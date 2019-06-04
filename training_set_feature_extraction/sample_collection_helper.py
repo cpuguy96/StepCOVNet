@@ -256,12 +256,7 @@ def feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_e
     sample_weights[frames_onset_p25 - frame_start] = 0.25
 
     label = np.zeros((len_line,))
-    #frames_onset = [x - frame_start for x in frames_onset if x - frame_start < len(label)]
-    try:
-        label[frames_onset - frame_start] = 1
-    except Exception:
-        print("Max Timing:", max(frames_onset) - frame_start, "| Song Len:", len(label), "| Diff:", max(frames_onset) - frame_start - len(label), "| Start:", frame_start)
-
+    label[frames_onset - frame_start] = 1
     label[frames_onset_p25 - frame_start] = 1
 
     return mfcc_line, label, sample_weights
