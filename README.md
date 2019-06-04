@@ -1,4 +1,3 @@
-# stepmania-note-generator
 # Stepmania Note Generator
 
 Derivation of...
