@@ -1,4 +1,8 @@
 # stepmania-note-generator
+# Stepmania Note Generator
+
+Derivation of...
+
 # An efficient deep learning model for musical onset detection
 
 This repo contains code and supplementary information for the paper:
