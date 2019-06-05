@@ -26,10 +26,14 @@ if __name__ == '__main__':
     file_names = get_file_names(audio_path)
     existing_wavs = get_file_names(wav_path)
 
+    print("Starting .wav conversion\n-----------------------------------------")
+
     for file_name in file_names:
         new_file_name = re.sub("[^a-z0-9-_]", "", file_name.lower()[:-4])
         if new_file_name + '.wav' in existing_wavs:
+            print(file_name + " already converted! Skipping...")
             continue
+        print("Converting " + file_name)
         subprocess.call(
             ['ffmpeg', '-y', '-loglevel', 'quiet', '-i',
              audio_path + file_name, '-ar', '44100', wav_path + new_file_name + '.wav']
