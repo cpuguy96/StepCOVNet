@@ -17,9 +17,21 @@ from file_path_jingju_shared import *
 from audio_preprocessing import getMFCCBands2DMadmom
 
 from utilFunctions import getRecordings
-from schluterParser import annotationCvParser
 
-# bock annotation format -----------------------------------------------------------------------------------------------
+
+def annotationCvParser(annotation_filename):
+    """
+    Schluter onset time annotation parser
+    :param annotation_filename:
+    :return: onset time list
+    """
+
+    with open(annotation_filename, 'r') as file:
+        lines = file.readlines()
+        list_onset_time = [x.replace("\n", "").split(" ")[1] for x in lines[3:]]
+        return list_onset_time
+
+
 def feature_label_weights_saver(path_output, filename, feature, label, sample_weights):
 
     filename_feature_all = join(path_output, 'dataset_features.h5')

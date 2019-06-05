@@ -1,22 +1,20 @@
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
-from keras.callbacks import EarlyStopping, CSVLogger, LearningRateScheduler, ModelCheckpoint, ReduceLROnPlateau
-from keras.layers import Conv2D, MaxPooling2D
-from keras.layers import Dropout, Dense, Flatten, BatchNormalization
+from keras.callbacks import EarlyStopping, CSVLogger, ReduceLROnPlateau
+from keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, BatchNormalization
 from keras.models import Sequential
-from keras.optimizers import Adam, Nadam
+from keras.optimizers import Nadam
 
 from feature_generator import generator
 from data_preparation import load_data
 
 
 def front_end_a(model_1,
-                filter_density,
                 reshape_dim,
                 channel_order,
                 dropout):
-    model_1.add(Conv2D(int(8 * filter_density),
+    model_1.add(Conv2D(int(8),
                        (3, 7),
                        padding="valid",
                        kernel_initializer='glorot_normal',
@@ -27,8 +25,7 @@ def front_end_a(model_1,
     model_1.add(MaxPooling2D(pool_size=(3, 1),
                              padding='valid',
                              data_format=channel_order))
-
-    model_1.add(Conv2D(int(16 * filter_density),
+    model_1.add(Conv2D(int(16),
                        (3, 3),
                        padding="valid",
                        kernel_initializer='glorot_normal',
@@ -51,10 +48,7 @@ def auc(y_true, y_pred):
     return auc
 
 
-def jan_original_5_layers_cnn(filter_density,
-                              dropout,
-                              input_shape,
-                              channel=1):
+def build_model(input_shape, channel=1):
     "less deep architecture"
     if channel == 1:
         reshape_dim = (1, input_shape[0], input_shape[1])
@@ -66,17 +60,14 @@ def jan_original_5_layers_cnn(filter_density,
     model = Sequential()
 
     model = front_end_a(model_1=model,
-                          filter_density=filter_density,
                           reshape_dim=reshape_dim,
                           channel_order=channel_order,
-                          dropout=dropout)
+                          dropout=0.5)
     model.add(BatchNormalization(axis=1))
     model.add(Flatten())
     model.add(Dense(512, activation="relu", kernel_initializer='glorot_normal'))
     model.add(BatchNormalization())
-
-    if dropout:
-        model.add(Dropout(dropout))
+    model.add(Dropout(0.5))
 
     model.add(Dense(1, activation='sigmoid'))
 
@@ -185,8 +176,6 @@ def model_train(model_0,
 def train_model(filename_train_validation_set,
                 filename_labels_train_validation_set,
                 filename_sample_weights,
-                filter_density,
-                dropout,
                 input_shape,
                 file_path_model,
                 filename_log,
@@ -196,12 +185,9 @@ def train_model(filename_train_validation_set,
     """
 
     filenames_features, Y_train_validation, sample_weights, class_weights = \
-        load_data(filename_labels_train_validation_set,
-                       filename_sample_weights)
-    model = jan_original_5_layers_cnn  (filter_density=filter_density,
-                                        dropout=dropout,
-                                        input_shape=input_shape,
-                                        channel=channel)
+        load_data(filename_labels_train_validation_set, filename_sample_weights)
+    model = build_model(input_shape=input_shape, channel=channel)
+
     batch_size = 256
 
     model_train(model,

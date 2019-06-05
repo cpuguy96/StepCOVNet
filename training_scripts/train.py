@@ -29,8 +29,6 @@ if __name__ == '__main__':
     train_model(filename_train_validation_set,
                 filename_labels_train_validation_set,
                 filename_sample_weights,
-                filter_density=1,
-                dropout=0.5,
                 input_shape=(80, 15),
                 file_path_model=file_path_model,
                 filename_log=file_path_log,
