@@ -11,9 +11,6 @@ from sample_collection_helper import feature_onset_phrase_label_sample_weights
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src/"))
 
-from parameters_jingju import *
-from file_path_jingju_shared import *
-
 from audio_preprocessing import getMFCCBands2DMadmom
 
 from utilFunctions import getRecordings
@@ -26,10 +23,11 @@ def annotationCvParser(annotation_filename):
     :return: onset time list
     """
 
+    list_onset_time = []
     with open(annotation_filename, 'r') as file:
         lines = file.readlines()
         list_onset_time = [x.replace("\n", "").split(" ")[1] for x in lines[3:]]
-        return list_onset_time
+    return list_onset_time
 
 
 def feature_label_weights_saver(path_output, filename, feature, label, sample_weights):
