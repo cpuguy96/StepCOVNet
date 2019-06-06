@@ -89,9 +89,11 @@ def model_train(model_0,
                 Y_train_validation,
                 sample_weights,
                 class_weights,
+                scaler,
                 file_path_model,
                 filename_log,
-                channel):
+                channel,
+                input_shape):
 
     print("start training...")
 
@@ -118,6 +120,12 @@ def model_train(model_0,
     steps_per_epoch_train = int(np.ceil(len(indices_train) / batch_size))
     steps_per_epoch_val = int(np.ceil(len(indices_validation) / batch_size))
 
+    import h5py
+
+    with h5py.File(path_feature_data, 'r') as data:
+        from sklearn.preprocessing import StandardScaler
+        training_scaler = StandardScaler().fit(np.asarray(data['feature_all'])[np.sort(indices_train)])
+
     generator_train = generator(path_feature_data=path_feature_data,
                                 indices=indices_train,
                                 number_of_batches=steps_per_epoch_train,
@@ -125,7 +133,8 @@ def model_train(model_0,
                                 labels=Y_train,
                                 shuffle=False,
                                 sample_weights=sample_weights_train,
-                                multi_inputs=False)
+                                multi_inputs=False,
+                                scaler=training_scaler)
     generator_val = generator(path_feature_data=path_feature_data,
                               indices=indices_validation,
                               number_of_batches=steps_per_epoch_val,
@@ -133,7 +142,8 @@ def model_train(model_0,
                               labels=Y_validation,
                               shuffle=False,
                               sample_weights=sample_weights_validation,
-                              multi_inputs=False)
+                              multi_inputs=False,
+                              scaler=training_scaler)
 
     history = model_0.fit_generator(generator=generator_train,
                                     steps_per_epoch=steps_per_epoch_train,
@@ -153,6 +163,8 @@ def model_train(model_0,
 
     steps_per_epoch_train_val = int(np.ceil(len(indices_all) / batch_size))
 
+    model = build_model(input_shape=input_shape, channel=channel)
+
     generator_train_val = generator(path_feature_data=path_feature_data,
                                     indices=indices_all,
                                     number_of_batches=steps_per_epoch_train_val,
@@ -161,21 +173,23 @@ def model_train(model_0,
                                     shuffle=False,
                                     sample_weights=sample_weights,
                                     multi_inputs=False,
-                                    channel=channel)
+                                    channel=channel,
+                                    scaler=scaler)
 
-    model_0.fit_generator(generator=generator_train_val,
-                          steps_per_epoch=steps_per_epoch_train_val,
-                          epochs=epochs_final,
-                          callbacks=callbacks,
-                          class_weight=class_weights,
-                          verbose=2)
+    model.fit_generator(generator=generator_train_val,
+                        steps_per_epoch=steps_per_epoch_train_val,
+                        epochs=epochs_final,
+                        callbacks=callbacks,
+                        class_weight=class_weights,
+                        verbose=2)
 
-    model_0.save(file_path_model)
+    model.save(file_path_model)
 
 
 def train_model(filename_train_validation_set,
                 filename_labels_train_validation_set,
                 filename_sample_weights,
+                filename_scaler,
                 input_shape,
                 file_path_model,
                 filename_log,
@@ -184,19 +198,21 @@ def train_model(filename_train_validation_set,
     train final model save to model path
     """
 
-    filenames_features, Y_train_validation, sample_weights, class_weights = \
-        load_data(filename_labels_train_validation_set, filename_sample_weights)
+    filenames_features, Y_train_validation, sample_weights, class_weights, scaler = \
+        load_data(filename_labels_train_validation_set, filename_sample_weights, filename_scaler)
     model = build_model(input_shape=input_shape, channel=channel)
 
     batch_size = 256
 
     model_train(model,
-                 batch_size,
-                 filename_train_validation_set,
-                 filenames_features,
-                 Y_train_validation,
-                 sample_weights,
-                 class_weights,
-                 file_path_model,
-                 filename_log,
-                 channel)
+                batch_size,
+                filename_train_validation_set,
+                filenames_features,
+                Y_train_validation,
+                sample_weights,
+                class_weights,
+                scaler,
+                file_path_model,
+                filename_log,
+                channel,
+                input_shape)

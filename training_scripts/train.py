@@ -22,12 +22,14 @@ if __name__ == '__main__':
     filename_train_validation_set = os.path.join(args.path_input, 'dataset_features.h5')
     filename_labels_train_validation_set = os.path.join(args.path_input, 'dataset_labels.pkl')
     filename_sample_weights = os.path.join(args.path_input, 'dataset_sample_weights.pkl')
+    filename_scaler = os.path.join(args.path_input, 'scaler.pkl')
 
     file_path_model = os.path.join(args.path_output, 'model.h5')
     file_path_log = os.path.join(args.path_output, 'model.csv')
     train_model(filename_train_validation_set,
                 filename_labels_train_validation_set,
                 filename_sample_weights,
+                filename_scaler,
                 input_shape=(80, 15),
                 file_path_model=file_path_model,
                 filename_log=file_path_log,

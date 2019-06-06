@@ -2,17 +2,20 @@
 # -*- coding: utf-8 -*-
 
 import os
+from os.path import join
 import pickle
 import sys
 
+
 import h5py
 import numpy as np
+from sklearn.preprocessing import StandardScaler
 from sample_collection_helper import feature_onset_phrase_label_sample_weights
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src/"))
 
 from audio_preprocessing import getMFCCBands2DMadmom
-
+from parameters import *
 from utilFunctions import getRecordings
 
 
@@ -72,6 +75,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     :param path_output:
     :return:
     """
+    features = []
     for fn in getRecordings(annotation_path):
 
         # from the annotation to get feature, frame start and frame end of each line, frames_onset
@@ -84,6 +88,9 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         # save feature, label and weights
         feature_label_weights_saver(path_output, fn, feature, label, sample_weights)
 
+        features.append(feature)
+
+    pickle.dump(StandardScaler().fit(np.concatenate(features)), open(join(path_output,  'scaler.pkl'), 'wb'), protocol=2)
     return True
 
 

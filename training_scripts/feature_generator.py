@@ -18,7 +18,8 @@ def generator(path_feature_data,
               sample_weights=None,
               shuffle=True,
               multi_inputs=False,
-              channel=1):
+              channel=1,
+              scaler = None):
 
     f = h5py.File(path_feature_data, 'r')
     indices_copy = np.array(indices[:], np.int64)
@@ -36,8 +37,15 @@ def generator(path_feature_data,
     counter = 0
 
     f_shape = f['feature_all'].shape
-    f_used = np.asarray(f['feature_all']).reshape(f_shape[0], 80, 15)
-    #f_used = StandardScaler().fit_transform(np.asarray(f['feature_all'])).reshape(f_shape[0], 80, 15)
+    f_used = np.asarray(f['feature_all'])
+
+    if scaler is not None:
+        f_used = scaler.transform(np.asarray(f_used))
+
+    f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15)
+
+
+
     while True:
         idx_start = file_size * counter
         idx_end = file_size * (counter + 1)
