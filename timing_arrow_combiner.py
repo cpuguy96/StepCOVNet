@@ -67,7 +67,7 @@ if __name__ == '__main__':
         arrows = []
         try:
             with open(arrows_path + "pred_arrows_" + song_name + ".txt", "r") as arrows_file:
-                arrows = np.asarray([line.replace("\n", "") for line in arrows_file.readlines()]).astype(int)
+                arrows = np.asarray([line.replace("\n", "") for line in arrows_file.readlines()])
         except Exception:
             print(song_name + " arrows not found! Skipping...")
             continue
