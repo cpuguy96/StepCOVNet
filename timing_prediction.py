@@ -13,7 +13,6 @@ sys.path.append(join(os.path.dirname('__file__'), "./src/"))
 
 from utilFunctions import smooth_obs
 from audio_preprocessing import getMFCCBands2DMadmom
-from experiment_process_helper import boundary_decoding
 from madmom.features.onsets import OnsetPeakPickingProcessor
 
 
@@ -25,6 +24,25 @@ def auc(y_true, y_pred):
     auc = tf.metrics.auc(y_true, y_pred)[1]
     K.get_session().run(tf.local_variables_initializer())
     return auc
+
+
+def boundary_decoding(obs_i,
+                      threshold,
+                      hopsize_t,
+                      OnsetPeakPickingProcessor):
+
+    """decode boundary"""
+    arg_pp = {'threshold': threshold,
+              'smooth': 0,
+              'fps': 1. / hopsize_t,
+              'pre_max': hopsize_t,
+              'post_max': hopsize_t}
+
+    peak_picking = OnsetPeakPickingProcessor(**arg_pp)
+    i_boundary = peak_picking.process(obs_i)
+    i_boundary = np.append(i_boundary, (len(obs_i) - 1) * hopsize_t)
+    i_boundary /= hopsize_t
+    return i_boundary
 
 
 if __name__ == '__main__':
@@ -69,14 +87,10 @@ if __name__ == '__main__':
         pdf = np.squeeze(pdf)
         pdf = smooth_obs(pdf)
 
-        timings, _ = boundary_decoding(decoding_method="lmao",
-                                          obs_i=pdf,
-                                          duration_score=None,
-                                          varin=None,
-                                          threshold=0.5,
-                                          hopsize_t=0.01,
-                                          viterbiDecoding=None,
-                                          OnsetPeakPickingProcessor=OnsetPeakPickingProcessor)
+        timings = boundary_decoding(  obs_i=pdf,
+                                      threshold=0.5,
+                                      hopsize_t=0.01,
+                                      OnsetPeakPickingProcessor=OnsetPeakPickingProcessor)
 
         with open(out_path + "pred_timings_" + wav_name[:-4] + ".txt", "w") as timings_file:
             for timing in timings:
