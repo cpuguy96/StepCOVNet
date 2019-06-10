@@ -1,6 +1,5 @@
 import numpy as np
 import h5py
-from sklearn.preprocessing import StandardScaler
 
 
 def shuffleFilenamesLabelsInUnison(filenames, labels, sample_weights):

@@ -1,6 +1,7 @@
 import pickle
 from sklearn.utils import compute_class_weight
 
+
 def load_data(filename_labels_train_validation_set,
               filename_sample_weights,
               filename_scaler):

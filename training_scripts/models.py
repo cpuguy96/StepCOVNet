@@ -3,7 +3,7 @@ import tensorflow as tf
 from keras import backend as K
 from keras.callbacks import EarlyStopping, CSVLogger, ReduceLROnPlateau
 from keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, BatchNormalization
-from keras.models import Sequential
+from keras.models import Sequential, load_model
 from keras.optimizers import Nadam
 
 from feature_generator import generator
@@ -26,6 +26,17 @@ def front_end_a(model_1,
                              padding='valid',
                              data_format=channel_order))
     model_1.add(Conv2D(int(16),
+                       (3, 3),
+                       padding="valid",
+                       kernel_initializer='glorot_normal',
+                       data_format=channel_order,
+                       activation='relu'))
+    model_1.add(BatchNormalization(axis=1))
+    model_1.add(MaxPooling2D(pool_size=(3, 1),
+                             padding='valid',
+                             data_format=channel_order))
+
+    model_1.add(Conv2D(int(32),
                        (3, 3),
                        padding="valid",
                        kernel_initializer='glorot_normal',
@@ -67,7 +78,7 @@ def build_model(input_shape, channel=1):
     model.add(Flatten())
     model.add(Dense(512, activation="relu", kernel_initializer='glorot_normal'))
     model.add(BatchNormalization())
-    model.add(Dropout(0.5))
+    #model.add(Dropout(0.5))
 
     model.add(Dense(1, activation='sigmoid'))
 
@@ -93,7 +104,9 @@ def model_train(model_0,
                 file_path_model,
                 filename_log,
                 channel,
-                input_shape):
+                input_shape,
+                pretrained_model=None,
+                is_pretrained=False):
 
     print("start training...")
 
@@ -163,7 +176,10 @@ def model_train(model_0,
 
     steps_per_epoch_train_val = int(np.ceil(len(indices_all) / batch_size))
 
-    model = build_model(input_shape=input_shape, channel=channel)
+    if is_pretrained:
+        model = build_pretrained_model(pretrained_model)
+    else:
+        model = build_model(input_shape=input_shape, channel=channel)
 
     generator_train_val = generator(path_feature_data=path_feature_data,
                                     indices=indices_all,
@@ -186,6 +202,30 @@ def model_train(model_0,
     model.save(file_path_model)
 
 
+def build_pretrained_model(pretrained_model):
+    import keras
+    model = load_model(pretrained_model)
+
+    for layer in model.layers:
+        layer.trainable = False
+    for layer in model.layers[::-1]:
+        if isinstance(layer, keras.layers.core.Flatten):
+            layer.trainable = True
+            break
+        model.pop()
+
+    model.add(Dense(512, activation="relu", kernel_initializer='glorot_normal'))
+    model.add(BatchNormalization())
+    #model.add(Dropout(0.5))
+    model.add(Dense(1, activation="sigmoid"))
+    model.compile(loss='binary_crossentropy',
+                  optimizer=Nadam(),
+                  metrics=["accuracy", auc])
+
+    print(model.summary())
+    return model
+
+
 def train_model(filename_train_validation_set,
                 filename_labels_train_validation_set,
                 filename_sample_weights,
@@ -193,16 +233,24 @@ def train_model(filename_train_validation_set,
                 input_shape,
                 file_path_model,
                 filename_log,
-                channel=1):
+                channel=1,
+                pretrained_model=None):
     """
     train final model save to model path
     """
 
     filenames_features, Y_train_validation, sample_weights, class_weights, scaler = \
         load_data(filename_labels_train_validation_set, filename_sample_weights, filename_scaler)
-    model = build_model(input_shape=input_shape, channel=channel)
 
+    model = None
+    is_pretrained = False
     batch_size = 256
+
+    if pretrained_model is not None:
+        model = build_pretrained_model(pretrained_model)
+        is_pretrained = True
+    else:
+        model = build_model(input_shape=input_shape, channel=channel)
 
     model_train(model,
                 batch_size,
@@ -215,4 +263,6 @@ def train_model(filename_train_validation_set,
                 file_path_model,
                 filename_log,
                 channel,
-                input_shape)
+                input_shape,
+                pretrained_model = pretrained_model,
+                is_pretrained=is_pretrained)
