@@ -26,7 +26,6 @@ def annotationCvParser(annotation_filename):
     :return: onset time list
     """
 
-    list_onset_time = []
     with open(annotation_filename, 'r') as file:
         lines = file.readlines()
         list_onset_time = [x.replace("\n", "").split(" ")[1] for x in lines[3:]]

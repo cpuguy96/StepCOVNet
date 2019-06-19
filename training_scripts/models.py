@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras.callbacks import EarlyStopping, CSVLogger, ReduceLROnPlateau
-from keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, BatchNormalization
+from keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, Bidirectional, BatchNormalization, LSTM
 from keras.models import Sequential, load_model
 from keras.optimizers import Nadam
 
@@ -10,47 +10,46 @@ from feature_generator import generator
 from data_preparation import load_data
 
 
-def front_end_a(model_1,
+def front_end_a(model,
                 reshape_dim,
-                channel_order,
-                dropout):
-    model_1.add(Conv2D(int(8),
-                       (3, 7),
+                channel_order):
+    model.add(Conv2D(int(8),
+                       (5, 7),
                        padding="valid",
                        kernel_initializer='glorot_normal',
                        input_shape=reshape_dim,
                        data_format=channel_order,
                        activation='relu'))
-    model_1.add(BatchNormalization(axis=1))
-    model_1.add(MaxPooling2D(pool_size=(3, 1),
+    model.add(Conv2D(int(8),
+                     (5, 5),
+                     padding="valid",
+                     kernel_initializer='glorot_normal',
+                     data_format=channel_order,
+                     activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 1),
                              padding='valid',
                              data_format=channel_order))
-    model_1.add(Conv2D(int(16),
+    model.add(BatchNormalization(axis=1))
+    model.add(Dropout(0.25))
+    model.add(Conv2D(int(16),
                        (3, 3),
                        padding="valid",
                        kernel_initializer='glorot_normal',
                        data_format=channel_order,
                        activation='relu'))
-    model_1.add(BatchNormalization(axis=1))
-    model_1.add(MaxPooling2D(pool_size=(3, 1),
+    model.add(Conv2D(int(16),
+                     (3, 3),
+                     padding="valid",
+                     kernel_initializer='glorot_normal',
+                     data_format=channel_order,
+                     activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 1),
                              padding='valid',
                              data_format=channel_order))
+    model.add(BatchNormalization(axis=1))
 
-    model_1.add(Conv2D(int(32),
-                       (3, 3),
-                       padding="valid",
-                       kernel_initializer='glorot_normal',
-                       data_format=channel_order,
-                       activation='relu'))
-    model_1.add(BatchNormalization(axis=1))
-    model_1.add(MaxPooling2D(pool_size=(3, 1),
-                             padding='valid',
-                             data_format=channel_order))
 
-    if dropout:
-        model_1.add(Dropout(dropout))
-
-    return model_1
+    return model
 
 
 def auc(y_true, y_pred):
@@ -70,21 +69,19 @@ def build_model(input_shape, channel=1):
 
     model = Sequential()
 
-    model = front_end_a(model_1=model,
+    model = front_end_a(model=model,
                           reshape_dim=reshape_dim,
-                          channel_order=channel_order,
-                          dropout=0.5)
-    model.add(BatchNormalization(axis=1))
+                          channel_order=channel_order)
     model.add(Flatten())
-    model.add(Dense(512, activation="relu", kernel_initializer='glorot_normal'))
+    model.add(Dense(256, activation="relu", kernel_initializer='glorot_normal'))
     model.add(BatchNormalization())
-    #model.add(Dropout(0.5))
+    model.add(Dropout(0.5))
 
     model.add(Dense(1, activation='sigmoid'))
 
     optimizer = Nadam()
 
-    model.compile(loss='binary_crossentropy',
+    model.compile(  loss='binary_crossentropy',
                     optimizer=optimizer,
                     metrics=["accuracy", auc])
 
