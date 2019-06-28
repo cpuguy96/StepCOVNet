@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras.callbacks import EarlyStopping, CSVLogger, ReduceLROnPlateau
-from keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, Bidirectional, BatchNormalization, LSTM
+from keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, BatchNormalization
 from keras.models import Sequential, load_model
 from keras.optimizers import Nadam
 
@@ -10,52 +10,52 @@ from feature_generator import generator
 from data_preparation import load_data
 
 
+def auc(y_true, y_pred):
+    auc = tf.metrics.auc(y_true, y_pred)[1]
+    K.get_session().run(tf.local_variables_initializer())
+    return auc
+
+
 def front_end_a(model,
                 reshape_dim,
                 channel_order):
     model.add(Conv2D(int(8),
-                       (5, 7),
+                       (3, 7),
                        padding="valid",
                        kernel_initializer='glorot_normal',
                        input_shape=reshape_dim,
                        data_format=channel_order,
                        activation='relu'))
     model.add(Conv2D(int(8),
-                     (5, 5),
+                     (3, 3),
                      padding="valid",
                      kernel_initializer='glorot_normal',
+                     input_shape=reshape_dim,
                      data_format=channel_order,
-                     activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 1),
+                     activation='tanh'))
+    model.add(MaxPooling2D(pool_size=(3, 1),
                              padding='valid',
                              data_format=channel_order))
     model.add(BatchNormalization(axis=1))
     model.add(Dropout(0.25))
     model.add(Conv2D(int(16),
-                       (3, 3),
+                       (2, 2),
                        padding="valid",
                        kernel_initializer='glorot_normal',
                        data_format=channel_order,
-                       activation='relu'))
+                       activation='tanh'))
     model.add(Conv2D(int(16),
-                     (3, 3),
+                     (2, 2),
                      padding="valid",
                      kernel_initializer='glorot_normal',
                      data_format=channel_order,
                      activation='relu'))
-    model.add(MaxPooling2D(pool_size=(2, 1),
+    model.add(MaxPooling2D(pool_size=(3, 1),
                              padding='valid',
                              data_format=channel_order))
     model.add(BatchNormalization(axis=1))
 
-
     return model
-
-
-def auc(y_true, y_pred):
-    auc = tf.metrics.auc(y_true, y_pred)[1]
-    K.get_session().run(tf.local_variables_initializer())
-    return auc
 
 
 def build_model(input_shape, channel=1):
@@ -87,6 +87,30 @@ def build_model(input_shape, channel=1):
 
     print(model.summary())
 
+    return model
+
+
+def build_pretrained_model(pretrained_model):
+    import keras
+    model = load_model(pretrained_model)
+
+    for layer in model.layers:
+        layer.trainable = False
+    for layer in model.layers[::-1]:
+        if isinstance(layer, keras.layers.core.Flatten):
+            layer.trainable = True
+            break
+        model.pop()
+
+    model.add(Dense(512, activation="relu", kernel_initializer='glorot_normal'))
+    model.add(BatchNormalization())
+    #model.add(Dropout(0.5))
+    model.add(Dense(1, activation="sigmoid"))
+    model.compile(loss='binary_crossentropy',
+                  optimizer=Nadam(),
+                  metrics=["accuracy", auc])
+
+    print(model.summary())
     return model
 
 
@@ -197,30 +221,6 @@ def model_train(model_0,
                         verbose=2)
 
     model.save(file_path_model)
-
-
-def build_pretrained_model(pretrained_model):
-    import keras
-    model = load_model(pretrained_model)
-
-    for layer in model.layers:
-        layer.trainable = False
-    for layer in model.layers[::-1]:
-        if isinstance(layer, keras.layers.core.Flatten):
-            layer.trainable = True
-            break
-        model.pop()
-
-    model.add(Dense(512, activation="relu", kernel_initializer='glorot_normal'))
-    model.add(BatchNormalization())
-    #model.add(Dropout(0.5))
-    model.add(Dense(1, activation="sigmoid"))
-    model.compile(loss='binary_crossentropy',
-                  optimizer=Nadam(),
-                  metrics=["accuracy", auc])
-
-    print(model.summary())
-    return model
 
 
 def train_model(filename_train_validation_set,
