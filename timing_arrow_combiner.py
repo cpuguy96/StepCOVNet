@@ -49,13 +49,6 @@ if __name__ == '__main__':
 
         song_name = wavs_file_name[:-4]
 
-        bpm = -1
-        try:
-            bpm, _ = get_bpm(wavs_path + wavs_file_name)
-        except Exception:
-            print(wavs_file_name + " not found! Skipping...")
-            continue
-
         timings = []
         try:
             with open(timings_path + "pred_timings_" + song_name + ".txt", "r") as timings_file:
@@ -70,6 +63,13 @@ if __name__ == '__main__':
                 arrows = np.asarray([line.replace("\n", "") for line in arrows_file.readlines()])
         except Exception:
             print(song_name + " arrows not found! Skipping...")
+            continue
+
+        bpm = -1
+        try:
+            bpm, _ = get_bpm(wavs_path + wavs_file_name)
+        except Exception:
+            print(wavs_file_name + " not found! Skipping...")
             continue
 
         print("Creating combined txt file for " + wavs_file_name[:-4])

@@ -5,6 +5,7 @@ from nltk.util import ngrams
 
 from keras.models import load_model
 
+import keras_self_attention
 
 def get_file_names(mypath):
     return [f for f in listdir(mypath) if isfile(join(mypath, f))]
@@ -72,16 +73,21 @@ def get_arrows(timings, model):
     return pred_notes
 '''
 
+
 def get_arrows(timings, model):
     from sklearn.preprocessing import OneHotEncoder
     encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
 
     pred_notes = []
     lookback = model.layers[0].input_shape[1]
-    tokens = np.expand_dims(create_tokens(timings), axis=1)
+    classes = model.layers[-1].output_shape[1]
+    tokens = np.expand_dims(np.expand_dims(create_tokens(timings), axis=1), axis = 1)
     notes_ngram = np.expand_dims(get_notes_ngram(np.zeros((1, 16)), lookback)[-1], axis=0)
     for i, token in enumerate(tokens):
-        pred_arrow = np.argmax(model.predict([notes_ngram, token]))
+        #pred_arrow = np.argmax(model.predict([notes_ngram, token]))
+        pred = model.predict([notes_ngram, token])
+        pred_arrow = np.random.choice(classes, 1, p=pred[0])[0]
+        #pred_arrow = sample(model.predict([notes_ngram, token]))
         binary_rep = encoder.categories_[0][pred_arrow]
         pred_notes.append(binary_rep)
         binary_note = get_extended_binary_rep([binary_rep])
@@ -111,7 +117,7 @@ if __name__ == '__main__':
 
     timings_names = get_file_names(timings_path)
     existing_pred_arrows = get_file_names(out_path)
-    model = load_model(join(model_path))
+    model = load_model(join(model_path), custom_objects={'SeqSelfAttention': keras_self_attention.SeqSelfAttention})
 
     print("Starting arrows prediction\n-----------------------------------------")
 
