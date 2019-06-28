@@ -134,7 +134,7 @@ if __name__ == '__main__':
         with open(timings_path + timings_name, "r") as timings_file:
             timings = np.asarray([line.replace("\n", "") for line in timings_file.readlines()]).astype("float32")
 
-        print("Generating timings for " + song_name)
+        print("Generating arrows for " + song_name)
 
         arrows = get_arrows(timings, model)
 
