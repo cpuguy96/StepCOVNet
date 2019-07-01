@@ -66,7 +66,7 @@ def dump_feature_onset_helper(audio_path, annotation_path, fn, channel):
     return mfcc, frames_onset, frame_start, frame_end
 
 
-def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, path_output):
+def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, path_output, multi):
     """
     dump feature, label, sample weights for each phrase with bock annotation format
     :param audio_path:
@@ -74,11 +74,22 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     :param path_output:
     :return:
     """
+    features_low = []
+    features_mid = []
+    features_high = []
+
     features = []
+
+    if multi:
+        channel = 3
+    else:
+        channel = 1
+
     for fn in getRecordings(annotation_path):
 
         # from the annotation to get feature, frame start and frame end of each line, frames_onset
-        log_mel, frames_onset, frame_start, frame_end = dump_feature_onset_helper(audio_path, annotation_path, fn, 1)
+        log_mel, frames_onset, frame_start, frame_end = \
+            dump_feature_onset_helper(audio_path, annotation_path, fn, channel)
 
         # simple sample weighting
         feature, label, sample_weights = \
@@ -87,10 +98,22 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         # save feature, label and weights
         feature_label_weights_saver(path_output, fn, feature, label, sample_weights)
 
-        features.append(feature)
+        if multi:
+            features_low.append(feature[:, :, 0])
+            features_mid.append(feature[:, :, 1])
+            features_high.append(feature[:, :, 2])
+        else:
+            features.append(feature)
 
-    pickle.dump(StandardScaler().fit(np.concatenate(features)), open(join(path_output,  'scaler.pkl'), 'wb'), protocol=2)
-    return True
+    if multi:
+        pickle.dump(StandardScaler().fit(np.concatenate(features_low)), open(join(path_output, 'scaler_low.pkl'), 'wb'),
+                    protocol=2)
+        pickle.dump(StandardScaler().fit(np.concatenate(features_mid)), open(join(path_output, 'scaler_mid.pkl'), 'wb'),
+                    protocol=2)
+        pickle.dump(StandardScaler().fit(np.concatenate(features_high)), open(join(path_output, 'scaler_high.pkl'), 'wb'),
+                    protocol=2)
+    else:
+        pickle.dump(StandardScaler().fit(np.concatenate(features)), open(join(path_output, 'scaler.pkl'), 'wb'), protocol=2)
 
 
 if __name__ == '__main__':
@@ -106,6 +129,9 @@ if __name__ == '__main__':
     parser.add_argument("--output",
                         type=str,
                         help="output path")
+    parser.add_argument("--multi",
+                        type=bool,
+                        help="whether multiple STFT window time-lengths are captured")
     args = parser.parse_args()
 
     if not os.path.isdir(args.audio):
@@ -118,5 +144,6 @@ if __name__ == '__main__':
         raise OSError('Output path %s not found' % args.output)
 
     dump_feature_label_sample_weights_onset_phrase(audio_path=args.audio,
-                                                        annotation_path=args.annotation,
-                                                        path_output=args.output)
+                                                   annotation_path=args.annotation,
+                                                   path_output=args.output,
+                                                   multi=args.multi)

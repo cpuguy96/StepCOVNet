@@ -20,13 +20,27 @@ if __name__ == '__main__':
     parser.add_argument("--pretrained",
                         type=str,
                         help="Input path where a pretrained model is located")
-
+    parser.add_argument("--multi",
+                        type=bool,
+                        help="whether multiple STFT window time-lengths are used in training ")
     args = parser.parse_args()
 
     filename_train_validation_set = os.path.join(args.path_input, 'dataset_features.h5')
     filename_labels_train_validation_set = os.path.join(args.path_input, 'dataset_labels.pkl')
     filename_sample_weights = os.path.join(args.path_input, 'dataset_sample_weights.pkl')
-    filename_scaler = os.path.join(args.path_input, 'scaler.pkl')
+
+    filename_scaler = []
+
+    if args.multi:
+        input_shape = (80, 15, 3)
+        channel = 3
+        filename_scaler.append(os.path.join(args.path_input, 'scaler_low.pkl'))
+        filename_scaler.append(os.path.join(args.path_input, 'scaler_mid.pkl'))
+        filename_scaler.append(os.path.join(args.path_input, 'scaler_high.pkl'))
+    else:
+        input_shape = (80, 15)
+        channel = 1
+        filename_scaler.append(os.path.join(args.path_input, 'scaler.pkl'))
 
     if args.pretrained is not None:
         filename_pretrained_model = os.path.join(args.pretrained)
@@ -36,10 +50,10 @@ if __name__ == '__main__':
                     filename_labels_train_validation_set,
                     filename_sample_weights,
                     filename_scaler,
-                    input_shape=(80, 15),
+                    input_shape=input_shape,
                     file_path_model=file_path_model,
                     filename_log=file_path_log,
-                    channel=1,
+                    channel=channel,
                     pretrained_model=filename_pretrained_model)
     else:
         file_path_model = os.path.join(args.path_output, 'trained_model.h5')
@@ -48,7 +62,7 @@ if __name__ == '__main__':
                     filename_labels_train_validation_set,
                     filename_sample_weights,
                     filename_scaler,
-                    input_shape=(80, 15),
+                    input_shape=input_shape,
                     file_path_model=file_path_model,
                     filename_log=file_path_log,
-                    channel=1)
+                    channel=channel)

@@ -18,7 +18,7 @@ def generator(path_feature_data,
               shuffle=True,
               multi_inputs=False,
               channel=1,
-              scaler = None):
+              scaler=None):
 
     f = h5py.File(path_feature_data, 'r')
     indices_copy = np.array(indices[:], np.int64)
@@ -39,9 +39,17 @@ def generator(path_feature_data,
     f_used = np.asarray(f['feature_all'])
 
     if scaler is not None:
-        f_used = scaler.transform(np.asarray(f_used))
+        if multi_inputs:
+            f_used[:, :, 0] = scaler[0].transform(np.asarray(f_used[:, :, 0]))
+            f_used[:, :, 1] = scaler[1].transform(np.asarray(f_used[:, :, 1]))
+            f_used[:, :, 2] = scaler[2].transform(np.asarray(f_used[:, :, 2]))
+        else:
+            f_used = scaler.transform(np.asarray(f_used))
 
-    f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15)
+    if multi_inputs:
+        f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15, 3)
+    else:
+        f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15)
 
 
 
@@ -65,15 +73,9 @@ def generator(path_feature_data,
         counter += 1
 
         if sample_weights is not None:
-            if multi_inputs:
-                yield [X_batch_tensor,X_batch_tensor], y_batch_tensor, sample_weights_batch_tensor
-            else:
-                yield X_batch_tensor, y_batch_tensor
+            yield X_batch_tensor, y_batch_tensor, sample_weights_batch_tensor
         else:
-            if multi_inputs:
-                yield [X_batch_tensor,X_batch_tensor], y_batch_tensor
-            else:
-                yield X_batch_tensor, y_batch_tensor
+            yield X_batch_tensor, y_batch_tensor
 
         if counter >= number_of_batches:
             counter = 0

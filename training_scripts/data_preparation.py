@@ -4,7 +4,7 @@ from sklearn.utils import compute_class_weight
 
 def load_data(filename_labels_train_validation_set,
               filename_sample_weights,
-              filename_scaler):
+              filename_scalers):
 
     # load training and validation data
 
@@ -14,8 +14,10 @@ def load_data(filename_labels_train_validation_set,
     with open(filename_sample_weights, 'rb') as f:
         sample_weights = pickle.load(f)
 
-    with open(filename_scaler, 'rb') as f:
-        scaler = pickle.load(f)
+    scaler = []
+    for filename_scaler in filename_scalers:
+        with open(filename_scaler, 'rb') as f:
+            scaler.append(pickle.load(f))
 
     # this is the filename indices
     indices_train_validation = range(len(Y_train_validation))

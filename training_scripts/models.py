@@ -15,46 +15,82 @@ def auc(y_true, y_pred):
     K.get_session().run(tf.local_variables_initializer())
     return auc
 
-
+"""
+def front_end_a(model,
+                reshape_dim,
+                channel_order):
+    model.add(Conv2D(int(10),
+                       (7, 3),
+                       padding="same",
+                       kernel_initializer='glorot_normal',
+                       input_shape=reshape_dim,
+                       data_format=channel_order,
+                       activation='relu'))
+    model.add(MaxPooling2D(pool_size=(3, 1),
+                           padding='valid',
+                           data_format=channel_order))
+    model.add(BatchNormalization(axis=1))
+    model.add(Dropout(0.5))
+    model.add(Conv2D(int(20),
+                     (3, 3),
+                     padding="same",
+                     kernel_initializer='glorot_normal',
+                     input_shape=reshape_dim,
+                     data_format=channel_order,
+                     activation='relu'))
+    model.add(MaxPooling2D(pool_size=(3, 1),
+                           padding='valid',
+                           data_format=channel_order))
+    model.add(BatchNormalization(axis=1))
+    model.add(Dropout(0.5))
+    return model
+"""
 def front_end_a(model,
                 reshape_dim,
                 channel_order):
     model.add(Conv2D(int(8),
-                       (3, 7),
-                       padding="valid",
+                       (7, 7),
+                       padding="same",
                        kernel_initializer='glorot_normal',
                        input_shape=reshape_dim,
                        data_format=channel_order,
                        activation='relu'))
     model.add(Conv2D(int(8),
-                     (3, 3),
-                     padding="valid",
+                     (6, 7),
+                     padding="same",
                      kernel_initializer='glorot_normal',
                      input_shape=reshape_dim,
                      data_format=channel_order,
-                     activation='tanh'))
-    model.add(MaxPooling2D(pool_size=(3, 1),
-                             padding='valid',
-                             data_format=channel_order))
-    model.add(BatchNormalization(axis=1))
-    model.add(Dropout(0.25))
-    model.add(Conv2D(int(16),
-                       (2, 2),
-                       padding="valid",
-                       kernel_initializer='glorot_normal',
-                       data_format=channel_order,
-                       activation='tanh'))
-    model.add(Conv2D(int(16),
-                     (2, 2),
-                     padding="valid",
+                     activation='relu'))
+    model.add(Conv2D(int(8),
+                     (5, 7),
+                     padding="same",
                      kernel_initializer='glorot_normal',
+                     input_shape=reshape_dim,
                      data_format=channel_order,
                      activation='relu'))
     model.add(MaxPooling2D(pool_size=(3, 1),
                              padding='valid',
                              data_format=channel_order))
     model.add(BatchNormalization(axis=1))
-
+    model.add(Dropout(0.25))
+    model.add(Conv2D(int(16),
+                       (4, 3),
+                       padding="same",
+                       kernel_initializer='glorot_normal',
+                       data_format=channel_order,
+                       activation='relu'))
+    model.add(Conv2D(int(16),
+                     (3, 3),
+                     padding="same",
+                     kernel_initializer='glorot_normal',
+                     data_format=channel_order,
+                     activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 1),
+                             padding='valid',
+                             data_format=channel_order))
+    model.add(BatchNormalization(axis=1))
+    model.add(Dropout(0.25))
     return model
 
 
@@ -74,7 +110,8 @@ def build_model(input_shape, channel=1):
                           channel_order=channel_order)
     model.add(Flatten())
     model.add(Dense(256, activation="relu", kernel_initializer='glorot_normal'))
-    model.add(BatchNormalization())
+    #model.add(Dense(256, activation="relu", kernel_initializer='glorot_normal'))
+    #model.add(Dense(128, activation="relu", kernel_initializer='glorot_normal'))
     model.add(Dropout(0.5))
 
     model.add(Dense(1, activation='sigmoid'))
@@ -102,9 +139,10 @@ def build_pretrained_model(pretrained_model):
             break
         model.pop()
 
-    model.add(Dense(512, activation="relu", kernel_initializer='glorot_normal'))
-    model.add(BatchNormalization())
-    #model.add(Dropout(0.5))
+    model.add(Dense(256, activation="relu", kernel_initializer='glorot_normal'))
+    model.add(Dense(128, activation="relu", kernel_initializer='glorot_normal'))
+    #model.add(BatchNormalization())
+    model.add(Dropout(0.5))
     model.add(Dense(1, activation="sigmoid"))
     model.compile(loss='binary_crossentropy',
                   optimizer=Nadam(),
@@ -155,10 +193,19 @@ def model_train(model_0,
     steps_per_epoch_val = int(np.ceil(len(indices_validation) / batch_size))
 
     import h5py
+    training_scaler = []
 
     with h5py.File(path_feature_data, 'r') as data:
         from sklearn.preprocessing import StandardScaler
-        training_scaler = StandardScaler().fit(np.asarray(data['feature_all'])[np.sort(indices_train)])
+        training_data = np.asarray(data['feature_all'])[np.sort(indices_train)]
+
+        for i in range(channel):
+            training_scaler.append(StandardScaler().fit(training_data[:, :, i]))
+
+    if channel != 1:
+        multi_inputs = True
+    else:
+        multi_inputs = False
 
     generator_train = generator(path_feature_data=path_feature_data,
                                 indices=indices_train,
@@ -167,8 +214,9 @@ def model_train(model_0,
                                 labels=Y_train,
                                 shuffle=False,
                                 sample_weights=sample_weights_train,
-                                multi_inputs=False,
-                                scaler=training_scaler)
+                                multi_inputs=multi_inputs,
+                                scaler=training_scaler,
+                                channel=channel)
     generator_val = generator(path_feature_data=path_feature_data,
                               indices=indices_validation,
                               number_of_batches=steps_per_epoch_val,
@@ -176,8 +224,9 @@ def model_train(model_0,
                               labels=Y_validation,
                               shuffle=False,
                               sample_weights=sample_weights_validation,
-                              multi_inputs=False,
-                              scaler=training_scaler)
+                              multi_inputs=multi_inputs,
+                              scaler=training_scaler,
+                              channel=channel)
 
     history = model_0.fit_generator(generator=generator_train,
                                     steps_per_epoch=steps_per_epoch_train,
@@ -209,7 +258,7 @@ def model_train(model_0,
                                     labels=Y_train_validation,
                                     shuffle=False,
                                     sample_weights=sample_weights,
-                                    multi_inputs=False,
+                                    multi_inputs=multi_inputs,
                                     channel=channel,
                                     scaler=scaler)
 
@@ -239,7 +288,6 @@ def train_model(filename_train_validation_set,
     filenames_features, Y_train_validation, sample_weights, class_weights, scaler = \
         load_data(filename_labels_train_validation_set, filename_sample_weights, filename_scaler)
 
-    model = None
     is_pretrained = False
     batch_size = 256
 
@@ -261,5 +309,5 @@ def train_model(filename_train_validation_set,
                 filename_log,
                 channel,
                 input_shape,
-                pretrained_model = pretrained_model,
+                pretrained_model=pretrained_model,
                 is_pretrained=is_pretrained)
