@@ -4,6 +4,7 @@ from madmom.processors import SequentialProcessor, ParallelProcessor
 
 EPSILON = np.spacing(1)
 
+
 def _nbf_2D(mfcc, nlen):
     mfcc = np.array(mfcc).transpose()
     mfcc_out = np.array(mfcc, copy=True)
@@ -14,9 +15,8 @@ def _nbf_2D(mfcc, nlen):
     feature = mfcc_out.transpose()
     return feature
 
+
 class MadmomMelbankProcessor(SequentialProcessor):
-
-
     def __init__(self, fs, hopsize_t):
         from madmom.audio.signal import SignalProcessor, FramedSignalProcessor
         from madmom.audio.stft import ShortTimeFourierTransformProcessor
@@ -53,8 +53,6 @@ class MadmomMelbankProcessor(SequentialProcessor):
 
 
 class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
-
-
     def __init__(self, fs, hopsize_t):
         from madmom.audio.signal import SignalProcessor, FramedSignalProcessor
         from madmom.audio.stft import ShortTimeFourierTransformProcessor

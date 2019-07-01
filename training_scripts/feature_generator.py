@@ -1,6 +1,7 @@
 import numpy as np
 import h5py
 
+from data_preparation import featureReshape
 
 def shuffleFilenamesLabelsInUnison(filenames, labels, sample_weights):
     assert len(filenames) == len(labels)
@@ -35,7 +36,6 @@ def generator(path_feature_data,
 
     counter = 0
 
-    f_shape = f['feature_all'].shape
     f_used = np.asarray(f['feature_all'])
 
     if scaler is not None:
@@ -47,11 +47,11 @@ def generator(path_feature_data,
             f_used = scaler.transform(np.asarray(f_used))
 
     if multi_inputs:
-        f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15, 3)
+        #f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15, 3)
+        f_used = featureReshape(f_used, True, 7)
     else:
-        f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15)
-
-
+        #f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15)
+        f_used = featureReshape(f_used, False, 7)
 
     while True:
         idx_start = file_size * counter
