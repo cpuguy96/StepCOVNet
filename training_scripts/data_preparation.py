@@ -1,7 +1,7 @@
 import pickle
 import numpy as np
 from sklearn.utils import compute_class_weight
-
+from sklearn.externals import joblib
 
 def featureReshape(feature, multi=False, nlen=10):
     """
@@ -36,15 +36,15 @@ def load_data(filename_labels_train_validation_set,
     # load training and validation data
 
     with open(filename_labels_train_validation_set, 'rb') as f:
-        Y_train_validation = pickle.load(f)
+        Y_train_validation = np.load(f)['labels']
 
     with open(filename_sample_weights, 'rb') as f:
-        sample_weights = pickle.load(f)
+        sample_weights = np.load(f)['sample_weights']
 
     scaler = []
     for filename_scaler in filename_scalers:
         with open(filename_scaler, 'rb') as f:
-            scaler.append(pickle.load(f))
+            scaler.append(joblib.load(f))
 
     # this is the filename indices
     indices_train_validation = range(len(Y_train_validation))

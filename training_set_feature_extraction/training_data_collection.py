@@ -10,6 +10,7 @@ import sys
 import h5py
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+from sklearn.externals import joblib
 from sample_collection_helper import feature_onset_phrase_label_sample_weights
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src/"))
@@ -30,18 +31,6 @@ def annotationCvParser(annotation_filename):
         lines = file.readlines()
         list_onset_time = [x.replace("\n", "").split(" ")[1] for x in lines[3:]]
     return list_onset_time
-
-
-def feature_label_weights_saver(path_output, filename, feature, label, sample_weights):
-
-    filename_feature_all = join(path_output, 'dataset_features.h5')
-    h5f = h5py.File(filename_feature_all, 'w')
-    h5f.create_dataset('feature_all', data=feature)
-    h5f.close()
-
-    pickle.dump(label, open(join(path_output, 'dataset_labels.pkl'), 'wb'), protocol=2)
-
-    pickle.dump(sample_weights, open(join(path_output,  'dataset_sample_weights.pkl'), 'wb'), protocol=2)
 
 
 def dump_feature_onset_helper(audio_path, annotation_path, fn, channel):
@@ -79,6 +68,8 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     features_high = []
 
     features = []
+    labels = []
+    weights = []
 
     if multi:
         channel = 3
@@ -95,9 +86,6 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         feature, label, sample_weights = \
             feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, log_mel)
 
-        # save feature, label and weights
-        feature_label_weights_saver(path_output, fn, feature, label, sample_weights)
-
         if multi:
             features_low.append(feature[:, :, 0])
             features_mid.append(feature[:, :, 1])
@@ -105,15 +93,38 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         else:
             features.append(feature)
 
+        labels.append(label)
+        weights.append(sample_weights)
+
+    labels = np.array(np.concatenate(labels, axis=0))
+    weights = np.array(np.concatenate(weights, axis=0))
+
+    print("Saving labels ...")
+    np.savez_compressed(join(path_output, 'labels'), labels=labels)
+    print("Saving sample weights ...")
+    np.savez_compressed(join(path_output, 'sample_weights'), sample_weights=weights)
+
     if multi:
-        pickle.dump(StandardScaler().fit(np.concatenate(features_low)), open(join(path_output, 'scaler_low.pkl'), 'wb'),
-                    protocol=2)
-        pickle.dump(StandardScaler().fit(np.concatenate(features_mid)), open(join(path_output, 'scaler_mid.pkl'), 'wb'),
-                    protocol=2)
-        pickle.dump(StandardScaler().fit(np.concatenate(features_high)), open(join(path_output, 'scaler_high.pkl'), 'wb'),
-                    protocol=2)
+        features_low = np.array(np.concatenate(features_low, axis=0))
+        features_mid = np.array(np.concatenate(features_mid, axis=0))
+        features_high = np.array(np.concatenate(features_high, axis=0))
+        stacked_feats = np.stack([features_low, features_mid, features_high], axis=-1)
+
+        print("Saving multi-features ...")
+        np.savez_compressed(join(path_output, 'multi_dataset_features'), features=stacked_feats)
+        print("Saving low scaler ...")
+        joblib.dump(StandardScaler().fit(features_low), join(path_output, 'scaler_low.pkl'))
+        print("Saving mid scaler ...")
+        joblib.dump(StandardScaler().fit(features_mid), join(path_output, 'scaler_mid.pkl'))
+        print("Saving high scaler ...")
+        joblib.dump(StandardScaler().fit(features_mid), join(path_output, 'scaler_high.pkl'))
+
     else:
-        pickle.dump(StandardScaler().fit(np.concatenate(features)), open(join(path_output, 'scaler.pkl'), 'wb'), protocol=2)
+        features = np.array(np.concatenate(features, axis=0))
+        print("Saving features ...")
+        np.savez_compressed(join(path_output, 'dataset_features'), features=features)
+        print("Saving scaler ...")
+        joblib.dump(StandardScaler().fit(features), join(path_output, 'scaler.pkl'))
 
 
 if __name__ == '__main__':
@@ -130,7 +141,7 @@ if __name__ == '__main__':
                         type=str,
                         help="output path")
     parser.add_argument("--multi",
-                        type=bool,
+                        type=int,
                         help="whether multiple STFT window time-lengths are captured")
     args = parser.parse_args()
 
@@ -143,7 +154,12 @@ if __name__ == '__main__':
     if not os.path.isdir(args.output):
         raise OSError('Output path %s not found' % args.output)
 
+    if args.multi == 1:
+        multi = True
+    else:
+        multi = False
+
     dump_feature_label_sample_weights_onset_phrase(audio_path=args.audio,
                                                    annotation_path=args.annotation,
                                                    path_output=args.output,
-                                                   multi=args.multi)
+                                                   multi=multi)

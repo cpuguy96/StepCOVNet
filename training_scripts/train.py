@@ -21,26 +21,36 @@ if __name__ == '__main__':
                         type=str,
                         help="Input path where a pretrained model is located")
     parser.add_argument("--multi",
-                        type=bool,
+                        type=int,
                         help="whether multiple STFT window time-lengths are used in training ")
     args = parser.parse_args()
 
-    filename_train_validation_set = os.path.join(args.path_input, 'dataset_features.h5')
-    filename_labels_train_validation_set = os.path.join(args.path_input, 'dataset_labels.pkl')
-    filename_sample_weights = os.path.join(args.path_input, 'dataset_sample_weights.pkl')
-
     filename_scaler = []
 
-    if args.multi:
+    if args.multi == 1:
+        multi = True
+    else:
+        multi = False
+
+    filename_labels_train_validation_set = os.path.join(args.path_input, 'labels.npz')
+    filename_sample_weights = os.path.join(args.path_input, 'sample_weights.npz')
+
+    if multi:
         input_shape = (80, 15, 3)
         channel = 3
+
         filename_scaler.append(os.path.join(args.path_input, 'scaler_low.pkl'))
         filename_scaler.append(os.path.join(args.path_input, 'scaler_mid.pkl'))
         filename_scaler.append(os.path.join(args.path_input, 'scaler_high.pkl'))
+
+        filename_train_validation_set = os.path.join(args.path_input, 'multi_dataset_features.npz')
     else:
         input_shape = (80, 15)
         channel = 1
+
         filename_scaler.append(os.path.join(args.path_input, 'scaler.pkl'))
+
+        filename_train_validation_set = os.path.join(args.path_input, 'dataset_features.npz')
 
     if args.pretrained is not None:
         filename_pretrained_model = os.path.join(args.pretrained)
