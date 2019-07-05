@@ -3,11 +3,8 @@
 
 import os
 from os.path import join
-import pickle
 import sys
 
-
-import h5py
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.externals import joblib
@@ -55,7 +52,7 @@ def dump_feature_onset_helper(audio_path, annotation_path, fn, channel):
     return mfcc, frames_onset, frame_start, frame_end
 
 
-def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, path_output, multi):
+def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, path_output, multi, is_limited, limit):
     """
     dump feature, label, sample weights for each phrase with bock annotation format
     :param audio_path:
@@ -63,6 +60,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     :param path_output:
     :return:
     """
+
     features_low = []
     features_mid = []
     features_high = []
@@ -76,8 +74,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     else:
         channel = 1
 
-    for fn in getRecordings(annotation_path):
-
+    for i, fn in enumerate(getRecordings(annotation_path)):
         # from the annotation to get feature, frame start and frame end of each line, frames_onset
         log_mel, frames_onset, frame_start, frame_end = \
             dump_feature_onset_helper(audio_path, annotation_path, fn, channel)
@@ -95,6 +92,13 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
 
         labels.append(label)
         weights.append(sample_weights)
+
+        if is_limited:
+            limit -= len(label)
+
+            if limit <= 0:
+                print("limit reached after %d songs. breaking..." % (i + 1))
+                break
 
     labels = np.array(np.concatenate(labels, axis=0))
     weights = np.array(np.concatenate(weights, axis=0))
@@ -143,6 +147,10 @@ if __name__ == '__main__':
     parser.add_argument("--multi",
                         type=int,
                         help="whether multiple STFT window time-lengths are captured")
+    parser.add_argument("--limit",
+                        type=int,
+                        default=-1,
+                        help="maximum number of samples allowed to be collected")
     args = parser.parse_args()
 
     if not os.path.isdir(args.audio):
@@ -159,7 +167,14 @@ if __name__ == '__main__':
     else:
         multi = False
 
+    if args.limit == -1:
+        is_limited = False
+    else:
+        is_limited = True
+
     dump_feature_label_sample_weights_onset_phrase(audio_path=args.audio,
                                                    annotation_path=args.annotation,
                                                    path_output=args.output,
-                                                   multi=multi)
+                                                   multi=multi,
+                                                   is_limited=is_limited,
+                                                   limit=args.limit)
