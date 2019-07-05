@@ -37,21 +37,25 @@ if __name__ == '__main__':
     arrows_path = args.arrow
     out_path = args.output
 
-    wavs_file_names = get_file_names(wavs_path)
+    wav_names = get_file_names(wavs_path)
     existing_txts = get_file_names(out_path)
 
     print("Starting combined txt generation\n-----------------------------------------")
 
-    for wavs_file_name in wavs_file_names:
-        if "pred_txt_" + wavs_file_name[:-4] + ".txt" in existing_txts:
-            print(wavs_file_name[:-4] + " txt already generated! Skipping...")
+    for wav_name in wav_names:
+        if not wav_name.endswith(".wav"):
+            print(wav_name, "is not a wav file! Skipping...")
             continue
 
-        song_name = wavs_file_name[:-4]
+        if "pred_txt_" + wav_name[:-4] + ".txt" in existing_txts:
+            print(wav_name[:-4] + " txt already generated! Skipping...")
+            continue
+
+        song_name = wav_name[:-4]
 
         timings = []
         try:
-            with open(timings_path + "pred_timings_" + song_name + ".txt", "r") as timings_file:
+            with open(join(timings_path, "pred_timings_" + song_name + ".txt"), "r") as timings_file:
                 timings = np.asarray([line.replace("\n", "") for line in timings_file.readlines()]).astype("float32")
         except Exception:
             print(song_name + " timings not found! Skipping...")
@@ -59,7 +63,7 @@ if __name__ == '__main__':
 
         arrows = []
         try:
-            with open(arrows_path + "pred_arrows_" + song_name + ".txt", "r") as arrows_file:
+            with open(join(arrows_path, "pred_arrows_" + song_name + ".txt"), "r") as arrows_file:
                 arrows = np.asarray([line.replace("\n", "") for line in arrows_file.readlines()])
         except Exception:
             print(song_name + " arrows not found! Skipping...")
@@ -67,14 +71,14 @@ if __name__ == '__main__':
 
         bpm = -1
         try:
-            bpm, _ = get_bpm(wavs_path + wavs_file_name)
+            bpm, _ = get_bpm(join(wavs_path, wav_name))
         except Exception:
-            print(wavs_file_name + " not found! Skipping...")
+            print(wav_name + " not found! Skipping...")
             continue
 
-        print("Creating combined txt file for " + wavs_file_name[:-4])
+        print("Creating combined txt file for " + wav_name[:-4])
 
-        with open(out_path + "pred_txt_" + song_name + ".txt", "w") as comb_file:
+        with open(join(out_path, "pred_txt_" + song_name + ".txt"), "w") as comb_file:
             comb_file.write("TITLE " + str(song_name) + "\n")
             comb_file.write("BPM " + str(bpm) + "\n")
             comb_file.write("NOTES \n")

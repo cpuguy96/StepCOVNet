@@ -3,17 +3,18 @@ from os import listdir
 from os.path import isfile, join
 import sys
 import numpy as np
-import pickle
 
 import tensorflow as tf
 from keras import backend as K
 from keras.models import load_model
+from sklearn.externals import joblib
 
 sys.path.append(join(os.path.dirname('__file__'), "./src/"))
 
 from utilFunctions import smooth_obs
 from audio_preprocessing import getMFCCBands2DMadmom
 from madmom.features.onsets import OnsetPeakPickingProcessor
+from training_scripts.data_preparation import featureReshape
 
 
 def get_file_names(mypath):
@@ -67,31 +68,59 @@ if __name__ == '__main__':
     wav_names = get_file_names(wav_path)
     existing_pred_timings = get_file_names(out_path)
     model = load_model(join(model_path), custom_objects={'auc': auc})
-    with open("training_data/scaler.pkl", "rb") as file:
-        scaler = pickle.load(file)
+
+    if model.layers[0].input_shape[1] != 1:
+        multi = True
+    else:
+        multi = False
+
+    scaler = []
+
+    if multi:
+        with open(join("training_data", "scaler_low.pkl"), "rb") as file:
+            scaler.append(joblib.load(file))
+        with open(join("training_data", "scaler_mid.pkl"), "rb") as file:
+            scaler.append(joblib.load(file))
+        with open(join("training_data", "scaler_high.pkl"), "rb") as file:
+            scaler.append(joblib.load(file))
+    else:
+        with open(join("training_data", "scaler.pkl"), "rb") as file:
+            scaler.append(joblib.load(file))
 
     print("Starting timings prediction\n-----------------------------------------")
 
     for wav_name in wav_names:
+        if not wav_name.endswith(".wav"):
+            print(wav_name, "is not a wav file! Skipping...")
+            continue
         if "pred_timings_" + wav_name[:-4] + ".txt" in existing_pred_timings:
             print(wav_name[:-4] + " timings already generated! Skipping...")
             continue
 
         print("Generating timings for " + wav_name[:-4])
 
-        log_mel = scaler.transform(getMFCCBands2DMadmom(wav_path + wav_name, 44100, 0.01, channel=1))
-        log_mel = log_mel.reshape(log_mel.shape[0], 80, 15)
-        log_mel = np.expand_dims(log_mel, axis=1)
+        if multi:
+            log_mel = getMFCCBands2DMadmom(join(wav_path + wav_name), 44100, 0.01, channel=3)
 
-        pdf = model.predict(log_mel, batch_size=256)
+            log_mel[:, :, 0] = scaler[0].transform(log_mel[:, :, 0])
+            log_mel[:, :, 1] = scaler[1].transform(log_mel[:, :, 1])
+            log_mel[:, :, 2] = scaler[2].transform(log_mel[:, :, 2])
+        else:
+            log_mel = getMFCCBands2DMadmom(join(wav_path + wav_name), 44100, 0.01, channel=1)
+            log_mel = scaler[0].transform(log_mel)
+
+        log_mel_re = featureReshape(log_mel, multi, 7)
+        if not multi:
+            log_mel_re = np.expand_dims(log_mel_re, axis=1)
+        pdf = model.predict(log_mel_re)
         pdf = np.squeeze(pdf)
         pdf = smooth_obs(pdf)
 
-        timings = boundary_decoding(  obs_i=pdf,
-                                      threshold=0.5,
-                                      hopsize_t=0.01,
-                                      OnsetPeakPickingProcessor=OnsetPeakPickingProcessor)
+        timings = boundary_decoding(obs_i=pdf,
+                                    threshold=0.5,
+                                    hopsize_t=0.01,
+                                    OnsetPeakPickingProcessor=OnsetPeakPickingProcessor)
 
-        with open(out_path + "pred_timings_" + wav_name[:-4] + ".txt", "w") as timings_file:
+        with open(join(out_path, "pred_timings_" + wav_name[:-4] + ".txt"), "w") as timings_file:
             for timing in timings:
                 timings_file.write(str(timing / 100) + "\n")

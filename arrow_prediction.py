@@ -4,8 +4,8 @@ import numpy as np
 from nltk.util import ngrams
 
 from keras.models import load_model
-
 import keras_self_attention
+
 
 def get_file_names(mypath):
     return [f for f in listdir(mypath) if isfile(join(mypath, f))]
@@ -55,46 +55,23 @@ def get_notes_ngram(binary_notes, lookback):
     data_w_padding = np.append(padding, binary_notes, axis=0)
     return np.asarray(list(ngrams(data_w_padding, lookback)))
 
-'''
-def get_arrows(timings, model):
-    pred_notes = []
 
-    lookback = model.layers[0].input_shape[1]
-    tokens = np.expand_dims(create_tokens(timings), axis=1)
-    notes_ngram = np.expand_dims(get_notes_ngram(np.zeros((1, 4)), lookback)[-1], axis=0)
-
-    for token in tokens:
-        pred_arrow = np.argmax(model.predict([notes_ngram, token])) + 1
-        pred_notes.append(pred_arrow)
-        binary_note = get_binary_rep([pred_arrow])
-        notes_ngram = np.roll(notes_ngram, -1, axis=0)
-        notes_ngram[0][-1] = binary_note
-
-    return pred_notes
-'''
-
-
-def get_arrows(timings, model):
-    from sklearn.preprocessing import OneHotEncoder
-    encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
-
+def get_arrows(timings, model, encoder):
     pred_notes = []
     lookback = model.layers[0].input_shape[1]
     classes = model.layers[-1].output_shape[1]
     tokens = np.expand_dims(np.expand_dims(create_tokens(timings), axis=1), axis = 1)
     notes_ngram = np.expand_dims(get_notes_ngram(np.zeros((1, 16)), lookback)[-1], axis=0)
     for i, token in enumerate(tokens):
-        #pred_arrow = np.argmax(model.predict([notes_ngram, token]))
         pred = model.predict([notes_ngram, token])
         pred_arrow = np.random.choice(classes, 1, p=pred[0])[0]
-        #pred_arrow = sample(model.predict([notes_ngram, token]))
         binary_rep = encoder.categories_[0][pred_arrow]
         pred_notes.append(binary_rep)
         binary_note = get_extended_binary_rep([binary_rep])
         notes_ngram = np.roll(notes_ngram, -1, axis=0)
         notes_ngram[0][-1] = binary_note
-
     return pred_notes
+
 
 if __name__ == '__main__':
     import argparse
@@ -119,9 +96,16 @@ if __name__ == '__main__':
     existing_pred_arrows = get_file_names(out_path)
     model = load_model(join(model_path), custom_objects={'SeqSelfAttention': keras_self_attention.SeqSelfAttention})
 
+    from sklearn.preprocessing import OneHotEncoder
+    encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
+
     print("Starting arrows prediction\n-----------------------------------------")
 
     for timings_name in timings_names:
+        if not timings_name.endswith(".txt"):
+            print(timings_name, "is not a timings file! Skipping...")
+            continue
+
         song_name = timings_name[:-4]
 
         if song_name.startswith("pred_timings_"):
@@ -136,7 +120,7 @@ if __name__ == '__main__':
 
         print("Generating arrows for " + song_name)
 
-        arrows = get_arrows(timings, model)
+        arrows = get_arrows(timings, model, encoder)
 
         with open(out_path + "pred_arrows_" + song_name + ".txt", "w") as arrows_file:
             for arrow in arrows:

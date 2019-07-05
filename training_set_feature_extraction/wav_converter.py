@@ -34,7 +34,10 @@ if __name__ == '__main__':
             print(file_name + " already converted! Skipping...")
             continue
         print("Converting " + file_name)
-        subprocess.call(
-            ['ffmpeg', '-y', '-loglevel', 'quiet', '-i',
-             audio_path + file_name, '-ar', '44100', wav_path + new_file_name + '.wav']
-        )
+        try:
+            subprocess.call(
+                ['ffmpeg', '-y', '-loglevel', 'quiet', '-i',
+                 audio_path + file_name, '-ar', '44100', join(wav_path, new_file_name + '.wav')]
+            )
+        except:
+            print("Failed to convert", file_name)
