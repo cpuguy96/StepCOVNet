@@ -1,6 +1,7 @@
 import numpy as np
 import os
 
+
 def featureReshape(feature, nlen=10):
     """
     reshape mfccBands feature into n_sample * n_row * n_col

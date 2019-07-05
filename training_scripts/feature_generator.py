@@ -1,7 +1,7 @@
 import numpy as np
-import h5py
 
 from data_preparation import featureReshape
+
 
 def shuffleFilenamesLabelsInUnison(filenames, labels, sample_weights):
     assert len(filenames) == len(labels)

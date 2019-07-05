@@ -1,7 +1,7 @@
-import pickle
 import numpy as np
 from sklearn.utils import compute_class_weight
 from sklearn.externals import joblib
+
 
 def featureReshape(feature, multi=False, nlen=10):
     """
