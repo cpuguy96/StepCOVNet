@@ -5,9 +5,14 @@ import sys
 import numpy as np
 
 import tensorflow as tf
-from keras import backend as K
-from keras.models import load_model
+from tensorflow.keras.models import load_model
+
+#from keras import backend as K
+#from keras.models import load_model
 from sklearn.externals import joblib
+
+
+
 
 sys.path.append(join(os.path.dirname('__file__'), "./src/"))
 
@@ -67,9 +72,12 @@ if __name__ == '__main__':
 
     wav_names = get_file_names(wav_path)
     existing_pred_timings = get_file_names(out_path)
-    model = load_model(join(model_path), custom_objects={'auc': auc})
 
-    if model.layers[0].input_shape[1] != 1:
+    custom_objects = {'GlorotNormal': tf.keras.initializers.glorot_normal,
+                      'GlorotUniform': tf.keras.initializers.glorot_uniform}
+    model = load_model(join(model_path), custom_objects=custom_objects)
+
+    if model.layers[0].input_shape[0][1] != 1:
         multi = True
     else:
         multi = False
