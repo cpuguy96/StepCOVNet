@@ -103,10 +103,15 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     labels = np.array(np.concatenate(labels, axis=0))
     weights = np.array(np.concatenate(weights, axis=0))
 
+    if multi:
+        prefix = "multi_"
+    else:
+        prefix = ""
+
     print("Saving labels ...")
-    np.savez_compressed(join(path_output, 'labels'), labels=labels)
+    np.savez_compressed(join(path_output, prefix + 'labels'), labels=labels)
     print("Saving sample weights ...")
-    np.savez_compressed(join(path_output, 'sample_weights'), sample_weights=weights)
+    np.savez_compressed(join(path_output, prefix + 'sample_weights'), sample_weights=weights)
 
     if multi:
         features_low = np.array(np.concatenate(features_low, axis=0))
