@@ -105,8 +105,8 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         elif is_limited:
             limit -= len(label)
 
-    labels = np.array(np.concatenate(labels, axis=0))
-    weights = np.array(np.concatenate(weights, axis=0))
+    labels = np.array(np.concatenate(labels, axis=0)).astype("int8")
+    weights = np.array(np.concatenate(weights, axis=0)).astype("int8")
 
     prefix = ""
 
@@ -135,7 +135,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         features_low = np.array(np.concatenate(features_low, axis=0))
         features_mid = np.array(np.concatenate(features_mid, axis=0))
         features_high = np.array(np.concatenate(features_high, axis=0))
-        stacked_feats = np.stack([features_low, features_mid, features_high], axis=-1)
+        stacked_feats = np.stack([features_low, features_mid, features_high], axis=-1).astype("float16")
 
         print("Saving multi-features ...")
         np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=stacked_feats[indices_used])
@@ -146,7 +146,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         print("Saving high scaler ...")
         joblib.dump(StandardScaler().fit(features_mid), join(path_output, prefix + 'scaler_high.pkl'))
     else:
-        features = np.array(np.concatenate(features, axis=0))
+        features = np.array(np.concatenate(features, axis=0)).astype("float16")
         print("Saving features ...")
         np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=features[indices_used])
         print("Saving scaler ...")
