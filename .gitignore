@@ -1,3 +1,10 @@
+# input dirs for testing
+input_wavs/
+pred_arrows/
+pred_timings/
+pred_txts/
+testing_models/
+
 # wav file location
 wavs
 
