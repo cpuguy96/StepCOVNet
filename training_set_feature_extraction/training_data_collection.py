@@ -52,7 +52,7 @@ def dump_feature_onset_helper(audio_path, annotation_path, fn, channel):
     return mfcc, frames_onset, frame_start, frame_end
 
 
-def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, path_output, multi, is_limited, limit):
+def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, path_output, multi, under_sample, is_limited, limit):
     """
     dump feature, label, sample weights for each phrase with bock annotation format
     :param audio_path:
@@ -74,7 +74,14 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     else:
         channel = 1
 
+    if is_limited and under_sample:
+        limit /= 2
+
     for i, fn in enumerate(getRecordings(annotation_path)):
+        if limit <= 0:
+            print("limit reached after %d songs. breaking..." % i)
+            break
+
         # from the annotation to get feature, frame start and frame end of each line, frames_onset
         log_mel, frames_onset, frame_start, frame_end = \
             dump_feature_onset_helper(audio_path, annotation_path, fn, channel)
@@ -93,25 +100,36 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         labels.append(label)
         weights.append(sample_weights)
 
-        if is_limited:
+        if is_limited and under_sample:
+            limit -= label.sum()
+        elif is_limited:
             limit -= len(label)
-
-            if limit <= 0:
-                print("limit reached after %d songs. breaking..." % (i + 1))
-                break
 
     labels = np.array(np.concatenate(labels, axis=0))
     weights = np.array(np.concatenate(weights, axis=0))
 
+    prefix = ""
+
     if multi:
-        prefix = "multi_"
-    else:
-        prefix = ""
+        prefix += "multi_"
+
+    if under_sample:
+        prefix += "under_"
+
+    indices_used = np.asarray(range(len(labels))).reshape(-1, 1)
+
+    if under_sample:
+        print("Under sampling ...")
+        from imblearn.under_sampling import RandomUnderSampler
+        indices_used, labels = RandomUnderSampler(random_state=42).fit_resample(indices_used, labels)
+
+    indices_used = indices_used.reshape(-1)
 
     print("Saving labels ...")
     np.savez_compressed(join(path_output, prefix + 'labels'), labels=labels)
+
     print("Saving sample weights ...")
-    np.savez_compressed(join(path_output, prefix + 'sample_weights'), sample_weights=weights)
+    np.savez_compressed(join(path_output, prefix + 'sample_weights'), sample_weights=weights[indices_used])
 
     if multi:
         features_low = np.array(np.concatenate(features_low, axis=0))
@@ -120,20 +138,19 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         stacked_feats = np.stack([features_low, features_mid, features_high], axis=-1)
 
         print("Saving multi-features ...")
-        np.savez_compressed(join(path_output, 'multi_dataset_features'), features=stacked_feats)
+        np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=stacked_feats[indices_used])
         print("Saving low scaler ...")
-        joblib.dump(StandardScaler().fit(features_low), join(path_output, 'scaler_low.pkl'))
+        joblib.dump(StandardScaler().fit(features_low), join(path_output, prefix + 'scaler_low.pkl'))
         print("Saving mid scaler ...")
-        joblib.dump(StandardScaler().fit(features_mid), join(path_output, 'scaler_mid.pkl'))
+        joblib.dump(StandardScaler().fit(features_mid), join(path_output, prefix + 'scaler_mid.pkl'))
         print("Saving high scaler ...")
-        joblib.dump(StandardScaler().fit(features_mid), join(path_output, 'scaler_high.pkl'))
-
+        joblib.dump(StandardScaler().fit(features_mid), join(path_output, prefix + 'scaler_high.pkl'))
     else:
         features = np.array(np.concatenate(features, axis=0))
         print("Saving features ...")
-        np.savez_compressed(join(path_output, 'dataset_features'), features=features)
+        np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=features[indices_used])
         print("Saving scaler ...")
-        joblib.dump(StandardScaler().fit(features), join(path_output, 'scaler.pkl'))
+        joblib.dump(StandardScaler().fit(features), join(path_output, prefix + 'scaler.pkl'))
 
 
 if __name__ == '__main__':
@@ -151,7 +168,12 @@ if __name__ == '__main__':
                         help="output path")
     parser.add_argument("--multi",
                         type=int,
+                        default=0,
                         help="whether multiple STFT window time-lengths are captured")
+    parser.add_argument("--under_sample",
+                        type=int,
+                        default=0,
+                        help="whether to under sample for balanced classes")
     parser.add_argument("--limit",
                         type=int,
                         default=-1,
@@ -172,6 +194,11 @@ if __name__ == '__main__':
     else:
         multi = False
 
+    if args.under_sample == 1:
+        under_sample = True
+    else:
+        under_sample = False
+
     if args.limit == -1:
         is_limited = False
     else:
@@ -181,5 +208,6 @@ if __name__ == '__main__':
                                                    annotation_path=args.annotation,
                                                    path_output=args.output,
                                                    multi=multi,
+                                                   under_sample=under_sample,
                                                    is_limited=is_limited,
                                                    limit=args.limit)
