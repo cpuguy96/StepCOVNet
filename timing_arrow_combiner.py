@@ -1,4 +1,5 @@
 from __future__ import print_function
+import os
 from os import listdir
 from os.path import isfile, join
 import numpy as np
@@ -30,12 +31,32 @@ if __name__ == '__main__':
     parser.add_argument("--output",
                         type=str,
                         help="output txt path")
+    parser.add_argument("--overwrite",
+                        type=int,
+                        help="overwrite already created files")
     args = parser.parse_args()
+
+    if not os.path.isdir(args.wav):
+        raise OSError('Input path %s not found' % args.wav)
+
+    if not os.path.isdir(args.timing):
+        raise OSError('Timing files path %s not found' % args.timing)
+
+    if not os.path.isdir(args.arrow):
+        raise OSError('Arrow files path %s not found' % args.arrow)
+
+    if not os.path.isdir(args.output):
+        raise OSError('Output path %s not found' % args.output)
 
     wavs_path = args.wav
     timings_path = args.timing
     arrows_path = args.arrow
     out_path = args.output
+
+    if args.overwrite == 1:
+        overwrite = True
+    else:
+        overwrite = False
 
     wav_names = get_file_names(wavs_path)
     existing_txts = get_file_names(out_path)
@@ -47,7 +68,7 @@ if __name__ == '__main__':
             print(wav_name, "is not a wav file! Skipping...")
             continue
 
-        if "pred_txt_" + wav_name[:-4] + ".txt" in existing_txts:
+        if "pred_txt_" + wav_name[:-4] + ".txt" in existing_txts and not overwrite:
             print(wav_name[:-4] + " txt already generated! Skipping...")
             continue
 

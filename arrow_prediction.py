@@ -1,3 +1,4 @@
+import os
 from os import listdir
 from os.path import isfile, join
 import numpy as np
@@ -86,11 +87,28 @@ if __name__ == '__main__':
     parser.add_argument("--model",
                         type=str,
                         help="trained model path")
+    parser.add_argument("--overwrite",
+                        type=int,
+                        help="overwrite already created files")
     args = parser.parse_args()
+
+    if not os.path.isdir(args.timing):
+        raise OSError('Timing files path %s not found' % args.timing)
+
+    if not os.path.isdir(args.output):
+        raise OSError('Output path %s not found' % args.output)
+
+    if not os.path.isfile(args.model):
+        raise OSError('Model %s is not found' % args.model)
 
     timings_path = args.timing
     out_path = args.output
     model_path = args.model
+
+    if args.overwrite == 1:
+        overwrite = True
+    else:
+        overwrite = False
 
     timings_names = get_file_names(timings_path)
     existing_pred_arrows = get_file_names(out_path)
@@ -111,7 +129,7 @@ if __name__ == '__main__':
         if song_name.startswith("pred_timings_"):
             song_name = song_name[13:]
 
-        if "pred_arrows_" + song_name + ".txt" in existing_pred_arrows:
+        if "pred_arrows_" + song_name + ".txt" in existing_pred_arrows and not overwrite:
             print(timings_name[:-4] + " arrows already generated! Skipping...")
             continue
 

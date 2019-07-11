@@ -6,13 +6,9 @@ import numpy as np
 
 import tensorflow as tf
 from tensorflow.keras.models import load_model
+from tensorflow.keras import backend as K
 
-#from keras import backend as K
-#from keras.models import load_model
 from sklearn.externals import joblib
-
-
-
 
 sys.path.append(join(os.path.dirname('__file__'), "./src/"))
 
@@ -30,6 +26,43 @@ def auc(y_true, y_pred):
     auc = tf.metrics.auc(y_true, y_pred)[1]
     K.get_session().run(tf.local_variables_initializer())
     return auc
+
+
+def perplexity(y_true, y_pred):
+    cross_entropy = K.categorical_crossentropy(y_true, y_pred)
+    perplexity = K.pow(2.0, cross_entropy)
+    return perplexity
+
+
+def f1(y_true, y_pred):
+    def recall(y_true, y_pred):
+        """Recall metric.
+
+        Only computes a batch-wise average of recall.
+
+        Computes the recall, a metric for multi-label classification of
+        how many relevant items are selected.
+        """
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+        recall = true_positives / (possible_positives + K.epsilon())
+        return recall
+
+    def precision(y_true, y_pred):
+        """Precision metric.
+
+        Only computes a batch-wise average of precision.
+
+        Computes the precision, a metric for multi-label classification of
+        how many selected items are relevant.
+        """
+        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+        precision = true_positives / (predicted_positives + K.epsilon())
+        return precision
+    precision = precision(y_true, y_pred)
+    recall = recall(y_true, y_pred)
+    return 2*((precision*recall)/(precision+recall+K.epsilon()))
 
 
 def boundary_decoding(obs_i,
@@ -64,17 +97,35 @@ if __name__ == '__main__':
     parser.add_argument("--model",
                         type=str,
                         help="trained model path")
+    parser.add_argument("--overwrite",
+                        type=int,
+                        default=0,
+                        help="overwrite already created files")
     args = parser.parse_args()
+
+    if not os.path.isdir(args.wav):
+        raise OSError('Input path %s not found' % args.wav)
+
+    if not os.path.isdir(args.output):
+        raise OSError('Output path %s not found' % args.output)
+
+    if not os.path.isfile(args.model):
+        raise OSError('Model %s is not found' % args.model)
 
     wav_path = args.wav
     out_path = args.output
     model_path = args.model
 
+    if args.overwrite == 1:
+        overwrite = True
+    else:
+        overwrite = False
+
     wav_names = get_file_names(wav_path)
     existing_pred_timings = get_file_names(out_path)
 
-    custom_objects = {'GlorotNormal': tf.keras.initializers.glorot_normal,
-                      'GlorotUniform': tf.keras.initializers.glorot_uniform}
+    custom_objects = {"perplexity": perplexity, "auc": auc, "f1": f1}
+
     model = load_model(join(model_path), custom_objects=custom_objects)
 
     if model.layers[0].input_shape[0][1] != 1:
@@ -101,7 +152,7 @@ if __name__ == '__main__':
         if not wav_name.endswith(".wav"):
             print(wav_name, "is not a wav file! Skipping...")
             continue
-        if "pred_timings_" + wav_name[:-4] + ".txt" in existing_pred_timings:
+        if "pred_timings_" + wav_name[:-4] + ".txt" in existing_pred_timings and not overwrite:
             print(wav_name[:-4] + " timings already generated! Skipping...")
             continue
 
