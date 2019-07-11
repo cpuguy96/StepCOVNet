@@ -104,7 +104,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if not os.path.isdir(args.wav):
-        raise OSError('Input path %s not found' % args.wav)
+        raise OSError('Wavs path %s not found' % args.wav)
 
     if not os.path.isdir(args.output):
         raise OSError('Output path %s not found' % args.output)

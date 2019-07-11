@@ -33,6 +33,7 @@ if __name__ == '__main__':
                         help="output txt path")
     parser.add_argument("--overwrite",
                         type=int,
+                        default=0,
                         help="overwrite already created files")
     args = parser.parse_args()
 

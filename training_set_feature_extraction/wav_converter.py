@@ -1,3 +1,4 @@
+import os
 from os import listdir
 from os.path import isfile, join
 
@@ -20,6 +21,12 @@ if __name__ == '__main__':
                         type=str,
                         help="output wav path")
     args = parser.parse_args()
+
+    if not os.path.isdir(args.audio):
+        raise OSError('Audio files path %s not found' % args.audio)
+
+    if not os.path.isdir(args.wav):
+        raise OSError('Wavs path %s not found' % args.wav)
 
     audio_path = args.audio
     wav_path = args.wav
