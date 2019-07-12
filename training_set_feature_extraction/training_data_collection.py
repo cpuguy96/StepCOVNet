@@ -69,16 +69,21 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     labels = []
     weights = []
 
+    sample_count = 0
+
     if multi:
         channel = 3
     else:
         channel = 1
 
     if is_limited and under_sample:
-        limit /= 2
+        limit //= 2
 
     for i, fn in enumerate(getRecordings(annotation_path)):
-        if limit <= 0:
+        if is_limited and under_sample and sample_count >= limit:
+            print("limit reached after %d songs. breaking..." % i)
+            break
+        elif is_limited and not under_sample and sample_count >= limit:
             print("limit reached after %d songs. breaking..." % i)
             break
 
@@ -101,12 +106,12 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         weights.append(sample_weights)
 
         if is_limited and under_sample:
-            limit -= label.sum()
+            sample_count += label.sum()
         elif is_limited:
-            limit -= len(label)
+            sample_count += len(label)
 
     labels = np.array(np.concatenate(labels, axis=0)).astype("int8")
-    weights = np.array(np.concatenate(weights, axis=0)).astype("int8")
+    weights = np.array(np.concatenate(weights, axis=0)).astype("float16")
 
     prefix = ""
 
@@ -123,7 +128,16 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         from imblearn.under_sampling import RandomUnderSampler
         indices_used, labels = RandomUnderSampler(random_state=42).fit_resample(indices_used, labels)
 
-    indices_used = indices_used.reshape(-1)
+    indices_used = indices_used.reshape(-1).astype(int)
+
+    if is_limited and len(labels) > limit:
+        if under_sample:
+            labels = np.random.choice(labels, limit*2)
+            indices_used = np.random.choice(indices_used, limit*2)
+        else:
+            labels = labels[:limit]
+            indices_used = indices_used[:limit]
+        assert labels.sum() > 0, "Not enough positive labels. Increase limit!"
 
     print("Saving labels ...")
     np.savez_compressed(join(path_output, prefix + 'labels'), labels=labels)
