@@ -126,21 +126,20 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     if under_sample:
         print("Under sampling ...")
         from imblearn.under_sampling import RandomUnderSampler
-        indices_used, labels = RandomUnderSampler(random_state=42).fit_resample(indices_used, labels)
+        indices_used, _ = RandomUnderSampler(random_state=42).fit_resample(indices_used, labels)
 
-    indices_used = indices_used.reshape(-1).astype(int)
+    indices_used = np.sort(indices_used.reshape(-1).astype(int))
 
-    if is_limited and len(labels) > limit:
+    if is_limited and len(indices_used) > limit:
         if under_sample:
-            labels = np.random.choice(labels, limit*2)
-            indices_used = np.random.choice(indices_used, limit*2)
+            indices_used = np.sort(np.random.choice(indices_used, limit*2))
         else:
-            labels = labels[:limit]
             indices_used = indices_used[:limit]
+
         assert labels.sum() > 0, "Not enough positive labels. Increase limit!"
 
     print("Saving labels ...")
-    np.savez_compressed(join(path_output, prefix + 'labels'), labels=labels)
+    np.savez_compressed(join(path_output, prefix + 'labels'), labels=labels[indices_used])
 
     print("Saving sample weights ...")
     np.savez_compressed(join(path_output, prefix + 'sample_weights'), sample_weights=weights[indices_used])
