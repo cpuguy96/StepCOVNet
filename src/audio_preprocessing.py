@@ -66,7 +66,7 @@ class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
         # process the multi-resolution spec in parallel
         multi = ParallelProcessor([])
         for frame_size in [2048, 1024, 4096]:
-            frames = FramedSignalProcessor(frame_size=frame_size, fps=100)
+            frames = FramedSignalProcessor(frame_size=frame_size, hopsize=int(fs*hopsize_t))
             stft = ShortTimeFourierTransformProcessor()  # caching FFT window
             filt = FilteredSpectrogramProcessor(
                 filterbank=MelFilterbank, num_bands=80, fmin=27.5, fmax=16000,
