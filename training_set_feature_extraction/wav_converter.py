@@ -38,7 +38,7 @@ if __name__ == '__main__':
     for file_name in file_names:
         new_file_name = re.sub("[^a-z0-9-_]", "", file_name.lower()[:-4])
         if new_file_name + '.wav' in existing_wavs:
-            print(file_name + " already converted! Skipping...")
+            print("Skipping...", file_name + " already converted!")
             continue
         print("Converting " + file_name)
         try:

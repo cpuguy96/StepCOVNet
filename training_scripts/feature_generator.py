@@ -47,10 +47,8 @@ def generator(path_feature_data,
             f_used = scaler[0].transform(np.asarray(f_used))
 
     if multi_inputs:
-        #f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15, 3)
         f_used = featureReshape(f_used, True, 7)
     else:
-        #f_used = np.asarray(f_used).reshape(f_shape[0], 80, 15)
         f_used = featureReshape(f_used, False, 7)
 
     while True:

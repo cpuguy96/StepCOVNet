@@ -8,7 +8,9 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras import backend as K
 
-from sklearn.externals import joblib
+import xgboost as xgb
+
+import joblib
 
 sys.path.append(join(os.path.dirname('__file__'), "./src/"))
 
@@ -26,12 +28,6 @@ def auc(y_true, y_pred):
     auc = tf.metrics.auc(y_true, y_pred)[1]
     K.get_session().run(tf.local_variables_initializer())
     return auc
-
-
-def perplexity(y_true, y_pred):
-    cross_entropy = K.categorical_crossentropy(y_true, y_pred)
-    perplexity = K.pow(2.0, cross_entropy)
-    return perplexity
 
 
 def f1(y_true, y_pred):
@@ -97,6 +93,13 @@ if __name__ == '__main__':
     parser.add_argument("--model",
                         type=str,
                         help="trained model path")
+    parser.add_argument("--pca",
+                        type=str,
+                        help="trained pca path")
+    parser.add_argument("--model_type",
+                        type=int,
+                        default=0,
+                        help="type of model: 0 - CNN; 1 - XGB; 2 - multi XGB")
     parser.add_argument("--overwrite",
                         type=int,
                         default=0,
@@ -112,6 +115,12 @@ if __name__ == '__main__':
     if not os.path.isfile(args.model):
         raise OSError('Model %s is not found' % args.model)
 
+    if args.model_type not in [0, 1, 2]:
+        raise OSError('Model type %s is not a valid model' % args.model_type)
+
+    if args.model_type in [1, 2] and not os.path.isfile(args.pca):
+        raise OSError('PCA %s is not found' % args.pca)
+
     wav_path = args.wav
     out_path = args.output
     model_path = args.model
@@ -124,23 +133,34 @@ if __name__ == '__main__':
     wav_names = get_file_names(wav_path)
     existing_pred_timings = get_file_names(out_path)
 
-    custom_objects = {"perplexity": perplexity, "auc": auc, "f1": f1}
+    model_type = args.model_type
 
-    model = load_model(join(model_path), custom_objects=custom_objects)
+    if model_type == 0:
+        custom_objects = {"perplexity": perplexity, "auc": auc, "f1": f1}
 
-    if model.layers[0].input_shape[0][1] != 1:
-        multi = True
+        model = load_model(join(model_path), custom_objects=custom_objects)
+
+        if model.layers[0].input_shape[0][1] != 1:
+            multi = True
+        else:
+            multi = False
     else:
-        multi = False
+        model = xgb.Booster({'nthread': -1})
+        model.load_model(join(model_path))
+        pca = joblib.load(join(args.pca))
+        if model_type == 1:
+            multi = False
+        else:
+            multi = True
 
     scaler = []
 
     if multi:
-        with open(join("training_data", "scaler_low.pkl"), "rb") as file:
+        with open(join("training_data", "multi_scaler_low.pkl"), "rb") as file:
             scaler.append(joblib.load(file))
-        with open(join("training_data", "scaler_mid.pkl"), "rb") as file:
+        with open(join("training_data", "multi_scaler_mid.pkl"), "rb") as file:
             scaler.append(joblib.load(file))
-        with open(join("training_data", "scaler_high.pkl"), "rb") as file:
+        with open(join("training_data", "multi_scaler_high.pkl"), "rb") as file:
             scaler.append(joblib.load(file))
     else:
         with open(join("training_data", "scaler.pkl"), "rb") as file:
@@ -168,10 +188,18 @@ if __name__ == '__main__':
             log_mel = getMFCCBands2DMadmom(join(wav_path + wav_name), 44100, 0.01, channel=1)
             log_mel = scaler[0].transform(log_mel)
 
-        log_mel_re = featureReshape(log_mel, multi, 7)
-        if not multi:
-            log_mel_re = np.expand_dims(log_mel_re, axis=1)
-        pdf = model.predict(log_mel_re)
+        if model_type == 0:
+            log_mel_re = featureReshape(log_mel, multi, 7)
+            if not multi:
+                log_mel_re = np.expand_dims(log_mel_re, axis=1)
+            pdf = model.predict(log_mel_re)
+        else:
+            if model_type == 1:
+                log_mel_pca = pca.transform(log_mel)
+            else:
+                log_mel_pca = pca.transform(log_mel.reshape(log_mel.shape[0], log_mel.shape[1] * log_mel.shape[2]))
+            pdf = model.predict(xgb.DMatrix(log_mel_pca))
+
         pdf = np.squeeze(pdf)
         pdf = smooth_obs(pdf)
 

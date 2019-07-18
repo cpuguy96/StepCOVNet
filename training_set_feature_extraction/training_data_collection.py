@@ -3,18 +3,15 @@
 
 import os
 from os.path import join
-import sys
+import joblib
 
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from sklearn.externals import joblib
-from sample_collection_helper import feature_onset_phrase_label_sample_weights
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "../src/"))
-
-from audio_preprocessing import getMFCCBands2DMadmom
-from parameters import *
-from utilFunctions import getRecordings
+from training_set_feature_extraction.sample_collection_helper import feature_onset_phrase_label_sample_weights
+from src.audio_preprocessing import getMFCCBands2DMadmom
+from src.parameters import *
+from src.utilFunctions import getRecordings
 
 
 def annotationCvParser(annotation_filename):
@@ -88,12 +85,16 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
             break
 
         # from the annotation to get feature, frame start and frame end of each line, frames_onset
-        log_mel, frames_onset, frame_start, frame_end = \
-            dump_feature_onset_helper(audio_path, annotation_path, fn, channel)
+        try:
+            log_mel, frames_onset, frame_start, frame_end = \
+                dump_feature_onset_helper(audio_path, annotation_path, fn, channel)
 
-        # simple sample weighting
-        feature, label, sample_weights = \
-            feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, log_mel)
+            # simple sample weighting
+            feature, label, sample_weights = \
+                feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, log_mel)
+        except Exception:
+            print("Error collecting features for", fn)
+            continue
 
         if multi:
             features_low.append(feature[:, :, 0])
