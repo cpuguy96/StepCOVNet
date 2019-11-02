@@ -5,8 +5,16 @@ pred_timings/
 pred_txts/
 testing_models/
 
-# wav file location
-wavs
+# Training Data
+training_data/*
+training_data/oggs/*
+training_data/timings/*
+training_data/wavs/*
+!training_data/oggs/66_marching_songs.ogg
+!training_data/wavs/66_marching_songs.wav
+!training_data/timings/66_marching_songs.txt
+*.ogg
+
 
 # Pycharm
 .idea
