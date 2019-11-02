@@ -13,7 +13,8 @@ training_data/wavs/*
 !training_data/oggs/66_marching_songs.ogg
 !training_data/wavs/66_marching_songs.wav
 !training_data/timings/66_marching_songs.txt
-
+!training_data/wavs/zombie_maker.wav
+!training_data/timings/zombie_maker.txt
 
 # Pycharm
 .idea
