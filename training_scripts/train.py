@@ -1,12 +1,11 @@
 import sys
 import os
 import argparse
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-
 from models import train_model
 
-if __name__ == '__main__':
+
+def main():
     parser = argparse.ArgumentParser(description="To train the model.")
 
     parser.add_argument("--path_input",
@@ -32,9 +31,10 @@ if __name__ == '__main__':
         raise OSError('Input path %s not found' % args.path_input)
 
     if not os.path.isdir(args.path_output):
-        raise OSError('Output path %s not found' % args.path_output)
+        print("Model output path not found. Creating directory...")
+        os.makedirs(args.path_output, exist_ok=True)
 
-    if len(args.pretrained) > 0 and not os.path.isfile(args.pretrained):
+    if args.pretrained is not None and not os.path.isfile(args.pretrained):
         raise OSError('Pretrained model %s is not found' % args.pretrained)
 
     filename_scaler = []
@@ -67,37 +67,33 @@ if __name__ == '__main__':
         filename_scaler.append(os.path.join(args.path_input, prefix + 'scaler_low.pkl'))
         filename_scaler.append(os.path.join(args.path_input, prefix + 'scaler_mid.pkl'))
         filename_scaler.append(os.path.join(args.path_input, prefix + 'scaler_high.pkl'))
-
-        filename_train_validation_set = os.path.join(args.path_input, prefix + 'multi_dataset_features.npz')
     else:
         input_shape = (80, 15)
         channel = 1
-
         filename_scaler.append(os.path.join(args.path_input, prefix + 'scaler.pkl'))
-
-        filename_train_validation_set = os.path.join(args.path_input, prefix + 'dataset_features.npz')
+    filename_train_validation_set = os.path.join(args.path_input, prefix + 'dataset_features.npz')
 
     if args.pretrained is not None:
         filename_pretrained_model = os.path.join(args.pretrained)
-        file_path_model = os.path.join(args.path_output, 'pretrained_trained_model.h5')
-        file_path_log = os.path.join(args.path_output, 'pretrained_trained_model.csv')
+        file_path_model = os.path.join(args.path_output)
         train_model(filename_train_validation_set,
                     filename_labels_train_validation_set,
                     filename_sample_weights,
                     filename_scaler,
                     input_shape=input_shape,
                     file_path_model=file_path_model,
-                    filename_log=file_path_log,
                     channel=channel,
                     pretrained_model=filename_pretrained_model)
     else:
-        file_path_model = os.path.join(args.path_output, 'trained_model.h5')
-        file_path_log = os.path.join(args.path_output, 'trained_model.csv')
+        file_path_model = os.path.join(args.path_output)
         train_model(filename_train_validation_set,
                     filename_labels_train_validation_set,
                     filename_sample_weights,
                     filename_scaler,
                     input_shape=input_shape,
                     file_path_model=file_path_model,
-                    filename_log=file_path_log,
                     channel=channel)
+
+
+if __name__ == '__main__':
+    main()
