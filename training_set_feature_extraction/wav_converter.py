@@ -10,7 +10,7 @@ def get_file_names(mypath):
     return [f for f in listdir(mypath) if isfile(join(mypath, f))]
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Convert audio files to .wav format.")
@@ -26,7 +26,8 @@ if __name__ == '__main__':
         raise OSError('Audio files path %s not found' % args.audio)
 
     if not os.path.isdir(args.wav):
-        raise OSError('Wavs path %s not found' % args.wav)
+        print("Wavs output path not found. Creating directory...")
+        os.makedirs(args.wav, exist_ok=True)
 
     audio_path = args.audio
     wav_path = args.wav
@@ -44,7 +45,11 @@ if __name__ == '__main__':
         try:
             subprocess.call(
                 ['ffmpeg', '-y', '-loglevel', 'quiet', '-i',
-                 audio_path + file_name, '-ar', '44100', join(wav_path, new_file_name + '.wav')]
+                 join(audio_path, file_name), '-ar', '44100', join(wav_path, new_file_name + '.wav')]
             )
-        except:
+        except Exception:
             print("Failed to convert", file_name)
+
+
+if __name__ == '__main__':
+    main()
