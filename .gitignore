@@ -6,6 +6,7 @@ pred_txts/
 testing_models/
 
 # Training Data
+training_data/mp3s
 training_data/oggs/*
 training_data/timings/*
 training_data/wavs/*
