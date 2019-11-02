@@ -136,7 +136,7 @@ if __name__ == '__main__':
     model_type = args.model_type
 
     if model_type == 0:
-        custom_objects = {"perplexity": perplexity, "auc": auc, "f1": f1}
+        custom_objects = {"auc": auc, "f1": f1}
 
         model = load_model(join(model_path), custom_objects=custom_objects)
 

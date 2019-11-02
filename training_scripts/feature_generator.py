@@ -66,6 +66,7 @@ def generator(path_feature_data,
         else:
             X_batch_tensor = f_used[batch_indices[index_sort], :, :, :]
         if channel == 1:
+            X_batch_tensor = np.squeeze(X_batch_tensor)
             X_batch_tensor = np.expand_dims(X_batch_tensor, axis=1)
 
         counter += 1
