@@ -12,7 +12,6 @@ training_data/wavs/*
 !training_data/oggs/66_marching_songs.ogg
 !training_data/wavs/66_marching_songs.wav
 !training_data/timings/66_marching_songs.txt
-*.ogg
 
 
 # Pycharm
