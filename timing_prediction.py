@@ -1,12 +1,15 @@
+from src.utilFunctions import smooth_obs
+from src.audio_preprocessing import getMFCCBands2DMadmom
+from madmom.features.onsets import OnsetPeakPickingProcessor
+from training_scripts.data_preparation import featureReshape
+
 import os
 from os import listdir
 from os.path import isfile, join
 import sys
 import numpy as np
 
-import tensorflow as tf
 from tensorflow.keras.models import load_model
-from tensorflow.keras import backend as K
 
 import xgboost as xgb
 
@@ -14,51 +17,9 @@ import joblib
 
 sys.path.append(join(os.path.dirname('__file__'), "./src/"))
 
-from utilFunctions import smooth_obs
-from audio_preprocessing import getMFCCBands2DMadmom
-from madmom.features.onsets import OnsetPeakPickingProcessor
-from training_scripts.data_preparation import featureReshape
-
 
 def get_file_names(mypath):
     return [f for f in listdir(mypath) if isfile(join(mypath, f))]
-
-
-def auc(y_true, y_pred):
-    auc = tf.metrics.auc(y_true, y_pred)[1]
-    K.get_session().run(tf.local_variables_initializer())
-    return auc
-
-
-def f1(y_true, y_pred):
-    def recall(y_true, y_pred):
-        """Recall metric.
-
-        Only computes a batch-wise average of recall.
-
-        Computes the recall, a metric for multi-label classification of
-        how many relevant items are selected.
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-        recall = true_positives / (possible_positives + K.epsilon())
-        return recall
-
-    def precision(y_true, y_pred):
-        """Precision metric.
-
-        Only computes a batch-wise average of precision.
-
-        Computes the precision, a metric for multi-label classification of
-        how many selected items are relevant.
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-        precision = true_positives / (predicted_positives + K.epsilon())
-        return precision
-    precision = precision(y_true, y_pred)
-    recall = recall(y_true, y_pred)
-    return 2*((precision*recall)/(precision+recall+K.epsilon()))
 
 
 def boundary_decoding(obs_i,
@@ -80,7 +41,7 @@ def boundary_decoding(obs_i,
     return i_boundary
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate arrow timings from .wav files.")
@@ -110,7 +71,8 @@ if __name__ == '__main__':
         raise OSError('Wavs path %s not found' % args.wav)
 
     if not os.path.isdir(args.output):
-        raise OSError('Output path %s not found' % args.output)
+        print('Output path not found. Creating directory...')
+        os.makedirs(args.output, exist_ok=True)
 
     if not os.path.isfile(args.model):
         raise OSError('Model %s is not found' % args.model)
@@ -136,9 +98,9 @@ if __name__ == '__main__':
     model_type = args.model_type
 
     if model_type == 0:
-        custom_objects = {"auc": auc, "f1": f1}
+        custom_objects = {}
 
-        model = load_model(join(model_path), custom_objects=custom_objects)
+        model = load_model(join(model_path), custom_objects=custom_objects, compile=False)
 
         if model.layers[0].input_shape[0][1] != 1:
             multi = True
@@ -211,3 +173,7 @@ if __name__ == '__main__':
         with open(join(out_path, "pred_timings_" + wav_name[:-4] + ".txt"), "w") as timings_file:
             for timing in timings:
                 timings_file.write(str(timing / 100) + "\n")
+
+
+if __name__ == '__main__':
+    main()

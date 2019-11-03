@@ -167,7 +167,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         joblib.dump(StandardScaler().fit(features), join(path_output, prefix + 'scaler.pkl'))
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="dump feature, label and sample weights for general purpose.")
@@ -225,3 +225,7 @@ if __name__ == '__main__':
                                                    under_sample=under_sample,
                                                    is_limited=is_limited,
                                                    limit=args.limit)
+
+
+if __name__ == '__main__':
+    main()

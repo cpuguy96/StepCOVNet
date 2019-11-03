@@ -4,8 +4,7 @@ from os.path import isfile, join
 import numpy as np
 from nltk.util import ngrams
 
-from keras.models import load_model
-import keras_self_attention
+from tensorflow.keras.models import load_model
 
 
 def get_file_names(mypath):
@@ -59,9 +58,9 @@ def get_notes_ngram(binary_notes, lookback):
 
 def get_arrows(timings, model, encoder):
     pred_notes = []
-    lookback = model.layers[0].input_shape[1]
+    lookback = model.layers[0].input_shape[0][1]
     classes = model.layers[-1].output_shape[1]
-    tokens = np.expand_dims(np.expand_dims(create_tokens(timings), axis=1), axis = 1)
+    tokens = np.expand_dims(np.expand_dims(create_tokens(timings), axis=1), axis=1)
     notes_ngram = np.expand_dims(get_notes_ngram(np.zeros((1, 16)), lookback)[-1], axis=0)
     for i, token in enumerate(tokens):
         pred = model.predict([notes_ngram, token])
@@ -74,7 +73,7 @@ def get_arrows(timings, model, encoder):
     return pred_notes
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate arrow types from .wav files.")
@@ -97,7 +96,8 @@ if __name__ == '__main__':
         raise OSError('Timing files path %s not found' % args.timing)
 
     if not os.path.isdir(args.output):
-        raise OSError('Output path %s not found' % args.output)
+        print('Output path not found. Creating directory...')
+        os.makedirs(args.output, exist_ok=True)
 
     if not os.path.isfile(args.model):
         raise OSError('Model %s is not found' % args.model)
@@ -113,7 +113,7 @@ if __name__ == '__main__':
 
     timings_names = get_file_names(timings_path)
     existing_pred_arrows = get_file_names(out_path)
-    model = load_model(join(model_path), custom_objects={'SeqSelfAttention': keras_self_attention.SeqSelfAttention})
+    model = load_model(join(model_path), compile=False)
 
     from sklearn.preprocessing import OneHotEncoder
     encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
@@ -141,6 +141,10 @@ if __name__ == '__main__':
 
         arrows = get_arrows(timings, model, encoder)
 
-        with open(out_path + "pred_arrows_" + song_name + ".txt", "w") as arrows_file:
+        with open(join(out_path, "pred_arrows_" + song_name + ".txt"), "w") as arrows_file:
             for arrow in arrows:
                 arrows_file.write(str(arrow) + "\n")
+
+
+if __name__ == '__main__':
+    main()

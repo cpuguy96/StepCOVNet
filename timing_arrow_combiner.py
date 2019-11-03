@@ -15,7 +15,7 @@ def get_bpm(wav_file_path):
     return librosa.beat.beat_track(y=y, sr=sr)
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Combine")
@@ -47,7 +47,8 @@ if __name__ == '__main__':
         raise OSError('Arrow files path %s not found' % args.arrow)
 
     if not os.path.isdir(args.output):
-        raise OSError('Output path %s not found' % args.output)
+        print('Output path not found. Creating directory...')
+        os.makedirs(args.output, exist_ok=True)
 
     wavs_path = args.wav
     timings_path = args.timing
@@ -75,7 +76,6 @@ if __name__ == '__main__':
 
         song_name = wav_name[:-4]
 
-        timings = []
         try:
             with open(join(timings_path, "pred_timings_" + song_name + ".txt"), "r") as timings_file:
                 timings = np.asarray([line.replace("\n", "") for line in timings_file.readlines()]).astype("float32")
@@ -83,7 +83,6 @@ if __name__ == '__main__':
             print(song_name + " timings not found! Skipping...")
             continue
 
-        arrows = []
         try:
             with open(join(arrows_path, "pred_arrows_" + song_name + ".txt"), "r") as arrows_file:
                 arrows = np.asarray([line.replace("\n", "") for line in arrows_file.readlines()])
@@ -91,7 +90,6 @@ if __name__ == '__main__':
             print(song_name + " arrows not found! Skipping...")
             continue
 
-        bpm = -1
         try:
             bpm, _ = get_bpm(join(wavs_path, wav_name))
         except Exception:
@@ -106,3 +104,7 @@ if __name__ == '__main__':
             comb_file.write("NOTES \n")
             for timing, arrow in zip(timings, arrows):
                 comb_file.write(str(arrow) + " " + str(timing) + "\n")
+
+
+if __name__ == '__main__':
+    main()
