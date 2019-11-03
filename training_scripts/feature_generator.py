@@ -1,6 +1,6 @@
-import numpy as np
+from training_scripts.data_preparation import featureReshape
 
-from data_preparation import featureReshape
+import numpy as np
 
 
 def shuffleFilenamesLabelsInUnison(filenames, labels, sample_weights):

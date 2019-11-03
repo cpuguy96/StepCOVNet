@@ -1,9 +1,6 @@
-import os
-import sys
-import numpy as np
-sys.path.append(os.path.join(os.path.dirname(__file__), "../src/"))
+from common.parameters import *
 
-from parameters import *
+import numpy as np
 
 
 def remove_out_of_range(frames, frame_start, frame_end):

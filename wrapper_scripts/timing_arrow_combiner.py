@@ -1,13 +1,11 @@
 from __future__ import print_function
+from common.utilFunctions import get_file_names
+
+from os.path import join
+
 import os
-from os import listdir
-from os.path import isfile, join
 import numpy as np
 import librosa
-
-
-def get_file_names(mypath):
-    return [f for f in listdir(mypath) if isfile(join(mypath, f))]
 
 
 def get_bpm(wav_file_path):

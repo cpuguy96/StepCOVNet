@@ -1,17 +1,24 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+from common.audio_preprocessing import getMFCCBands2DMadmom
+from common.parameters import *
+from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 
-import os
 from os.path import join
-import joblib
-
-import numpy as np
 from sklearn.preprocessing import StandardScaler
 
-from training_set_feature_extraction.sample_collection_helper import feature_onset_phrase_label_sample_weights
-from src.audio_preprocessing import getMFCCBands2DMadmom
-from src.parameters import *
-from src.utilFunctions import getRecordings
+import os
+import joblib
+import numpy as np
+
+
+def getRecordings(wav_path):
+    recordings      = []
+    for root, subFolders, files in os.walk(wav_path):
+            for f in files:
+                file_prefix, file_extension = os.path.splitext(f)
+                if file_prefix != '.DS_Store' and file_prefix != '_DS_Store':
+                    recordings.append(file_prefix)
+
+    return recordings
 
 
 def annotationCvParser(annotation_filename):

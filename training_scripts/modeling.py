@@ -1,26 +1,26 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-import os
-os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
+from training_scripts.architectures import *
+from training_scripts.feature_generator import generator
+from training_scripts.data_preparation import load_data
 
-import numpy as np
-import tensorflow as tf
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.layers import Dense, Flatten, Input, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.optimizers import Nadam
+
+import os
+import numpy as np
+import tensorflow as tf
+
+os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
 tf.compat.v1.disable_eager_execution()
 
 # disabling until more stable
 # from keras_radam import RAdam
 # os.environ['TF_KERAS'] = '1'
-
-from training_scripts.architectures import *
-
-from training_scripts.feature_generator import generator
-from training_scripts.data_preparation import load_data
 
 
 def f1(y_true, y_pred):

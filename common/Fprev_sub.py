@@ -3,7 +3,7 @@
 '''
  * Copyright (C) 2016  Music Technology Group - Universitat Pompeu Fabra
  *
- * This file is part of jingjuPhoneticSegmentation
+ * This file is part of stepmania-note-generator
  *
  * pypYIN is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Affero General Public License as published by the Free
@@ -27,7 +27,6 @@
 '''
 
 import numpy as np
-# import matplotlib.pyplot as plt
 
 def Fprev_sub(x,w=2):
     '''

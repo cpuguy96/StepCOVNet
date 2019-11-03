@@ -1,13 +1,10 @@
-import os
-from os import listdir
-from os.path import isfile, join
+from common.utilFunctions import get_file_names
 
+from os.path import join
+
+import os
 import subprocess
 import re
-
-
-def get_file_names(mypath):
-    return [f for f in listdir(mypath) if isfile(join(mypath, f))]
 
 
 def main():

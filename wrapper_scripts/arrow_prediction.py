@@ -1,14 +1,11 @@
-import os
-from os import listdir
-from os.path import isfile, join
-import numpy as np
-from nltk.util import ngrams
+from common.utilFunctions import get_file_names
 
+from os.path import join
+from nltk.util import ngrams
 from tensorflow.keras.models import load_model
 
-
-def get_file_names(mypath):
-    return [f for f in listdir(mypath) if isfile(join(mypath, f))]
+import os
+import numpy as np
 
 
 def get_binary_rep(arrow_values):

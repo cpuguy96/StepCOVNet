@@ -1,8 +1,7 @@
-import sys
+from training_scripts.modeling import train_model
+
 import os
 import argparse
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-from models import train_model
 
 
 def main():

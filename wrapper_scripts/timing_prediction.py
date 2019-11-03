@@ -1,25 +1,23 @@
-from src.utilFunctions import smooth_obs
-from src.audio_preprocessing import getMFCCBands2DMadmom
+from common.audio_preprocessing import getMFCCBands2DMadmom
+from common.utilFunctions import get_file_names
 from madmom.features.onsets import OnsetPeakPickingProcessor
 from training_scripts.data_preparation import featureReshape
 
-import os
-from os import listdir
-from os.path import isfile, join
-import sys
-import numpy as np
-
+from os.path import join
 from tensorflow.keras.models import load_model
 
+import os
+import numpy as np
 import xgboost as xgb
-
 import joblib
 
-sys.path.append(join(os.path.dirname('__file__'), "./src/"))
 
-
-def get_file_names(mypath):
-    return [f for f in listdir(mypath) if isfile(join(mypath, f))]
+def smooth_obs(obs):
+    """using moving average hanning window for smoothing"""
+    hann = np.hanning(5)
+    hann /= np.sum(hann)
+    obs = np.convolve(hann, obs, mode='same')
+    return obs
 
 
 def boundary_decoding(obs_i,

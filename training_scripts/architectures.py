@@ -1,4 +1,3 @@
-
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, BatchNormalization, \
     Input, Activation, Add, AveragePooling2D, ConvLSTM2D, Reshape, SpatialDropout2D, GlobalMaxPooling2D
 
