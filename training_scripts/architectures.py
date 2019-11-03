@@ -3,7 +3,7 @@ from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatte
     Input, Activation, Add, AveragePooling2D, ConvLSTM2D, Reshape, SpatialDropout2D, GlobalMaxPooling2D
 
 
-def new_front(x_input, reshape_dim, channel_order, channel):
+def front(x_input, reshape_dim, channel_order, channel):
     x = Conv2D(16,
                (3, 7),
                padding="valid",
@@ -35,8 +35,20 @@ def new_front(x_input, reshape_dim, channel_order, channel):
     x = MaxPooling2D(pool_size=(2, 1),
                      padding='valid',
                      data_format=channel_order)(x)
-    x = SpatialDropout2D(0.25)(x)
+    #x = SpatialDropout2D(0.25)(x)
     return x
+
+
+def back(model):
+    X = Dense(256, kernel_initializer='glorot_normal')(model)
+    X = BatchNormalization()(X)
+    X = Activation('relu')(X)
+    X = Dropout(0.15)(X)
+    X = Dense(128, kernel_initializer='glorot_normal')(X)
+    X = Activation('relu')(X)
+    X = Dropout(0.15)(X)
+
+    return X
 
 
 def front_end_a_fun(x_input, reshape_dim, channel_order, channel):
@@ -182,15 +194,3 @@ def back_end_c_fun(model, channel_order, channel):
     model = SpatialDropout2D(0.5)(model)
 
     return model
-
-
-def new_back(model):
-    X = Dense(256, kernel_initializer='glorot_normal')(model)
-    X = BatchNormalization()(X)
-    X = Activation('relu')(X)
-    X = Dropout(0.25)(X)
-    X = Dense(128, kernel_initializer='glorot_normal')(X)
-    X = Activation('relu')(X)
-    X = Dropout(0.25)(X)
-
-    return X
