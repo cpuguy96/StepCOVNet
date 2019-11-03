@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import os
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
-
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
 
 import numpy as np
 import tensorflow as tf
@@ -98,22 +98,22 @@ def build_model(input_shape, channel=1, silent=False):
     #                    channel_order=channel_order,
     #                   channel=channel)
     # x = back_end_c_fun(x, channel_order, channel)
-    x = new_front(x_input,
+    x = front(x_input,
                   reshape_dim=reshape_dim,
                   channel_order=channel_order,
                   channel=channel)
     x = Flatten()(x)
-    x = new_back(x)
+    x = back(x)
 
     x = Dense(1, activation='sigmoid')(x)
 
     model = Model(inputs=x_input, outputs=x, name='StepNet')
 
-    optimizer = Nadam()
+    optimizer = Nadam(beta_1=0.99)
 
     model.compile(loss='binary_crossentropy',
                   optimizer=optimizer,
-                  metrics=["accuracy", f1])
+                  metrics=["accuracy"])
 
     if not silent:
         print(model.summary())
@@ -123,6 +123,7 @@ def build_model(input_shape, channel=1, silent=False):
 
 def model_train(model_0,
                 batch_size,
+                max_epochs,
                 path_feature_data,
                 indices_all,
                 all_labels,
@@ -134,7 +135,6 @@ def model_train(model_0,
                 input_shape,
                 pretrained_model=None,
                 is_pretrained=False):
-    print("start training...")
 
     callbacks = [EarlyStopping(monitor='val_loss', patience=5, verbose=0)]
     from sklearn.model_selection import train_test_split
@@ -154,8 +154,6 @@ def model_train(model_0,
 
     steps_per_epoch_train = int(np.ceil(len(indices_train) / batch_size))
     steps_per_epoch_val = int(np.ceil(len(indices_validation) / batch_size))
-
-    print("loading training data")
 
     from sklearn.preprocessing import StandardScaler
     with open(path_feature_data, 'rb') as f:
@@ -195,9 +193,11 @@ def model_train(model_0,
                               scaler=training_scaler,
                               channel=channel)
 
+    print("\nstart training...")
+
     history = model_0.fit(generator_train,
                           steps_per_epoch=steps_per_epoch_train,
-                          epochs=300,
+                          epochs=max_epochs,
                           validation_data=generator_val,
                           validation_steps=steps_per_epoch_val,
                           class_weight=class_weights,
@@ -205,6 +205,10 @@ def model_train(model_0,
                           verbose=1)
 
     model_0.save(os.path.join(file_path_model, "trained_model.h5"))
+
+    print("\n*****************************")
+    print("***** TRAINING FINISHED *****")
+    print("*****************************\n")
 
     callbacks = []
     # train again use all train and validation set
@@ -227,6 +231,8 @@ def model_train(model_0,
                                     multi_inputs=multi_inputs,
                                     channel=channel,
                                     scaler=scaler)
+
+    print("start retraining...")
 
     model.fit(generator_train_val,
               steps_per_epoch=steps_per_epoch_train_val,
@@ -254,7 +260,8 @@ def train_model(filename_train_validation_set,
         load_data(filename_labels_train_validation_set, filename_sample_weights, filename_scaler)
 
     is_pretrained = False
-    batch_size = 128
+    batch_size = 256
+    max_epochs = 200
 
     if pretrained_model is not None:
         model = build_pretrained_model(pretrained_model)
@@ -264,6 +271,7 @@ def train_model(filename_train_validation_set,
 
     model_train(model,
                 batch_size,
+                max_epochs,
                 filename_train_validation_set,
                 filenames_features,
                 Y_train_validation,
