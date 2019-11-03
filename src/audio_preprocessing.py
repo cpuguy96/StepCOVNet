@@ -1,5 +1,5 @@
 import numpy as np
-from Fprev_sub import Fprev_sub
+from src.Fprev_sub import Fprev_sub
 from madmom.processors import SequentialProcessor, ParallelProcessor
 
 EPSILON = np.spacing(1)
