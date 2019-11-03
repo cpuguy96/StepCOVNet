@@ -201,7 +201,8 @@ def main():
         raise OSError('Annotation path %s not found' % args.annotation)
 
     if not os.path.isdir(args.output):
-        raise OSError('Output path %s not found' % args.output)
+        print('Output path not found. Creating directory...')
+        os.makedirs(args.output, exist_ok=True)
 
     if args.multi == 1:
         multi = True
