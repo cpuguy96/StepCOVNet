@@ -13,7 +13,7 @@
 * ffmpeg
 
 ## Running Audio to SM File Generator
-### Currently only produces `.txt` files. Use [smfile_writer.py](https://github.com/jhaco/SMFile_Writer) to convert `.txt` to `.sm`
+### Currently only produces `.txt` files. Use [`smfile_writer.py`](https://github.com/jhaco/SMFile_Writer) to convert `.txt` to `.sm`
 ```bash
 python stepmania_note_generator.py --input <string>  --output <string> -- scalers <string> --timing_model <string> --arrow_model <string> --overwrite <int>
 ```
