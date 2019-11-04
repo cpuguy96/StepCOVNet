@@ -221,7 +221,10 @@ def main():
     else:
         under_sample = False
 
-    if args.limit == -1:
+    if args.limit == 0:
+        raise OSError('Limit cannot be 0!')
+
+    if args.limit < 0:
         is_limited = False
     else:
         is_limited = True
