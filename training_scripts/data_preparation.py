@@ -15,15 +15,15 @@ def featureReshape(feature, multi=False, nlen=10):
     n_row = 80
     n_col = nlen * 2 + 1
 
-    feature_reshaped = np.zeros((n_sample, n_row, n_col), dtype='float32')
+    feature_reshaped = np.zeros((n_sample, n_row, n_col), dtype='float16')
     if multi:
-        feature_reshaped = np.zeros((n_sample, n_row, n_col, feature.shape[-1]), dtype='float32')
+        feature_reshaped = np.zeros((n_sample, n_row, n_col, feature.shape[-1]), dtype='float16')
     # print("reshaping feature...")
     for ii in range(n_sample):
         # print ii
-        feature_frame = np.zeros((n_row, n_col), dtype='float32')
+        feature_frame = np.zeros((n_row, n_col), dtype='float16')
         if multi:
-            feature_frame = np.zeros((n_row, n_col, feature.shape[-1]), dtype='float32')
+            feature_frame = np.zeros((n_row, n_col, feature.shape[-1]), dtype='float16')
         for jj in range(n_col):
             feature_frame[:, jj] = feature[ii][n_row * jj:n_row * (jj + 1)]
         feature_reshaped[ii, :, :] = feature_frame

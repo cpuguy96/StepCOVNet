@@ -104,9 +104,9 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
             continue
 
         if multi:
-            features_low.append(feature[:, :, 0])
-            features_mid.append(feature[:, :, 1])
-            features_high.append(feature[:, :, 2])
+            features_low.append(feature[:, :, 0].astype("float16"))
+            features_mid.append(feature[:, :, 1].astype("float16"))
+            features_high.append(feature[:, :, 2].astype("float16"))
         else:
             features.append(feature)
 
@@ -153,13 +153,13 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     np.savez_compressed(join(path_output, prefix + 'sample_weights'), sample_weights=weights[indices_used])
 
     if multi:
-        features_low = np.array(np.concatenate(features_low, axis=0))
-        features_mid = np.array(np.concatenate(features_mid, axis=0))
-        features_high = np.array(np.concatenate(features_high, axis=0))
+        features_low = np.array(np.concatenate(features_low, axis=0)[indices_used].astype("float16"))
+        features_mid = np.array(np.concatenate(features_mid, axis=0)[indices_used].astype("float16"))
+        features_high = np.array(np.concatenate(features_high, axis=0)[indices_used].astype("float16"))
         stacked_feats = np.stack([features_low, features_mid, features_high], axis=-1).astype("float16")
 
         print("Saving multi-features ...")
-        np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=stacked_feats[indices_used])
+        np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=stacked_feats)
         print("Saving low scaler ...")
         joblib.dump(StandardScaler().fit(features_low), join(path_output, prefix + 'scaler_low.pkl'))
         print("Saving mid scaler ...")
