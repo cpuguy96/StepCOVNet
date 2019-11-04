@@ -204,7 +204,7 @@ def model_train(model_0,
                           callbacks=callbacks,
                           verbose=1)
 
-    model_0.save(os.path.join(file_path_model, "trained_model.h5"))
+    model_0.save(os.path.join(file_path_model, "timing_model.h5"))
 
     print("\n*****************************")
     print("***** TRAINING FINISHED *****")
@@ -241,7 +241,7 @@ def model_train(model_0,
               class_weight=class_weights,
               verbose=1)
 
-    model.save(os.path.join(file_path_model, "retrained_model.h5"))
+    model.save(os.path.join(file_path_model, "retrained_timing_model.h5"))
 
 
 def train_model(filename_train_validation_set,

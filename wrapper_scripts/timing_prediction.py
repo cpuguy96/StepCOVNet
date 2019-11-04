@@ -39,13 +39,13 @@ def boundary_decoding(obs_i,
     return i_boundary
 
 
-def timing_predition(wav_path,
-                     out_path,
-                     model_path,
-                     scaler_path,
-                     pca_path,
-                     model_type,
-                     overwrite_int):
+def timing_prediction(wav_path,
+                      out_path,
+                      model_path,
+                      scaler_path=None,
+                      pca_path=None,
+                      model_type=0,
+                      overwrite_int=0):
     if not os.path.isdir(wav_path):
         raise OSError('Wavs path %s not found' % wav_path)
 
@@ -90,16 +90,17 @@ def timing_predition(wav_path,
 
     scaler = []
 
-    if multi:
-        with open(join(scaler_path, "multi_scaler_low.pkl"), "rb") as file:
-            scaler.append(joblib.load(file))
-        with open(join(scaler_path, "multi_scaler_mid.pkl"), "rb") as file:
-            scaler.append(joblib.load(file))
-        with open(join(scaler_path, "multi_scaler_high.pkl"), "rb") as file:
-            scaler.append(joblib.load(file))
-    else:
-        with open(join(scaler_path, "scaler.pkl"), "rb") as file:
-            scaler.append(joblib.load(file))
+    if scaler_path is not None:
+        if multi:
+            with open(join(scaler_path, "multi_scaler_low.pkl"), "rb") as file:
+                scaler.append(joblib.load(file))
+            with open(join(scaler_path, "multi_scaler_mid.pkl"), "rb") as file:
+                scaler.append(joblib.load(file))
+            with open(join(scaler_path, "multi_scaler_high.pkl"), "rb") as file:
+                scaler.append(joblib.load(file))
+        else:
+            with open(join(scaler_path, "scaler.pkl"), "rb") as file:
+                scaler.append(joblib.load(file))
 
     print("Starting timings prediction\n-----------------------------------------")
 
@@ -115,13 +116,14 @@ def timing_predition(wav_path,
 
         if multi:
             log_mel = getMFCCBands2DMadmom(join(wav_path + wav_name), 44100, 0.01, channel=3)
-
-            log_mel[:, :, 0] = scaler[0].transform(log_mel[:, :, 0])
-            log_mel[:, :, 1] = scaler[1].transform(log_mel[:, :, 1])
-            log_mel[:, :, 2] = scaler[2].transform(log_mel[:, :, 2])
+            if not scaler:
+                log_mel[:, :, 0] = scaler[0].transform(log_mel[:, :, 0])
+                log_mel[:, :, 1] = scaler[1].transform(log_mel[:, :, 1])
+                log_mel[:, :, 2] = scaler[2].transform(log_mel[:, :, 2])
         else:
             log_mel = getMFCCBands2DMadmom(join(wav_path + wav_name), 44100, 0.01, channel=1)
-            log_mel = scaler[0].transform(log_mel)
+            if not scaler:
+                log_mel = scaler[0].transform(log_mel)
 
         if model_type == 0:
             log_mel_re = featureReshape(log_mel, multi, 7)
@@ -177,10 +179,10 @@ if __name__ == '__main__':
                         help="overwrite already created files")
     args = parser.parse_args()
 
-    timing_predition(args.wav,
-                     args.output,
-                     args.model,
-                     args.scaler,
-                     args.pca,
-                     args.model_type,
-                     args.overwrite)
+    timing_prediction(args.wav,
+                      args.output,
+                      args.model,
+                      args.scaler,
+                      args.pca,
+                      args.model_type,
+                      args.overwrite)
