@@ -7,27 +7,15 @@ import subprocess
 import re
 
 
-def main():
-    import argparse
+def wav_converter(audio_path,
+                  wav_path):
+    if not os.path.isdir(audio_path):
+        raise OSError('Audio files path %s not found' % audio_path)
 
-    parser = argparse.ArgumentParser(description="Convert audio files to .wav format.")
-    parser.add_argument("--audio",
-                        type=str,
-                        help="input audio path")
-    parser.add_argument("--wav",
-                        type=str,
-                        help="output wav path")
-    args = parser.parse_args()
-
-    if not os.path.isdir(args.audio):
-        raise OSError('Audio files path %s not found' % args.audio)
-
-    if not os.path.isdir(args.wav):
+    if not os.path.isdir(wav_path):
         print("Wavs output path not found. Creating directory...")
-        os.makedirs(args.wav, exist_ok=True)
+        os.makedirs(wav_path, exist_ok=True)
 
-    audio_path = args.audio
-    wav_path = args.wav
     file_names = get_file_names(audio_path)
     existing_wavs = get_file_names(wav_path)
 
@@ -49,4 +37,16 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Convert audio files to .wav format.")
+    parser.add_argument("--audio",
+                        type=str,
+                        help="input audio path")
+    parser.add_argument("--wav",
+                        type=str,
+                        help="output wav path")
+    args = parser.parse_args()
+
+    wav_converter(args.audio,
+                  args.wav)

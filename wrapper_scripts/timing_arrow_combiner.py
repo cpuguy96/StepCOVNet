@@ -13,47 +13,25 @@ def get_bpm(wav_file_path):
     return librosa.beat.beat_track(y=y, sr=sr)
 
 
-def main():
-    import argparse
+def timing_arrow_combiner(wavs_path,
+                          timings_path,
+                          arrows_path,
+                          out_path,
+                          overwrite_int):
+    if not os.path.isdir(wavs_path):
+        raise OSError('Input path %s not found' % wavs_path)
 
-    parser = argparse.ArgumentParser(description="Combine")
-    parser.add_argument("--wav",
-                        type=str,
-                        help="input wavs path")
-    parser.add_argument("--timing",
-                        type=str,
-                        help="input timings path")
-    parser.add_argument("--arrow",
-                        type=str,
-                        help="input arrows path")
-    parser.add_argument("--output",
-                        type=str,
-                        help="output txt path")
-    parser.add_argument("--overwrite",
-                        type=int,
-                        default=0,
-                        help="overwrite already created files")
-    args = parser.parse_args()
+    if not os.path.isdir(timings_path):
+        raise OSError('Timing files path %s not found' % timings_path)
 
-    if not os.path.isdir(args.wav):
-        raise OSError('Input path %s not found' % args.wav)
+    if not os.path.isdir(arrows_path):
+        raise OSError('Arrow files path %s not found' % arrows_path)
 
-    if not os.path.isdir(args.timing):
-        raise OSError('Timing files path %s not found' % args.timing)
-
-    if not os.path.isdir(args.arrow):
-        raise OSError('Arrow files path %s not found' % args.arrow)
-
-    if not os.path.isdir(args.output):
+    if not os.path.isdir(out_path):
         print('Output path not found. Creating directory...')
-        os.makedirs(args.output, exist_ok=True)
+        os.makedirs(out_path, exist_ok=True)
 
-    wavs_path = args.wav
-    timings_path = args.timing
-    arrows_path = args.arrow
-    out_path = args.output
-
-    if args.overwrite == 1:
+    if overwrite_int == 1:
         overwrite = True
     else:
         overwrite = False
@@ -105,4 +83,29 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Combine")
+    parser.add_argument("--wav",
+                        type=str,
+                        help="input wavs path")
+    parser.add_argument("--timing",
+                        type=str,
+                        help="input timings path")
+    parser.add_argument("--arrow",
+                        type=str,
+                        help="input arrows path")
+    parser.add_argument("--output",
+                        type=str,
+                        help="output txt path")
+    parser.add_argument("--overwrite",
+                        type=int,
+                        default=0,
+                        help="overwrite already created files")
+    args = parser.parse_args()
+
+    timing_arrow_combiner(args.wav,
+                          args.timing,
+                          args.arrow,
+                          args.output,
+                          args.overwrite)

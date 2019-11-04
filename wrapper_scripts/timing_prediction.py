@@ -39,61 +39,36 @@ def boundary_decoding(obs_i,
     return i_boundary
 
 
-def main():
-    import argparse
+def timing_predition(wav_path,
+                     out_path,
+                     model_path,
+                     scaler_path,
+                     pca_path,
+                     model_type,
+                     overwrite_int):
+    if not os.path.isdir(wav_path):
+        raise OSError('Wavs path %s not found' % wav_path)
 
-    parser = argparse.ArgumentParser(description="Generate arrow timings from .wav files.")
-    parser.add_argument("--wav",
-                        type=str,
-                        help="input wav path")
-    parser.add_argument("--output",
-                        type=str,
-                        help="output txt path")
-    parser.add_argument("--model",
-                        type=str,
-                        help="trained model path")
-    parser.add_argument("--pca",
-                        type=str,
-                        help="trained pca path")
-    parser.add_argument("--model_type",
-                        type=int,
-                        default=0,
-                        help="type of model: 0 - CNN; 1 - XGB; 2 - multi XGB")
-    parser.add_argument("--overwrite",
-                        type=int,
-                        default=0,
-                        help="overwrite already created files")
-    args = parser.parse_args()
-
-    if not os.path.isdir(args.wav):
-        raise OSError('Wavs path %s not found' % args.wav)
-
-    if not os.path.isdir(args.output):
+    if not os.path.isdir(out_path):
         print('Output path not found. Creating directory...')
-        os.makedirs(args.output, exist_ok=True)
+        os.makedirs(out_path, exist_ok=True)
 
-    if not os.path.isfile(args.model):
-        raise OSError('Model %s is not found' % args.model)
+    if not os.path.isfile(model_path):
+        raise OSError('Model %s is not found' % model_path)
 
-    if args.model_type not in [0, 1, 2]:
-        raise OSError('Model type %s is not a valid model' % args.model_type)
+    if model_type not in [0, 1, 2]:
+        raise OSError('Model type %s is not a valid model' % model_type)
 
-    if args.model_type in [1, 2] and not os.path.isfile(args.pca):
-        raise OSError('PCA %s is not found' % args.pca)
+    if model_type in [1, 2] and not os.path.isfile(pca_path):
+        raise OSError('PCA %s is not found' % pca_path)
 
-    wav_path = args.wav
-    out_path = args.output
-    model_path = args.model
-
-    if args.overwrite == 1:
+    if overwrite_int == 1:
         overwrite = True
     else:
         overwrite = False
 
     wav_names = get_file_names(wav_path)
     existing_pred_timings = get_file_names(out_path)
-
-    model_type = args.model_type
 
     if model_type == 0:
         custom_objects = {}
@@ -107,7 +82,7 @@ def main():
     else:
         model = xgb.Booster({'nthread': -1})
         model.load_model(join(model_path))
-        pca = joblib.load(join(args.pca))
+        pca = joblib.load(join(pca_path))
         if model_type == 1:
             multi = False
         else:
@@ -116,14 +91,14 @@ def main():
     scaler = []
 
     if multi:
-        with open(join("training_data", "multi_scaler_low.pkl"), "rb") as file:
+        with open(join(scaler_path, "multi_scaler_low.pkl"), "rb") as file:
             scaler.append(joblib.load(file))
-        with open(join("training_data", "multi_scaler_mid.pkl"), "rb") as file:
+        with open(join(scaler_path, "multi_scaler_mid.pkl"), "rb") as file:
             scaler.append(joblib.load(file))
-        with open(join("training_data", "multi_scaler_high.pkl"), "rb") as file:
+        with open(join(scaler_path, "multi_scaler_high.pkl"), "rb") as file:
             scaler.append(joblib.load(file))
     else:
-        with open(join("training_data", "scaler.pkl"), "rb") as file:
+        with open(join(scaler_path, "scaler.pkl"), "rb") as file:
             scaler.append(joblib.load(file))
 
     print("Starting timings prediction\n-----------------------------------------")
@@ -174,4 +149,38 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate arrow timings from .wav files.")
+    parser.add_argument("--wav",
+                        type=str,
+                        help="input wav path")
+    parser.add_argument("--output",
+                        type=str,
+                        help="output txt path")
+    parser.add_argument("--model",
+                        type=str,
+                        help="trained model path")
+    parser.add_argument("--scaler",
+                        type=str,
+                        help="scaler path")
+    parser.add_argument("--pca",
+                        type=str,
+                        help="trained pca path")
+    parser.add_argument("--model_type",
+                        type=int,
+                        default=0,
+                        help="type of model: 0 - CNN; 1 - XGB; 2 - multi XGB")
+    parser.add_argument("--overwrite",
+                        type=int,
+                        default=0,
+                        help="overwrite already created files")
+    args = parser.parse_args()
+
+    timing_predition(args.wav,
+                     args.output,
+                     args.model,
+                     args.scaler,
+                     args.pca,
+                     args.model_type,
+                     args.overwrite)

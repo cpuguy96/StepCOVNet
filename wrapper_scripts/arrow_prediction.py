@@ -70,40 +70,21 @@ def get_arrows(timings, model, encoder):
     return pred_notes
 
 
-def main():
-    import argparse
+def arrow_prediction(timings_path,
+                     out_path,
+                     model_path,
+                     overwrite_int):
+    if not os.path.isdir(timings_path):
+        raise OSError('Timing files path %s not found' % timings_path)
 
-    parser = argparse.ArgumentParser(description="Generate arrow types from .wav files.")
-    parser.add_argument("--timing",
-                        type=str,
-                        help="input timings path")
-    parser.add_argument("--output",
-                        type=str,
-                        help="output arrows path")
-    parser.add_argument("--model",
-                        type=str,
-                        help="trained model path")
-    parser.add_argument("--overwrite",
-                        type=int,
-                        default=0,
-                        help="overwrite already created files")
-    args = parser.parse_args()
-
-    if not os.path.isdir(args.timing):
-        raise OSError('Timing files path %s not found' % args.timing)
-
-    if not os.path.isdir(args.output):
+    if not os.path.isdir(out_path):
         print('Output path not found. Creating directory...')
-        os.makedirs(args.output, exist_ok=True)
+        os.makedirs(out_path, exist_ok=True)
 
-    if not os.path.isfile(args.model):
-        raise OSError('Model %s is not found' % args.model)
+    if not os.path.isfile(model_path):
+        raise OSError('Model %s is not found' % model_path)
 
-    timings_path = args.timing
-    out_path = args.output
-    model_path = args.model
-
-    if args.overwrite == 1:
+    if overwrite_int == 1:
         overwrite = True
     else:
         overwrite = False
@@ -144,4 +125,25 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate arrow types from .wav files.")
+    parser.add_argument("--timing",
+                        type=str,
+                        help="input timings path")
+    parser.add_argument("--output",
+                        type=str,
+                        help="output arrows path")
+    parser.add_argument("--model",
+                        type=str,
+                        help="trained model path")
+    parser.add_argument("--overwrite",
+                        type=int,
+                        default=0,
+                        help="overwrite already created files")
+    args = parser.parse_args()
+
+    arrow_prediction(args.timing,
+                     args.output,
+                     args.model,
+                     args.overwrite)
