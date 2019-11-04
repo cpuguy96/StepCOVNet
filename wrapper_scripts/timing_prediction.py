@@ -8,7 +8,6 @@ from tensorflow.keras.models import load_model
 
 import os
 import numpy as np
-import xgboost as xgb
 import joblib
 
 
@@ -80,7 +79,8 @@ def timing_prediction(wav_path,
         else:
             multi = False
     else:
-        model = xgb.Booster({'nthread': -1})
+        import xgboost
+        model = xgboost.Booster({'nthread': -1})
         model.load_model(join(model_path))
         pca = joblib.load(join(pca_path))
         if model_type == 1:
@@ -131,11 +131,12 @@ def timing_prediction(wav_path,
                 log_mel_re = np.expand_dims(log_mel_re, axis=1)
             pdf = model.predict(log_mel_re)
         else:
+            import xgboost
             if model_type == 1:
                 log_mel_pca = pca.transform(log_mel)
             else:
                 log_mel_pca = pca.transform(log_mel.reshape(log_mel.shape[0], log_mel.shape[1] * log_mel.shape[2]))
-            pdf = model.predict(xgb.DMatrix(log_mel_pca))
+            pdf = model.predict(xgboost.DMatrix(log_mel_pca))
 
         pdf = np.squeeze(pdf)
         pdf = smooth_obs(pdf)

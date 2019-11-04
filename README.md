@@ -4,6 +4,7 @@
 ## Requirements
 
 * tensorflow-gpu>=2.0
+* xgboost (**OPTIONAL** not fully supported yet)
 * numpy
 * madmom
 * sklearn
