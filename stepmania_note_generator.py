@@ -50,18 +50,18 @@ def stepmania_note_generator(input_path,
     print("Starting audio to txt generation\n-----------------------------------------")
 
     for input_audio_name in input_audio_names:
-        new_file_name = re.sub("[^a-z0-9-_]", "", input_audio_name.lower()[:-4])
-        if overwrite and new_file_name in existing_txt_names:
-            print("Skipping...", input_audio_name, "is txt is already generated!")
-            continue
-
-        # create tmp folder
-        os.makedirs(join(tmp_folder_name), exist_ok=True)
-        # copy audio to tmp folder
-        os.makedirs(join(tmp_folder_name, "input"), exist_ok=True)
-        copyfile(join(input_path, input_audio_name), join(tmp_folder_name, "input", input_audio_name))
-
         try:
+            new_file_name = re.sub("[^a-z0-9-_]", "", "".join(input_audio_name.lower().split(".")[:-1]))
+            if not overwrite and 'pred_txt_' + new_file_name + '.txt' in existing_txt_names:
+                print("Skipping...", input_audio_name, "txt is already generated!")
+                continue
+
+            # create tmp folder
+            os.makedirs(join(tmp_folder_name), exist_ok=True)
+            # copy audio to tmp folder
+            os.makedirs(join(tmp_folder_name, "input"), exist_ok=True)
+            copyfile(join(input_path, input_audio_name), join(tmp_folder_name, "input", input_audio_name))
+
             # convert audio file to wav
             print()
             os.makedirs(join(tmp_folder_name, "wav"), exist_ok=True)
@@ -101,7 +101,10 @@ def stepmania_note_generator(input_path,
         except Exception:
             print("Skipping... Failed to generate txt from", input_audio_name)
         finally:
-            rmtree(tmp_folder_name)
+            try:
+                rmtree(tmp_folder_name)
+            except Exception:
+                pass
 
 
 if __name__ == '__main__':

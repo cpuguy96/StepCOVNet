@@ -4,6 +4,13 @@ pred_arrows/
 pred_timings/
 pred_txts/
 testing_models/
+input/*
+!input/zombie_maker.ogg
+
+# output dirs for testing
+output/*
+!output/zombie_maker.txt
+!output/zombie_maker.sm
 
 # Training Data
 training_data/mp3s
