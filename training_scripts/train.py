@@ -82,7 +82,8 @@ def main():
                     input_shape=input_shape,
                     file_path_model=file_path_model,
                     channel=channel,
-                    pretrained_model=filename_pretrained_model)
+                    pretrained_model=filename_pretrained_model,
+                    prefix=prefix)
     else:
         file_path_model = os.path.join(args.path_output)
         train_model(filename_train_validation_set,
@@ -91,7 +92,8 @@ def main():
                     filename_scaler,
                     input_shape=input_shape,
                     file_path_model=file_path_model,
-                    channel=channel)
+                    channel=channel,
+                    prefix=prefix)
 
 
 if __name__ == '__main__':

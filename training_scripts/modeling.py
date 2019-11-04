@@ -133,6 +133,7 @@ def model_train(model_0,
                 file_path_model,
                 channel,
                 input_shape,
+                prefix,
                 pretrained_model=None,
                 is_pretrained=False):
 
@@ -204,7 +205,7 @@ def model_train(model_0,
                           callbacks=callbacks,
                           verbose=1)
 
-    model_0.save(os.path.join(file_path_model, "timing_model.h5"))
+    model_0.save(os.path.join(file_path_model, prefix + "timing_model.h5"))
 
     print("\n*****************************")
     print("***** TRAINING FINISHED *****")
@@ -241,7 +242,7 @@ def model_train(model_0,
               class_weight=class_weights,
               verbose=1)
 
-    model.save(os.path.join(file_path_model, "retrained_timing_model.h5"))
+    model.save(os.path.join(file_path_model, prefix + "retrained_timing_model.h5"))
 
 
 def train_model(filename_train_validation_set,
@@ -249,6 +250,7 @@ def train_model(filename_train_validation_set,
                 filename_sample_weights,
                 filename_scaler,
                 input_shape,
+                prefix,
                 file_path_model,
                 channel=1,
                 pretrained_model=None):
@@ -282,4 +284,5 @@ def train_model(filename_train_validation_set,
                 channel,
                 input_shape,
                 pretrained_model=pretrained_model,
-                is_pretrained=is_pretrained)
+                is_pretrained=is_pretrained,
+                prefix=prefix)
