@@ -3,23 +3,16 @@ from training_scripts.data_preparation import featureReshape
 import numpy as np
 
 
-def shuffleFilenamesLabelsInUnison(filenames, labels, sample_weights):
-    assert len(filenames) == len(labels)
-    assert len(filenames) == len(sample_weights)
-    p=np.random.permutation(len(filenames))
-    return filenames[p], labels[p], sample_weights[p]
-
-
 def generator(path_feature_data,
               indices,
-              number_of_batches,
               file_size,
               labels=None,
               sample_weights=None,
-              shuffle=True,
               multi_inputs=False,
               channel=1,
-              scaler=None):
+              scaler=None,
+              path_extra_features=None,
+              extra=False):
 
     indices_copy = np.array(indices[:], np.int64)
 
@@ -38,7 +31,11 @@ def generator(path_feature_data,
     with open(path_feature_data, 'rb') as f:
         f_used = np.load(f)['features']
 
-    if scaler is not None:
+    if extra:
+        with open(path_extra_features, 'rb') as f:
+            extra_features = np.load(f)['extra_features']
+
+    if scaler:
         if multi_inputs:
             f_used[:, :, 0] = scaler[0].transform(np.asarray(f_used[:, :, 0]))
             f_used[:, :, 1] = scaler[1].transform(np.asarray(f_used[:, :, 1]))
@@ -61,6 +58,11 @@ def generator(path_feature_data,
         y_batch_tensor = labels_copy[idx_start:idx_end][index_sort]
         sample_weights_batch_tensor = sample_weights_copy[idx_start:idx_end][index_sort]
 
+        if extra:
+            extra_features_tensor = extra_features[idx_start:idx_end][index_sort]
+        else:
+            extra_features_tensor = None
+
         if channel == 1:
             X_batch_tensor = f_used[batch_indices[index_sort], :, :]
         else:
@@ -72,11 +74,12 @@ def generator(path_feature_data,
         counter += 1
 
         if sample_weights is not None:
-            yield X_batch_tensor, y_batch_tensor, sample_weights_batch_tensor
+            if extra:
+                yield [X_batch_tensor, extra_features_tensor], y_batch_tensor, sample_weights_batch_tensor
+            else:
+                yield X_batch_tensor, y_batch_tensor, sample_weights_batch_tensor
         else:
-            yield X_batch_tensor, y_batch_tensor
-
-        if counter >= number_of_batches:
-            counter = 0
-            if shuffle:
-                indices_copy, labels_copy, sample_weights_copy = shuffleFilenamesLabelsInUnison(indices_copy, labels_copy, sample_weights_copy)
+            if extra:
+                yield [X_batch_tensor, extra_features_tensor], y_batch_tensor
+            else:
+                yield X_batch_tensor, y_batch_tensor

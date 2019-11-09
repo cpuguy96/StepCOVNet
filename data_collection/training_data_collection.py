@@ -1,4 +1,4 @@
-from common.audio_preprocessing import getMFCCBands2DMadmom
+from common.audio_preprocessing import getMFCCBands2DMadmom, get_madmom_librosa_features
 from common.parameters import *
 from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 
@@ -56,7 +56,14 @@ def dump_feature_onset_helper(audio_path, annotation_path, fn, channel):
     return mfcc, frames_onset, frame_start, frame_end
 
 
-def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, path_output, multi, under_sample, is_limited, limit):
+def dump_feature_label_sample_weights_onset_phrase(audio_path,
+                                                   annotation_path,
+                                                   path_output,
+                                                   multi,
+                                                   extra,
+                                                   under_sample,
+                                                   is_limited,
+                                                   limit):
     """
     dump feature, label, sample weights for each phrase with bock annotation format
     :param audio_path:
@@ -70,6 +77,8 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
     features_high = []
 
     features = []
+
+    extra_features = []
     labels = []
     weights = []
 
@@ -99,6 +108,17 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
             # simple sample weighting
             feature, label, sample_weights = \
                 feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, log_mel)
+
+            if extra:
+                # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
+                extra_feature = get_madmom_librosa_features(join(audio_path, fn + '.wav'),
+                                                            fs,
+                                                            hopsize_t,
+                                                            len(label),
+                                                            frame_start)
+            else:
+                extra_feature = None
+
         except Exception:
             print("Error collecting features for", fn)
             continue
@@ -113,6 +133,9 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
         labels.append(label)
         weights.append(sample_weights)
 
+        if extra:
+            extra_features.append(extra_feature)
+
         if is_limited and under_sample:
             sample_count += label.sum()
         elif is_limited:
@@ -120,6 +143,9 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
 
     labels = np.array(np.concatenate(labels, axis=0)).astype("int8")
     weights = np.array(np.concatenate(weights, axis=0)).astype("float16")
+
+    if extra:
+        extra_features = np.array(np.concatenate(extra_features, axis=0)).astype("int8")
 
     prefix = ""
 
@@ -151,6 +177,10 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path, annotation_path, 
 
     print("Saving sample weights ...")
     np.savez_compressed(join(path_output, prefix + 'sample_weights'), sample_weights=weights[indices_used])
+
+    if extra:
+        print("Saving extra features ...")
+        np.savez_compressed(join(path_output, prefix + 'extra_features'), extra_features=extra_features[indices_used])
 
     if multi:
         features_low = np.array(np.concatenate(features_low, axis=0)[indices_used].astype("float16"))
@@ -191,6 +221,10 @@ def main():
                         type=int,
                         default=0,
                         help="whether multiple STFT window time-lengths are captured")
+    parser.add_argument("--extra",
+                        type=int,
+                        default=0,
+                        help="whether to gather extra data from madmom and librosa")
     parser.add_argument("--under_sample",
                         type=int,
                         default=0,
@@ -202,10 +236,10 @@ def main():
     args = parser.parse_args()
 
     if not os.path.isdir(args.audio):
-        raise OSError('Audio path %s not found' % args.audio)
+        raise NotADirectoryError('Audio path %s not found' % args.audio)
 
     if not os.path.isdir(args.annotation):
-        raise OSError('Annotation path %s not found' % args.annotation)
+        raise NotADirectoryError('Annotation path %s not found' % args.annotation)
 
     if not os.path.isdir(args.output):
         print('Output path not found. Creating directory...')
@@ -216,13 +250,18 @@ def main():
     else:
         multi = False
 
+    if args.extra == 1:
+        extra = True
+    else:
+        extra = False
+
     if args.under_sample == 1:
         under_sample = True
     else:
         under_sample = False
 
     if args.limit == 0:
-        raise OSError('Limit cannot be 0!')
+        raise ValueError('Limit cannot be 0!')
 
     if args.limit < 0:
         is_limited = False
@@ -233,6 +272,7 @@ def main():
                                                    annotation_path=args.annotation,
                                                    path_output=args.output,
                                                    multi=multi,
+                                                   extra=extra,
                                                    under_sample=under_sample,
                                                    is_limited=is_limited,
                                                    limit=args.limit)

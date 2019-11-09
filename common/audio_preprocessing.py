@@ -1,9 +1,10 @@
 from common.Fprev_sub import Fprev_sub
 
 from madmom.processors import SequentialProcessor, ParallelProcessor
+from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
 
 import numpy as np
-
+import librosa
 
 EPSILON = np.spacing(1)
 
@@ -68,7 +69,7 @@ class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
         sig = SignalProcessor(num_channels=1, sample_rate=fs)
         # process the multi-resolution spec in parallel
         multi = ParallelProcessor([])
-        for frame_size in [2048, 1024, 4096]:
+        for frame_size in [1024, 2048, 4096]:
             frames = FramedSignalProcessor(frame_size=frame_size, hopsize=int(fs*hopsize_t))
             stft = ShortTimeFourierTransformProcessor()  # caching FFT window
             filt = FilteredSpectrogramProcessor(
@@ -102,3 +103,31 @@ def getMFCCBands2DMadmom(audio_fn, fs, hopsize_t, channel):
             mfcc_conc.append(_nbf_2D(mfcc[:,:,ii], 7))
         mfcc = np.stack(mfcc_conc, axis=2)
     return mfcc
+
+
+def get_madmom_librosa_features(audio_fn, fs, hopsize_t, num_frames, frame_start=0):
+    # might add ability to choose which features to add
+
+    # librosa features
+    samples, _ = librosa.load(audio_fn, sr=fs)
+    onset_times = librosa.onset.onset_detect(y=samples,
+                                             sr=fs,
+                                             units="time",
+                                             hop_length=int(fs*hopsize_t))
+    onset_frames = np.array(np.around(np.array(onset_times) / hopsize_t), dtype=int)
+
+    # madmom features
+    proc = DBNBeatTrackingProcessor(max_bpm=300,
+                                    fps=int(1/hopsize_t))
+    act = RNNBeatProcessor()(audio_fn)
+    beat_times = proc(act)
+    beat_frames = np.array(np.around(np.array(beat_times) / hopsize_t), dtype=int)
+
+    # fill in blanks and return
+    librosa_features = np.zeros((num_frames,))
+    madmom_features = np.zeros((num_frames,))
+
+    librosa_features[onset_frames - frame_start] = 1
+    madmom_features[beat_frames - frame_start] = 1
+
+    return np.hstack((librosa_features.reshape(-1, 1), madmom_features.reshape(-1, 1)))

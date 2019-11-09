@@ -20,6 +20,10 @@ def main():
                         type=int,
                         default=0,
                         help="whether multiple STFT window time-lengths are used in training ")
+    parser.add_argument("--extra",
+                        type=int,
+                        default=0,
+                        help="whether to use extra data from madmom and librosa")
     parser.add_argument("--under_sample",
                         type=int,
                         default=0,
@@ -43,6 +47,11 @@ def main():
     else:
         multi = False
 
+    if args.extra == 1:
+        extra = True
+    else:
+        extra = False
+
     if args.under_sample == 1:
         under_sample = True
     else:
@@ -59,6 +68,13 @@ def main():
     filename_labels_train_validation_set = os.path.join(args.path_input, prefix + 'labels.npz')
     filename_sample_weights = os.path.join(args.path_input, prefix + 'sample_weights.npz')
 
+    if extra:
+        path_extra_features = os.path.join(args.path_input, prefix + 'extra_features.npz')
+        extra_input_shape = (1, 2)
+    else:
+        path_extra_features = None
+        extra_input_shape = None
+
     if multi:
         input_shape = (80, 15, 3)
         channel = 3
@@ -72,7 +88,12 @@ def main():
         filename_scaler.append(os.path.join(args.path_input, prefix + 'scaler.pkl'))
     filename_train_validation_set = os.path.join(args.path_input, prefix + 'dataset_features.npz')
 
+    # adding this afterwards since we want to only rename the model
+    if extra:
+        prefix += "extra_"
+
     if args.pretrained is not None:
+        prefix += "pretrained_"
         filename_pretrained_model = os.path.join(args.pretrained)
         file_path_model = os.path.join(args.path_output)
         train_model(filename_train_validation_set,
@@ -83,7 +104,10 @@ def main():
                     file_path_model=file_path_model,
                     channel=channel,
                     pretrained_model=filename_pretrained_model,
-                    prefix=prefix)
+                    prefix=prefix,
+                    path_extra_features=path_extra_features,
+                    extra_input_shape=extra_input_shape,
+                    extra=extra)
     else:
         file_path_model = os.path.join(args.path_output)
         train_model(filename_train_validation_set,
@@ -93,7 +117,10 @@ def main():
                     input_shape=input_shape,
                     file_path_model=file_path_model,
                     channel=channel,
-                    prefix=prefix)
+                    prefix=prefix,
+                    path_extra_features=path_extra_features,
+                    extra_input_shape=extra_input_shape,
+                    extra=extra)
 
 
 if __name__ == '__main__':

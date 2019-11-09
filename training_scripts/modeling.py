@@ -9,6 +9,7 @@ from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.layers import Dense, Flatten, Input, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.optimizers import Nadam
+from tensorflow.keras.callbacks import ModelCheckpoint
 
 import os
 import numpy as np
@@ -85,7 +86,7 @@ def build_pretrained_model(pretrained_model, silent=False):
     return model
 
 
-def build_model(input_shape, channel=1, silent=False):
+def build_model(input_shape, channel=1, extra_input_shape=None, silent=False):
     if channel == 1:
         reshape_dim = (1, input_shape[0], input_shape[1])
         channel_order = 'channels_first'
@@ -93,21 +94,31 @@ def build_model(input_shape, channel=1, silent=False):
         reshape_dim = input_shape
         channel_order = 'channels_last'
 
-    x_input = Input(reshape_dim)
+    x_input = Input(reshape_dim, dtype='float16', name="log_mel_input")
+
+    if extra_input_shape is not None:
+        extra_input = Input((extra_input_shape[1],), dtype="float16", name="extra_input")
+    else:
+        extra_input = None
+
     # x = front_end_a_fun(x_input, reshape_dim=reshape_dim,
     #                    channel_order=channel_order,
     #                   channel=channel)
     # x = back_end_c_fun(x, channel_order, channel)
     x = front(x_input,
-                  reshape_dim=reshape_dim,
-                  channel_order=channel_order,
-                  channel=channel)
+              reshape_dim=reshape_dim,
+              channel_order=channel_order,
+              channel=channel)
     x = Flatten()(x)
-    x = back(x)
+    x = back(x,
+             extra_input)
 
     x = Dense(1, activation='sigmoid')(x)
 
-    model = Model(inputs=x_input, outputs=x, name='StepNet')
+    if extra_input_shape is not None:
+        model = Model(inputs=[x_input, extra_input], outputs=x, name='StepNet')
+    else:
+        model = Model(inputs=x_input, outputs=x, name='StepNet')
 
     optimizer = Nadam(beta_1=0.99)
 
@@ -135,9 +146,16 @@ def model_train(model_0,
                 input_shape,
                 prefix,
                 pretrained_model=None,
-                is_pretrained=False):
+                is_pretrained=False,
+                path_extra_features=None,
+                extra=False,
+                extra_input_shape=None):
 
-    callbacks = [EarlyStopping(monitor='val_loss', patience=5, verbose=0)]
+    training_callbacks = [EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+                          ModelCheckpoint(filepath=os.path.join(file_path_model, prefix + 'callback_timing_model.h5'),
+                                          monitor='val_loss',
+                                          verbose=0,
+                                          save_best_only=True)]
     from sklearn.model_selection import train_test_split
 
     print("number of samples:", len(indices_all))
@@ -146,9 +164,9 @@ def model_train(model_0,
         train_test_split(indices_all,
                          all_labels,
                          test_size=0.2,
-                         random_state=42,
-                         # shuffle=False,
-                         stratify=all_labels)
+                         stratify=all_labels,
+                         #shuffle=False,
+                         random_state=42)
 
     sample_weights_train = sample_weights[indices_train]
     sample_weights_validation = sample_weights[indices_validation]
@@ -175,24 +193,24 @@ def model_train(model_0,
 
     generator_train = generator(path_feature_data=path_feature_data,
                                 indices=indices_train,
-                                number_of_batches=steps_per_epoch_train,
                                 file_size=batch_size,
                                 labels=y_train,
-                                shuffle=False,
                                 sample_weights=sample_weights_train,
                                 multi_inputs=multi_inputs,
                                 scaler=training_scaler,
-                                channel=channel)
+                                channel=channel,
+                                path_extra_features=path_extra_features,
+                                extra=extra)
     generator_val = generator(path_feature_data=path_feature_data,
                               indices=indices_validation,
-                              number_of_batches=steps_per_epoch_val,
                               file_size=batch_size,
                               labels=y_val,
-                              shuffle=False,
                               sample_weights=sample_weights_validation,
                               multi_inputs=multi_inputs,
                               scaler=training_scaler,
-                              channel=channel)
+                              channel=channel,
+                              path_extra_features=path_extra_features,
+                              extra=extra)
 
     print("\nstart training...")
 
@@ -202,7 +220,7 @@ def model_train(model_0,
                           validation_data=generator_val,
                           validation_steps=steps_per_epoch_val,
                           class_weight=class_weights,
-                          callbacks=callbacks,
+                          callbacks=training_callbacks,
                           verbose=1)
 
     model_0.save(os.path.join(file_path_model, prefix + "timing_model.h5"))
@@ -211,7 +229,11 @@ def model_train(model_0,
     print("***** TRAINING FINISHED *****")
     print("*****************************\n")
 
-    callbacks = []
+    callbacks = [ModelCheckpoint(
+                  filepath=os.path.join(file_path_model, prefix + 'retrained_callback_timing_model.h5'),
+                  monitor='loss',
+                  verbose=0,
+                  save_best_only=True)]
     # train again use all train and validation set
     epochs_final = len(history.history['val_loss'])
 
@@ -220,18 +242,18 @@ def model_train(model_0,
     if is_pretrained:
         model = build_pretrained_model(pretrained_model, silent=True)
     else:
-        model = build_model(input_shape=input_shape, channel=channel, silent=True)
+        model = build_model(input_shape=input_shape, extra_input_shape=extra_input_shape, channel=channel, silent=True)
 
     generator_train_val = generator(path_feature_data=path_feature_data,
                                     indices=indices_all,
-                                    number_of_batches=steps_per_epoch_train_val,
                                     file_size=batch_size,
                                     labels=all_labels,
-                                    shuffle=False,
                                     sample_weights=sample_weights,
                                     multi_inputs=multi_inputs,
                                     channel=channel,
-                                    scaler=scaler)
+                                    scaler=scaler,
+                                    path_extra_features=path_extra_features,
+                                    extra=extra)
 
     print("start retraining...")
 
@@ -253,7 +275,10 @@ def train_model(filename_train_validation_set,
                 prefix,
                 file_path_model,
                 channel=1,
-                pretrained_model=None):
+                pretrained_model=None,
+                extra_input_shape=None,
+                path_extra_features=None,
+                extra=False):
     """
     train final model save to model path
     """
@@ -263,13 +288,13 @@ def train_model(filename_train_validation_set,
 
     is_pretrained = False
     batch_size = 256
-    max_epochs = 200
+    max_epochs = 100
 
     if pretrained_model is not None:
         model = build_pretrained_model(pretrained_model)
         is_pretrained = True
     else:
-        model = build_model(input_shape=input_shape, channel=channel)
+        model = build_model(input_shape=input_shape, extra_input_shape=extra_input_shape, channel=channel)
 
     model_train(model,
                 batch_size,
@@ -283,6 +308,9 @@ def train_model(filename_train_validation_set,
                 file_path_model,
                 channel,
                 input_shape,
+                extra_input_shape=extra_input_shape,
                 pretrained_model=pretrained_model,
                 is_pretrained=is_pretrained,
-                prefix=prefix)
+                prefix=prefix,
+                path_extra_features=path_extra_features,
+                extra=extra)

@@ -1,4 +1,4 @@
-from common.audio_preprocessing import getMFCCBands2DMadmom
+from common.audio_preprocessing import getMFCCBands2DMadmom, get_madmom_librosa_features
 from common.utilFunctions import get_file_names
 from madmom.features.onsets import OnsetPeakPickingProcessor
 from training_scripts.data_preparation import featureReshape
@@ -46,20 +46,20 @@ def timing_prediction(wav_path,
                       model_type=0,
                       overwrite_int=0):
     if not os.path.isdir(wav_path):
-        raise OSError('Wavs path %s not found' % wav_path)
+        raise NotADirectoryError('Wavs path %s not found' % wav_path)
 
     if not os.path.isdir(out_path):
         print('Output path not found. Creating directory...')
         os.makedirs(out_path, exist_ok=True)
 
     if not os.path.isfile(model_path):
-        raise OSError('Model %s is not found' % model_path)
+        raise FileNotFoundError('Model %s is not found' % model_path)
 
     if model_type not in [0, 1, 2]:
-        raise OSError('Model type %s is not a valid model' % model_type)
+        raise ValueError('Model type %s is not a valid model' % model_type)
 
     if model_type in [1, 2] and not os.path.isfile(pca_path):
-        raise OSError('PCA %s is not found' % pca_path)
+        raise FileNotFoundError('PCA %s is not found' % pca_path)
 
     if overwrite_int == 1:
         overwrite = True
@@ -68,6 +68,8 @@ def timing_prediction(wav_path,
 
     wav_names = get_file_names(wav_path)
     existing_pred_timings = get_file_names(out_path)
+    extra = False
+    pca = None
 
     if model_type == 0:
         custom_objects = {}
@@ -78,6 +80,16 @@ def timing_prediction(wav_path,
             multi = True
         else:
             multi = False
+
+        try:
+            # try to find second input which indicates extra features
+            if model.get_layer('extra_input'):
+                extra = True
+            else:
+                extra = False
+        except Exception:
+            # if not, then there is no extra features
+            extra = False
     else:
         import xgboost
         model = xgboost.Booster({'nthread': -1})
@@ -115,21 +127,26 @@ def timing_prediction(wav_path,
         print("Generating timings for " + wav_name[:-4])
 
         if multi:
-            log_mel = getMFCCBands2DMadmom(join(wav_path + wav_name), 44100, 0.01, channel=3)
-            if not scaler:
+            log_mel = getMFCCBands2DMadmom(join(wav_path, wav_name), 44100, 0.01, channel=3)
+            if scaler:
                 log_mel[:, :, 0] = scaler[0].transform(log_mel[:, :, 0])
                 log_mel[:, :, 1] = scaler[1].transform(log_mel[:, :, 1])
                 log_mel[:, :, 2] = scaler[2].transform(log_mel[:, :, 2])
         else:
-            log_mel = getMFCCBands2DMadmom(join(wav_path + wav_name), 44100, 0.01, channel=1)
-            if not scaler:
+            log_mel = getMFCCBands2DMadmom(join(wav_path, wav_name), 44100, 0.01, channel=1)
+            if scaler:
                 log_mel = scaler[0].transform(log_mel)
 
         if model_type == 0:
             log_mel_re = featureReshape(log_mel, multi, 7)
             if not multi:
                 log_mel_re = np.expand_dims(log_mel_re, axis=1)
-            pdf = model.predict(log_mel_re)
+            if extra:
+                print("Generating extra features...")
+                extra_features = get_madmom_librosa_features(join(wav_path, wav_name), 44100, 0.01, len(log_mel_re))
+                pdf = model.predict([log_mel_re, extra_features])
+            else:
+                pdf = model.predict(log_mel_re)
         else:
             import xgboost
             if model_type == 1:
