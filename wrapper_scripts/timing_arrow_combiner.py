@@ -19,13 +19,13 @@ def timing_arrow_combiner(wavs_path,
                           out_path,
                           overwrite_int):
     if not os.path.isdir(wavs_path):
-        raise OSError('Input path %s not found' % wavs_path)
+        raise NotADirectoryError('Input path %s not found' % wavs_path)
 
     if not os.path.isdir(timings_path):
-        raise OSError('Timing files path %s not found' % timings_path)
+        raise NotADirectoryError('Timing files path %s not found' % timings_path)
 
     if not os.path.isdir(arrows_path):
-        raise OSError('Arrow files path %s not found' % arrows_path)
+        raise NotADirectoryError('Arrow files path %s not found' % arrows_path)
 
     if not os.path.isdir(out_path):
         print('Output path not found. Creating directory...')

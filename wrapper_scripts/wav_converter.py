@@ -10,7 +10,7 @@ import re
 def wav_converter(audio_path,
                   wav_path):
     if not os.path.isdir(audio_path):
-        raise OSError('Audio files path %s not found' % audio_path)
+        raise NotADirectoryError('Audio files path %s not found' % audio_path)
 
     if not os.path.isdir(wav_path):
         print("Wavs output path not found. Creating directory...")

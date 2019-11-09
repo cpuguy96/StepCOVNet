@@ -75,14 +75,14 @@ def arrow_prediction(timings_path,
                      model_path,
                      overwrite_int):
     if not os.path.isdir(timings_path):
-        raise OSError('Timing files path %s not found' % timings_path)
+        raise NotADirectoryError('Timing files path %s not found' % timings_path)
 
     if not os.path.isdir(out_path):
         print('Output path not found. Creating directory...')
         os.makedirs(out_path, exist_ok=True)
 
     if not os.path.isfile(model_path):
-        raise OSError('Model %s is not found' % model_path)
+        raise FileNotFoundError('Model %s is not found' % model_path)
 
     if overwrite_int == 1:
         overwrite = True
