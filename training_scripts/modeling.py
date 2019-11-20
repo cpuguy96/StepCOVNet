@@ -1,62 +1,30 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from training_scripts.architectures import *
-from training_scripts.feature_generator import generator
-from training_scripts.data_preparation import load_data
+from training_scripts.data_preparation import load_data, preprocess
+from training_scripts.stepnet import build_stepnet
 
-from tensorflow.keras import backend as K
-from tensorflow.keras.models import Model, Sequential, load_model
-from tensorflow.keras.layers import Dense, Flatten, Input, Dropout
-from tensorflow.keras.callbacks import EarlyStopping
+
+from tensorflow.keras.models import load_model
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
 from tensorflow.keras.optimizers import Nadam
-from tensorflow.keras.callbacks import ModelCheckpoint
 
 import os
-import numpy as np
 import tensorflow as tf
 
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
 tf.compat.v1.disable_eager_execution()
 
+tf.random.set_seed(42)
+#tf.keras.backend.set_floatx('float16')
+
 # disabling until more stable
 # from keras_radam import RAdam
 # os.environ['TF_KERAS'] = '1'
 
 
-def f1(y_true, y_pred):
-    def recall(y_true, y_pred):
-        """Recall metric.
-
-        Only computes a batch-wise average of recall.
-
-        Computes the recall, a metric for multi-label classification of
-        how many relevant items are selected.
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-        recall = true_positives / (possible_positives + K.epsilon())
-        return recall
-
-    def precision(y_true, y_pred):
-        """Precision metric.
-
-        Only computes a batch-wise average of precision.
-
-        Computes the precision, a metric for multi-label classification of
-        how many selected items are relevant.
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-        precision = true_positives / (predicted_positives + K.epsilon())
-        return precision
-    precision = precision(y_true, y_pred)
-    recall = recall(y_true, y_pred)
-    return 2*((precision*recall)/(precision+recall+K.epsilon()))
-
-
 def build_pretrained_model(pretrained_model, silent=False):
-    model = load_model(pretrained_model, custom_objects={'f1': f1})
+    model = load_model(pretrained_model, custom_objects={}, compile=False)
 
     for layer in model.layers:
         layer.trainable = False
@@ -77,53 +45,7 @@ def build_pretrained_model(pretrained_model, silent=False):
     # X = Dense(1, activation="sigmoid")(X)
     # model = Model(inputs=x_input, outputs=X, name='StepNet')
     model.compile(loss='binary_crossentropy',
-                  optimizer=Nadam(),
-                  metrics=["accuracy", f1])
-
-    if not silent:
-        print(model.summary())
-
-    return model
-
-
-def build_model(input_shape, channel=1, extra_input_shape=None, silent=False):
-    if channel == 1:
-        reshape_dim = (1, input_shape[0], input_shape[1])
-        channel_order = 'channels_first'
-    else:
-        reshape_dim = input_shape
-        channel_order = 'channels_last'
-
-    x_input = Input(reshape_dim, dtype='float16', name="log_mel_input")
-
-    if extra_input_shape is not None:
-        extra_input = Input((extra_input_shape[1],), dtype="float16", name="extra_input")
-    else:
-        extra_input = None
-
-    # x = front_end_a_fun(x_input, reshape_dim=reshape_dim,
-    #                    channel_order=channel_order,
-    #                   channel=channel)
-    # x = back_end_c_fun(x, channel_order, channel)
-    x = front(x_input,
-              reshape_dim=reshape_dim,
-              channel_order=channel_order,
-              channel=channel)
-    x = Flatten()(x)
-    x = back(x,
-             extra_input)
-
-    x = Dense(1, activation='sigmoid')(x)
-
-    if extra_input_shape is not None:
-        model = Model(inputs=[x_input, extra_input], outputs=x, name='StepNet')
-    else:
-        model = Model(inputs=x_input, outputs=x, name='StepNet')
-
-    optimizer = Nadam(beta_1=0.99)
-
-    model.compile(loss='binary_crossentropy',
-                  optimizer=optimizer,
+                  optimizer=Nadam(beta_1=0.99),
                   metrics=["accuracy"])
 
     if not silent:
@@ -132,185 +54,173 @@ def build_model(input_shape, channel=1, extra_input_shape=None, silent=False):
     return model
 
 
-def model_train(model_0,
+def model_train(model,
                 batch_size,
                 max_epochs,
-                path_feature_data,
-                indices_all,
-                all_labels,
+                features,
+                extra_features,
+                labels,
                 sample_weights,
                 class_weights,
-                scaler,
-                file_path_model,
-                channel,
-                input_shape,
+                all_scalers,
                 prefix,
-                pretrained_model=None,
-                is_pretrained=False,
-                path_extra_features=None,
-                extra=False,
-                extra_input_shape=None):
+                model_out_path,
+                lookback=1):
 
     training_callbacks = [EarlyStopping(monitor='val_loss', patience=3, verbose=0),
-                          ModelCheckpoint(filepath=os.path.join(file_path_model, prefix + 'callback_timing_model.h5'),
+                          ModelCheckpoint(filepath=os.path.join(model_out_path, prefix + 'callback_timing_model.h5'),
                                           monitor='val_loss',
                                           verbose=0,
                                           save_best_only=True)]
     from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
 
+    indices_all = range(len(features))
     print("number of samples:", len(indices_all))
 
-    indices_train, indices_validation, y_train, y_val = \
-        train_test_split(indices_all,
-                         all_labels,
-                         test_size=0.2,
-                         stratify=all_labels,
-                         #shuffle=False,
-                         random_state=42)
+    if lookback > 2:
+        indices_train, indices_validation, y_train, y_train = \
+            train_test_split(indices_all,
+                             labels,
+                             test_size=0.2,
+                             shuffle=False,
+                             random_state=42)
+    else:
+        indices_train, indices_validation, y_train, y_train = \
+            train_test_split(indices_all,
+                             labels,
+                             test_size=0.2,
+                             stratify=labels,
+                             shuffle=True,
+                             random_state=42)
 
-    sample_weights_train = sample_weights[indices_train]
-    sample_weights_validation = sample_weights[indices_validation]
-
-    steps_per_epoch_train = int(np.ceil(len(indices_train) / batch_size))
-    steps_per_epoch_val = int(np.ceil(len(indices_validation) / batch_size))
-
-    from sklearn.preprocessing import StandardScaler
-    with open(path_feature_data, 'rb') as f:
-        training_data = np.load(f)['features'][indices_train]
+    if extra_features is not None:
+        training_extra_features = extra_features[indices_train]
+        testing_extra_features = extra_features[indices_validation]
+    else:
+        training_extra_features = None
+        testing_extra_features = None
 
     training_scaler = []
 
-    if channel != 1:
-        for i in range(channel):
-            training_scaler.append(StandardScaler().fit(training_data[:, :, i]))
+    if len(features.shape) > 2:
+        for i in range(3):
+            training_scaler.append(StandardScaler().fit(features[indices_train, :, i]))
     else:
-        training_scaler.append(StandardScaler().fit(training_data))
+        training_scaler.append(StandardScaler().fit(features[indices_train]))
 
-    if channel != 1:
-        multi_inputs = True
-    else:
-        multi_inputs = False
-
-    generator_train = generator(path_feature_data=path_feature_data,
-                                indices=indices_train,
-                                file_size=batch_size,
-                                labels=y_train,
-                                sample_weights=sample_weights_train,
-                                multi_inputs=multi_inputs,
-                                scaler=training_scaler,
-                                channel=channel,
-                                path_extra_features=path_extra_features,
-                                extra=extra)
-    generator_val = generator(path_feature_data=path_feature_data,
-                              indices=indices_validation,
-                              file_size=batch_size,
-                              labels=y_val,
-                              sample_weights=sample_weights_validation,
-                              multi_inputs=multi_inputs,
-                              scaler=training_scaler,
-                              channel=channel,
-                              path_extra_features=path_extra_features,
-                              extra=extra)
+    print(model.summary())
 
     print("\nstart training...")
 
-    history = model_0.fit(generator_train,
-                          steps_per_epoch=steps_per_epoch_train,
-                          epochs=max_epochs,
-                          validation_data=generator_val,
-                          validation_steps=steps_per_epoch_val,
-                          class_weight=class_weights,
-                          callbacks=training_callbacks,
-                          verbose=1)
+    weights = model.get_weights()
 
-    model_0.save(os.path.join(file_path_model, prefix + "timing_model.h5"))
+    x_train, y_train, sample_weights_train = preprocess(features[indices_train],
+                                                        labels[indices_train],
+                                                        training_extra_features,
+                                                        sample_weights[indices_train],
+                                                        training_scaler)
+
+    x_test, y_test, sample_weights_test = preprocess(features[indices_validation],
+                                                     labels[indices_validation],
+                                                     testing_extra_features,
+                                                     sample_weights[indices_validation],
+                                                     training_scaler)
+
+    history = model.fit(x=x_train,
+                        y=y_train,
+                        batch_size=batch_size,
+                        epochs=max_epochs,
+                        callbacks=training_callbacks,
+                        class_weight=class_weights,
+                        sample_weight=sample_weights_train,
+                        validation_data=(x_test, y_test, sample_weights_test),
+                        shuffle="batch",
+                        verbose=1)
+
+    model.save(os.path.join(model_out_path, prefix + "timing_model.h5"))
 
     print("\n*****************************")
     print("***** TRAINING FINISHED *****")
     print("*****************************\n")
 
-    callbacks = [ModelCheckpoint(
-                  filepath=os.path.join(file_path_model, prefix + 'retrained_callback_timing_model.h5'),
-                  monitor='loss',
-                  verbose=0,
-                  save_best_only=True)]
+    callbacks = [# ModelCheckpoint(
+                 # filepath=os.path.join(model_out_path, prefix + 'retrained_callback_timing_model.h5'),
+                 # monitor='loss',
+                 # verbose=0,
+                 # save_best_only=True)
+                ]
     # train again use all train and validation set
     epochs_final = len(history.history['val_loss'])
 
-    steps_per_epoch_train_val = int(np.ceil(len(indices_all) / batch_size))
+    all_x, all_y, sample_weights_all = preprocess(features,
+                                                  labels,
+                                                  extra_features,
+                                                  sample_weights,
+                                                  all_scalers)
 
-    if is_pretrained:
-        model = build_pretrained_model(pretrained_model, silent=True)
-    else:
-        model = build_model(input_shape=input_shape, extra_input_shape=extra_input_shape, channel=channel, silent=True)
-
-    generator_train_val = generator(path_feature_data=path_feature_data,
-                                    indices=indices_all,
-                                    file_size=batch_size,
-                                    labels=all_labels,
-                                    sample_weights=sample_weights,
-                                    multi_inputs=multi_inputs,
-                                    channel=channel,
-                                    scaler=scaler,
-                                    path_extra_features=path_extra_features,
-                                    extra=extra)
+    model.set_weights(weights)
 
     print("start retraining...")
 
-    model.fit(generator_train_val,
-              steps_per_epoch=steps_per_epoch_train_val,
-              epochs=epochs_final,
-              callbacks=callbacks,
-              class_weight=class_weights,
-              verbose=1)
+    history = model.fit(x=all_x,
+                        y=all_y,
+                        batch_size=batch_size,
+                        epochs=epochs_final,
+                        callbacks=callbacks,
+                        sample_weight=sample_weights_all,
+                        class_weight=class_weights,
+                        shuffle="batch",
+                        verbose=1)
 
-    model.save(os.path.join(file_path_model, prefix + "retrained_timing_model.h5"))
+    model.save(os.path.join(model_out_path, prefix + "retrained_timing_model.h5"))
 
 
-def train_model(filename_train_validation_set,
-                filename_labels_train_validation_set,
+def train_model(filename_features,
+                filename_labels,
                 filename_sample_weights,
                 filename_scaler,
                 input_shape,
                 prefix,
-                file_path_model,
-                channel=1,
-                pretrained_model=None,
-                extra_input_shape=None,
-                path_extra_features=None,
-                extra=False):
-    """
-    train final model save to model path
-    """
+                model_out_path,
+                extra_input_shape,
+                path_extra_features,
+                lookback,
+                limit=-1):
 
-    filenames_features, Y_train_validation, sample_weights, class_weights, scaler = \
-        load_data(filename_labels_train_validation_set, filename_sample_weights, filename_scaler)
+    print("Loading data...")
+    features, extra_features, labels, sample_weights, class_weights, all_scalers = \
+        load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler)
 
-    is_pretrained = False
+    if limit > 0:
+        features = features[:limit]
+        if extra_features is not None:
+            extra_features = extra_features[:limit]
+        labels = labels[:limit]
+        sample_weights = sample_weights[:limit]
+
+        assert labels.sum() > 0, "Not enough positive labels. Increase limit!"
+
+    timeseries = True if lookback > 1 else False
+
+    model = build_stepnet(input_shape, timeseries, extra_input_shape)
+
+    model.compile(loss='binary_crossentropy',
+                  optimizer=Nadam(beta_1=0.99),
+                  metrics=["accuracy"])
+
     batch_size = 256
-    max_epochs = 100
-
-    if pretrained_model is not None:
-        model = build_pretrained_model(pretrained_model)
-        is_pretrained = True
-    else:
-        model = build_model(input_shape=input_shape, extra_input_shape=extra_input_shape, channel=channel)
+    max_epochs = 30
 
     model_train(model,
                 batch_size,
                 max_epochs,
-                filename_train_validation_set,
-                filenames_features,
-                Y_train_validation,
+                features,
+                extra_features,
+                labels,
                 sample_weights,
                 class_weights,
-                scaler,
-                file_path_model,
-                channel,
-                input_shape,
-                extra_input_shape=extra_input_shape,
-                pretrained_model=pretrained_model,
-                is_pretrained=is_pretrained,
-                prefix=prefix,
-                path_extra_features=path_extra_features,
-                extra=extra)
+                all_scalers,
+                prefix,
+                model_out_path,
+                lookback)

@@ -130,11 +130,11 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
         else:
             features.append(feature)
 
-        labels.append(label)
+        labels.append(label.astype("int8"))
         weights.append(sample_weights)
 
         if extra:
-            extra_features.append(extra_feature)
+            extra_features.append(extra_feature.astype("int8"))
 
         if is_limited and under_sample:
             sample_count += label.sum()
