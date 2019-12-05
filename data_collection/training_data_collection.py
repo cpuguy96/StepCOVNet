@@ -270,7 +270,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
         print("Saving mid scaler ...")
         pickle.dump(StandardScaler().fit(worker.features_mid), open(join(path_output, prefix + 'scaler_mid.pkl'), 'wb'))
         print("Saving high scaler ...")
-        pickle.dump(StandardScaler().fit(worker.features_mid), open(join(path_output, prefix + 'scaler_high.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(worker.features_high), open(join(path_output, prefix + 'scaler_high.pkl'), 'wb'))
     else:
         worker.features = np.array(np.concatenate(worker.features, axis=0)).astype("float16")
         print("Saving features ...")

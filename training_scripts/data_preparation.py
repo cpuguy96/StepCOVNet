@@ -2,6 +2,7 @@ from sklearn.utils import compute_class_weight
 
 import numpy as np
 import joblib
+import pickle
 
 
 def preprocess(features, labels, extra_features=None, sample_weights=None, scalers=None, stride=1):
@@ -70,24 +71,24 @@ def load_data(filename_features,
 
     # load training and validation data
     with open(filename_features, 'rb') as f:
-        features = np.load(f)['features']
+        features = joblib.load(f)
 
     if filename_extra_features is not None:
         with open(filename_extra_features, 'rb') as f:
-            extra_features = np.load(f)['extra_features']
+            extra_features = joblib.load(f)
     else:
         extra_features = None
 
     with open(filename_labels, 'rb') as f:
-        labels = np.load(f)['labels']
+        labels = joblib.load(f)
 
     with open(filename_sample_weights, 'rb') as f:
-        sample_weights = np.load(f)['sample_weights']
+        sample_weights = joblib.load(f)
 
     scaler = []
     for filename_scaler in filename_scalers:
         with open(filename_scaler, 'rb') as f:
-            scaler.append(joblib.load(f))
+            scaler.append(pickle.load(f))
 
     class_weights = compute_class_weight('balanced', [0, 1], labels)
 

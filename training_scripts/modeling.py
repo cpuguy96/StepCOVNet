@@ -111,7 +111,7 @@ def model_train(model,
 
     print(model.summary())
 
-    print("\nstart training...")
+    print("\nStarting training...")
 
     weights = model.get_weights()
 
@@ -161,7 +161,7 @@ def model_train(model,
 
     model.set_weights(weights)
 
-    print("start retraining...")
+    print("Starting retraining...")
 
     history = model.fit(x=all_x,
                         y=all_y,
@@ -203,6 +203,7 @@ def train_model(filename_features,
 
     timeseries = True if lookback > 1 else False
 
+    print("Building StepNet...")
     model = build_stepnet(input_shape, timeseries, extra_input_shape)
 
     model.compile(loss='binary_crossentropy',
