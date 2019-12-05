@@ -105,29 +105,48 @@ def getMFCCBands2DMadmom(audio_fn, fs, hopsize_t, channel):
     return mfcc
 
 
-def get_madmom_librosa_features(audio_fn, fs, hopsize_t, num_frames, frame_start=0):
-    # might add ability to choose which features to add
-
-    # librosa features
+def __get_librosa_features(audio_fn, fs, hopsize_t, q):
     samples, _ = librosa.load(audio_fn, sr=fs)
     onset_times = librosa.onset.onset_detect(y=samples,
                                              sr=fs,
                                              units="time",
                                              hop_length=int(fs*hopsize_t))
-    onset_frames = np.array(np.around(np.array(onset_times) / hopsize_t), dtype=int)
+    q.put(np.array(np.around(np.array(onset_times) / hopsize_t), dtype=int))
 
-    # madmom features
+
+def __get_madmom_features(audio_fn, hopsize_t, q):
     proc = DBNBeatTrackingProcessor(max_bpm=300,
                                     fps=int(1/hopsize_t))
     act = RNNBeatProcessor()(audio_fn)
     beat_times = proc(act)
-    beat_frames = np.array(np.around(np.array(beat_times) / hopsize_t), dtype=int)
+    q.put(np.array(np.around(np.array(beat_times) / hopsize_t), dtype=int))
+
+
+def get_madmom_librosa_features(audio_fn, fs, hopsize_t, num_frames, frame_start=0):
+    # might add ability to choose which features to add
+    import threading
+    import queue
+    # librosa features
+    librosa_q = queue.Queue()
+    librosa_process = threading.Thread(target=__get_librosa_features, args=(audio_fn, fs, hopsize_t, librosa_q))
+    librosa_process.daemon = True
+    # madmom features
+    madmom_q = queue.Queue()
+    madmom_process = threading.Thread(target=__get_madmom_features, args=(audio_fn, hopsize_t, madmom_q))
+    madmom_process.daemon = True
+    # start processes
+    librosa_process.start()
+    madmom_process.start()
+
+    # get results
+    librosa_process.join()
+    madmom_process.join()
 
     # fill in blanks and return
     librosa_features = np.zeros((num_frames,))
     madmom_features = np.zeros((num_frames,))
 
-    librosa_features[onset_frames - frame_start] = 1
-    madmom_features[beat_frames - frame_start] = 1
+    librosa_features[librosa_q.get() - frame_start] = 1
+    madmom_features[madmom_q.get() - frame_start] = 1
 
     return np.hstack((librosa_features.reshape(-1, 1), madmom_features.reshape(-1, 1)))

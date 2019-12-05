@@ -5,8 +5,13 @@ from data_collection.sample_collection_helper import feature_onset_phrase_label_
 from os.path import join
 from sklearn.preprocessing import StandardScaler
 
+from functools import partial
+
 import os
+import pickle
 import joblib
+import psutil
+import multiprocessing
 import numpy as np
 
 
@@ -56,33 +61,148 @@ def dump_feature_onset_helper(audio_path, annotation_path, fn, channel):
     return mfcc, frames_onset, frame_start, frame_end
 
 
+def collect_features(audio_path,
+                     annotation_path,
+                     channel,
+                     extra,
+                     fn):
+    # from the annotation to get feature, frame start and frame end of each line, frames_onset
+    try:
+        log_mel, frames_onset, frame_start, frame_end = \
+            dump_feature_onset_helper(audio_path, annotation_path, fn, channel)
+
+        # simple sample weighting
+        feature, label, sample_weights = \
+            feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, log_mel)
+
+        if extra:
+            # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
+            extra_feature = get_madmom_librosa_features(join(audio_path, fn + '.wav'),
+                                                        fs,
+                                                        hopsize_t,
+                                                        len(label),
+                                                        frame_start)
+        else:
+            extra_feature = False
+        return [feature, label, sample_weights, extra_feature]
+    except Exception:
+        print("Error collecting features for", fn)
+        return [None, None, None, None]
+
+
+class Worker:
+
+    def __init__(self, multi, extra, is_limited, limit, under_sample, num_workers):
+        self.pool = multiprocessing.Pool(num_workers)
+        self.multi = multi
+        self.extra = extra
+        self.is_limited = is_limited
+        self.limit = limit
+        self.under_sample = under_sample
+
+        self.features_low = []
+        self.features_mid = []
+        self.features_high = []
+        self.features = []
+        self.extra_features = []
+        self.labels = []
+        self.weights = []
+
+        self.sample_count = 0
+        self.song_count = 0
+        self.lock = multiprocessing.Lock()
+
+    def __collect_results(self, feature, label, sample_weight, extra_feature):
+        if self.is_limited and self.sample_count >= self.limit:
+            print("limit reached after %d songs. breaking..." % self.song_count)
+            return False
+        if feature is None or label is None or sample_weight is None or extra_feature is None:
+            return True
+        try:
+            self.lock.acquire()
+            if self.multi:
+                self.features_low.append(feature[:, :, 0].astype("float16"))
+                self.features_mid.append(feature[:, :, 1].astype("float16"))
+                self.features_high.append(feature[:, :, 2].astype("float16"))
+            else:
+                self.features.append(feature)
+
+            self.labels.append(label.astype("int8"))
+            self.weights.append(sample_weight)
+
+            if self.extra:
+                self.extra_features.append(extra_feature.astype("int8"))
+
+            if self.is_limited and self.under_sample:
+                self.sample_count += label.sum()
+            elif self.is_limited:
+                self.sample_count += len(label)
+            self.song_count += 1
+            return True
+        finally:
+            self.lock.release()
+
+    def __callback(self, result, use_map):
+        if use_map:
+            for feature, label, sample_weight, extra_feature in result:
+                self.__collect_results(feature, label, sample_weight, extra_feature)
+        else:
+            feature, label, sample_weight, extra_feature = result
+            return self.__collect_results(feature, label, sample_weight, extra_feature)
+
+    def do_job(self, func, iter):
+        print("Starting job")
+        if self.limit > 0:
+            with self.pool as pool:
+                for result in pool.imap_unordered(func, iter):
+                    if not self.__callback(result, False):
+                        break
+        else:
+            with self.pool as pool:
+                self.__callback(pool.map_async(func, iter).get(), True)
+
+
 def dump_feature_label_sample_weights_onset_phrase(audio_path,
                                                    annotation_path,
                                                    path_output,
                                                    multi,
                                                    extra,
                                                    under_sample,
-                                                   is_limited,
                                                    limit):
-    """
-    dump feature, label, sample weights for each phrase with bock annotation format
-    :param audio_path:
-    :param annotation_path:
-    :param path_output:
-    :return:
-    """
+    if not os.path.isdir(audio_path):
+        raise NotADirectoryError('Audio path %s not found' % audio_path)
 
-    features_low = []
-    features_mid = []
-    features_high = []
+    if not os.path.isdir(annotation_path):
+        raise NotADirectoryError('Annotation path %s not found' % annotation_path)
 
-    features = []
+    if not os.path.isdir(path_output):
+        print('Output path not found. Creating directory...')
+        os.makedirs(path_output, exist_ok=True)
 
-    extra_features = []
-    labels = []
-    weights = []
+    if multi == 1:
+        multi = True
+    else:
+        multi = False
 
-    sample_count = 0
+    if extra == 1:
+        extra = True
+    else:
+        extra = False
+
+    if under_sample == 1:
+        under_sample = True
+    else:
+        under_sample = False
+
+    if limit == 0:
+        raise ValueError('Limit cannot be 0!')
+
+    if limit < 0:
+        limit = -1
+        is_limited = False
+    else:
+        limit = limit
+        is_limited = True
 
     if multi:
         channel = 3
@@ -92,60 +212,16 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
     if is_limited and under_sample:
         limit //= 2
 
-    for i, fn in enumerate(getRecordings(annotation_path)):
-        if is_limited and under_sample and sample_count >= limit:
-            print("limit reached after %d songs. breaking..." % i)
-            break
-        elif is_limited and not under_sample and sample_count >= limit:
-            print("limit reached after %d songs. breaking..." % i)
-            break
+    worker = Worker(multi, extra, is_limited, limit, under_sample, psutil.cpu_count(logical=False))
+    worker.do_job(partial(collect_features, audio_path, annotation_path, channel, extra), getRecordings(annotation_path))
 
-        # from the annotation to get feature, frame start and frame end of each line, frames_onset
-        try:
-            log_mel, frames_onset, frame_start, frame_end = \
-                dump_feature_onset_helper(audio_path, annotation_path, fn, channel)
-
-            # simple sample weighting
-            feature, label, sample_weights = \
-                feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, log_mel)
-
-            if extra:
-                # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
-                extra_feature = get_madmom_librosa_features(join(audio_path, fn + '.wav'),
-                                                            fs,
-                                                            hopsize_t,
-                                                            len(label),
-                                                            frame_start)
-            else:
-                extra_feature = None
-
-        except Exception:
-            print("Error collecting features for", fn)
-            continue
-
-        if multi:
-            features_low.append(feature[:, :, 0].astype("float16"))
-            features_mid.append(feature[:, :, 1].astype("float16"))
-            features_high.append(feature[:, :, 2].astype("float16"))
-        else:
-            features.append(feature)
-
-        labels.append(label.astype("int8"))
-        weights.append(sample_weights)
-
-        if extra:
-            extra_features.append(extra_feature.astype("int8"))
-
-        if is_limited and under_sample:
-            sample_count += label.sum()
-        elif is_limited:
-            sample_count += len(label)
-
-    labels = np.array(np.concatenate(labels, axis=0)).astype("int8")
-    weights = np.array(np.concatenate(weights, axis=0)).astype("float16")
+    worker.labels = np.array(np.concatenate(worker.labels, axis=0)).astype("int8")
+    worker.weights = np.array(np.concatenate(worker.weights, axis=0)).astype("float16")
 
     if extra:
-        extra_features = np.array(np.concatenate(extra_features, axis=0)).astype("int8")
+        worker.extra_features = np.array(np.concatenate(worker.extra_features, axis=0)).astype("int8")
+    else:
+        worker.extra_features = None
 
     prefix = ""
 
@@ -155,12 +231,12 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
     if under_sample:
         prefix += "under_"
 
-    indices_used = np.asarray(range(len(labels))).reshape(-1, 1)
+    indices_used = np.asarray(range(len(worker.labels))).reshape(-1, 1)
 
     if under_sample:
         print("Under sampling ...")
         from imblearn.under_sampling import RandomUnderSampler
-        indices_used, _ = RandomUnderSampler(random_state=42).fit_resample(indices_used, labels)
+        indices_used, _ = RandomUnderSampler(random_state=42).fit_resample(indices_used, worker.labels)
 
     indices_used = np.sort(indices_used.reshape(-1).astype(int))
 
@@ -170,41 +246,40 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
         else:
             indices_used = indices_used[:limit]
 
-        assert labels.sum() > 0, "Not enough positive labels. Increase limit!"
+        assert worker.labels.sum() > 0, "Not enough positive labels. Increase limit!"
 
     print("Saving labels ...")
-    np.savez_compressed(join(path_output, prefix + 'labels'), labels=labels[indices_used])
+    joblib.dump(worker.labels[indices_used], join(path_output, prefix + 'labels.npz'), compress=True)
 
     print("Saving sample weights ...")
-    np.savez_compressed(join(path_output, prefix + 'sample_weights'), sample_weights=weights[indices_used])
+    joblib.dump(worker.weights[indices_used], join(path_output, prefix + 'sample_weights.npz'), compress=True)
 
     if extra:
         print("Saving extra features ...")
-        np.savez_compressed(join(path_output, prefix + 'extra_features'), extra_features=extra_features[indices_used])
+        joblib.dump(worker.extra_features[indices_used], join(path_output, prefix + 'extra_features.npz'), compress=True)
 
     if multi:
-        features_low = np.array(np.concatenate(features_low, axis=0)[indices_used].astype("float16"))
-        features_mid = np.array(np.concatenate(features_mid, axis=0)[indices_used].astype("float16"))
-        features_high = np.array(np.concatenate(features_high, axis=0)[indices_used].astype("float16"))
-        stacked_feats = np.stack([features_low, features_mid, features_high], axis=-1).astype("float16")
+        worker.features_low = np.array(np.concatenate(worker.features_low, axis=0)[indices_used].astype("float16"))
+        worker.features_mid = np.array(np.concatenate(worker.features_mid, axis=0)[indices_used].astype("float16"))
+        worker.features_high = np.array(np.concatenate(worker.features_high, axis=0)[indices_used].astype("float16"))
 
         print("Saving multi-features ...")
-        np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=stacked_feats)
+        joblib.dump(np.stack([worker.features_low, worker.features_mid, worker.features_high], axis=-1).astype("float16"), join(path_output, prefix + 'dataset_features.npz'), compress=True)
         print("Saving low scaler ...")
-        joblib.dump(StandardScaler().fit(features_low), join(path_output, prefix + 'scaler_low.pkl'))
+        pickle.dump(StandardScaler().fit(worker.features_low), open(join(path_output, prefix + 'scaler_low.pkl'), 'wb'))
         print("Saving mid scaler ...")
-        joblib.dump(StandardScaler().fit(features_mid), join(path_output, prefix + 'scaler_mid.pkl'))
+        pickle.dump(StandardScaler().fit(worker.features_mid), open(join(path_output, prefix + 'scaler_mid.pkl'), 'wb'))
         print("Saving high scaler ...")
-        joblib.dump(StandardScaler().fit(features_mid), join(path_output, prefix + 'scaler_high.pkl'))
+        pickle.dump(StandardScaler().fit(worker.features_mid), open(join(path_output, prefix + 'scaler_high.pkl'), 'wb'))
     else:
-        features = np.array(np.concatenate(features, axis=0)).astype("float16")
+        worker.features = np.array(np.concatenate(worker.features, axis=0)).astype("float16")
         print("Saving features ...")
-        np.savez_compressed(join(path_output, prefix + 'dataset_features'), features=features[indices_used])
+        joblib.dump(worker.features[indices_used], join(path_output, prefix + 'dataset_features.npz'), compress=True)
         print("Saving scaler ...")
-        joblib.dump(StandardScaler().fit(features), join(path_output, prefix + 'scaler.pkl'))
+        pickle.dump(StandardScaler().fit(worker.features), open(join(path_output, prefix + 'scaler.pkl'), 'wb'))
 
 
-def main():
+if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="dump feature, label and sample weights for general purpose.")
@@ -235,48 +310,10 @@ def main():
                         help="maximum number of samples allowed to be collected")
     args = parser.parse_args()
 
-    if not os.path.isdir(args.audio):
-        raise NotADirectoryError('Audio path %s not found' % args.audio)
-
-    if not os.path.isdir(args.annotation):
-        raise NotADirectoryError('Annotation path %s not found' % args.annotation)
-
-    if not os.path.isdir(args.output):
-        print('Output path not found. Creating directory...')
-        os.makedirs(args.output, exist_ok=True)
-
-    if args.multi == 1:
-        multi = True
-    else:
-        multi = False
-
-    if args.extra == 1:
-        extra = True
-    else:
-        extra = False
-
-    if args.under_sample == 1:
-        under_sample = True
-    else:
-        under_sample = False
-
-    if args.limit == 0:
-        raise ValueError('Limit cannot be 0!')
-
-    if args.limit < 0:
-        is_limited = False
-    else:
-        is_limited = True
-
     dump_feature_label_sample_weights_onset_phrase(audio_path=args.audio,
                                                    annotation_path=args.annotation,
                                                    path_output=args.output,
-                                                   multi=multi,
-                                                   extra=extra,
-                                                   under_sample=under_sample,
-                                                   is_limited=is_limited,
+                                                   multi=args.multi,
+                                                   extra=args.extra,
+                                                   under_sample=args.under_sample,
                                                    limit=args.limit)
-
-
-if __name__ == '__main__':
-    main()
