@@ -1,5 +1,5 @@
 from __future__ import print_function
-from scripts_common.utilFunctions import get_file_names
+from scripts_common.utilFunctions import get_filenames_from_folder
 
 from os.path import join
 
@@ -36,8 +36,8 @@ def timing_arrow_combiner(wavs_path,
     else:
         overwrite = False
 
-    wav_names = get_file_names(wavs_path)
-    existing_txts = get_file_names(out_path)
+    wav_names = get_filenames_from_folder(wavs_path)
+    existing_txts = get_filenames_from_folder(out_path)
 
     print("Starting combined txt generation\n-----------------------------------------")
 

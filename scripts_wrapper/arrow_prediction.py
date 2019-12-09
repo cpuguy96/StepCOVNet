@@ -1,4 +1,4 @@
-from scripts_common.utilFunctions import get_file_names
+from scripts_common.utilFunctions import get_filenames_from_folder
 
 from os.path import join
 from nltk.util import ngrams
@@ -89,8 +89,8 @@ def arrow_prediction(timings_path,
     else:
         overwrite = False
 
-    timings_names = get_file_names(timings_path)
-    existing_pred_arrows = get_file_names(out_path)
+    timings_names = get_filenames_from_folder(timings_path)
+    existing_pred_arrows = get_filenames_from_folder(out_path)
     model = load_model(join(model_path), compile=False)
 
     from sklearn.preprocessing import OneHotEncoder

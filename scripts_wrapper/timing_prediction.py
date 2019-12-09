@@ -1,5 +1,5 @@
 from scripts_common.audio_preprocessing import getMFCCBands2DMadmom, get_madmom_librosa_features
-from scripts_common.utilFunctions import get_file_names
+from scripts_common.utilFunctions import get_filenames_from_folder
 from madmom.features.onsets import OnsetPeakPickingProcessor
 from scripts_training.data_preparation import featureReshape
 
@@ -66,8 +66,8 @@ def timing_prediction(wav_path,
     else:
         overwrite = False
 
-    wav_names = get_file_names(wav_path)
-    existing_pred_timings = get_file_names(out_path)
+    wav_names = get_filenames_from_folder(wav_path)
+    existing_pred_timings = get_filenames_from_folder(out_path)
     extra = False
     pca = None
 

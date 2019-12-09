@@ -1,4 +1,4 @@
-from scripts_common.utilFunctions import get_file_names
+from scripts_common.utilFunctions import get_filenames_from_folder
 from scripts_wrapper.wav_converter import wav_converter
 from scripts_wrapper.arrow_prediction import arrow_prediction
 from scripts_wrapper.timing_arrow_combiner import timing_arrow_combiner
@@ -42,8 +42,8 @@ def stepmania_note_generator(input_path,
     else:
         overwrite = False
 
-    input_audio_names = get_file_names(input_path)
-    existing_txt_names = get_file_names(output_path)
+    input_audio_names = get_filenames_from_folder(input_path)
+    existing_txt_names = get_filenames_from_folder(output_path)
 
     tmp_folder_name = "_tmp"
 
