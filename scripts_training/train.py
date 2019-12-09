@@ -1,4 +1,4 @@
-from training_scripts.modeling import train_model
+from scripts_training.modeling import train_model
 
 import os
 import argparse

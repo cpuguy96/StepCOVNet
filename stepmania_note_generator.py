@@ -1,8 +1,8 @@
-from common.utilFunctions import get_file_names
-from wrapper_scripts.wav_converter import wav_converter
-from wrapper_scripts.arrow_prediction import arrow_prediction
-from wrapper_scripts.timing_arrow_combiner import timing_arrow_combiner
-from wrapper_scripts.timing_prediction import timing_prediction
+from scripts_common.utilFunctions import get_file_names
+from scripts_wrapper.wav_converter import wav_converter
+from scripts_wrapper.arrow_prediction import arrow_prediction
+from scripts_wrapper.timing_arrow_combiner import timing_arrow_combiner
+from scripts_wrapper.timing_prediction import timing_prediction
 
 from shutil import copyfile, rmtree
 from os.path import join

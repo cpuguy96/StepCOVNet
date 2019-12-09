@@ -1,6 +1,6 @@
-from common.audio_preprocessing import getMFCCBands2DMadmom, get_madmom_librosa_features
-from common.parameters import *
-from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
+from scripts_common.audio_preprocessing import getMFCCBands2DMadmom, get_madmom_librosa_features
+from scripts_common.parameters import *
+from scripts_data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 
 from os.path import join
 from sklearn.preprocessing import StandardScaler

@@ -1,13 +1,13 @@
-from training_scripts.architectures import *
+from scripts_training.architectures import *
 
-from tensorflow.keras.layers import Dense, Input, Flatten, RepeatVector
+from tensorflow.keras.layers import Dense, Input, Flatten
 from tensorflow.keras.models import Model
 
 
-def build_stepnet(input_shape,
-                  timeseries=False,
-                  extra_input_shape=None,
-                  name="StepCOVNet"):
+def build_stepcovnet(input_shape,
+                     timeseries=False,
+                     extra_input_shape=None,
+                     name="StepCOVNet"):
     if timeseries:
         x_input = Input(input_shape[1:], dtype='float16', name="log_mel_input")
     else:

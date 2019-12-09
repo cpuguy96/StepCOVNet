@@ -1,4 +1,4 @@
-from common.Fprev_sub import Fprev_sub
+from scripts_common.Fprev_sub import Fprev_sub
 
 from madmom.processors import SequentialProcessor, ParallelProcessor
 from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor

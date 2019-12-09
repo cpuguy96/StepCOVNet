@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from training_scripts.data_preparation import load_data, preprocess
-from training_scripts.stepnet import build_stepnet
+from scripts_training.data_preparation import load_data, preprocess
+from scripts_training.stepcovnet import build_stepcovnet
 
 
 from tensorflow.keras.models import load_model

@@ -1,4 +1,4 @@
-from common.utilFunctions import get_file_names
+from scripts_common.utilFunctions import get_file_names
 
 from os.path import join
 from nltk.util import ngrams
