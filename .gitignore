@@ -1,34 +1,12 @@
-# input dirs for testing
-input_wavs/
 pred_arrows/
 pred_timings/
 pred_txts/
 testing_models/
 saved_models/
-input/*
-output/*
-testing_files/
+input/
 !input/zombie_maker.ogg
-
-# output dirs for testing
-output/*
-!output/zombie_maker.txt
-!output/zombie_maker.sm
-
-# Training Data
-training_data/*
+output/
 training_data/
-training_data/mp3s
-training_data/oggs/*
-training_data/timings/*
-training_data/wavs/*
-training_data/*.npz
-training_data/*.pkl
-!training_data/oggs/66_marching_songs.ogg
-!training_data/wavs/66_marching_songs.wav
-!training_data/timings/66_marching_songs.txt
-!training_data/wavs/zombie_maker.wav
-!training_data/timings/zombie_maker.txt
 
 # Pycharm
 .idea
