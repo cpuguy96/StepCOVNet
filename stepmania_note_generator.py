@@ -1,4 +1,4 @@
-from scripts_common.utilFunctions import get_filenames_from_folder
+from scripts_common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
 from scripts_wrapper.wav_converter import wav_converter
 from scripts_wrapper.arrow_prediction import arrow_prediction
 from scripts_wrapper.timing_arrow_combiner import timing_arrow_combiner
@@ -8,14 +8,60 @@ from shutil import copyfile, rmtree
 from os.path import join
 
 import os
-import re
 import warnings
+import time
 
 warnings.filterwarnings("ignore")
 
 
-def cleanup():
-    print()
+def __copy_to_tmp_folder(input_path, tmp_folder_name, batch):
+    if batch:
+        for input_audio_name in get_filenames_from_folder(input_path):
+            new_file_name = standardize_filename(get_filename(input_audio_name, False))
+            copyfile(join(input_path, input_audio_name), join(tmp_folder_name, "input", new_file_name))
+    else:
+        new_file_name = standardize_filename(get_filename(input_path, False))
+        copyfile(join(input_path), join(tmp_folder_name, "input", new_file_name))
+
+
+def __build_tmp_folder(tmp_folder_name):
+    rmtree(tmp_folder_name, ignore_errors=True)
+    os.makedirs(join(tmp_folder_name), exist_ok=True)
+    os.makedirs(join(tmp_folder_name, "input"), exist_ok=True)
+    os.makedirs(join(tmp_folder_name, "wav"), exist_ok=True)
+    os.makedirs(join(tmp_folder_name, "timing"), exist_ok=True)
+    os.makedirs(join(tmp_folder_name, "arrows"), exist_ok=True)
+
+
+def __generate_notes(output_path,
+                     tmp_folder_name,
+                     timing_model,
+                     arrow_model,
+                     scalers_path,
+                     verbose_int):
+
+    wav_converter(input_path=join(tmp_folder_name, "input/"),
+                  output_path=join(tmp_folder_name, "wav"),
+                  verbose_int=verbose_int)
+
+    timing_prediction(input_path=join(tmp_folder_name, "wav/"),
+                      output_path=join(tmp_folder_name, "timing"),
+                      model_path=join(timing_model),
+                      scaler_path=join(scalers_path),
+                      verbose_int=verbose_int)
+
+    # generate arrows for wav
+    arrow_prediction(input_path=join(tmp_folder_name, "timing/"),
+                     output_path=join(tmp_folder_name, "arrows"),
+                     model_path=join(arrow_model),
+                     verbose_int=verbose_int)
+
+    # combine timings and arrows
+    timing_arrow_combiner(wavs_path=join(tmp_folder_name, "wav/"),
+                          timings_path=join(tmp_folder_name, "timing/"),
+                          arrows_path=join(tmp_folder_name, "arrows/"),
+                          output_path=join(output_path),
+                          verbose_int=verbose_int)
 
 
 def stepmania_note_generator(input_path,
@@ -23,101 +69,52 @@ def stepmania_note_generator(input_path,
                              scalers_path,
                              timing_model,
                              arrow_model,
-                             overwrite_int):
-    if not os.path.isdir(input_path):
-        raise OSError('Audio files path %s not found' % input_path)
-
+                             verbose_int=0):
+    start_time = time.time()
+    if verbose_int not in [0, 1]:
+        raise ValueError('%s is not a valid verbose input. Choose 0 for none or 1 for full' % verbose_int)
+    verbose = True if verbose_int == 1 else False
+    # TODO: Checker to make sure output path isn't temp folder path
     if not os.path.isdir(output_path):
         print('Output path not found. Creating directory...')
         os.makedirs(output_path, exist_ok=True)
 
     if not os.path.isfile(timing_model):
-        raise OSError('Timing model %s is not found' % timing_model)
+        raise FileNotFoundError('Timing model %s is not found' % timing_model)
 
     if not os.path.isfile(arrow_model):
-        raise OSError('Arrow model %s is not found' % arrow_model)
+        raise FileNotFoundError('Arrow model %s is not found' % arrow_model)
 
-    if overwrite_int == 1:
-        overwrite = True
-    else:
-        overwrite = False
-
-    input_audio_names = get_filenames_from_folder(input_path)
-    existing_txt_names = get_filenames_from_folder(output_path)
-
-    tmp_folder_name = "_tmp"
-
-    print("Starting audio to txt generation\n-----------------------------------------")
-
-    for input_audio_name in input_audio_names:
+    if os.path.isfile(input_path) or os.path.isdir(input_path):
+        batch = False if os.path.isfile(input_path) else True
+        tmp_folder_name = "_tmp"
+        __build_tmp_folder(tmp_folder_name)
+        __copy_to_tmp_folder(input_path, tmp_folder_name, batch)
+        if verbose:
+            print("Starting audio to txt generation\n-----------------------------------------\n")
         try:
-            new_file_name = re.sub("[^a-z0-9-_]", "", "".join(input_audio_name.lower().split(".")[:-1]))
-            if not overwrite and 'pred_txt_' + new_file_name + '.txt' in existing_txt_names:
-                print("Skipping...", input_audio_name, "txt is already generated!")
-                continue
-
-            # create tmp folder
-            os.makedirs(join(tmp_folder_name), exist_ok=True)
-            # copy audio to tmp folder
-            os.makedirs(join(tmp_folder_name, "input"), exist_ok=True)
-            copyfile(join(input_path, input_audio_name), join(tmp_folder_name, "input", input_audio_name))
-
-            # convert audio file to wav
-            print()
-            os.makedirs(join(tmp_folder_name, "wav"), exist_ok=True)
-            wav_converter(audio_path=join(tmp_folder_name, "input"),
-                          wav_path=join(tmp_folder_name, "wav/"))
-
-            # generate timings for wav
-            print()
-            os.makedirs(join(tmp_folder_name, "timing"), exist_ok=True)
-            timing_prediction(wav_path=join(tmp_folder_name, "wav/"),
-                              out_path=join(tmp_folder_name, "timing"),
-                              model_path=join(timing_model),
-                              scaler_path=join(scalers_path),
-                              overwrite_int=overwrite_int)
-
-            # generate arrows for wav
-            print()
-            os.makedirs(join(tmp_folder_name, "arrows"), exist_ok=True)
-            arrow_prediction(timings_path=join(tmp_folder_name, "timing/"),
-                             out_path=join(tmp_folder_name, "arrows"),
-                             model_path=join(arrow_model),
-                             overwrite_int=overwrite_int)
-
-            # combine timings and arrows
-            print()
-            timing_arrow_combiner(wavs_path=join(tmp_folder_name, "wav/"),
-                                  timings_path=join(tmp_folder_name, "timing/"),
-                                  arrows_path=join(tmp_folder_name, "arrows/"),
-                                  out_path=join(output_path),
-                                  overwrite_int=overwrite_int)
-
-            # convert txt to .sm file
-            print()
-            # need to add sm file writer to this for that to work
-            # doing nothing for now
-
-        except Exception:
-            print("Skipping... Failed to generate txt from", input_audio_name)
+            __generate_notes(output_path, tmp_folder_name, timing_model, arrow_model, scalers_path, verbose_int)
+            rmtree(tmp_folder_name, ignore_errors=True)
         finally:
-            try:
-                rmtree(tmp_folder_name)
-            except Exception:
-                pass
+            pass
+    else:
+        raise FileNotFoundError('Audio file(s) path %s not found' % input_path)
+    end_time = time.time()
+    if verbose:
+        print("Elapsed time was %g seconds\n" % (end_time - start_time))
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate .txt (eventually .sm) files from audio tracks")
-    parser.add_argument("--input",
+    parser.add_argument("-i", "--input",
                         type=str,
                         help="input audio files path")
-    parser.add_argument("--output",
+    parser.add_argument("-o", "--output",
                         type=str,
                         help="output .txt file path")
-    parser.add_argument("--scalers",
+    parser.add_argument("-s", "--scalers",
                         type=str,
                         default="training_data/",
                         help="scalers used in training path")
@@ -129,10 +126,10 @@ if __name__ == '__main__':
                         type=str,
                         default="models/retrained_arrow_model.h5",
                         help="trained arrow model path")
-    parser.add_argument("--overwrite",
+    parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
-                        help="overwrite already created files")
+                        help="verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
     stepmania_note_generator(args.input,
@@ -140,4 +137,4 @@ if __name__ == '__main__':
                              args.scalers,
                              args.timing_model,
                              args.arrow_model,
-                             args.overwrite)
+                             args.verbose)

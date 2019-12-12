@@ -1,18 +1,18 @@
-from scripts_common.utilFunctions import get_filenames_from_folder
+from scripts_common.utilFunctions import get_filenames_from_folder, get_filename
 
 from os.path import join
 from nltk.util import ngrams
-from tensorflow.keras.models import load_model
 
 import os
+import time
 import numpy as np
 
 
-def get_binary_rep(arrow_values):
+def __get_binary_rep(arrow_values):
     return ((np.asarray(arrow_values).astype(int)[:,None] & (1 << np.arange(4))) > 0).astype(int)
 
 
-def get_extended_binary_rep(arrow_combs):
+def __get_extended_binary_rep(arrow_combs):
     extended_binary_rep = []
     for i, arrow_comb in enumerate(arrow_combs):
         binary_rep = np.zeros((4, 4))
@@ -22,7 +22,7 @@ def get_extended_binary_rep(arrow_combs):
     return np.asarray(extended_binary_rep)
 
 
-def get_all_note_combs():
+def __get_all_note_combs():
     all_note_combs = []
 
     for i in range(0, 4):
@@ -36,7 +36,7 @@ def get_all_note_combs():
     return all_note_combs
 
 
-def create_tokens(timings):
+def __create_tokens(timings):
     timings = timings.astype("float32")
     tokens = np.zeros((timings.shape[0], 3))
     tokens[0][0] = 1 # set start token
@@ -47,81 +47,83 @@ def create_tokens(timings):
     return tokens.astype("float32")
 
 
-def get_notes_ngram(binary_notes, lookback):
+def __get_notes_ngram(binary_notes, lookback):
     padding = np.zeros((lookback, binary_notes.shape[1]))
     data_w_padding = np.append(padding, binary_notes, axis=0)
     return np.asarray(list(ngrams(data_w_padding, lookback)))
 
 
-def get_arrows(timings, model, encoder):
+def __get_arrows(timings, model, encoder):
     pred_notes = []
     lookback = model.layers[0].input_shape[0][1]
     classes = model.layers[-1].output_shape[1]
-    tokens = np.expand_dims(np.expand_dims(create_tokens(timings), axis=1), axis=1)
-    notes_ngram = np.expand_dims(get_notes_ngram(np.zeros((1, 16)), lookback)[-1], axis=0)
+    tokens = np.expand_dims(np.expand_dims(__create_tokens(timings), axis=1), axis=1)
+    notes_ngram = np.expand_dims(__get_notes_ngram(np.zeros((1, 16)), lookback)[-1], axis=0)
     for i, token in enumerate(tokens):
         pred = model.predict([notes_ngram, token])
         pred_arrow = np.random.choice(classes, 1, p=pred[0])[0]
         binary_rep = encoder.categories_[0][pred_arrow]
         pred_notes.append(binary_rep)
-        binary_note = get_extended_binary_rep([binary_rep])
+        binary_note = __get_extended_binary_rep([binary_rep])
         notes_ngram = np.roll(notes_ngram, -1, axis=0)
         notes_ngram[0][-1] = binary_note
     return pred_notes
 
 
-def arrow_prediction(timings_path,
-                     out_path,
-                     model_path,
-                     overwrite_int):
-    if not os.path.isdir(timings_path):
-        raise NotADirectoryError('Timing files path %s not found' % timings_path)
+def __generate_arrows(input_path, output_path, model, encoder, verbose, timing_name):
+    song_name = get_filename(timing_name, False)
+    with open(input_path + timing_name, "r") as timings_file:
+        timings = np.asarray([line.replace("\n", "") for line in timings_file.readlines()]).astype("float32")
 
-    if not os.path.isdir(out_path):
+    if verbose:
+        print("Generating arrows for " + song_name)
+
+    arrows = __get_arrows(timings, model, encoder)
+
+    with open(join(output_path, song_name + ".arrows"), "w") as arrows_file:
+        for arrow in arrows:
+            arrows_file.write(str(arrow) + "\n")
+
+
+def __run_process(input_path, output_path, model, encoder, verbose):
+    if os.path.isfile(input_path):
+        __generate_arrows(os.path.dirname(input_path), output_path, model, encoder, verbose, get_filename(input_path))
+    else:
+        timings_names = get_filenames_from_folder(input_path)
+        for timing_name in timings_names:
+            __generate_arrows(input_path, output_path, model, encoder, verbose, timing_name)
+
+
+def arrow_prediction(input_path,
+                     output_path,
+                     model_path,
+                     verbose_int=0):
+    start_time = time.time()
+    if verbose_int not in [0, 1]:
+        raise ValueError('%s is not a valid verbose input. Choose 0 for none or 1 for full' % verbose_int)
+    verbose = True if verbose_int == 1 else False
+
+    if not os.path.isdir(output_path):
         print('Output path not found. Creating directory...')
-        os.makedirs(out_path, exist_ok=True)
+        os.makedirs(output_path, exist_ok=True)
 
     if not os.path.isfile(model_path):
         raise FileNotFoundError('Model %s is not found' % model_path)
 
-    if overwrite_int == 1:
-        overwrite = True
+    if os.path.isdir(input_path) or os.path.isfile(input_path):
+        if verbose:
+            print("Starting arrows prediction\n-----------------------------------------")
+        from tensorflow.keras.models import load_model
+        from sklearn.preprocessing import OneHotEncoder
+        model = load_model(join(model_path), compile=False)
+        encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(__get_all_note_combs()).reshape(-1, 1))
+        __run_process(input_path, output_path, model, encoder, verbose)
     else:
-        overwrite = False
+        raise FileNotFoundError('Timing files path %s not found' % input_path)
 
-    timings_names = get_filenames_from_folder(timings_path)
-    existing_pred_arrows = get_filenames_from_folder(out_path)
-    model = load_model(join(model_path), compile=False)
-
-    from sklearn.preprocessing import OneHotEncoder
-    encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
-
-    print("Starting arrows prediction\n-----------------------------------------")
-
-    for timings_name in timings_names:
-        if not timings_name.endswith(".txt"):
-            print(timings_name, "is not a timings file! Skipping...")
-            continue
-
-        song_name = timings_name[:-4]
-
-        if song_name.startswith("pred_timings_"):
-            song_name = song_name[13:]
-
-        if "pred_arrows_" + song_name + ".txt" in existing_pred_arrows and not overwrite:
-            print(timings_name[:-4] + " arrows already generated! Skipping...")
-            continue
-
-        with open(timings_path + timings_name, "r") as timings_file:
-            timings = np.asarray([line.replace("\n", "") for line in timings_file.readlines()]).astype("float32")
-
-        print("Generating arrows for " + song_name)
-
-        arrows = get_arrows(timings, model, encoder)
-
-        with open(join(out_path, "pred_arrows_" + song_name + ".txt"), "w") as arrows_file:
-            for arrow in arrows:
-                arrows_file.write(str(arrow) + "\n")
+    end_time = time.time()
+    if verbose:
+        print("Elapsed time was %g seconds\n" % (end_time - start_time))
 
 
 if __name__ == '__main__':
@@ -137,13 +139,13 @@ if __name__ == '__main__':
     parser.add_argument("--model",
                         type=str,
                         help="trained model path")
-    parser.add_argument("--overwrite",
+    parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
-                        help="overwrite already created files")
+                        help="verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
     arrow_prediction(args.timing,
                      args.output,
                      args.model,
-                     args.overwrite)
+                     args.verbose)

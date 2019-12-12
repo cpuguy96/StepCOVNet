@@ -117,8 +117,9 @@ def __get_librosa_features(audio_fn, fs, hopsize_t, q):
 def __get_madmom_features(audio_fn, hopsize_t, q):
     proc = DBNBeatTrackingProcessor(max_bpm=300,
                                     fps=int(1/hopsize_t))
-    act = RNNBeatProcessor()(audio_fn)
-    beat_times = proc(act)
+    act = RNNBeatProcessor()
+    pre_processor = SequentialProcessor([act, proc])
+    beat_times = pre_processor(audio_fn)
     q.put(np.array(np.around(np.array(beat_times) / hopsize_t), dtype=int))
 
 

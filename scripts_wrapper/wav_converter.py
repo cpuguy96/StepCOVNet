@@ -1,16 +1,18 @@
-from scripts_common.utilFunctions import get_filenames_from_folder, get_filename
+from scripts_common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
 
 from os.path import join
 
 import os
 import subprocess
-import re
 import time
 
 
-def __convert_file(input_path, output_path, verbose, file_name):
+def __convert_file(input_path,
+                   output_path,
+                   verbose,
+                   file_name):
     try:
-        new_file_name = re.sub("[^a-z0-9-_]", "", get_filename(file_name, False))
+        new_file_name = standardize_filename(get_filename(file_name, False))
         if verbose:
             print("Converting " + file_name)
         subprocess.call(
@@ -21,41 +23,38 @@ def __convert_file(input_path, output_path, verbose, file_name):
             print("Failed to convert", file_name)
 
 
+def __run_process(input_path, output_path, verbose):
+    if os.path.isfile(input_path):
+        __convert_file(os.path.dirname(input_path), output_path, verbose, get_filename(input_path))
+    else:
+        file_names = get_filenames_from_folder(input_path)
+        import multiprocessing
+        import psutil
+        from functools import partial
+        func = partial(__convert_file, input_path, output_path, verbose)
+        with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
+            pool.map_async(func, file_names).get()
+
+
 def wav_converter(input_path, output_path, verbose_int=0):
     start_time = time.time()
     if verbose_int not in [0, 1]:
         raise ValueError('%s is not a valid verbose input. Choose 0 for none or 1 for full' % verbose_int)
     verbose = True if verbose_int == 1 else False
 
-    if os.path.isfile(input_path) or os.path.isdir(input_path):
-        if not os.path.isdir(output_path):
-            print("Wavs output path not found. Creating directory...")
-            os.makedirs(output_path, exist_ok=True)
+    if not os.path.isdir(output_path):
+        print("Wavs output path not found. Creating directory...")
+        os.makedirs(output_path, exist_ok=True)
 
+    if os.path.isfile(input_path) or os.path.isdir(input_path):
         if verbose:
             print("Starting .wav conversion\n-----------------------------------------")
-
-        if os.path.isfile(input_path):
-            __convert_file(os.path.dirname(input_path), output_path, verbose, get_filename(input_path))
-        else:
-            file_names = get_filenames_from_folder(input_path)
-            try:
-                import multiprocessing, psutil
-                from functools import partial
-                with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
-                    pool.map_async(partial(__convert_file, input_path, output_path, verbose), file_names).get()
-            except Exception:
-                if verbose:
-                    print("Cannot use multiprocessing. Defaulting to normal processing.")
-
-                for file_name in file_names:
-                    __convert_file(input_path, output_path, verbose, file_name)
-
+        __run_process(input_path, output_path, verbose)
     else:
-        raise RuntimeError('Audio file(s) path %s not found' % input_path)
+        raise FileNotFoundError('Audio file(s) path %s not found' % input_path)
     end_time = time.time()
     if verbose:
-        print("Elapsed time was %g seconds" % (end_time - start_time))
+        print("Elapsed time was %g seconds\n" % (end_time - start_time))
 
 
 if __name__ == '__main__':

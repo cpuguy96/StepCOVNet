@@ -1,6 +1,8 @@
 from os import listdir
 from os.path import join, isfile, splitext, basename
 
+import re
+
 
 def get_filenames_from_folder(mypath):
     return [f for f in listdir(mypath) if isfile(join(mypath, f))]
@@ -11,3 +13,7 @@ def get_filename(file_path, with_ext=True):
         return basename(file_path)
     else:
         return splitext(basename(file_path))[0]
+
+
+def standardize_filename(filename):
+    return re.sub("[^a-z0-9-_]", "", filename.lower())
