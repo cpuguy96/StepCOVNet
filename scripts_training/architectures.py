@@ -1,8 +1,8 @@
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, BatchNormalization, \
-    Input, Activation, Add, SpatialDropout2D, concatenate, Bidirectional, \
-    RepeatVector, SpatialDropout1D
+    Activation, SpatialDropout2D, concatenate, Bidirectional, RepeatVector, SpatialDropout1D
 
 from tensorflow.compat.v1.keras.layers import CuDNNLSTM
+from tensorflow.keras.regularizers import l2
 
 
 def time_front(x_input, reshape_dim, channel_order, channel):
@@ -54,7 +54,7 @@ def time_back(model, lookback, extra_input=None):
         x = RepeatVector(lookback)(model)
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=True,
-                                #kernel_regularizer=tensorflow.keras.regularizers.l2(1e-6),
+                                kernel_regularizer=l2(1e-6),
                                 #recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
                                 kernel_initializer='glorot_normal'))(x)
     x = BatchNormalization()(x)
@@ -62,7 +62,7 @@ def time_back(model, lookback, extra_input=None):
     x = SpatialDropout1D(0.5)(x)
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=False,
-                                #kernel_regularizer=tensorflow.keras.regularizers.l2(1e-6),
+                                kernel_regularizer=l2(1e-6),
                                 #recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
                                 kernel_initializer='glorot_normal'))(x)
     x = BatchNormalization()(x)

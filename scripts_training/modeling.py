@@ -204,9 +204,9 @@ def train_model(filename_features,
     timeseries = True if lookback > 1 else False
 
     print("Building StepNet...")
-    model = build_stepnet(input_shape, timeseries, extra_input_shape)
+    model = build_stepcovnet(input_shape, timeseries, extra_input_shape)
 
-    model.compile(loss='binary_crossentropy',
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
                   optimizer=Nadam(beta_1=0.99),
                   metrics=["accuracy"])
 
