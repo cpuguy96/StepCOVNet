@@ -283,13 +283,13 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="dump feature, label and sample weights for general purpose.")
-    parser.add_argument("--audio",
+    parser.add_argument("-w", "--wav",
                         type=str,
-                        help="input audio path")
-    parser.add_argument("--annotation",
+                        help="input wavs path")
+    parser.add_argument("-t", "--timing",
                         type=str,
-                        help="input annotation path")
-    parser.add_argument("--output",
+                        help="input timings path")
+    parser.add_argument("-o", "--output",
                         type=str,
                         help="output path")
     parser.add_argument("--multi",
@@ -310,8 +310,8 @@ if __name__ == '__main__':
                         help="maximum number of samples allowed to be collected")
     args = parser.parse_args()
 
-    dump_feature_label_sample_weights_onset_phrase(audio_path=args.audio,
-                                                   annotation_path=args.annotation,
+    dump_feature_label_sample_weights_onset_phrase(audio_path=args.wav,
+                                                   annotation_path=args.timing,
                                                    path_output=args.output,
                                                    multi=args.multi,
                                                    extra=args.extra,

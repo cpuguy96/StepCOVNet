@@ -116,11 +116,11 @@ if __name__ == '__main__':
                         help="output .txt file path")
     parser.add_argument("-s", "--scalers",
                         type=str,
-                        default="training_data/",
+                        default="testing_files/",
                         help="scalers used in training path")
     parser.add_argument("--timing_model",
                         type=str,
-                        default="models/retrained_timing_model.h5",
+                        default="models/timing_model.h5",
                         help="trained timing model path")
     parser.add_argument("--arrow_model",
                         type=str,

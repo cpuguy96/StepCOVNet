@@ -7,6 +7,7 @@ from tensorflow.keras.models import Model
 def build_stepcovnet(input_shape,
                      timeseries=False,
                      extra_input_shape=None,
+                     pretrained_model=None,
                      name="StepCOVNet"):
     if timeseries:
         x_input = Input(input_shape[1:], dtype='float16', name="log_mel_input")
@@ -28,6 +29,9 @@ def build_stepcovnet(input_shape,
             channel = -1
             channel_order = 'channels_last'
 
+        if pretrained_model:
+            # TODO: Add support for pretrained model
+            pass
         x = time_front(x_input,
                        input_shape[1:],
                        channel_order=channel_order,
@@ -42,6 +46,9 @@ def build_stepcovnet(input_shape,
             channel = -1
             channel_order = 'channels_last'
 
+        if pretrained_model:
+            # TODO: Add support for pretrained model
+            pass
         x = front(x_input,
                   input_shape,
                   channel_order=channel_order,

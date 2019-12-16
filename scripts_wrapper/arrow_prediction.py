@@ -130,10 +130,10 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate arrow types from .wav files.")
-    parser.add_argument("--timing",
+    parser.add_argument("-i", "--input",
                         type=str,
                         help="input timings path")
-    parser.add_argument("--output",
+    parser.add_argument("-o", "--output",
                         type=str,
                         help="output arrows path")
     parser.add_argument("--model",
@@ -145,7 +145,7 @@ if __name__ == '__main__':
                         help="verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
-    arrow_prediction(args.timing,
+    arrow_prediction(args.input,
                      args.output,
                      args.model,
                      args.verbose)

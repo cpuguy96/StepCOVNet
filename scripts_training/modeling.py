@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 from scripts_training.data_preparation import load_data, preprocess
-from scripts_training.stepcovnet import build_stepcovnet
+from scripts_training.network import build_stepcovnet
 
 
 from tensorflow.keras.models import load_model
@@ -68,7 +68,7 @@ def model_train(model,
                 lookback=1):
 
     training_callbacks = [EarlyStopping(monitor='val_loss', patience=3, verbose=0),
-                          ModelCheckpoint(filepath=os.path.join(model_out_path, prefix + 'callback_timing_model.h5'),
+                          ModelCheckpoint(filepath=os.path.join(model_out_path, prefix + '_callback.h5'),
                                           monitor='val_loss',
                                           verbose=0,
                                           save_best_only=True)]
@@ -138,7 +138,7 @@ def model_train(model,
                         shuffle="batch",
                         verbose=1)
 
-    model.save(os.path.join(model_out_path, prefix + "timing_model.h5"))
+    model.save(os.path.join(model_out_path, prefix + ".h5"))
 
     print("\n*****************************")
     print("***** TRAINING FINISHED *****")
@@ -173,7 +173,7 @@ def model_train(model,
                         shuffle="batch",
                         verbose=1)
 
-    model.save(os.path.join(model_out_path, prefix + "retrained_timing_model.h5"))
+    model.save(os.path.join(model_out_path, prefix + "_retrained.h5"))
 
 
 def train_model(filename_features,
@@ -186,11 +186,12 @@ def train_model(filename_features,
                 extra_input_shape,
                 path_extra_features,
                 lookback,
-                limit=-1):
+                limit=-1,
+                filename_pretrained_model=None):
 
     print("Loading data...")
-    features, extra_features, labels, sample_weights, class_weights, all_scalers = \
-        load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler)
+    features, extra_features, labels, sample_weights, class_weights, all_scalers, pretrained_model = \
+        load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler, filename_pretrained_model)
 
     if limit > 0:
         features = features[:limit]
@@ -204,7 +205,7 @@ def train_model(filename_features,
     timeseries = True if lookback > 1 else False
 
     print("Building StepNet...")
-    model = build_stepcovnet(input_shape, timeseries, extra_input_shape)
+    model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model)
 
     model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
                   optimizer=Nadam(beta_1=0.99),
