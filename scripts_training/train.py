@@ -30,7 +30,7 @@ def train(input_path,
         raise ValueError('Cannot use under sample when lookback > 1')
 
     if pretrained_model_path is not None and not os.path.isfile(pretrained_model_path):
-        raise FileNotFoundError('Pretrained model path %s not found ' % pretrained_model_path)
+        raise FileNotFoundError('Pretrained model path %s not found' % pretrained_model_path)
 
     filename_scaler = []
 
@@ -90,7 +90,7 @@ def train(input_path,
     # adding this afterwards since don't have preprocessing for timeseries data set up
     # might add this preprocessing later if training seems to be slow to start
     if lookback > 1:
-        prefix += "time_"
+        prefix += "time%s_" % lookback
 
     if pretrained_model_path is not None:
         prefix += "pretrained_"

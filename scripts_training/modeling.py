@@ -3,9 +3,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from scripts_training.data_preparation import load_data, preprocess
 from scripts_training.network import build_stepcovnet
 
-
-from tensorflow.keras.models import load_model
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Nadam
 
 import os
@@ -21,37 +19,6 @@ tf.random.set_seed(42)
 # disabling until more stable
 # from keras_radam import RAdam
 # os.environ['TF_KERAS'] = '1'
-
-
-def build_pretrained_model(pretrained_model, silent=False):
-    model = load_model(pretrained_model, custom_objects={}, compile=False)
-
-    for layer in model.layers:
-        layer.trainable = False
-    for layer in model.layers[::-1]:
-        layer.trainable = True
-        if isinstance(layer, tf.keras.layers.Flatten):
-            layer.trainable = True
-            break
-    #    model.layers.pop()
-    # x_input = Input(model.)
-    # X = Dense(256, kernel_initializer='glorot_normal')(model.outputs)
-    # X = BatchNormalization()(X)
-    # X = Activation('relu')(X)
-    # X = Dropout(0.5)(X)
-    # X = Dense(128, kernel_initializer='glorot_normal')(X)
-    # X = Activation('relu')(X)
-    # X = Dropout(0.5)(X)
-    # X = Dense(1, activation="sigmoid")(X)
-    # model = Model(inputs=x_input, outputs=X, name='StepNet')
-    model.compile(loss='binary_crossentropy',
-                  optimizer=Nadam(beta_1=0.99),
-                  metrics=["accuracy"])
-
-    if not silent:
-        print(model.summary())
-
-    return model
 
 
 def model_train(model,
@@ -108,8 +75,6 @@ def model_train(model,
             training_scaler.append(StandardScaler().fit(features[indices_train, :, i]))
     else:
         training_scaler.append(StandardScaler().fit(features[indices_train]))
-
-    print(model.summary())
 
     print("\nStarting training...")
 
@@ -204,12 +169,14 @@ def train_model(filename_features,
 
     timeseries = True if lookback > 1 else False
 
-    print("Building StepNet...")
+    print("Building StepCOVNet...")
     model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model)
 
     model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
                   optimizer=Nadam(beta_1=0.99),
                   metrics=["accuracy"])
+
+    print(model.summary())
 
     batch_size = 256
     max_epochs = 30
