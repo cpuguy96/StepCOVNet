@@ -172,7 +172,7 @@ def train_model(filename_features,
     print("Building StepCOVNet...")
     model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model)
 
-    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.15),
                   optimizer=Nadam(beta_1=0.99),
                   metrics=["accuracy"])
 
