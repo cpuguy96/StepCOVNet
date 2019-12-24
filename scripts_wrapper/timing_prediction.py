@@ -1,4 +1,4 @@
-from scripts_common.audio_preprocessing import getMFCCBands2DMadmom, get_madmom_librosa_features
+from scripts_common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
 from scripts_common.utilFunctions import get_filenames_from_folder, get_filename
 from madmom.features.onsets import OnsetPeakPickingProcessor
 from scripts_training.data_preparation import featureReshape
@@ -108,13 +108,13 @@ def __generate_features(input_path,
             print("Generating features for " + get_filename(wav_name, False))
 
         if multi:
-            log_mel = getMFCCBands2DMadmom(join(input_path, wav_name), 44100, 0.01, multi)
+            log_mel = get_madmom_log_mels(join(input_path, wav_name), 44100, 0.01, multi)
             if scaler:
                 log_mel[:, :, 0] = scaler[0].transform(log_mel[:, :, 0])
                 log_mel[:, :, 1] = scaler[1].transform(log_mel[:, :, 1])
                 log_mel[:, :, 2] = scaler[2].transform(log_mel[:, :, 2])
         else:
-            log_mel = getMFCCBands2DMadmom(join(input_path, wav_name), 44100, 0.01, multi)
+            log_mel = get_madmom_log_mels(join(input_path, wav_name), 44100, 0.01, multi)
             if scaler:
                 log_mel = scaler[0].transform(log_mel)
         if extra:
