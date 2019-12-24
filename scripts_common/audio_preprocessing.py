@@ -87,15 +87,15 @@ class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
         super(MadmomMelbank3ChannelsProcessor, self).__init__([pre_processor])
 
 
-def getMFCCBands2DMadmom(audio_fn, fs, hopsize_t, channel):
-    if channel == 1:
+def getMFCCBands2DMadmom(audio_fn, fs, hopsize_t, multi):
+    if multi:
         madmomMelbankProc = MadmomMelbankProcessor(fs, hopsize_t)
     else:
         madmomMelbankProc = MadmomMelbank3ChannelsProcessor(fs, hopsize_t)
 
     mfcc = madmomMelbankProc(audio_fn)
 
-    if channel == 1:
+    if multi:
         mfcc = _nbf_2D(mfcc, 7)
     else:
         mfcc_conc = []
