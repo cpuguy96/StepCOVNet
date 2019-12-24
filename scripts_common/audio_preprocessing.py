@@ -21,7 +21,7 @@ def _nbf_2D(mfcc, nlen):
 
 
 class MadmomMelbankProcessor(SequentialProcessor):
-    def __init__(self, fs, hopsize_t):
+    def __init__(self, sample_rate, hopsize_t):
         from madmom.audio.signal import SignalProcessor, FramedSignalProcessor
         from madmom.audio.stft import ShortTimeFourierTransformProcessor
         from madmom.audio.filters import MelFilterbank
@@ -30,11 +30,11 @@ class MadmomMelbankProcessor(SequentialProcessor):
         # from madmom.features.onsets import _cnn_onset_processor_pad
 
         # define pre-processing chain
-        sig = SignalProcessor(num_channels=1, sample_rate=fs)
+        sig = SignalProcessor(num_channels=1, sample_rate=sample_rate)
         # process the multi-resolution spec in parallel
         # multi = ParallelProcessor([])
         # for frame_size in [2048, 1024, 4096]:
-        frames = FramedSignalProcessor(frame_size=2048, hopsize=int(fs*hopsize_t))
+        frames = FramedSignalProcessor(frame_size=2048, hopsize=int(sample_rate * hopsize_t))
         stft = ShortTimeFourierTransformProcessor()  # caching FFT window
         filt = FilteredSpectrogramProcessor(
             filterbank=MelFilterbank, num_bands=80, fmin=27.5, fmax=16000,
@@ -57,7 +57,7 @@ class MadmomMelbankProcessor(SequentialProcessor):
 
 
 class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
-    def __init__(self, fs, hopsize_t):
+    def __init__(self, sample_rate, hopsize_t):
         from madmom.audio.signal import SignalProcessor, FramedSignalProcessor
         from madmom.audio.stft import ShortTimeFourierTransformProcessor
         from madmom.audio.filters import MelFilterbank
@@ -66,11 +66,11 @@ class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
         # from madmom.features.onsets import _cnn_onset_processor_pad
 
         # define pre-processing chain
-        sig = SignalProcessor(num_channels=1, sample_rate=fs)
+        sig = SignalProcessor(num_channels=1, sample_rate=sample_rate)
         # process the multi-resolution spec in parallel
         multi = ParallelProcessor([])
         for frame_size in [1024, 2048, 4096]:
-            frames = FramedSignalProcessor(frame_size=frame_size, hopsize=int(fs*hopsize_t))
+            frames = FramedSignalProcessor(frame_size=frame_size, hopsize=int(sample_rate * hopsize_t))
             stft = ShortTimeFourierTransformProcessor()  # caching FFT window
             filt = FilteredSpectrogramProcessor(
                 filterbank=MelFilterbank, num_bands=80, fmin=27.5, fmax=16000,
@@ -87,13 +87,13 @@ class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
         super(MadmomMelbank3ChannelsProcessor, self).__init__([pre_processor])
 
 
-def getMFCCBands2DMadmom(audio_fn, fs, hopsize_t, multi):
+def get_madmom_log_mels(file_name, sample_rate, hopsize_t, multi):
     if multi:
-        madmomMelbankProc = MadmomMelbankProcessor(fs, hopsize_t)
+        madmomMelbankProc = MadmomMelbankProcessor(sample_rate, hopsize_t)
     else:
-        madmomMelbankProc = MadmomMelbank3ChannelsProcessor(fs, hopsize_t)
+        madmomMelbankProc = MadmomMelbank3ChannelsProcessor(sample_rate, hopsize_t)
 
-    mfcc = madmomMelbankProc(audio_fn)
+    mfcc = madmomMelbankProc(file_name)
 
     if multi:
         mfcc = _nbf_2D(mfcc, 7)
@@ -105,31 +105,31 @@ def getMFCCBands2DMadmom(audio_fn, fs, hopsize_t, multi):
     return mfcc
 
 
-def __get_librosa_features(audio_fn, fs, hopsize_t):
-    samples, _ = librosa.load(audio_fn, sr=fs)
+def __get_librosa_features(file_name, sample_rate, hopsize_t):
+    samples, _ = librosa.load(file_name, sr=sample_rate)
     onset_times = librosa.onset.onset_detect(y=samples,
-                                             sr=fs,
+                                             sr=sample_rate,
                                              units="time",
-                                             hop_length=int(fs*hopsize_t))
+                                             hop_length=int(sample_rate * hopsize_t))
     return np.array(np.around(np.array(onset_times) / hopsize_t), dtype=int)
 
 
-def __get_madmom_features(audio_fn, hopsize_t):
+def __get_madmom_features(file_name, hopsize_t):
     proc = DBNBeatTrackingProcessor(max_bpm=300,
                                     fps=int(1/hopsize_t))
     act = RNNBeatProcessor()
     pre_processor = SequentialProcessor([act, proc])
-    beat_times = pre_processor(audio_fn)
+    beat_times = pre_processor(file_name)
     return np.array(np.around(np.array(beat_times) / hopsize_t), dtype=int)
 
 
-def get_madmom_librosa_features(audio_fn, fs, hopsize_t, num_frames, frame_start=0):
+def get_madmom_librosa_features(file_name, sample_rate, hopsize_t, num_frames, frame_start=0):
     # might add ability to choose which features to add
     # librosa features
-    librosa_frames = __get_librosa_features(audio_fn, fs, hopsize_t)
+    librosa_frames = __get_librosa_features(file_name, sample_rate, hopsize_t)
 
     # madmom features
-    madmom_frames = __get_madmom_features(audio_fn, hopsize_t)
+    madmom_frames = __get_madmom_features(file_name, hopsize_t)
 
     # fill in blanks and return
     librosa_features = np.zeros((num_frames,))
