@@ -34,7 +34,7 @@ def test_feature_reshape():
     n_samples = 500
     n_rows = 80
     n_cols = 15
-    dummy_features = np.ones((n_samples, n_rows*n_cols))
+    dummy_features = np.ones((n_samples, n_rows * n_cols))
     reshaped_features = feature_reshape(dummy_features, multi=False)
     assert reshaped_features.shape == (n_samples, n_rows, n_cols)
 
