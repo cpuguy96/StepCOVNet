@@ -1,20 +1,19 @@
-from common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
-from wrapper.wav_converter import wav_converter
+import os
+import time
+import warnings
+from os.path import join
+from shutil import copyfile, rmtree
+
+from common.utils import get_filenames_from_folder, get_filename, standardize_filename
 from wrapper.arrow_prediction import arrow_prediction
 from wrapper.timing_arrow_combiner import timing_arrow_combiner
 from wrapper.timing_prediction import timing_prediction
-
-from shutil import copyfile, rmtree
-from os.path import join
-
-import os
-import warnings
-import time
+from wrapper.wav_converter import wav_converter
 
 warnings.filterwarnings("ignore")
 
 
-def __copy_to_tmp_folder(input_path, tmp_folder_name, batch):
+def copy_to_tmp_folder(input_path, tmp_folder_name, batch):
     if batch:
         for input_audio_name in get_filenames_from_folder(input_path):
             new_file_name = standardize_filename(get_filename(input_audio_name, False))
@@ -24,7 +23,7 @@ def __copy_to_tmp_folder(input_path, tmp_folder_name, batch):
         copyfile(join(input_path), join(tmp_folder_name, "input", new_file_name))
 
 
-def __build_tmp_folder(tmp_folder_name):
+def build_tmp_folder(tmp_folder_name):
     rmtree(tmp_folder_name, ignore_errors=True)
     os.makedirs(join(tmp_folder_name), exist_ok=True)
     os.makedirs(join(tmp_folder_name, "input"), exist_ok=True)
@@ -33,13 +32,12 @@ def __build_tmp_folder(tmp_folder_name):
     os.makedirs(join(tmp_folder_name, "arrows"), exist_ok=True)
 
 
-def __generate_notes(output_path,
-                     tmp_folder_name,
-                     timing_model,
-                     arrow_model,
-                     scalers_path,
-                     verbose_int):
-
+def generate_notes(output_path,
+                   tmp_folder_name,
+                   timing_model,
+                   arrow_model,
+                   scalers_path,
+                   verbose_int):
     wav_converter(input_path=join(tmp_folder_name, "input/"),
                   output_path=join(tmp_folder_name, "wav"),
                   verbose_int=verbose_int)
@@ -88,12 +86,12 @@ def stepmania_note_generator(input_path,
     if os.path.isfile(input_path) or os.path.isdir(input_path):
         batch = False if os.path.isfile(input_path) else True
         tmp_folder_name = "_tmp"
-        __build_tmp_folder(tmp_folder_name)
-        __copy_to_tmp_folder(input_path, tmp_folder_name, batch)
+        build_tmp_folder(tmp_folder_name)
+        copy_to_tmp_folder(input_path, tmp_folder_name, batch)
         if verbose:
             print("Starting audio to txt generation\n-----------------------------------------\n")
         try:
-            __generate_notes(output_path, tmp_folder_name, timing_model, arrow_model, scalers_path, verbose_int)
+            generate_notes(output_path, tmp_folder_name, timing_model, arrow_model, scalers_path, verbose_int)
             rmtree(tmp_folder_name, ignore_errors=True)
         finally:
             pass

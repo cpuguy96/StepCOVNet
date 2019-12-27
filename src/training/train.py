@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from training.modeling import train_model
+from training.modeling import prepare_model
 
 
 def train(input_path,
@@ -99,18 +99,18 @@ def train(input_path,
 
     file_path_model = os.path.join(output_path)
 
-    train_model(filename_features,
-                filename_labels,
-                filename_sample_weights,
-                filename_scaler,
-                input_shape=input_shape,
-                prefix=prefix if name is None else name,
-                model_out_path=file_path_model,
-                extra_input_shape=extra_input_shape,
-                path_extra_features=path_extra_features,
-                lookback=lookback,
-                limit=limit,
-                filename_pretrained_model=pretrained_model_path)
+    prepare_model(filename_features,
+                  filename_labels,
+                  filename_sample_weights,
+                  filename_scaler,
+                  input_shape=input_shape,
+                  prefix=prefix if name is None else name,
+                  model_out_path=file_path_model,
+                  extra_input_shape=extra_input_shape,
+                  path_extra_features=path_extra_features,
+                  lookback=lookback,
+                  limit=limit,
+                  filename_pretrained_model=pretrained_model_path)
 
 
 if __name__ == '__main__':

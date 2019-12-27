@@ -5,12 +5,14 @@ from tensorflow.keras.models import Model
 from training.architectures import front, time_front, back, time_back, pretrained_back, pretrained_time_back
 
 
-def __get_pretrained_front(model, x_input):
+def get_pretrained_front(model, x_input):
     for i, layer in enumerate(model.layers):
         layer._name = layer.name + str("_pre")
-        if isinstance(layer, (tf.keras.layers.Flatten, tf.keras.layers.GlobalAveragePooling2D, tf.keras.layers.GlobalMaxPooling2D)):
+        if isinstance(layer, (
+                tf.keras.layers.Flatten, tf.keras.layers.GlobalAveragePooling2D, tf.keras.layers.GlobalMaxPooling2D)):
             # should never start with flatten or pool layer
-            return tf.keras.layers.GlobalAveragePooling2D()(Model(inputs=x_input, outputs=model.layers[i-1].output).output)
+            return tf.keras.layers.GlobalAveragePooling2D()(
+                Model(inputs=x_input, outputs=model.layers[i - 1].output).output)
         else:
             layer.trainable = False
     return tf.keras.layers.GlobalAveragePooling2D()(Model(inputs=x_input, outputs=model.layers[-1].output).output)
@@ -42,7 +44,7 @@ def build_stepcovnet(input_shape,
             channel_order = 'channels_last'
 
         if pretrained_model is not None:
-            x = __get_pretrained_front(pretrained_model, inputs)
+            x = get_pretrained_front(pretrained_model, inputs)
             x = pretrained_time_back(x, input_shape[0], extra_input)
         else:
             x = time_front(x_input,
@@ -60,7 +62,7 @@ def build_stepcovnet(input_shape,
             channel_order = 'channels_last'
 
         if pretrained_model is not None:
-            x = __get_pretrained_front(pretrained_model, inputs)
+            x = get_pretrained_front(pretrained_model, inputs)
             x = pretrained_back(x, extra_input)
         else:
             x = front(x_input,

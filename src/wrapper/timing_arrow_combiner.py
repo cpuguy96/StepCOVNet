@@ -8,20 +8,20 @@ import librosa
 import numpy as np
 import psutil
 
-from common.utilFunctions import get_filenames_from_folder, get_filename
+from common.utils import get_filenames_from_folder, get_filename
 
 
-def __get_bpm(wav_file_path):
+def get_bpm(wav_file_path):
     y, sr = librosa.load(wav_file_path)
     return librosa.beat.beat_track(y=y, sr=sr)
 
 
-def __combine_data(timings_path,
-                   arrows_path,
-                   wavs_path,
-                   output_path,
-                   verbose,
-                   wav_name):
+def combine_data(timings_path,
+                 arrows_path,
+                 wavs_path,
+                 output_path,
+                 verbose,
+                 wav_name):
     if not wav_name.endswith(".wav"):
         print("%s is not a wav file! Skipping..." % wav_name)
         return
@@ -43,7 +43,7 @@ def __combine_data(timings_path,
         return
 
     try:
-        bpm, _ = __get_bpm(join(wavs_path, wav_name))
+        bpm, _ = get_bpm(join(wavs_path, wav_name))
     except FileNotFoundError:
         print("%s not found! Skipping..." % wav_name)
         return
@@ -65,10 +65,11 @@ def __run_process(timings_path,
                   output_path,
                   verbose):
     if os.path.isfile(timings_path):
-        __combine_data(os.path.dirname(timings_path), arrows_path, wavs_path, output_path, verbose, get_filename(wavs_path))
+        combine_data(os.path.dirname(timings_path), arrows_path, wavs_path, output_path, verbose,
+                     get_filename(wavs_path))
     else:
         wav_names = get_filenames_from_folder(wavs_path)
-        func = partial(__combine_data, timings_path, arrows_path, wavs_path, output_path, verbose)
+        func = partial(combine_data, timings_path, arrows_path, wavs_path, output_path, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
             pool.map_async(func, wav_names).get()
 

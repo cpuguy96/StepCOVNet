@@ -25,7 +25,7 @@ tf.random.set_seed(42)
 # os.environ['TF_KERAS'] = '1'
 
 
-def model_train(model,
+def train_model(model,
                 batch_size,
                 max_epochs,
                 features,
@@ -141,18 +141,18 @@ def model_train(model,
     model.save(os.path.join(model_out_path, prefix + "_retrained.h5"))
 
 
-def train_model(filename_features,
-                filename_labels,
-                filename_sample_weights,
-                filename_scaler,
-                input_shape,
-                prefix,
-                model_out_path,
-                extra_input_shape,
-                path_extra_features,
-                lookback,
-                limit=-1,
-                filename_pretrained_model=None):
+def prepare_model(filename_features,
+                  filename_labels,
+                  filename_sample_weights,
+                  filename_scaler,
+                  input_shape,
+                  prefix,
+                  model_out_path,
+                  extra_input_shape,
+                  path_extra_features,
+                  lookback,
+                  limit=-1,
+                  filename_pretrained_model=None):
     print("Loading data...")
     features, extra_features, labels, sample_weights, class_weights, all_scalers, pretrained_model = \
         load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler,
@@ -181,7 +181,7 @@ def train_model(filename_features,
     batch_size = 256
     max_epochs = 30
 
-    model_train(model,
+    train_model(model,
                 batch_size,
                 max_epochs,
                 features,

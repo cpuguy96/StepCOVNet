@@ -10,53 +10,10 @@ import numpy as np
 import psutil
 from sklearn.preprocessing import StandardScaler
 
-from common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
+from common.audio_preprocessing import get_madmom_librosa_features
 from configuration.parameters import hopsize_t, sample_rate
-from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
-
-
-def get_recordings(wav_path):
-    recordings = []
-    for root, subFolders, files in os.walk(wav_path):
-        for f in files:
-            file_prefix, file_extension = os.path.splitext(f)
-            if file_prefix != '.DS_Store' and file_prefix != '_DS_Store':
-                recordings.append(file_prefix)
-    return recordings
-
-
-def timings_parser(annotation_filename):
-    """
-    Schluter onset time annotation parser
-    :param annotation_filename:
-    :return: onset time list
-    """
-
-    with open(annotation_filename, 'r') as file:
-        lines = file.readlines()
-        list_onset_time = [x.replace("\n", "").split(" ")[1] for x in lines[3:]]
-    return list_onset_time
-
-
-def dump_feature_onset_helper(audio_path, annotation_path, fn, multi):
-    audio_fn = join(audio_path, fn + '.wav')
-    annotation_fn = join(annotation_path, fn + '.txt')
-
-    mfcc = get_madmom_log_mels(audio_fn, sample_rate, hopsize_t, multi)
-
-    print('Feature collecting ...', fn)
-
-    times_onset = timings_parser(annotation_fn)
-    times_onset = [float(to) for to in times_onset]
-
-    # syllable onset frames
-    frames_onset = np.array(np.around(np.array(times_onset) / hopsize_t), dtype=int)
-
-    # line start and end frames
-    frame_start = 0
-    frame_end = mfcc.shape[0] - 1
-
-    return mfcc, frames_onset, frame_start, frame_end
+from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights, \
+    dump_feature_onset_helper, get_recordings
 
 
 def collect_features(audio_path,
@@ -134,7 +91,7 @@ def collect_data(audio_path,
                  is_limited,
                  limit,
                  under_sample):
-    func = partial(audio_path, annotation_path, multi, extra,
+    func = partial(collect_features, audio_path, annotation_path, multi, extra,
                    namedtuple("AudioSampleData", ["features", "labels", "sample_weights", "extra_features"]))
     file_names = get_recordings(annotation_path)
     data = []
@@ -153,7 +110,7 @@ def collect_data(audio_path,
                     sample_count += len(result.labels)
                 song_count += 1
                 if sample_count >= limit:
-                    print("limit reached after %d songs. breaking..." % song_count)
+                    print("Limit reached after %d songs. Breaking..." % song_count)
                     break
         else:
             data = pool.map(func, file_names)

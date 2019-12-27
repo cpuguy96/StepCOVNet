@@ -7,7 +7,7 @@ from os.path import join
 
 import psutil
 
-from common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
+from common.utils import get_filenames_from_folder, get_filename, standardize_filename
 from configuration.parameters import sample_rate
 
 

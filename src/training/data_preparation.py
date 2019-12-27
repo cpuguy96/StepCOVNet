@@ -4,8 +4,10 @@ import joblib
 import numpy as np
 from sklearn.utils import compute_class_weight
 
+from common.utils import feature_reshape
 
-def preprocess(features, labels, extra_features=None, sample_weights=None, scalers=None, stride=1):
+
+def preprocess(features, labels, extra_features=None, sample_weights=None, scalers=None):
     features_copy = np.copy(features)
     if len(features.shape) > 2:
         if scalers is not None:
@@ -21,45 +23,10 @@ def preprocess(features, labels, extra_features=None, sample_weights=None, scale
 
     targets = np.copy(labels.reshape(-1, 1))
 
-    if stride > 1:
-        if extra_features is not None:
-            features_copy = [features_copy[::stride], extra_features[::stride]]
-        else:
-            features_copy = features_copy[::stride]
-        targets = targets[::stride]
-        if sample_weights is not None:
-            sample_weights = sample_weights[::stride]
-    else:
-        if extra_features is not None:
-            features_copy = [features_copy, extra_features]
+    if extra_features is not None:
+        features_copy = [features_copy, extra_features]
 
     return features_copy, targets, sample_weights
-
-
-def feature_reshape(feature, multi=False, nlen=10):
-    """
-    reshape mfccBands feature into n_sample * n_row * n_col
-    :param feature:
-    :return:
-    """
-
-    n_sample = feature.shape[0]
-    n_row = 80
-    n_col = nlen * 2 + 1
-
-    feature_reshaped = np.zeros((n_sample, n_row, n_col), dtype='float16')
-    if multi:
-        feature_reshaped = np.zeros((n_sample, n_row, n_col, feature.shape[-1]), dtype='float16')
-    # print("reshaping feature...")
-    for ii in range(n_sample):
-        # print ii
-        feature_frame = np.zeros((n_row, n_col), dtype='float16')
-        if multi:
-            feature_frame = np.zeros((n_row, n_col, feature.shape[-1]), dtype='float16')
-        for jj in range(n_col):
-            feature_frame[:, jj] = feature[ii][n_row * jj:n_row * (jj + 1)]
-        feature_reshaped[ii, :, :] = feature_frame
-    return feature_reshaped
 
 
 def load_data(filename_features,
@@ -68,7 +35,6 @@ def load_data(filename_features,
               filename_sample_weights,
               filename_scalers,
               filename_pretrained_model):
-
     # load training and validation data
     with open(filename_features, 'rb') as f:
         features = joblib.load(f)
