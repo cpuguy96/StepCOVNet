@@ -7,18 +7,18 @@ from sklearn.utils import compute_class_weight
 from common.utils import feature_reshape
 
 
-def preprocess(features, labels, extra_features=None, sample_weights=None, scalers=None):
+def pre_process(features, labels, extra_features=None, sample_weights=None, scalers=None):
     features_copy = np.copy(features)
     if len(features.shape) > 2:
         if scalers is not None:
             features_copy[:, :, 0] = scalers[0].transform(np.array(features_copy[:, :, 0]))
             features_copy[:, :, 1] = scalers[1].transform(np.array(features_copy[:, :, 1]))
             features_copy[:, :, 2] = scalers[2].transform(np.array(features_copy[:, :, 2]))
-        features_copy = feature_reshape(features_copy, True, 7)
+        features_copy = feature_reshape(features_copy, True)
     else:
         if scalers is not None:
             features_copy = scalers[0].transform(np.array(features_copy))
-        features_copy = feature_reshape(features_copy, False, 7)
+        features_copy = feature_reshape(features_copy, False)
         features_copy = np.expand_dims(np.squeeze(features_copy), axis=1)
 
     targets = np.copy(labels.reshape(-1, 1))

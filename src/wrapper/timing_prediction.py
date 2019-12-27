@@ -128,7 +128,7 @@ def generate_features(input_path,
             extra_features = None
 
         if model_type == 0:
-            log_mel = feature_reshape(log_mel, multi, 7)
+            log_mel = feature_reshape(log_mel, multi)
             if not multi:
                 log_mel = np.expand_dims(log_mel, axis=1)
         else:

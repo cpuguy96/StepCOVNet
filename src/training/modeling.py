@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Nadam
 
-from training.data_preparation import load_data, preprocess
+from training.data_preparation import load_data, pre_process
 from training.network import build_stepcovnet
 
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
@@ -80,17 +80,17 @@ def train_model(model,
 
     weights = model.get_weights()
 
-    x_train, y_train, sample_weights_train = preprocess(features[indices_train],
-                                                        labels[indices_train],
-                                                        training_extra_features,
-                                                        sample_weights[indices_train],
-                                                        training_scaler)
+    x_train, y_train, sample_weights_train = pre_process(features[indices_train],
+                                                         labels[indices_train],
+                                                         training_extra_features,
+                                                         sample_weights[indices_train],
+                                                         training_scaler)
 
-    x_test, y_test, sample_weights_test = preprocess(features[indices_validation],
-                                                     labels[indices_validation],
-                                                     testing_extra_features,
-                                                     sample_weights[indices_validation],
-                                                     training_scaler)
+    x_test, y_test, sample_weights_test = pre_process(features[indices_validation],
+                                                      labels[indices_validation],
+                                                      testing_extra_features,
+                                                      sample_weights[indices_validation],
+                                                      training_scaler)
 
     history = model.fit(x=x_train,
                         y=y_train,
@@ -118,11 +118,11 @@ def train_model(model,
     # train again use all train and validation set
     epochs_final = len(history.history['val_loss'])
 
-    all_x, all_y, sample_weights_all = preprocess(features,
-                                                  labels,
-                                                  extra_features,
-                                                  sample_weights,
-                                                  all_scalers)
+    all_x, all_y, sample_weights_all = pre_process(features,
+                                                   labels,
+                                                   extra_features,
+                                                   sample_weights,
+                                                   all_scalers)
 
     model.set_weights(weights)
 

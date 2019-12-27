@@ -20,7 +20,7 @@ def standardize_filename(filename):
     return re.sub("[^a-z0-9-_]", "", filename.lower())
 
 
-def feature_reshape(feature, multi=False, nlen=10):
+def feature_reshape(feature, multi=False):
     """
     reshape mfccBands feature into n_sample * n_row * n_col
     :param feature:
@@ -29,7 +29,7 @@ def feature_reshape(feature, multi=False, nlen=10):
 
     n_sample = feature.shape[0]
     n_row = 80
-    n_col = nlen * 2 + 1
+    n_col = 15
 
     feature_reshaped = np.zeros((n_sample, n_row, n_col), dtype='float16')
     if multi:

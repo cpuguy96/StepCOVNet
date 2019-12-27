@@ -28,3 +28,21 @@ def test_get_filename_without_ext():
 def test_standardize_filename():
     standard_file_name = standardize_filename(TEST_FILE_WITHOUT_EXT_WITH_RANDOM_CHARS)
     assert standard_file_name == TEST_FILE_WITHOUT_EXT
+
+
+def test_feature_reshape():
+    n_samples = 500
+    n_rows = 80
+    n_cols = 15
+    dummy_features = np.ones((n_samples, n_rows*n_cols))
+    reshaped_features = feature_reshape(dummy_features, multi=False)
+    assert reshaped_features.shape == (n_samples, n_rows, n_cols)
+
+
+def test_feature_reshape_multi():
+    n_samples = 500
+    n_rows = 80
+    n_cols = 15
+    dummy_features = np.ones((n_samples, n_rows * n_cols, 3))
+    reshaped_features = feature_reshape(dummy_features, multi=True)
+    assert reshaped_features.shape == (n_samples, n_rows, n_cols, 3)
