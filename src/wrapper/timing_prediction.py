@@ -1,8 +1,8 @@
-from configuration.parameters import sample_rate, hopsize_t
+from configuration.parameters import sample_rate, hopsize_t, thresholds
 from common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
 from common.utilFunctions import get_filenames_from_folder, get_filename
 from madmom.features.onsets import OnsetPeakPickingProcessor
-from training.data_preparation import featureReshape
+from training.data_preparation import feature_reshape
 
 from os.path import join
 
@@ -21,10 +21,7 @@ def __smooth_obs(obs):
     return obs
 
 
-def __boundary_decoding(obs_i,
-                        threshold,
-                        hopsize_t,
-                        OnsetPeakPickingProcessor):
+def __boundary_decoding(obs_i, threshold):
 
     """decode boundary"""
     arg_pp = {'threshold': threshold,
@@ -77,7 +74,7 @@ def __get_model(model_path,
                 extra = True
             else:
                 extra = False
-        except Exception:
+        except ValueError:
             # if not, then there is no extra features
             extra = False
     else:
@@ -126,7 +123,7 @@ def __generate_features(input_path,
             extra_features = None
 
         if model_type == 0:
-            log_mel = featureReshape(log_mel, multi, 7)
+            log_mel = feature_reshape(log_mel, multi, 7)
             if not multi:
                 log_mel = np.expand_dims(log_mel, axis=1)
         else:
@@ -162,8 +159,7 @@ def __generate_timings(model,
                 print("Generating timings for %s" % wav_name)
             pdfs.append(model.predict(xgboost.DMatrix(feature)))
 
-    timings = [__boundary_decoding(obs_i=__smooth_obs(np.squeeze(pdf)), threshold=0.5, hopsize_t=hopsize_t,
-                                   OnsetPeakPickingProcessor=OnsetPeakPickingProcessor)
+    timings = [__boundary_decoding(obs_i=__smooth_obs(np.squeeze(pdf)), threshold=thresholds['expert'])
                for pdf in pdfs]
     return timings
 

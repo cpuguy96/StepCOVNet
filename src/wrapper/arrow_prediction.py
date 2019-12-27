@@ -9,7 +9,7 @@ import numpy as np
 
 
 def __get_binary_rep(arrow_values):
-    return ((np.asarray(arrow_values).astype(int)[:,None] & (1 << np.arange(4))) > 0).astype(int)
+    return ((np.asarray(arrow_values).astype(int)[:, None] & (1 << np.arange(4))) > 0).astype(int)
 
 
 def __get_extended_binary_rep(arrow_combs):
@@ -25,11 +25,11 @@ def __get_extended_binary_rep(arrow_combs):
 def __get_all_note_combs():
     all_note_combs = []
 
-    for i in range(0, 4):
-        for j in range(0, 4):
-            for k in range(0, 4):
-                for l in range(0, 4):
-                    all_note_combs.append(str(i) + str(j) + str(k) + str(l))
+    for first_digit in range(0, 4):
+        for second_digit in range(0, 4):
+            for third_digit in range(0, 4):
+                for fourth_digit in range(0, 4):
+                    all_note_combs.append(str(first_digit) + str(second_digit) + str(third_digit) + str(fourth_digit))
 
     all_note_combs = all_note_combs[1:]
 
@@ -39,9 +39,9 @@ def __get_all_note_combs():
 def __create_tokens(timings):
     timings = timings.astype("float32")
     tokens = np.zeros((timings.shape[0], 3))
-    tokens[0][0] = 1 # set start token
+    tokens[0][0] = 1  # set start token
     next_note_token = np.append(timings[1:] - timings[:-1], np.asarray([0]))
-    prev_note_token = np.append(np.asarray([0]),  next_note_token[: -1])
+    prev_note_token = np.append(np.asarray([0]), next_note_token[: -1])
     tokens[:, 1] = prev_note_token.reshape(1, -1)
     tokens[:, 2] = next_note_token.reshape(1, -1)
     return tokens.astype("float32")

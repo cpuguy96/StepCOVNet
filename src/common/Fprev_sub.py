@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-'''
+"""
  * Copyright (C) 2016  Music Technology Group - Universitat Pompeu Fabra
  *
  * This file is part of jingjuPhoneticSegmentation
@@ -24,23 +24,25 @@
  *
  * If you want to refer this code, please use this article:
  *
-'''
+"""
 
 import numpy as np
 
-def Fprev_sub(x,w=2):
-    '''
+
+def Fprev_sub(x, w=2):
+    """
     # D = prev_sub(X,W) calculate the shifted x, with shifting frames 2
     input feature*frame
-    '''
+    """
+    xx = 0
     # pad data by repeating first and last columns
     if w > 0:
         # shift to right
-        xx = np.hstack((np.tile(x[:,0], (w,1)).transpose(), x[:,:-w]))
+        xx = np.hstack((np.tile(x[:, 0], (w, 1)).transpose(), x[:, :-w]))
     if w < 0:
         # shift to left
-        xx = np.hstack((x[:,-w:], np.tile(x[:,-1], (-w,1)).transpose()))
-    if w==0:
+        xx = np.hstack((x[:, -w:], np.tile(x[:, -1], (-w, 1)).transpose()))
+    if w == 0:
         raise ValueError("shifting frame coef can't be 0.")
 
     # plt.figure()
@@ -48,4 +50,3 @@ def Fprev_sub(x,w=2):
     # plt.show()
 
     return xx
-

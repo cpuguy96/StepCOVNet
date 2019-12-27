@@ -16,17 +16,17 @@ import multiprocessing
 import numpy as np
 
 
-def getRecordings(wav_path):
-    recordings      = []
+def get_recordings(wav_path):
+    recordings = []
     for root, subFolders, files in os.walk(wav_path):
-            for f in files:
-                file_prefix, file_extension = os.path.splitext(f)
-                if file_prefix != '.DS_Store' and file_prefix != '_DS_Store':
-                    recordings.append(file_prefix)
+        for f in files:
+            file_prefix, file_extension = os.path.splitext(f)
+            if file_prefix != '.DS_Store' and file_prefix != '_DS_Store':
+                recordings.append(file_prefix)
     return recordings
 
 
-def annotationCvParser(annotation_filename):
+def timings_parser(annotation_filename):
     """
     Schluter onset time annotation parser
     :param annotation_filename:
@@ -40,7 +40,6 @@ def annotationCvParser(annotation_filename):
 
 
 def dump_feature_onset_helper(audio_path, annotation_path, fn, multi):
-
     audio_fn = join(audio_path, fn + '.wav')
     annotation_fn = join(annotation_path, fn + '.txt')
 
@@ -48,7 +47,7 @@ def dump_feature_onset_helper(audio_path, annotation_path, fn, multi):
 
     print('Feature collecting ...', fn)
 
-    times_onset = annotationCvParser(annotation_fn)
+    times_onset = timings_parser(annotation_fn)
     times_onset = [float(to) for to in times_onset]
 
     # syllable onset frames
@@ -138,7 +137,7 @@ def collect_data(audio_path,
                  under_sample):
     func = partial(audio_path, annotation_path, multi, extra,
                    namedtuple("AudioSampleData", ["features", "labels", "sample_weights", "extra_features"]))
-    file_names = getRecordings(annotation_path)
+    file_names = get_recordings(annotation_path)
     data = []
 
     with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
@@ -235,7 +234,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
 
     if is_limited and len(indices_used) > limit:
         if under_sample:
-            indices_used = np.sort(np.random.choice(indices_used, limit*2))
+            indices_used = np.sort(np.random.choice(indices_used, limit * 2))
         else:
             indices_used = indices_used[:limit]
 
@@ -253,7 +252,8 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
 
     if multi:
         print("Saving multi-features ...")
-        joblib.dump(np.stack([features[0], features[1], features[2]], axis=-1).astype("float16"), join(path_output, prefix + 'dataset_features.npz'), compress=True)
+        joblib.dump(np.stack([features[0], features[1], features[2]], axis=-1).astype("float16"),
+                    join(path_output, prefix + 'dataset_features.npz'), compress=True)
         print("Saving low scaler ...")
         pickle.dump(StandardScaler().fit(features[0]), open(join(path_output, prefix + 'scaler_low.pkl'), 'wb'))
         print("Saving mid scaler ...")

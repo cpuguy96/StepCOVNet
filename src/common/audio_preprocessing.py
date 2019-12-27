@@ -13,7 +13,7 @@ import librosa
 EPSILON = np.spacing(1)
 
 
-def _nbf_2D(mfcc, nlen):
+def __nbf_2D(mfcc, nlen):
     mfcc = np.array(mfcc).transpose()
     mfcc_out = np.array(mfcc, copy=True)
     for ii in range(1, nlen + 1):
@@ -79,18 +79,18 @@ class MadmomMelbank3ChannelsProcessor(SequentialProcessor):
 
 def get_madmom_log_mels(file_name, sample_rate, hopsize_t, multi):
     if multi:
-        madmomMelbankProc = MadmomMelbankProcessor(sample_rate, hopsize_t)
+        madmom_melbank_proc = MadmomMelbankProcessor(sample_rate, hopsize_t)
     else:
-        madmomMelbankProc = MadmomMelbank3ChannelsProcessor(sample_rate, hopsize_t)
+        madmom_melbank_proc = MadmomMelbank3ChannelsProcessor(sample_rate, hopsize_t)
 
-    mfcc = madmomMelbankProc(file_name)
+    mfcc = madmom_melbank_proc(file_name)
 
     if multi:
-        mfcc = _nbf_2D(mfcc, 7)
+        mfcc = __nbf_2D(mfcc, 7)
     else:
         mfcc_conc = []
         for ii in range(3):
-            mfcc_conc.append(_nbf_2D(mfcc[:,:,ii], 7))
+            mfcc_conc.append(__nbf_2D(mfcc[:, :, ii], 7))
         mfcc = np.stack(mfcc_conc, axis=2)
     return mfcc
 
@@ -106,7 +106,7 @@ def __get_librosa_features(file_name, sample_rate, hopsize_t):
 
 def __get_madmom_features(file_name, hopsize_t):
     proc = DBNBeatTrackingProcessor(max_bpm=300,
-                                    fps=int(1/hopsize_t))
+                                    fps=int(1 / hopsize_t))
     act = RNNBeatProcessor()
     pre_processor = SequentialProcessor([act, proc])
     beat_times = pre_processor(file_name)

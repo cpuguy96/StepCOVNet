@@ -55,7 +55,7 @@ def time_back(model, lookback, extra_input=None):
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=True,
                                 kernel_regularizer=l2(1e-6),
-                                #recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
+                                # recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
                                 kernel_initializer='glorot_normal'))(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
@@ -63,7 +63,7 @@ def time_back(model, lookback, extra_input=None):
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=False,
                                 kernel_regularizer=l2(1e-6),
-                                #recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
+                                # recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
                                 kernel_initializer='glorot_normal'))(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
@@ -79,7 +79,6 @@ def time_back(model, lookback, extra_input=None):
 
 
 def front(x_input, reshape_dim, channel_order, channel):
-
     x = Conv2D(8,
                (3, 7),
                padding="valid",
@@ -128,7 +127,7 @@ def back(model, extra_input=None):
         x = Dense(256, kernel_initializer='glorot_normal')(model)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
-    #x = Dropout(0.10)(x)
+    # x = Dropout(0.10)(x)
     x = Dense(128, kernel_initializer='glorot_normal')(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
@@ -146,7 +145,7 @@ def pretrained_time_back(model, lookback, extra_input=None):
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=True,
                                 kernel_regularizer=l2(1e-6),
-                                #recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
+                                # recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
                                 kernel_initializer='glorot_normal'))(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
@@ -154,7 +153,7 @@ def pretrained_time_back(model, lookback, extra_input=None):
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=False,
                                 kernel_regularizer=l2(1e-6),
-                                #recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
+                                # recurrent_regularizer=tensorflow.keras.regularizers.l2(1e-6),
                                 kernel_initializer='glorot_normal'))(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
@@ -177,7 +176,7 @@ def pretrained_back(model, extra_input=None):
         x = Dense(256, kernel_initializer='glorot_normal')(model)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
-    #x = Dropout(0.10)(x)
+    # x = Dropout(0.10)(x)
     x = Dense(128, kernel_initializer='glorot_normal')(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
