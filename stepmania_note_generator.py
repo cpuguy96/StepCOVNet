@@ -1,8 +1,8 @@
-from scripts_common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
-from scripts_wrapper.wav_converter import wav_converter
-from scripts_wrapper.arrow_prediction import arrow_prediction
-from scripts_wrapper.timing_arrow_combiner import timing_arrow_combiner
-from scripts_wrapper.timing_prediction import timing_prediction
+from common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
+from wrapper.wav_converter import wav_converter
+from wrapper.arrow_prediction import arrow_prediction
+from wrapper.timing_arrow_combiner import timing_arrow_combiner
+from wrapper.timing_prediction import timing_prediction
 
 from shutil import copyfile, rmtree
 from os.path import join

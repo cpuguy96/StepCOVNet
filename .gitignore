@@ -1,12 +1,9 @@
-pred_arrows/
-pred_timings/
-pred_txts/
-testing_models/
-saved_models/
 input/
 !input/zombie_maker.ogg
 output/
-training_data/
+
+saved_models/
+data/
 
 # Pycharm
 .idea
@@ -125,3 +122,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/data/

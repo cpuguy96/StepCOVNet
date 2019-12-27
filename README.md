@@ -30,12 +30,12 @@ python stepmania_note_generator.py -i --input <string> -o --output <string> -s -
 ## Creating Dataset
 To create a training dataset, you need to parse the `.sm` files and convert sound files into `.wav` files: 
 * [`smfile_parser.py`](https://github.com/jhaco/SMFile_Parser) should be used to parse the `.sm` files into `.txt` files. 
-* [`wav_converter.py`](https://github.com/cpuguy96/stepcovnet/blob/master/scripts_wrapper/wav_converter.py) can be used to convert the audio files into `.wav` files. If a different `.wav` converter is uses, ensure the sample rate is `44100hz`.
+* [`wav_converter.py`](https://github.com/cpuguy96/stepcovnet/blob/master/wrapper/wav_converter.py) can be used to convert the audio files into `.wav` files. If a different `.wav` converter is uses, ensure the sample rate is `44100hz`.
 
-Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` files into separate directories and run [`training_data_collection.py`](https://github.com/cpuguy96/stepcovnet/blob/master/scripts_data_collection/training_data_collection.py).
+Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` files into separate directories and run [`training_data_collection.py`](https://github.com/cpuguy96/stepcovnet/blob/master/data_collection/training_data_collection.py).
 
 ```.bash
-cd scripts_data_collection
+cd data_collection
 python training_data_collection.py -w --wav <string> -t --timing <string> -o --output <string> --multi <int> --extra <int> --under_sample <int> --limit <int>
 ```
 * `-w` `--wav` input directory path to `.wav` files
@@ -47,9 +47,9 @@ python training_data_collection.py -w --wav <string> -t --timing <string> -o --o
 * **OPTIONAL:** `--limit` `>0` stops data collection and resizes output to match limit, `-1` means unlimited; default is `-1`
 
 ## Training Model
-Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/stepcovnet/blob/master/scripts_training/train.py).
+Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/stepcovnet/blob/master/training/train.py).
 ```.bash
-cd scripts_training
+cd training
 python train.py -i --input <string> -o --output <string> --multi <int> --extra <int> --under_sample <int> --lookback <int> --limit <int> --name <string> --pretrained_model <string>
 ``` 
 * `-i` `--input` input directory path to training dataset
