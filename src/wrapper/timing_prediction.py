@@ -1,16 +1,18 @@
-from configuration.parameters import sample_rate, hopsize_t, thresholds
-from common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
-from common.utilFunctions import get_filenames_from_folder, get_filename
-from madmom.features.onsets import OnsetPeakPickingProcessor
-from training.data_preparation import feature_reshape
-
-from os.path import join
-
-
+import multiprocessing
 import os
 import time
-import numpy as np
+from functools import partial
+from os.path import join
+
 import joblib
+import numpy as np
+import psutil
+from madmom.features.onsets import OnsetPeakPickingProcessor
+
+from common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
+from common.utilFunctions import get_filenames_from_folder, get_filename
+from configuration.parameters import sample_rate, hopsize_t, thresholds
+from training.data_preparation import feature_reshape
 
 
 def __smooth_obs(obs):
@@ -56,11 +58,12 @@ def __get_scaler(scaler_path, multi):
 def __get_model(model_path,
                 model_type,
                 pca_path):
-    from tensorflow.keras.models import load_model
     extra = False
     pca = None
 
     if model_type == 0:
+        from tensorflow.keras.models import load_model
+
         custom_objects = {}
 
         model = load_model(join(model_path), custom_objects=custom_objects, compile=False)
@@ -137,8 +140,6 @@ def __generate_features(input_path,
     except Exception as ex:
         if verbose:
             print("Error generating timings for %s. Exception: %s" % (wav_name, ex))
-            import traceback
-            traceback.print_exc()
         return None, None
 
 
@@ -190,9 +191,6 @@ def __run_process(input_path,
         timing = __generate_timings(model, model_type, verbose, [features_and_wav_name])
         __write_predictions(output_path, (timing, features_and_wav_name[1]))
     else:
-        import multiprocessing
-        import psutil
-        from functools import partial
         wav_names = get_filenames_from_folder(input_path)
         func = partial(__generate_features, input_path, multi, extra, model_type, scaler, pca, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:

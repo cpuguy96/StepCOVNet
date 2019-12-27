@@ -1,11 +1,14 @@
-from configuration.parameters import sample_rate
-from common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
-
-from os.path import join
-
+import multiprocessing
 import os
 import subprocess
 import time
+from functools import partial
+from os.path import join
+
+import psutil
+
+from common.utilFunctions import get_filenames_from_folder, get_filename, standardize_filename
+from configuration.parameters import sample_rate
 
 
 def __convert_file(input_path,
@@ -29,9 +32,6 @@ def __run_process(input_path, output_path, verbose):
         __convert_file(os.path.dirname(input_path), output_path, verbose, get_filename(input_path))
     else:
         file_names = get_filenames_from_folder(input_path)
-        import multiprocessing
-        import psutil
-        from functools import partial
         func = partial(__convert_file, input_path, output_path, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
             pool.map_async(func, file_names).get()

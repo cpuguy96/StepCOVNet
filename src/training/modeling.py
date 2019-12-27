@@ -1,13 +1,15 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-from training.data_preparation import load_data, preprocess
-from training.network import build_stepcovnet
+import os
 
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Nadam
 
-import os
-import tensorflow as tf
+from training.data_preparation import load_data, preprocess
+from training.network import build_stepcovnet
 
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
@@ -40,9 +42,6 @@ def model_train(model,
                                           monitor='val_loss',
                                           verbose=0,
                                           save_best_only=True)]
-    from sklearn.model_selection import train_test_split
-    from sklearn.preprocessing import StandardScaler
-
     indices_all = range(len(features))
     print("number of samples:", len(indices_all))
 

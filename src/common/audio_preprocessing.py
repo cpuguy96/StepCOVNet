@@ -1,14 +1,13 @@
-from common.Fprev_sub import Fprev_sub
-
-from madmom.processors import SequentialProcessor, ParallelProcessor
-from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
-from madmom.audio.signal import SignalProcessor, FramedSignalProcessor
-from madmom.audio.stft import ShortTimeFourierTransformProcessor
-from madmom.audio.filters import MelFilterbank
-from madmom.audio.spectrogram import FilteredSpectrogramProcessor, LogarithmicSpectrogramProcessor
-
-import numpy as np
 import librosa
+import numpy as np
+from madmom.audio.filters import MelFilterbank
+from madmom.audio.signal import SignalProcessor, FramedSignalProcessor
+from madmom.audio.spectrogram import FilteredSpectrogramProcessor, LogarithmicSpectrogramProcessor
+from madmom.audio.stft import ShortTimeFourierTransformProcessor
+from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
+from madmom.processors import SequentialProcessor, ParallelProcessor
+
+from common.Fprev_sub import Fprev_sub
 
 EPSILON = np.spacing(1)
 

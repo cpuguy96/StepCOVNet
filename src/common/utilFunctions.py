@@ -1,7 +1,6 @@
+import re
 from os import listdir
 from os.path import join, isfile, splitext, basename
-
-import re
 
 
 def get_filenames_from_folder(mypath):

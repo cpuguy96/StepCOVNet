@@ -1,19 +1,18 @@
+import multiprocessing
+import os
+import pickle
+from collections import namedtuple
+from functools import partial
+from os.path import join
+
+import joblib
+import numpy as np
+import psutil
+from sklearn.preprocessing import StandardScaler
+
 from common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
 from configuration.parameters import hopsize_t, sample_rate
 from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
-
-from os.path import join
-from sklearn.preprocessing import StandardScaler
-
-from functools import partial
-from collections import namedtuple
-
-import os
-import pickle
-import joblib
-import psutil
-import multiprocessing
-import numpy as np
 
 
 def get_recordings(wav_path):

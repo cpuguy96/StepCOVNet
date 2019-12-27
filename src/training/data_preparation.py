@@ -1,8 +1,8 @@
-from sklearn.utils import compute_class_weight
-
-import numpy as np
-import joblib
 import pickle
+
+import joblib
+import numpy as np
+from sklearn.utils import compute_class_weight
 
 
 def preprocess(features, labels, extra_features=None, sample_weights=None, scalers=None, stride=1):

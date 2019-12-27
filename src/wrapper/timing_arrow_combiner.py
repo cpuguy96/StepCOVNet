@@ -1,11 +1,14 @@
-from common.utilFunctions import get_filenames_from_folder, get_filename
-
+import multiprocessing
+import os
+import time
+from functools import partial
 from os.path import join
 
-import os
-import numpy as np
 import librosa
-import time
+import numpy as np
+import psutil
+
+from common.utilFunctions import get_filenames_from_folder, get_filename
 
 
 def __get_bpm(wav_file_path):
@@ -64,9 +67,6 @@ def __run_process(timings_path,
     if os.path.isfile(timings_path):
         __combine_data(os.path.dirname(timings_path), arrows_path, wavs_path, output_path, verbose, get_filename(wavs_path))
     else:
-        import multiprocessing
-        import psutil
-        from functools import partial
         wav_names = get_filenames_from_folder(wavs_path)
         func = partial(__combine_data, timings_path, arrows_path, wavs_path, output_path, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:

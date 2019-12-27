@@ -1,7 +1,7 @@
-from training.modeling import train_model
-
-import os
 import argparse
+import os
+
+from training.modeling import train_model
 
 
 def train(input_path,

@@ -1,11 +1,12 @@
-from common.utilFunctions import get_filenames_from_folder, get_filename
-
-from os.path import join
-from nltk.util import ngrams
-
 import os
 import time
+from os.path import join
+
 import numpy as np
+from nltk.util import ngrams
+from sklearn.preprocessing import OneHotEncoder
+
+from common.utilFunctions import get_filenames_from_folder, get_filename
 
 
 def __get_binary_rep(arrow_values):
@@ -114,7 +115,6 @@ def arrow_prediction(input_path,
         if verbose:
             print("Starting arrows prediction\n-----------------------------------------")
         from tensorflow.keras.models import load_model
-        from sklearn.preprocessing import OneHotEncoder
         model = load_model(join(model_path), compile=False)
         encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(__get_all_note_combs()).reshape(-1, 1))
         __run_process(input_path, output_path, model, encoder, verbose)

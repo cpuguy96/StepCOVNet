@@ -1,7 +1,6 @@
+from tensorflow.compat.v1.keras.layers import CuDNNLSTM
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Dense, Flatten, BatchNormalization, \
     Activation, SpatialDropout2D, concatenate, Bidirectional, RepeatVector, SpatialDropout1D
-
-from tensorflow.compat.v1.keras.layers import CuDNNLSTM
 from tensorflow.keras.regularizers import l2
 
 

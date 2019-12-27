@@ -1,11 +1,11 @@
-from training.architectures import front, time_front, back, time_back, pretrained_back, pretrained_time_back
-
+import tensorflow as tf
 from tensorflow.keras.layers import Dense, Input, Flatten
 from tensorflow.keras.models import Model
 
+from training.architectures import front, time_front, back, time_back, pretrained_back, pretrained_time_back
+
 
 def __get_pretrained_front(model, x_input):
-    import tensorflow as tf
     for i, layer in enumerate(model.layers):
         layer._name = layer.name + str("_pre")
         if isinstance(layer, (tf.keras.layers.Flatten, tf.keras.layers.GlobalAveragePooling2D, tf.keras.layers.GlobalMaxPooling2D)):
