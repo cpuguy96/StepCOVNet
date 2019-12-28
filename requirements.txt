@@ -6,5 +6,5 @@ psutil
 nltk
 sklearn
 tensorflow
-madmom
 Cython
+madmom
