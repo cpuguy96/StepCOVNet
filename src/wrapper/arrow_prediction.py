@@ -86,7 +86,7 @@ def generate_arrows(input_path, output_path, model, encoder, verbose, timing_nam
             arrows_file.write(str(arrow) + "\n")
 
 
-def __run_process(input_path, output_path, model, encoder, verbose):
+def run_process(input_path, output_path, model, encoder, verbose):
     if os.path.isfile(input_path):
         generate_arrows(os.path.dirname(input_path), output_path, model, encoder, verbose, get_filename(input_path))
     else:
@@ -117,7 +117,7 @@ def arrow_prediction(input_path,
         from tensorflow.keras.models import load_model
         model = load_model(join(model_path), compile=False)
         encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
-        __run_process(input_path, output_path, model, encoder, verbose)
+        run_process(input_path, output_path, model, encoder, verbose)
     else:
         raise FileNotFoundError('Timing files path %s not found' % input_path)
 

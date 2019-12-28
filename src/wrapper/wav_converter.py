@@ -8,31 +8,31 @@ from os.path import join
 import psutil
 
 from common.utils import get_filenames_from_folder, get_filename, standardize_filename
-from configuration.parameters import sample_rate
+from configuration.parameters import SAMPLE_RATE
 
 
-def __convert_file(input_path,
-                   output_path,
-                   verbose,
-                   file_name):
+def convert_file(input_path,
+                 output_path,
+                 verbose,
+                 file_name):
     try:
         new_file_name = standardize_filename(get_filename(file_name, False))
         if verbose:
             print("Converting " + file_name)
         subprocess.call(
             ['ffmpeg', '-y', '-loglevel', 'quiet', '-i',
-             join(input_path, file_name), '-ar', str(sample_rate), join(output_path, new_file_name + '.wav')])
+             join(input_path, file_name), '-ar', str(SAMPLE_RATE), join(output_path, new_file_name + '.wav')])
     except Exception as ex:
         if verbose:
-            print("Failed to convert %s. Exception: %s", (file_name, ex))
+            print("Failed to convert %s: %r", (file_name, ex))
 
 
-def __run_process(input_path, output_path, verbose):
+def run_process(input_path, output_path, verbose):
     if os.path.isfile(input_path):
-        __convert_file(os.path.dirname(input_path), output_path, verbose, get_filename(input_path))
+        convert_file(os.path.dirname(input_path), output_path, verbose, get_filename(input_path))
     else:
         file_names = get_filenames_from_folder(input_path)
-        func = partial(__convert_file, input_path, output_path, verbose)
+        func = partial(convert_file, input_path, output_path, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
             pool.map_async(func, file_names).get()
 
@@ -50,7 +50,7 @@ def wav_converter(input_path, output_path, verbose_int=0):
     if os.path.isfile(input_path) or os.path.isdir(input_path):
         if verbose:
             print("Starting .wav conversion\n-----------------------------------------")
-        __run_process(input_path, output_path, verbose)
+        run_process(input_path, output_path, verbose)
     else:
         raise FileNotFoundError('Audio file(s) path %s not found' % input_path)
     end_time = time.time()

@@ -1,9 +1,13 @@
-sample_rate = 44100
+SAMPLE_RATE = 44100
 
-hopsize_t = 0.010
+HOPSIZE_T = 0.010
 
-nfolds = 8
+BATCH_SIZE = 256
 
-batch_size = 64
+MAX_EPOCHS = 30
 
-thresholds = {'expert': 0.5}
+MULTI_CHANNEL_FRAME_SIZES = [1024, 2048, 4096]
+
+SINGLE_CHANNEL_FRAME_SIZE = 2048
+
+THRESHOLDS = {'expert': 0.5}

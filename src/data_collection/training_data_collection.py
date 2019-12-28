@@ -1,7 +1,6 @@
 import multiprocessing
 import os
 import pickle
-from collections import namedtuple
 from functools import partial
 from os.path import join
 
@@ -11,21 +10,16 @@ import psutil
 from sklearn.preprocessing import StandardScaler
 
 from common.audio_preprocessing import get_madmom_librosa_features
-from configuration.parameters import hopsize_t, sample_rate
+from configuration.parameters import HOPSIZE_T, SAMPLE_RATE
 from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights, \
     dump_feature_onset_helper, get_recordings
 
 
-def collect_features(audio_path,
-                     annotation_path,
-                     multi,
-                     extra,
-                     data_named_tuple,
-                     fn):
+def collect_features(wav_path, timing_path, multi, extra, file_name):
     # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
         log_mel, frames_onset, frame_start, frame_end = \
-            dump_feature_onset_helper(audio_path, annotation_path, fn, multi)
+            dump_feature_onset_helper(wav_path, timing_path, file_name, multi)
 
         # simple sample weighting
         feature, label, sample_weights = \
@@ -33,22 +27,21 @@ def collect_features(audio_path,
 
         if extra:
             # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
-            extra_feature = get_madmom_librosa_features(join(audio_path, fn + '.wav'),
-                                                        sample_rate,
-                                                        hopsize_t,
+            extra_feature = get_madmom_librosa_features(join(wav_path, file_name + '.wav'),
+                                                        SAMPLE_RATE,
+                                                        HOPSIZE_T,
                                                         len(label),
                                                         frame_start)
         else:
             extra_feature = False
 
-        return data_named_tuple(feature, label, sample_weights, extra_feature)
+        return [feature, label, sample_weights, extra_feature]
     except Exception as ex:
-        print("Error collecting features for %s. Exception: %s", (fn, ex))
+        print("Error collecting features for %s: %r", (file_name, ex))
         return None
 
 
-def format_data(data,
-                multi):
+def format_data(data, multi):
     labels, sample_weights, extra_features = [], [], []
     features = []
     features_low, features_mid, features_high = [], [], []
@@ -56,8 +49,8 @@ def format_data(data,
     for feature_list, label_list, sample_weight_list, extra_feature_list in data:
         if multi:
             features_low.append(feature_list[:, :, 0].astype("float16"))
-            features_mid.append(feature_list[:, :, 0].astype("float16"))
-            features_high.append(feature_list[:, :, 0].astype("float16"))
+            features_mid.append(feature_list[:, :, 1].astype("float16"))
+            features_high.append(feature_list[:, :, 2].astype("float16"))
         else:
             features.append(feature_list)
 
@@ -70,7 +63,7 @@ def format_data(data,
     labels = np.concatenate(labels, axis=0).astype("int8")
     sample_weights = np.concatenate(sample_weights, axis=0).astype("float16")
 
-    if not extra_features:
+    if extra_features:
         extra_features = np.concatenate(extra_features, axis=0).astype("int8")
 
     if multi:
@@ -84,30 +77,20 @@ def format_data(data,
     return all_features, labels, sample_weights, extra_features
 
 
-def collect_data(audio_path,
-                 annotation_path,
-                 multi,
-                 extra,
-                 is_limited,
-                 limit,
-                 under_sample):
-    func = partial(collect_features, audio_path, annotation_path, multi, extra,
-                   namedtuple("AudioSampleData", ["features", "labels", "sample_weights", "extra_features"]))
-    file_names = get_recordings(annotation_path)
+def collect_data(wavs_path, timings_path, multi, extra, limit, under_sample):
+    func = partial(collect_features, wavs_path, timings_path, multi, extra)
+    file_names = get_recordings(timings_path)
     data = []
 
     with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
-        if is_limited:
+        if limit > 0:
             sample_count = 0
             song_count = 0
             for result in pool.imap(func, file_names):
                 if result is None:
                     continue
                 data.append(result)
-                if under_sample:
-                    sample_count += result.labels.sum()  # labels collected
-                else:
-                    sample_count += len(result.labels)
+                sample_count += result[2].sum() if under_sample else len(result[2])  # labels collected
                 song_count += 1
                 if sample_count >= limit:
                     print("Limit reached after %d songs. Breaking..." % song_count)
@@ -118,66 +101,36 @@ def collect_data(audio_path,
     return format_data(data, multi)
 
 
-def dump_feature_label_sample_weights_onset_phrase(audio_path,
-                                                   annotation_path,
-                                                   path_output,
-                                                   multi,
-                                                   extra,
-                                                   under_sample,
-                                                   limit):
-    if not os.path.isdir(audio_path):
-        raise NotADirectoryError('Audio path %s not found' % audio_path)
+def training_data_collection(wavs_path, timings_path, output_path, multi_int, extra_int, under_sample_int, limit):
+    if not os.path.isdir(wavs_path):
+        raise NotADirectoryError('Audio path %s not found' % wavs_path)
 
-    if not os.path.isdir(annotation_path):
-        raise NotADirectoryError('Annotation path %s not found' % annotation_path)
+    if not os.path.isdir(timings_path):
+        raise NotADirectoryError('Annotation path %s not found' % timings_path)
 
-    if not os.path.isdir(path_output):
+    if not os.path.isdir(output_path):
         print('Output path not found. Creating directory...')
-        os.makedirs(path_output, exist_ok=True)
-
-    if multi == 1:
-        multi = True
-    else:
-        multi = False
-
-    if extra == 1:
-        extra = True
-    else:
-        extra = False
-
-    if under_sample == 1:
-        under_sample = True
-    else:
-        under_sample = False
+        os.makedirs(output_path, exist_ok=True)
 
     if limit == 0:
         raise ValueError('Limit cannot be 0!')
 
+    multi = True if multi_int == 1 else False
+    extra = True if extra_int == 1 else False
+    under_sample = True if under_sample_int == 1 else False
     if limit < 0:
         limit = -1
-        is_limited = False
     else:
         limit = limit
-        is_limited = True
 
-    if is_limited and under_sample:
+    if limit > 0 and under_sample:
         limit //= 2
 
-    features, labels, weights, extra_features = collect_data(audio_path,
-                                                             annotation_path,
-                                                             multi,
-                                                             extra,
-                                                             is_limited,
-                                                             limit,
+    features, labels, weights, extra_features = collect_data(wavs_path, timings_path, multi, extra, limit,
                                                              under_sample)
 
-    prefix = ""
-
-    if multi:
-        prefix += "multi_"
-
-    if under_sample:
-        prefix += "under_"
+    prefix = "multi_" if multi else ""
+    prefix += "under_" if under_sample else ""
 
     indices_used = np.asarray(range(len(labels))).reshape(-1, 1)
 
@@ -188,7 +141,7 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
 
     indices_used = np.sort(indices_used.reshape(-1).astype(int))
 
-    if is_limited and len(indices_used) > limit:
+    if 0 < limit < len(indices_used):
         if under_sample:
             indices_used = np.sort(np.random.choice(indices_used, limit * 2))
         else:
@@ -197,30 +150,30 @@ def dump_feature_label_sample_weights_onset_phrase(audio_path,
         assert labels.sum() > 0, "Not enough positive labels. Increase limit!"
 
     print("Saving labels ...")
-    joblib.dump(labels[indices_used], join(path_output, prefix + 'labels.npz'), compress=True)
+    joblib.dump(labels[indices_used], join(output_path, prefix + 'labels.npz'), compress=True)
 
     print("Saving sample weights ...")
-    joblib.dump(weights[indices_used], join(path_output, prefix + 'sample_weights.npz'), compress=True)
+    joblib.dump(weights[indices_used], join(output_path, prefix + 'sample_weights.npz'), compress=True)
 
     if extra:
         print("Saving extra features ...")
-        joblib.dump(extra_features[indices_used], join(path_output, prefix + 'extra_features.npz'), compress=True)
+        joblib.dump(extra_features[indices_used], join(output_path, prefix + 'extra_features.npz'), compress=True)
 
     if multi:
         print("Saving multi-features ...")
         joblib.dump(np.stack([features[0], features[1], features[2]], axis=-1).astype("float16"),
-                    join(path_output, prefix + 'dataset_features.npz'), compress=True)
+                    join(output_path, prefix + 'dataset_features.npz'), compress=True)
         print("Saving low scaler ...")
-        pickle.dump(StandardScaler().fit(features[0]), open(join(path_output, prefix + 'scaler_low.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(features[0]), open(join(output_path, prefix + 'scaler_low.pkl'), 'wb'))
         print("Saving mid scaler ...")
-        pickle.dump(StandardScaler().fit(features[1]), open(join(path_output, prefix + 'scaler_mid.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(features[1]), open(join(output_path, prefix + 'scaler_mid.pkl'), 'wb'))
         print("Saving high scaler ...")
-        pickle.dump(StandardScaler().fit(features[2]), open(join(path_output, prefix + 'scaler_high.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(features[2]), open(join(output_path, prefix + 'scaler_high.pkl'), 'wb'))
     else:
         print("Saving features ...")
-        joblib.dump(features[indices_used], join(path_output, prefix + 'dataset_features.npz'), compress=True)
+        joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
         print("Saving scaler ...")
-        pickle.dump(StandardScaler().fit(features), open(join(path_output, prefix + 'scaler.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(features), open(join(output_path, prefix + 'scaler.pkl'), 'wb'))
 
 
 if __name__ == '__main__':
@@ -254,10 +207,6 @@ if __name__ == '__main__':
                         help="maximum number of samples allowed to be collected")
     args = parser.parse_args()
 
-    dump_feature_label_sample_weights_onset_phrase(audio_path=args.wav,
-                                                   annotation_path=args.timing,
-                                                   path_output=args.output,
-                                                   multi=args.multi,
-                                                   extra=args.extra,
-                                                   under_sample=args.under_sample,
-                                                   limit=args.limit)
+    training_data_collection(wavs_path=args.wav, timings_path=args.timing, output_path=args.output,
+                             multi_int=args.multi, extra_int=args.extra, under_sample_int=args.under_sample,
+                             limit=args.limit)

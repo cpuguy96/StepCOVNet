@@ -12,7 +12,7 @@ from madmom.features.onsets import OnsetPeakPickingProcessor
 from common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
 from common.utils import feature_reshape
 from common.utils import get_filenames_from_folder, get_filename
-from configuration.parameters import sample_rate, hopsize_t, thresholds
+from configuration.parameters import SAMPLE_RATE, HOPSIZE_T, THRESHOLDS
 
 
 def smooth_obs(obs):
@@ -27,14 +27,14 @@ def boundary_decoding(obs_i, threshold):
     """decode boundary"""
     arg_pp = {'threshold': threshold,
               'smooth': 0,
-              'fps': 1. / hopsize_t,
-              'pre_max': hopsize_t,
-              'post_max': hopsize_t}
+              'fps': 1. / HOPSIZE_T,
+              'pre_max': HOPSIZE_T,
+              'post_max': HOPSIZE_T}
 
     peak_picking = OnsetPeakPickingProcessor(**arg_pp)
     i_boundary = peak_picking.process(obs_i)
-    i_boundary = np.append(i_boundary, (len(obs_i) - 1) * hopsize_t)
-    i_boundary /= hopsize_t
+    i_boundary = np.append(i_boundary, (len(obs_i) - 1) * HOPSIZE_T)
+    i_boundary /= HOPSIZE_T
     return i_boundary
 
 
@@ -110,19 +110,19 @@ def generate_features(input_path,
             print("Generating features for " + get_filename(wav_name, False))
 
         if multi:
-            log_mel = get_madmom_log_mels(join(input_path, wav_name), sample_rate, hopsize_t, multi)
+            log_mel = get_madmom_log_mels(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T, multi)
             if scaler is not None:
                 log_mel[:, :, 0] = scaler[0].transform(log_mel[:, :, 0])
                 log_mel[:, :, 1] = scaler[1].transform(log_mel[:, :, 1])
                 log_mel[:, :, 2] = scaler[2].transform(log_mel[:, :, 2])
         else:
-            log_mel = get_madmom_log_mels(join(input_path, wav_name), sample_rate, hopsize_t, multi)
+            log_mel = get_madmom_log_mels(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T, multi)
             if scaler is not None:
                 log_mel = scaler[0].transform(log_mel)
         if extra:
             if verbose:
                 print("Generating extra features for " + get_filename(wav_name, False))
-            extra_features = get_madmom_librosa_features(join(input_path, wav_name), sample_rate, hopsize_t,
+            extra_features = get_madmom_librosa_features(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T,
                                                          len(log_mel))
         else:
             extra_features = None
@@ -141,7 +141,7 @@ def generate_features(input_path,
         return [log_mel, extra_features], wav_name
     except Exception as ex:
         if verbose:
-            print("Error generating timings for %s. Exception: %s" % (wav_name, ex))
+            print("Error generating timings for %s: %r" % (wav_name, ex))
         return None, None
 
 
@@ -162,7 +162,7 @@ def generate_timings(model,
                 print("Generating timings for %s" % wav_name)
             pdfs.append(model.predict(xgboost.DMatrix(feature)))
 
-    timings = [boundary_decoding(obs_i=smooth_obs(np.squeeze(pdf)), threshold=thresholds['expert'])
+    timings = [boundary_decoding(obs_i=smooth_obs(np.squeeze(pdf)), threshold=THRESHOLDS['expert'])
                for pdf in pdfs]
     return timings
 
@@ -176,15 +176,15 @@ def write_predictions(output_path,
             timings_file.write(str(timing / 100) + "\n")
 
 
-def __run_process(input_path,
-                  output_path,
-                  model,
-                  model_type,
-                  multi,
-                  scaler,
-                  extra,
-                  pca,
-                  verbose):
+def run_process(input_path,
+                output_path,
+                model,
+                model_type,
+                multi,
+                scaler,
+                extra,
+                pca,
+                verbose):
     if os.path.isfile(input_path):
         features_and_wav_name = generate_features(os.path.dirname(input_path), multi, extra, model_type, scaler, pca,
                                                   verbose, get_filename(input_path))
@@ -239,7 +239,7 @@ def timing_prediction(input_path,
             print("Starting timings prediction\n-----------------------------------------")
         model, multi, extra, pca = get_model(model_path, model_type, pca_path)
         scaler = get_scalers(scaler_path, multi)
-        __run_process(input_path, output_path, model, model_type, multi, scaler, extra, pca, verbose)
+        run_process(input_path, output_path, model, model_type, multi, scaler, extra, pca, verbose)
     else:
         raise FileNotFoundError('Wav file(s) path %s not found' % input_path)
     end_time = time.time()

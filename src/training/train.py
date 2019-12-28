@@ -1,4 +1,3 @@
-import argparse
 import os
 
 from training.modeling import prepare_model
@@ -29,91 +28,60 @@ def train(input_path,
     if lookback > 1 and under_sample_int == 1:
         raise ValueError('Cannot use under sample when lookback > 1')
 
+    if name is not None and not name:
+        raise ValueError('Model name cannot be empty')
+
     if pretrained_model_path is not None and not os.path.isfile(pretrained_model_path):
         raise FileNotFoundError('Pretrained model path %s not found' % pretrained_model_path)
 
-    filename_scaler = []
+    multi = True if multi_int == 1 else False
+    extra = True if extra_int == 1 else False
+    under_sample = True if under_sample_int == 1 else False
 
-    if multi_int == 1:
-        multi = True
-    else:
-        multi = False
+    built_model_name = "multi_" if multi else ""
+    built_model_name += "under_" if under_sample else ""
 
-    if extra_int == 1:
-        extra = True
-    else:
-        extra = False
-
-    if under_sample_int == 1:
-        under_sample = True
-    else:
-        under_sample = False
-
-    prefix = ""
-
-    if multi:
-        prefix += "multi_"
-
-    if under_sample:
-        prefix += "under_"
-
-    filename_labels = os.path.join(input_path, prefix + 'labels.npz')
-    filename_sample_weights = os.path.join(input_path, prefix + 'sample_weights.npz')
+    filename_labels = os.path.join(input_path, built_model_name + 'labels.npz')
+    filename_sample_weights = os.path.join(input_path, built_model_name + 'sample_weights.npz')
 
     if extra:
-        path_extra_features = os.path.join(input_path, prefix + 'extra_features.npz')
+        path_extra_features = os.path.join(input_path, built_model_name + 'extra_features.npz')
         extra_input_shape = (None, 2)
     else:
         path_extra_features = None
         extra_input_shape = None
 
+    filename_scaler = []
     if multi:
-        input_shape = (80, 15, 3)
-        if lookback > 1:
-            input_shape = (lookback, 80, 15, 3)
-
-        filename_scaler.append(os.path.join(input_path, prefix + 'scaler_low.pkl'))
-        filename_scaler.append(os.path.join(input_path, prefix + 'scaler_mid.pkl'))
-        filename_scaler.append(os.path.join(input_path, prefix + 'scaler_high.pkl'))
+        input_shape = (lookback, 80, 15, 3) if lookback > 1 else (80, 15, 3)
+        filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler_low.pkl'))
+        filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler_mid.pkl'))
+        filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler_high.pkl'))
     else:
-        input_shape = (1, 80, 15)
-        if lookback > 1:
-            input_shape = (lookback, 1, 80, 15)
-
-        filename_scaler.append(os.path.join(input_path, prefix + 'scaler.pkl'))
-    filename_features = os.path.join(input_path, prefix + 'dataset_features.npz')
+        input_shape = (lookback, 1, 80, 15) if lookback > 1 else (1, 80, 15)
+        filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler.pkl'))
+    filename_features = os.path.join(input_path, built_model_name + 'dataset_features.npz')
 
     # adding this afterwards since we want to only rename the model
-    if extra:
-        prefix += "extra_"
+    built_model_name += "extra_" if extra else ""
+    built_model_name += "time%s_" % lookback if lookback > 1 else ""
+    built_model_name += "pretrained_" if pretrained_model_path is not None else ""
+    # finally, specify training timing model
+    built_model_name += "timing_model"
 
-    # adding this afterwards since don't have preprocessing for timeseries data set up
-    # might add this preprocessing later if training seems to be slow to start
-    if lookback > 1:
-        prefix += "time%s_" % lookback
-
-    if pretrained_model_path is not None:
-        prefix += "pretrained_"
-
-    prefix += "timing_model"
+    model_name = name if name is not None else built_model_name
 
     file_path_model = os.path.join(output_path)
 
-    prepare_model(filename_features,
-                  filename_labels,
-                  filename_sample_weights,
-                  filename_scaler,
-                  input_shape=input_shape,
-                  prefix=prefix if name is None else name,
-                  model_out_path=file_path_model,
-                  extra_input_shape=extra_input_shape,
-                  path_extra_features=path_extra_features,
-                  lookback=lookback,
-                  limit=limit,
-                  filename_pretrained_model=pretrained_model_path)
+    prepare_model(filename_features, filename_labels, filename_sample_weights, filename_scaler, input_shape=input_shape,
+                  model_name=model_name, model_out_path=file_path_model,
+                  extra_input_shape=extra_input_shape, path_extra_features=path_extra_features, lookback=lookback,
+                  limit=limit, filename_pretrained_model=pretrained_model_path)
 
 
 if __name__ == '__main__':
+    import argparse
+
     parser = argparse.ArgumentParser(description="To train the model.")
 
     parser.add_argument("-i", "--input",

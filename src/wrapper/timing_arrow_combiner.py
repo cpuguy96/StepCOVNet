@@ -59,11 +59,11 @@ def combine_data(timings_path,
             comb_file.write(str(arrow) + " " + str(timing) + "\n")
 
 
-def __run_process(timings_path,
-                  arrows_path,
-                  wavs_path,
-                  output_path,
-                  verbose):
+def run_process(timings_path,
+                arrows_path,
+                wavs_path,
+                output_path,
+                verbose):
     if os.path.isfile(timings_path):
         combine_data(os.path.dirname(timings_path), arrows_path, wavs_path, output_path, verbose,
                      get_filename(wavs_path))
@@ -100,7 +100,7 @@ def timing_arrow_combiner(wavs_path,
     if verbose:
         print("Starting combined txt generation\n-----------------------------------------")
 
-    __run_process(timings_path, arrows_path, wavs_path, output_path, verbose)
+    run_process(timings_path, arrows_path, wavs_path, output_path, verbose)
     end_time = time.time()
     if verbose:
         print("Elapsed time was %g seconds\n" % (end_time - start_time))

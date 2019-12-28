@@ -8,6 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Nadam
 
+from configuration.parameters import BATCH_SIZE, MAX_EPOCHS
 from training.data_preparation import load_data, pre_process
 from training.network import build_stepcovnet
 
@@ -25,25 +26,10 @@ tf.random.set_seed(42)
 # os.environ['TF_KERAS'] = '1'
 
 
-def train_model(model,
-                batch_size,
-                max_epochs,
-                features,
-                extra_features,
-                labels,
-                sample_weights,
-                class_weights,
-                all_scalers,
-                prefix,
-                model_out_path,
-                lookback=1):
-    training_callbacks = [EarlyStopping(monitor='val_loss', patience=3, verbose=0),
-                          ModelCheckpoint(filepath=os.path.join(model_out_path, prefix + '_callback.h5'),
-                                          monitor='val_loss',
-                                          verbose=0,
-                                          save_best_only=True)]
+def train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
+                model_out_path, lookback=1):
     indices_all = range(len(features))
-    print("number of samples:", len(indices_all))
+    print("Number of samples: %s" % len(indices_all))
 
     if lookback > 2:
         indices_train, indices_validation, y_train, y_train = \
@@ -68,6 +54,8 @@ def train_model(model,
         training_extra_features = None
         testing_extra_features = None
 
+    print("\nCreating training scalers..")
+
     training_scaler = []
 
     if len(features.shape) > 2:
@@ -76,7 +64,13 @@ def train_model(model,
     else:
         training_scaler.append(StandardScaler().fit(features[indices_train]))
 
-    print("\nStarting training...")
+    training_callbacks = [EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+                          ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
+                                          monitor='val_loss',
+                                          verbose=0,
+                                          save_best_only=True)]
+
+    print("\nCreating training and test sets...")
 
     weights = model.get_weights()
 
@@ -92,10 +86,12 @@ def train_model(model,
                                                       sample_weights[indices_validation],
                                                       training_scaler)
 
+    print("\nStarting training...")
+
     history = model.fit(x=x_train,
                         y=y_train,
-                        batch_size=batch_size,
-                        epochs=max_epochs,
+                        batch_size=BATCH_SIZE,
+                        epochs=MAX_EPOCHS,
                         callbacks=training_callbacks,
                         class_weight=class_weights,
                         sample_weight=sample_weights_train,
@@ -103,11 +99,11 @@ def train_model(model,
                         shuffle="batch",
                         verbose=1)
 
-    model.save(os.path.join(model_out_path, prefix + ".h5"))
-
     print("\n*****************************")
     print("***** TRAINING FINISHED *****")
     print("*****************************\n")
+
+    model.save(os.path.join(model_out_path, model_name + ".h5"))
 
     callbacks = [  # ModelCheckpoint(
         # filepath=os.path.join(model_out_path, prefix + 'retrained_callback_timing_model.h5'),
@@ -118,6 +114,8 @@ def train_model(model,
     # train again use all train and validation set
     epochs_final = len(history.history['val_loss'])
 
+    print("\nUsing entire dataset for training...")
+
     all_x, all_y, sample_weights_all = pre_process(features,
                                                    labels,
                                                    extra_features,
@@ -126,11 +124,11 @@ def train_model(model,
 
     model.set_weights(weights)
 
-    print("Starting retraining...")
+    print("\nStarting retraining...")
 
     model.fit(x=all_x,
               y=all_y,
-              batch_size=batch_size,
+              batch_size=BATCH_SIZE,
               epochs=epochs_final,
               callbacks=callbacks,
               sample_weight=sample_weights_all,
@@ -138,20 +136,15 @@ def train_model(model,
               shuffle="batch",
               verbose=1)
 
-    model.save(os.path.join(model_out_path, prefix + "_retrained.h5"))
+    print("\n*******************************")
+    print("***** RETRAINING FINISHED *****")
+    print("*******************************\n")
+
+    model.save(os.path.join(model_out_path, model_name + "_retrained.h5"))
 
 
-def prepare_model(filename_features,
-                  filename_labels,
-                  filename_sample_weights,
-                  filename_scaler,
-                  input_shape,
-                  prefix,
-                  model_out_path,
-                  extra_input_shape,
-                  path_extra_features,
-                  lookback,
-                  limit=-1,
+def prepare_model(filename_features, filename_labels, filename_sample_weights, filename_scaler, input_shape, model_name,
+                  model_out_path, extra_input_shape, path_extra_features, lookback, limit=-1,
                   filename_pretrained_model=None):
     print("Loading data...")
     features, extra_features, labels, sample_weights, class_weights, all_scalers, pretrained_model = \
@@ -165,7 +158,8 @@ def prepare_model(filename_features,
         labels = labels[:limit]
         sample_weights = sample_weights[:limit]
 
-        assert labels.sum() > 0, "Not enough positive labels. Increase limit!"
+        if labels.sum() == 0:
+            raise ValueError("Not enough positive labels. Increase limit!")
 
     timeseries = True if lookback > 1 else False
 
@@ -178,18 +172,5 @@ def prepare_model(filename_features,
 
     print(model.summary())
 
-    batch_size = 256
-    max_epochs = 30
-
-    train_model(model,
-                batch_size,
-                max_epochs,
-                features,
-                extra_features,
-                labels,
-                sample_weights,
-                class_weights,
-                all_scalers,
-                prefix,
-                model_out_path,
-                lookback)
+    train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
+                model_out_path, lookback)

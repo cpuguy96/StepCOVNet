@@ -4,7 +4,7 @@ from os.path import join
 import numpy as np
 
 from common.audio_preprocessing import get_madmom_log_mels
-from configuration.parameters import sample_rate, hopsize_t
+from configuration.parameters import SAMPLE_RATE, HOPSIZE_T
 
 
 def remove_out_of_range(frames, frame_start, frame_end):
@@ -39,32 +39,32 @@ def get_recordings(wav_path):
     return recordings
 
 
-def timings_parser(annotation_filename):
+def timings_parser(timing_name):
     """
     Schluter onset time annotation parser
-    :param annotation_filename:
+    :param timing_name:
     :return: onset time list
     """
 
-    with open(annotation_filename, 'r') as file:
+    with open(timing_name, 'r') as file:
         lines = file.readlines()
         list_onset_time = [x.replace("\n", "").split(" ")[1] for x in lines[3:]]
     return list_onset_time
 
 
-def dump_feature_onset_helper(audio_path, annotation_path, fn, multi):
-    audio_fn = join(audio_path, fn + '.wav')
-    annotation_fn = join(annotation_path, fn + '.txt')
+def dump_feature_onset_helper(wav_path, timing_path, file_name, multi):
+    audio_fn = join(wav_path, file_name + '.wav')
+    annotation_fn = join(timing_path, file_name + '.txt')
 
-    mfcc = get_madmom_log_mels(audio_fn, sample_rate, hopsize_t, multi)
+    mfcc = get_madmom_log_mels(audio_fn, SAMPLE_RATE, HOPSIZE_T, multi)
 
-    print('Feature collecting ...', fn)
+    print('Feature collecting ...', file_name)
 
     times_onset = timings_parser(annotation_fn)
     times_onset = [float(to) for to in times_onset]
 
     # syllable onset frames
-    frames_onset = np.array(np.around(np.array(times_onset) / hopsize_t), dtype=int)
+    frames_onset = np.array(np.around(np.array(times_onset) / HOPSIZE_T), dtype=int)
 
     # line start and end frames
     frame_start = 0
