@@ -6,3 +6,4 @@ psutil
 nltk
 sklearn
 tensorflow
+madmom
