@@ -22,6 +22,7 @@ jobs:
         pip install mido
     - name: Install rest of dependencies
       run: |
+        sudo apt-get install libsndfile1
         pip install -r requirements.txt
     - name: Test with pytest
       run: |
