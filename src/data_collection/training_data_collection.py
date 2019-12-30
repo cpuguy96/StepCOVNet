@@ -57,7 +57,7 @@ def format_data(features, labels, weights, extra_features, data):
 
 def collect_data(wavs_path, timings_path, multi, extra, limit, under_sample):
     func = partial(collect_features, wavs_path, timings_path, multi, extra)
-    file_names = [get_filename(file_name) for file_name in get_filenames_from_folder(timings_path)]
+    file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     features, labels, weights, extra_features = [], [], [], []
 
