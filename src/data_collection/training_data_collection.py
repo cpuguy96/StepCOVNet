@@ -10,14 +10,16 @@ import psutil
 from sklearn.preprocessing import StandardScaler
 
 from common.audio_preprocessing import get_madmom_librosa_features
+from common.utils import get_filenames_from_folder, get_filename
 from configuration.parameters import HOPSIZE_T, SAMPLE_RATE
 from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights, \
-    dump_feature_onset_helper, get_recordings
+    dump_feature_onset_helper
 
 
 def collect_features(wav_path, timing_path, multi, extra, file_name):
     # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
+        print('Feature collecting: %s' % file_name)
         log_mel, frames_onset, frame_start, frame_end = \
             dump_feature_onset_helper(wav_path, timing_path, file_name, multi)
 
@@ -79,7 +81,7 @@ def format_data(data, multi):
 
 def collect_data(wavs_path, timings_path, multi, extra, limit, under_sample):
     func = partial(collect_features, wavs_path, timings_path, multi, extra)
-    file_names = get_recordings(timings_path)
+    file_names = [get_filename(file_name) for file_name in get_filenames_from_folder(timings_path)]
     data = []
 
     with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:

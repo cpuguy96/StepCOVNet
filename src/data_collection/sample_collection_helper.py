@@ -1,4 +1,3 @@
-import os
 from os.path import join
 
 import numpy as np
@@ -29,16 +28,6 @@ def feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_e
     return mfcc_line, label, sample_weights
 
 
-def get_recordings(wav_path):
-    recordings = []
-    for root, subFolders, files in os.walk(wav_path):
-        for f in files:
-            file_prefix, file_extension = os.path.splitext(f)
-            if file_prefix != '.DS_Store' and file_prefix != '_DS_Store':
-                recordings.append(file_prefix)
-    return recordings
-
-
 def timings_parser(timing_name):
     """
     Schluter onset time annotation parser
@@ -47,20 +36,18 @@ def timings_parser(timing_name):
     """
 
     with open(timing_name, 'r') as file:
-        lines = file.readlines()
-        list_onset_time = [x.replace("\n", "").split(" ")[1] for x in lines[3:]]
-    return list_onset_time
+        lines = [line.replace("\n", "") for line in file.readlines()]
+        if "NOTES" in set(lines):
+            lines = lines[lines.index("NOTES") + 1:]
+            return [line.split(" ")[1] for line in lines]
+        else:
+            raise ValueError('Could not find NOTES line in file %s' % timing_name)
 
 
 def dump_feature_onset_helper(wav_path, timing_path, file_name, multi):
-    audio_fn = join(wav_path, file_name + '.wav')
-    annotation_fn = join(timing_path, file_name + '.txt')
+    mfcc = get_madmom_log_mels(join(wav_path, file_name + '.wav'), SAMPLE_RATE, HOPSIZE_T, multi)
 
-    mfcc = get_madmom_log_mels(audio_fn, SAMPLE_RATE, HOPSIZE_T, multi)
-
-    print('Feature collecting ...', file_name)
-
-    times_onset = timings_parser(annotation_fn)
+    times_onset = timings_parser(join(timing_path, file_name + '.txt'))
     times_onset = [float(to) for to in times_onset]
 
     # syllable onset frames
