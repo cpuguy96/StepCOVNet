@@ -33,72 +33,46 @@ def collect_features(wav_path, timing_path, multi, extra, file_name):
                                                         len(label),
                                                         frame_start)
         else:
-            extra_feature = False
+            extra_feature = None
 
-        return [feature, label, sample_weights, extra_feature]
+        return [feature.astype("float16"), label.astype("int8"), sample_weights.astype("float16"), extra_feature]
     except Exception as ex:
-        print("Error collecting features for %s: %r", (file_name, ex))
+        print("Error collecting features for %s: %r" % (file_name, ex))
         return None
 
 
-def format_data(data, multi):
-    labels, sample_weights, extra_features = [], [], []
-    features = []
-    features_low, features_mid, features_high = [], [], []
+def format_data(features, labels, weights, extra_features, data):
+    feature_list, label_list, sample_weight_list, extra_feature_list = data
 
-    for feature_list, label_list, sample_weight_list, extra_feature_list in data:
-        if multi:
-            features_low.append(feature_list[:, :, 0].astype("float16"))
-            features_mid.append(feature_list[:, :, 1].astype("float16"))
-            features_high.append(feature_list[:, :, 2].astype("float16"))
-        else:
-            features.append(feature_list)
+    features.extend(feature_list)
+    labels.extend(label_list)
+    weights.extend(sample_weight_list)
+    if extra_feature_list is not None:
+        extra_features.extend(extra_feature_list)
 
-        if extra_feature_list is not None:
-            extra_features.append(extra_feature_list.astype("int8"))
-
-        labels.append(label_list.astype("int8"))
-        sample_weights.append(sample_weight_list)
-
-    labels = np.concatenate(labels, axis=0).astype("int8")
-    sample_weights = np.concatenate(sample_weights, axis=0).astype("float16")
-
-    if extra_features:
-        extra_features = np.concatenate(extra_features, axis=0).astype("int8")
-
-    if multi:
-        features_low = np.concatenate(features_low, axis=0).astype("float16"),
-        features_mid = np.concatenate(features_mid, axis=0).astype("float16"),
-        features_high = np.concatenate(features_high, axis=0).astype("float16")
-        all_features = [features_low, features_mid, features_high]
-    else:
-        all_features = np.concatenate(features, axis=0).astype("float16")
-
-    return all_features, labels, sample_weights, extra_features
+    return features, labels, weights, extra_features
 
 
 def collect_data(wavs_path, timings_path, multi, extra, limit, under_sample):
     func = partial(collect_features, wavs_path, timings_path, multi, extra)
     file_names = get_recordings(timings_path)
-    data = []
+
+    features, labels, weights, extra_features = [], [], [], []
 
     with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
-        if limit > 0:
-            sample_count = 0
-            song_count = 0
-            for result in pool.imap(func, file_names):
-                if result is None:
-                    continue
-                data.append(result)
+        sample_count = 0
+        song_count = 0
+        for result in pool.imap_unordered(func, file_names):
+            if result is None:
+                continue
+            features, labels, weights, extra_features = format_data(features, labels, weights, extra_features, result)
+            if limit > 0:
                 sample_count += result[2].sum() if under_sample else len(result[2])  # labels collected
                 song_count += 1
                 if sample_count >= limit:
                     print("Limit reached after %d songs. Breaking..." % song_count)
                     break
-        else:
-            data = pool.map(func, file_names)
-
-    return format_data(data, multi)
+    return features, labels, weights, extra_features
 
 
 def training_data_collection(wavs_path, timings_path, output_path, multi_int, extra_int, under_sample_int, limit):
@@ -126,8 +100,7 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     if limit > 0 and under_sample:
         limit //= 2
 
-    features, labels, weights, extra_features = collect_data(wavs_path, timings_path, multi, extra, limit,
-                                                             under_sample)
+    features, labels, weights, extra_features = collect_data(wavs_path, timings_path, multi, extra, limit, under_sample)
 
     prefix = "multi_" if multi else ""
     prefix += "under_" if under_sample else ""
@@ -147,7 +120,13 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
         else:
             indices_used = indices_used[:limit]
 
-        assert labels.sum() > 0, "Not enough positive labels. Increase limit!"
+        if sum(labels) <= 0:
+            raise ValueError("Not enough positive labels. Increase limit!")
+
+    features = np.array(features)
+    labels = np.array(labels)
+    weights = np.array(weights)
+    extra_features = np.array(extra_features)
 
     print("Saving labels ...")
     joblib.dump(labels[indices_used], join(output_path, prefix + 'labels.npz'), compress=True)
@@ -161,14 +140,13 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
 
     if multi:
         print("Saving multi-features ...")
-        joblib.dump(np.stack([features[0], features[1], features[2]], axis=-1).astype("float16"),
-                    join(output_path, prefix + 'dataset_features.npz'), compress=True)
+        joblib.dump(features, join(output_path, prefix + 'dataset_features.npz'), compress=True)
         print("Saving low scaler ...")
-        pickle.dump(StandardScaler().fit(features[0]), open(join(output_path, prefix + 'scaler_low.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(features[:, :, 0]), open(join(output_path, prefix + 'scaler_low.pkl'), 'wb'))
         print("Saving mid scaler ...")
-        pickle.dump(StandardScaler().fit(features[1]), open(join(output_path, prefix + 'scaler_mid.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(features[:, :, 1]), open(join(output_path, prefix + 'scaler_mid.pkl'), 'wb'))
         print("Saving high scaler ...")
-        pickle.dump(StandardScaler().fit(features[2]), open(join(output_path, prefix + 'scaler_high.pkl'), 'wb'))
+        pickle.dump(StandardScaler().fit(features[:, :, 2]), open(join(output_path, prefix + 'scaler_high.pkl'), 'wb'))
     else:
         print("Saving features ...")
         joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)

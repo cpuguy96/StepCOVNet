@@ -5,6 +5,8 @@ output/
 saved_models/
 data/
 
+*.ini
+
 # Pycharm
 .idea
 
