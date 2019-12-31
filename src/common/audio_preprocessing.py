@@ -8,14 +8,15 @@ from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
 from madmom.processors import SequentialProcessor, ParallelProcessor
 
 from common.Fprev_sub import Fprev_sub
-from configuration.parameters import MULTI_CHANNEL_FRAME_SIZES, SINGLE_CHANNEL_FRAME_SIZE
+from configuration.parameters import MULTI_CHANNEL_FRAME_SIZES, SINGLE_CHANNEL_FRAME_SIZE, NUM_FREQ_BANDS, \
+    NUM_MULTI_CHANNELS
 
 
 def get_feature_processors(sample_rate, hopsize_t, frame_size):
     frames = FramedSignalProcessor(frame_size=frame_size, hopsize=int(sample_rate * hopsize_t))
     stft = ShortTimeFourierTransformProcessor()  # caching FFT window
     filt = FilteredSpectrogramProcessor(
-        filterbank=MelFilterbank, num_bands=80, fmin=27.5, fmax=16000,
+        filterbank=MelFilterbank, num_bands=NUM_FREQ_BANDS, fmin=27.5, fmax=16000,
         norm_filters=True, unique_filters=False)
     spec = LogarithmicSpectrogramProcessor(log=np.log, add=np.spacing(1))
     return SequentialProcessor([frames, stft, filt, spec])
@@ -42,7 +43,7 @@ def get_madmom_log_mels(file_name, sample_rate, hopsize_t, multi):
         mfcc = SequentialProcessor([sig, single_proc])(file_name)
 
     if multi:
-        mfcc_conc = [nbf_2D(mfcc[:, :, i], 7) for i in range(3)]
+        mfcc_conc = [nbf_2D(mfcc[:, :, i], 7) for i in range(NUM_MULTI_CHANNELS)]
         return np.stack(mfcc_conc, axis=2)
     else:
         return nbf_2D(mfcc, 7)

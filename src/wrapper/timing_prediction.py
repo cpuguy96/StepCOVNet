@@ -10,7 +10,7 @@ import psutil
 from madmom.features.onsets import OnsetPeakPickingProcessor
 
 from common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
-from common.utils import feature_reshape
+from common.utils import feature_reshape, pre_process
 from common.utils import get_filenames_from_folder, get_filename
 from configuration.parameters import SAMPLE_RATE, HOPSIZE_T, THRESHOLDS
 
@@ -103,25 +103,19 @@ def generate_features(input_path,
                       wav_name):
     if not wav_name.endswith(".wav"):
         if verbose:
-            print(wav_name, "is not a wav file! Skipping...")
+            print("%s is not a wav file! Skipping..." % wav_name)
         return None, None
     try:
         if verbose:
-            print("Generating features for " + get_filename(wav_name, False))
+            print("Generating features for %s" % get_filename(wav_name, False))
 
-        if multi:
-            log_mel = get_madmom_log_mels(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T, multi)
-            if scaler is not None:
-                log_mel[:, :, 0] = scaler[0].transform(log_mel[:, :, 0])
-                log_mel[:, :, 1] = scaler[1].transform(log_mel[:, :, 1])
-                log_mel[:, :, 2] = scaler[2].transform(log_mel[:, :, 2])
-        else:
-            log_mel = get_madmom_log_mels(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T, multi)
-            if scaler is not None:
-                log_mel = scaler[0].transform(log_mel)
+        log_mel = get_madmom_log_mels(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T, multi)
+
+        log_mel, _ = pre_process(log_mel, multi, scalers=scaler)
+
         if extra:
             if verbose:
-                print("Generating extra features for " + get_filename(wav_name, False))
+                print("Generating extra features for %s" % get_filename(wav_name, False))
             extra_features = get_madmom_librosa_features(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T,
                                                          len(log_mel))
         else:

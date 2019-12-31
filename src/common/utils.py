@@ -3,6 +3,8 @@ import re
 
 import numpy as np
 
+from configuration.parameters import NUM_MULTI_CHANNELS, NUM_FREQ_BANDS, NUM_TIME_BANDS
+
 
 def get_filenames_from_folder(mypath):
     return [file for file in os.listdir(mypath)
@@ -29,8 +31,8 @@ def feature_reshape(feature, multi=False):
     """
 
     n_sample = feature.shape[0]
-    n_row = 80
-    n_col = 15
+    n_row = NUM_FREQ_BANDS
+    n_col = NUM_TIME_BANDS
 
     feature_reshaped = np.zeros((n_sample, n_row, n_col), dtype='float16')
     if multi:
@@ -60,7 +62,7 @@ def get_scalers(features, multi):
     :return scalers: list - mean and std for each frequency band for each channel
     """
     # TODO: Add better check for non formatted features
-    if {80 * 15 * 3, 80 * 15} in features.shape[1:]:
+    if {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS} in features.shape[1:]:
         raise ValueError('Need to reshape features before getting scalers')
 
     scalers = []
@@ -68,8 +70,31 @@ def get_scalers(features, multi):
         import multiprocessing
         import psutil
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
-            for result in pool.imap(get_features_mean_std, (features[:, :, i, :] for i in range(15))):
+            for result in pool.imap(get_features_mean_std, (features[:, :, i, :] for i in range(NUM_TIME_BANDS))):
                 scalers.append(result)
         return np.array(scalers).T
     else:
         return get_features_mean_std(features)
+
+
+def pre_process(features, multi, labels=None, extra_features=None, scalers=None):
+    features_copy = np.copy(features)
+    scalers = np.array(scalers).T
+    if multi:
+        if scalers is not None:
+            for i in range(NUM_MULTI_CHANNELS):
+                for j, scaler in enumerate(scalers[:, :, i]):
+                    features_copy[:, :, j, i] = (features_copy[:, :, j, i] - scaler[0]) / scaler[1]
+    else:
+        if scalers is not None:
+            for j, scaler in enumerate(scalers):
+                features_copy[:, :, j] = (features_copy[:, :, j] - scaler[0]) / scaler[1]
+        features_copy = np.expand_dims(np.squeeze(features_copy), axis=1)
+
+    if labels is not None:
+        labels = labels.reshape(-1, 1)
+
+    if extra_features is not None:
+        features_copy = [features_copy, extra_features]
+
+    return features_copy, labels

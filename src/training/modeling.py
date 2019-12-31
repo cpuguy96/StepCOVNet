@@ -7,9 +7,9 @@ from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Nadam
 
-from common.utils import get_scalers, feature_reshape
+from common.utils import get_scalers, feature_reshape, pre_process
 from configuration.parameters import BATCH_SIZE, MAX_EPOCHS
-from training.data_preparation import load_data, pre_process
+from training.data_preparation import load_data
 from training.network import build_stepcovnet
 
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
@@ -27,7 +27,7 @@ tf.random.set_seed(42)
 
 
 def train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, multi, lookback=1):
+                model_out_path, multi):
     indices_all = range(len(features))
     print("Number of samples: %s" % len(indices_all))
 
@@ -68,19 +68,11 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     weights = model.get_weights()
 
-    x_train, y_train, sample_weights_train = pre_process(features[indices_train],
-                                                         labels[indices_train],
-                                                         multi,
-                                                         training_extra_features,
-                                                         sample_weights[indices_train],
-                                                         training_scaler)
+    x_train, y_train = pre_process(features[indices_train], multi, labels[indices_train], training_extra_features,
+                                   training_scaler)
 
-    x_test, y_test, sample_weights_test = pre_process(features[indices_validation],
-                                                      labels[indices_validation],
-                                                      multi,
-                                                      testing_extra_features,
-                                                      sample_weights[indices_validation],
-                                                      training_scaler)
+    x_test, y_test = pre_process(features[indices_validation], multi, labels[indices_validation],
+                                 testing_extra_features, training_scaler)
 
     print("\nStarting training...")
 
@@ -90,8 +82,8 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
                         epochs=MAX_EPOCHS,
                         callbacks=training_callbacks,
                         class_weight=class_weights,
-                        sample_weight=sample_weights_train,
-                        validation_data=(x_test, y_test, sample_weights_test),
+                        sample_weight=sample_weights[indices_train],
+                        validation_data=(x_test, y_test, sample_weights[indices_validation]),
                         shuffle="batch",
                         verbose=1)
 
@@ -112,12 +104,7 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     print("\nUsing entire dataset for training...")
 
-    all_x, all_y, sample_weights_all = pre_process(features,
-                                                   labels,
-                                                   multi,
-                                                   extra_features,
-                                                   sample_weights,
-                                                   all_scalers)
+    all_x, all_y = pre_process(features, multi, labels, extra_features, all_scalers)
 
     model.set_weights(weights)
 
@@ -128,7 +115,7 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
               batch_size=BATCH_SIZE,
               epochs=epochs_final,
               callbacks=callbacks,
-              sample_weight=sample_weights_all,
+              sample_weight=sample_weights,
               class_weight=class_weights,
               shuffle="batch",
               verbose=1)
@@ -173,4 +160,4 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
     print(model.summary())
 
     train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, multi, lookback)
+                model_out_path, multi)
