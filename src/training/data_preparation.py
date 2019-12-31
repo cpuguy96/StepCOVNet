@@ -1,24 +1,22 @@
-import pickle
-
 import joblib
 import numpy as np
 from sklearn.utils import compute_class_weight
 
-from common.utils import feature_reshape
+from configuration.parameters import NUM_MULTI_CHANNELS
 
 
-def pre_process(features, labels, extra_features=None, sample_weights=None, scalers=None):
+def pre_process(features, labels, multi, extra_features=None, sample_weights=None, scalers=None):
     features_copy = np.copy(features)
-    if len(features.shape) > 2:
+    scalers = np.array(scalers).T
+    if multi:
         if scalers is not None:
-            features_copy[:, :, 0] = scalers[0].transform(np.array(features_copy[:, :, 0]))
-            features_copy[:, :, 1] = scalers[1].transform(np.array(features_copy[:, :, 1]))
-            features_copy[:, :, 2] = scalers[2].transform(np.array(features_copy[:, :, 2]))
-        features_copy = feature_reshape(features_copy, True)
+            for i in range(NUM_MULTI_CHANNELS):
+                for j, scaler in enumerate(scalers[:, :, i]):
+                    features_copy[:, :, j, i] = (features_copy[:, :, j, i] - scaler[0]) / scaler[1]
     else:
         if scalers is not None:
-            features_copy = scalers[0].transform(np.array(features_copy))
-        features_copy = feature_reshape(features_copy, False)
+            for j, scaler in enumerate(scalers):
+                features_copy[:, :, j] = (features_copy[:, :, j] - scaler[0]) / scaler[1]
         features_copy = np.expand_dims(np.squeeze(features_copy), axis=1)
 
     targets = np.copy(labels.reshape(-1, 1))
@@ -54,7 +52,7 @@ def load_data(filename_features,
     scaler = []
     for filename_scaler in filename_scalers:
         with open(filename_scaler, 'rb') as f:
-            scaler.append(pickle.load(f))
+            scaler.append(joblib.load(f))
 
     if filename_pretrained_model is not None:
         from tensorflow.keras.models import load_model

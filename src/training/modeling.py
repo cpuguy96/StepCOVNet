@@ -4,10 +4,10 @@ import os
 
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Nadam
 
+from common.utils import get_scalers, feature_reshape
 from configuration.parameters import BATCH_SIZE, MAX_EPOCHS
 from training.data_preparation import load_data, pre_process
 from training.network import build_stepcovnet
@@ -27,11 +27,11 @@ tf.random.set_seed(42)
 
 
 def train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, lookback=1):
+                model_out_path, multi, lookback=1):
     indices_all = range(len(features))
     print("Number of samples: %s" % len(indices_all))
 
-    if lookback > 2:
+    if multi:
         indices_train, indices_validation, y_train, y_train = \
             train_test_split(indices_all,
                              labels,
@@ -56,13 +56,7 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     print("\nCreating training scalers..")
 
-    training_scaler = []
-
-    if len(features.shape) > 2:
-        for i in range(3):
-            training_scaler.append(StandardScaler().fit(features[indices_train, :, i]))
-    else:
-        training_scaler.append(StandardScaler().fit(features[indices_train]))
+    training_scaler = get_scalers(features[indices_train], multi)
 
     training_callbacks = [EarlyStopping(monitor='val_loss', patience=3, verbose=0),
                           ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
@@ -76,12 +70,14 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     x_train, y_train, sample_weights_train = pre_process(features[indices_train],
                                                          labels[indices_train],
+                                                         multi,
                                                          training_extra_features,
                                                          sample_weights[indices_train],
                                                          training_scaler)
 
     x_test, y_test, sample_weights_test = pre_process(features[indices_validation],
                                                       labels[indices_validation],
+                                                      multi,
                                                       testing_extra_features,
                                                       sample_weights[indices_validation],
                                                       training_scaler)
@@ -118,6 +114,7 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     all_x, all_y, sample_weights_all = pre_process(features,
                                                    labels,
+                                                   multi,
                                                    extra_features,
                                                    sample_weights,
                                                    all_scalers)
@@ -144,12 +141,15 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
 
 def prepare_model(filename_features, filename_labels, filename_sample_weights, filename_scaler, input_shape, model_name,
-                  model_out_path, extra_input_shape, path_extra_features, lookback, limit=-1,
+                  model_out_path, extra_input_shape, path_extra_features, lookback, multi, limit=-1,
                   filename_pretrained_model=None):
     print("Loading data...")
     features, extra_features, labels, sample_weights, class_weights, all_scalers, pretrained_model = \
         load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler,
                   filename_pretrained_model)
+
+    print("Reshaping features...")
+    features = feature_reshape(features, multi)
 
     if limit > 0:
         features = features[:limit]
@@ -166,11 +166,11 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
     print("Building StepCOVNet...")
     model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model)
 
-    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.15),
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
                   optimizer=Nadam(beta_1=0.99),
                   metrics=["accuracy"])
 
     print(model.summary())
 
     train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, lookback)
+                model_out_path, multi, lookback)

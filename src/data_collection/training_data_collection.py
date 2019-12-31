@@ -1,16 +1,14 @@
 import multiprocessing
 import os
-import pickle
 from functools import partial
 from os.path import join
 
 import joblib
 import numpy as np
 import psutil
-from sklearn.preprocessing import StandardScaler
 
 from common.audio_preprocessing import get_madmom_librosa_features
-from common.utils import get_filenames_from_folder, get_filename
+from common.utils import get_filenames_from_folder, get_filename, get_scalers, feature_reshape
 from configuration.parameters import HOPSIZE_T, SAMPLE_RATE
 from data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights, \
     dump_feature_onset_helper
@@ -91,6 +89,9 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     if limit == 0:
         raise ValueError('Limit cannot be 0!')
 
+    import time
+    start_time = time.time()
+
     multi = True if multi_int == 1 else False
     extra = True if extra_int == 1 else False
     under_sample = True if under_sample_int == 1 else False
@@ -130,6 +131,9 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     weights = np.array(weights)
     extra_features = np.array(extra_features)
 
+    print("Getting scalers ...")
+    scalers = get_scalers(feature_reshape(features[indices_used], multi), multi)
+
     print("Saving labels ...")
     joblib.dump(labels[indices_used], join(output_path, prefix + 'labels.npz'), compress=True)
 
@@ -141,19 +145,24 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
         joblib.dump(extra_features[indices_used], join(output_path, prefix + 'extra_features.npz'), compress=True)
 
     if multi:
-        print("Saving multi-features ...")
-        joblib.dump(features, join(output_path, prefix + 'dataset_features.npz'), compress=True)
         print("Saving low scaler ...")
-        pickle.dump(StandardScaler().fit(features[:, :, 0]), open(join(output_path, prefix + 'scaler_low.pkl'), 'wb'))
+        joblib.dump(np.array(scalers[0]), join(output_path, prefix + 'scaler_low.pkl'), compress=True)
         print("Saving mid scaler ...")
-        pickle.dump(StandardScaler().fit(features[:, :, 1]), open(join(output_path, prefix + 'scaler_mid.pkl'), 'wb'))
+        joblib.dump(np.array(scalers[1]), join(output_path, prefix + 'scaler_mid.pkl'), compress=True)
         print("Saving high scaler ...")
-        pickle.dump(StandardScaler().fit(features[:, :, 2]), open(join(output_path, prefix + 'scaler_high.pkl'), 'wb'))
+        joblib.dump(np.array(scalers[2]), join(output_path, prefix + 'scaler_high.pkl'), compress=True)
+
+        print("Saving multi-features ...")
+        joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
     else:
+        print("Saving scaler ...")
+        joblib.dump(np.array(scalers), join(output_path, prefix + 'scaler.pkl'), compress=True)
+
         print("Saving features ...")
         joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
-        print("Saving scaler ...")
-        pickle.dump(StandardScaler().fit(features), open(join(output_path, prefix + 'scaler.pkl'), 'wb'))
+
+    end_time = time.time()
+    print("\nElapsed time was %g seconds" % (end_time - start_time))
 
 
 if __name__ == '__main__':

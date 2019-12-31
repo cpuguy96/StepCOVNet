@@ -76,6 +76,7 @@ def train(input_path,
     prepare_model(filename_features, filename_labels, filename_sample_weights, filename_scaler, input_shape=input_shape,
                   model_name=model_name, model_out_path=file_path_model,
                   extra_input_shape=extra_input_shape, path_extra_features=path_extra_features, lookback=lookback,
+                  multi=multi,
                   limit=limit, filename_pretrained_model=pretrained_model_path)
 
 
