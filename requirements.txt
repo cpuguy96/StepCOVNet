@@ -9,3 +9,6 @@ sklearn
 tensorflow
 madmom
 SoundFile
+scipy
+Cython
+mido
