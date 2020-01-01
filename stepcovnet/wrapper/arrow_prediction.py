@@ -6,7 +6,7 @@ import numpy as np
 from nltk.util import ngrams
 from sklearn.preprocessing import OneHotEncoder
 
-from ..common.utils import get_filenames_from_folder, get_filename
+from stepcovnet.common.utils import get_filenames_from_folder, get_filename
 
 
 def get_binary_rep(arrow_values):
