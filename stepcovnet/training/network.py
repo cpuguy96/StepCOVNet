@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import Dense, Input, Flatten
 from tensorflow.keras.models import Model
 
-from ..training.architectures import front, time_front, back, time_back, pretrained_back, pretrained_time_back
+from stepcovnet.training.architectures import front, time_front, back, time_back, pretrained_back, pretrained_time_back
 
 
 def get_pretrained_front(model, x_input):

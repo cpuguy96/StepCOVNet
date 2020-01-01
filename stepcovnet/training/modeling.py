@@ -5,12 +5,11 @@ import os
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.optimizers import Nadam
 
-from ..common.utils import get_scalers, feature_reshape, pre_process
-from ..configuration.parameters import BATCH_SIZE, MAX_EPOCHS
-from ..training.data_preparation import load_data
-from ..training.network import build_stepcovnet
+from stepcovnet.common.utils import get_scalers, feature_reshape, pre_process
+from stepcovnet.configuration.parameters import BATCH_SIZE, MAX_EPOCHS
+from stepcovnet.training.data_preparation import load_data
+from stepcovnet.training.network import build_stepcovnet
 
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
@@ -135,9 +134,6 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
         load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler,
                   filename_pretrained_model)
 
-    print("Reshaping features...")
-    features = feature_reshape(features, multi)
-
     if limit > 0:
         features = features[:limit]
         if extra_features is not None:
@@ -148,13 +144,16 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
         if labels.sum() == 0:
             raise ValueError("Not enough positive labels. Increase limit!")
 
+    print("Reshaping features...")
+    features = feature_reshape(features, multi)
+
     timeseries = True if lookback > 1 else False
 
     print("Building StepCOVNet...")
     model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model)
 
-    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
-                  optimizer=Nadam(beta_1=0.99),
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.15),
+                  optimizer=tf.keras.optimizers.Nadam(beta_1=0.99),
                   metrics=["accuracy"])
 
     print(model.summary())

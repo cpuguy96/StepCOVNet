@@ -1,7 +1,7 @@
 import os
 
-from ..configuration.parameters import NUM_FREQ_BANDS, NUM_MULTI_CHANNELS, NUM_TIME_BANDS
-from ..training.modeling import prepare_model
+from stepcovnet.configuration.parameters import NUM_FREQ_BANDS, NUM_MULTI_CHANNELS, NUM_TIME_BANDS
+from stepcovnet.training.modeling import prepare_model
 
 
 def train(input_path,
@@ -55,13 +55,13 @@ def train(input_path,
     filename_scaler = []
     if multi:
         input_shape = (lookback, NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS) if lookback > 1 else (
-        NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS)
+            NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS)
         filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler_low.pkl'))
         filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler_mid.pkl'))
         filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler_high.pkl'))
     else:
         input_shape = (lookback, 1, NUM_FREQ_BANDS, NUM_TIME_BANDS) if lookback > 1 else (
-        1, NUM_FREQ_BANDS, NUM_TIME_BANDS)
+            1, NUM_FREQ_BANDS, NUM_TIME_BANDS)
         filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler.pkl'))
     filename_features = os.path.join(input_path, built_model_name + 'dataset_features.npz')
 

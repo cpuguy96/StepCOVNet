@@ -9,10 +9,9 @@ import numpy as np
 import psutil
 from madmom.features.onsets import OnsetPeakPickingProcessor
 
-from ..common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
-from ..common.utils import feature_reshape, pre_process
-from ..common.utils import get_filenames_from_folder, get_filename
-from ..configuration.parameters import SAMPLE_RATE, HOPSIZE_T, THRESHOLDS
+from stepcovnet.common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
+from stepcovnet.common.utils import feature_reshape, pre_process, get_filenames_from_folder, get_filename
+from stepcovnet.configuration.parameters import SAMPLE_RATE, HOPSIZE_T, THRESHOLDS
 
 
 def smooth_obs(obs):
@@ -38,7 +37,7 @@ def boundary_decoding(obs_i, threshold):
     return i_boundary
 
 
-def get_scalers(scaler_path, multi):
+def get_file_scalers(scaler_path, multi):
     if scaler_path is not None:
         scaler = []
         if multi:
@@ -111,16 +110,6 @@ def generate_features(input_path,
 
         log_mel = get_madmom_log_mels(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T, multi)
 
-        log_mel, _ = pre_process(log_mel, multi, scalers=scaler)
-
-        if extra:
-            if verbose:
-                print("Generating extra features for %s" % get_filename(wav_name, False))
-            extra_features = get_madmom_librosa_features(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T,
-                                                         len(log_mel))
-        else:
-            extra_features = None
-
         if model_type == 0:
             log_mel = feature_reshape(log_mel, multi)
             if not multi:
@@ -131,6 +120,16 @@ def generate_features(input_path,
                 log_mel = pca.transform(log_mel)
             else:
                 log_mel = pca.transform(log_mel.reshape(log_mel.shape[0], log_mel.shape[1] * log_mel.shape[2]))
+
+        log_mel, _ = pre_process(log_mel, multi, scalers=scaler)
+
+        if extra:
+            if verbose:
+                print("Generating extra features for %s" % get_filename(wav_name, False))
+            extra_features = get_madmom_librosa_features(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T,
+                                                         len(log_mel))
+        else:
+            extra_features = None
 
         return [log_mel, extra_features], wav_name
     except Exception as ex:
@@ -232,7 +231,7 @@ def timing_prediction(input_path,
         if verbose:
             print("Starting timings prediction\n-----------------------------------------")
         model, multi, extra, pca = get_model(model_path, model_type, pca_path)
-        scaler = get_scalers(scaler_path, multi)
+        scaler = get_file_scalers(scaler_path, multi)
         run_process(input_path, output_path, model, model_type, multi, scaler, extra, pca, verbose)
     else:
         raise FileNotFoundError('Wav file(s) path %s not found' % input_path)

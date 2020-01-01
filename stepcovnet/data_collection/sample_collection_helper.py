@@ -2,8 +2,8 @@ from os.path import join
 
 import numpy as np
 
-from ..common.audio_preprocessing import get_madmom_log_mels
-from ..configuration.parameters import SAMPLE_RATE, HOPSIZE_T
+from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
+from stepcovnet.configuration.parameters import SAMPLE_RATE, HOPSIZE_T
 
 
 def remove_out_of_range(frames, frame_start, frame_end):

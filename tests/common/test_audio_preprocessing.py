@@ -1,7 +1,8 @@
 import os
 
 from stepcovnet.common.audio_preprocessing import *
-from stepcovnet.configuration.parameters import HOPSIZE_T, SAMPLE_RATE, NUM_FREQ_BANDS, NUM_MULTI_CHANNELS, NUM_TIME_BANDS
+from stepcovnet.configuration.parameters import HOPSIZE_T, SAMPLE_RATE, NUM_FREQ_BANDS, NUM_MULTI_CHANNELS, \
+    NUM_TIME_BANDS
 
 DATA_RELATIVE_PATH = "tests/data/"
 TEST_FILE = "zombie_maker.wav"
@@ -61,9 +62,9 @@ def get_madmom_librosa_features(mocker):
     def mock_madmom_frames():
         return madmom_frame_timings
 
-    import common.audio_preprocessing
-    mocker.setattr(common.audio_preprocessing, "get_librosa_frames", mock_librosa_frames)
-    mocker.setattr(common.audio_preprocessing, "get_madmom_frames", mock_madmom_frames)
+    import stepcovnet.common
+    mocker.setattr(stepcovnet.common, "get_librosa_frames", mock_librosa_frames)
+    mocker.setattr(stepcovnet.common, "get_madmom_frames", mock_madmom_frames)
     extra_features = get_madmom_librosa_features(os.path.join(TEST_DATA_PATH, TEST_FILE),
                                                  SAMPLE_RATE, HOPSIZE_T, num_frames)
     assert extra_features.shape == (num_frames, 2)

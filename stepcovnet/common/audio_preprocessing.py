@@ -7,8 +7,8 @@ from madmom.audio.stft import ShortTimeFourierTransformProcessor
 from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
 from madmom.processors import SequentialProcessor, ParallelProcessor
 
-from ..common.Fprev_sub import Fprev_sub
-from ..configuration.parameters import MULTI_CHANNEL_FRAME_SIZES, SINGLE_CHANNEL_FRAME_SIZE, NUM_FREQ_BANDS, \
+from stepcovnet.common.Fprev_sub import Fprev_sub
+from stepcovnet.configuration.parameters import MULTI_CHANNEL_FRAME_SIZES, SINGLE_CHANNEL_FRAME_SIZE, NUM_FREQ_BANDS, \
     NUM_MULTI_CHANNELS
 
 

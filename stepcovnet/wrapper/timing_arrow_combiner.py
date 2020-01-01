@@ -8,7 +8,7 @@ import librosa
 import numpy as np
 import psutil
 
-from ..common.utils import get_filenames_from_folder, get_filename
+from stepcovnet.common.utils import get_filenames_from_folder, get_filename
 
 
 def get_bpm(wav_file_path):

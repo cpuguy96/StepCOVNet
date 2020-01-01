@@ -7,10 +7,10 @@ import joblib
 import numpy as np
 import psutil
 
-from ..common.audio_preprocessing import get_madmom_librosa_features
-from ..common.utils import get_filenames_from_folder, get_filename, get_scalers, feature_reshape
-from ..configuration.parameters import HOPSIZE_T, SAMPLE_RATE
-from ..data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights, \
+from stepcovnet.common.audio_preprocessing import get_madmom_librosa_features
+from stepcovnet.common.utils import get_filenames_from_folder, get_filename, get_scalers, feature_reshape
+from stepcovnet.configuration.parameters import HOPSIZE_T, SAMPLE_RATE
+from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights, \
     dump_feature_onset_helper
 
 

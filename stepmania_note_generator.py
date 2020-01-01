@@ -4,11 +4,8 @@ import warnings
 from os.path import join
 from shutil import copyfile, rmtree
 
-from .common.utils import get_filenames_from_folder, get_filename, standardize_filename
-from .wrapper.arrow_prediction import arrow_prediction
-from .wrapper.timing_arrow_combiner import timing_arrow_combiner
-from .wrapper.timing_prediction import timing_prediction
-from .wrapper.wav_converter import wav_converter
+from stepcovnet.common.utils import get_filenames_from_folder, get_filename, standardize_filename
+from stepcovnet.wrapper import wav_converter, timing_prediction, arrow_prediction, timing_arrow_combiner
 
 warnings.filterwarnings("ignore")
 
@@ -114,19 +111,20 @@ if __name__ == '__main__':
                         help="output .txt file path")
     parser.add_argument("-s", "--scalers",
                         type=str,
-                        default="testing_files/",
+                        default="data/",
                         help="scalers used in training path")
     parser.add_argument("--timing_model",
                         type=str,
-                        default="models/timing_model.h5",
+                        default="stepcovnet/models/timing_model.h5",
                         help="trained timing model path")
     parser.add_argument("--arrow_model",
                         type=str,
-                        default="models/retrained_arrow_model.h5",
+                        default="stepcovnet/models/retrained_arrow_model.h5",
                         help="trained arrow model path")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
+                        choices=[0, 1],
                         help="verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 

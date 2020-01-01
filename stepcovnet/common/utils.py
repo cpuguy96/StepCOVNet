@@ -3,7 +3,7 @@ import re
 
 import numpy as np
 
-from ..configuration.parameters import NUM_MULTI_CHANNELS, NUM_FREQ_BANDS, NUM_TIME_BANDS
+from stepcovnet.configuration.parameters import NUM_MULTI_CHANNELS, NUM_FREQ_BANDS, NUM_TIME_BANDS
 
 
 def get_filenames_from_folder(mypath):
@@ -79,11 +79,10 @@ def get_scalers(features, multi):
 
 def pre_process(features, multi, labels=None, extra_features=None, scalers=None):
     features_copy = np.copy(features)
-    scalers = np.array(scalers).T
     if multi:
         if scalers is not None:
             for i in range(NUM_MULTI_CHANNELS):
-                for j, scaler in enumerate(scalers[:, :, i]):
+                for j, scaler in enumerate(scalers[i]):
                     features_copy[:, :, j, i] = (features_copy[:, :, j, i] - scaler[0]) / scaler[1]
     else:
         if scalers is not None:
