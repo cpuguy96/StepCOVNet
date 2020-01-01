@@ -3,7 +3,7 @@ import os
 from stepcovnet.common.audio_preprocessing import *
 from stepcovnet.configuration.parameters import HOPSIZE_T, SAMPLE_RATE, NUM_FREQ_BANDS, NUM_MULTI_CHANNELS, NUM_TIME_BANDS
 
-DATA_RELATIVE_PATH = "tst/data/"
+DATA_RELATIVE_PATH = "tests/data/"
 TEST_FILE = "zombie_maker.wav"
 TEST_DATA_PATH = os.path.relpath(os.path.join(DATA_RELATIVE_PATH))
 

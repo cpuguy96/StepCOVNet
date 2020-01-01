@@ -3,7 +3,7 @@ from stepcovnet.common.utils import *
 from stepcovnet.configuration.parameters import NUM_FREQ_BANDS, NUM_TIME_BANDS
 
 
-DATA_RELATIVE_PATH = "tst/data/"
+DATA_RELATIVE_PATH = "tests/data/"
 TEST_FILE = "scaler.pkl"
 TEST_FILE_WITHOUT_EXT = "scaler"
 TEST_FILE_WITHOUT_EXT_WITH_RANDOM_CHARS = "/|`:s~;?]@[C(>a!+<#L,)$=e%R^^*"
