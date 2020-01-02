@@ -74,7 +74,7 @@ def get_scalers(features, multi):
                 scalers.append(result)
         return np.array(scalers).T
     else:
-        return get_features_mean_std(features)
+        return np.array(get_features_mean_std(features))
 
 
 def pre_process(features, multi, labels=None, extra_features=None, scalers=None):

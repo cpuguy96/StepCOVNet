@@ -156,7 +156,7 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
         joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
     else:
         print("Saving scaler ...")
-        joblib.dump(np.array(scalers), join(output_path, prefix + 'scaler.pkl'), compress=True)
+        joblib.dump(scalers, join(output_path, prefix + 'scaler.pkl'), compress=True)
 
         print("Saving features ...")
         joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
