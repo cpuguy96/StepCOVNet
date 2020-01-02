@@ -105,27 +105,27 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generate .txt (eventually .sm) files from audio tracks")
     parser.add_argument("-i", "--input",
                         type=str,
-                        help="input audio files path")
+                        help="Input audio file/directory path")
     parser.add_argument("-o", "--output",
                         type=str,
-                        help="output .txt file path")
+                        help="output .txt files path")
     parser.add_argument("-s", "--scalers",
                         type=str,
                         default="data/",
-                        help="scalers used in training path")
+                        help="Input scalers path")
     parser.add_argument("--timing_model",
                         type=str,
                         default="stepcovnet/models/timing_model.h5",
-                        help="trained timing model path")
+                        help="Input trained timing model path")
     parser.add_argument("--arrow_model",
                         type=str,
                         default="stepcovnet/models/retrained_arrow_model.h5",
-                        help="trained arrow model path")
+                        help="Input trained arrow model path")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
                         choices=[0, 1],
-                        help="verbosity: 0 - none, 1 - full")
+                        help="Verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
     stepmania_note_generator(args.input,

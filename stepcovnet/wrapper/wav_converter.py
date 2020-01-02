@@ -61,17 +61,18 @@ def wav_converter(input_path, output_path, verbose_int=0):
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description="Convert audio files to .wav format.")
+    parser = argparse.ArgumentParser(description="Convert audio files to .wav format")
     parser.add_argument("-i", "--input",
                         type=str,
-                        help="input audio file/path")
+                        help="Input audio file/directory path")
     parser.add_argument("-o", "--output",
                         type=str,
-                        help="output wav path")
+                        help="Output wavs path")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
-                        help="verbosity: 0 - none, 1 - full")
+                        choices=[0, 1],
+                        help="Verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
     wav_converter(args.input,

@@ -129,20 +129,22 @@ def arrow_prediction(input_path,
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate arrow types from .wav files.")
+    parser = argparse.ArgumentParser(description="Generate arrow types from .wav files")
     parser.add_argument("-i", "--input",
                         type=str,
-                        help="input timings path")
+                        help="Input timings path")
     parser.add_argument("-o", "--output",
                         type=str,
-                        help="output arrows path")
+                        help="Output generated arrows path")
     parser.add_argument("--model",
                         type=str,
-                        help="trained model path")
+                        default="stepcovnet/models/retrained_arrow_model.h5",
+                        help="Input trained model path")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
-                        help="verbosity: 0 - none, 1 - full")
+                        choices=[0, 1],
+                        help="Verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
     arrow_prediction(args.input,

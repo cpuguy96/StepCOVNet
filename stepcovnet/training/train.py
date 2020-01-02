@@ -86,42 +86,45 @@ def train(input_path,
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description="To train the model.")
+    parser = argparse.ArgumentParser(description="Train a note timings model")
 
     parser.add_argument("-i", "--input",
                         type=str,
-                        help="Input path where you put the training data")
+                        help="Input training data path")
     parser.add_argument("-o", "--output",
                         type=str,
-                        help="Output path where you store the model")
+                        help="Output stored model path")
     parser.add_argument("--multi",
                         type=int,
                         default=0,
-                        help="whether multiple STFT window time-lengths are used in training ")
+                        choices=[0, 1],
+                        help="Whether multiple STFT window time-lengths are used in training: 0 - single, 1 - multi")
     parser.add_argument("--extra",
                         type=int,
                         default=0,
-                        help="whether to use extra data from madmom and librosa")
+                        choices=[0, 1],
+                        help="Whether to use extra data from madmom and librosa: 0 - not used, 1 - used")
     parser.add_argument("--under_sample",
                         type=int,
                         default=0,
-                        help="whether to under sample for balanced classes")
+                        choices=[0, 1],
+                        help="Whether to under sample for balanced classes: 0 - not used, 1 - used")
     parser.add_argument("--lookback",
                         type=int,
                         default=1,
-                        help="number of frames to lookback when training")
+                        help="Number of frames to lookback when training: 1 - non timeseries, > 1 timeseries")
     parser.add_argument("--limit",
                         type=int,
                         default=-1,
-                        help="number of frames to use when training")
+                        help="Maximum number of frames to use when training: -1 unlimited, > 0 frame limit")
     parser.add_argument("--name",
                         type=str,
                         default=None,
-                        help="Name to give finished model. Defaults to dataset description.")
+                        help="Name to give finished model")
     parser.add_argument("--pretrained_model",
                         type=str,
                         default=None,
-                        help="Input path to pretrained model to use transfer learning.")
+                        help="Input path to pretrained model to use transfer learning")
     args = parser.parse_args()
 
     train(args.input,

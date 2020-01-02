@@ -168,32 +168,35 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description="dump feature, label and sample weights for general purpose.")
+    parser = argparse.ArgumentParser(description="Collect audio and timings data to create training dataset")
     parser.add_argument("-w", "--wav",
                         type=str,
-                        help="input wavs path")
+                        help="Input wavs path")
     parser.add_argument("-t", "--timing",
                         type=str,
-                        help="input timings path")
+                        help="Input timings path")
     parser.add_argument("-o", "--output",
                         type=str,
-                        help="output path")
+                        help="Output collected data path")
     parser.add_argument("--multi",
                         type=int,
                         default=0,
-                        help="whether multiple STFT window time-lengths are captured")
+                        choices=[0, 1],
+                        help="Whether multiple STFT window time-lengths are captured: 0 - single, 1 - multi")
     parser.add_argument("--extra",
                         type=int,
                         default=0,
-                        help="whether to gather extra data from madmom and librosa")
+                        choices=[0, 1],
+                        help="Whether to gather extra data from madmom and librosa: 0 - not collected, 1 - collected")
     parser.add_argument("--under_sample",
                         type=int,
                         default=0,
-                        help="whether to under sample for balanced classes")
+                        choices=[0, 1],
+                        help="Whether to under sample for balanced classes: 0 - not sampled, 1 - sampled")
     parser.add_argument("--limit",
                         type=int,
                         default=-1,
-                        help="maximum number of samples allowed to be collected")
+                        help="Maximum number of frames allowed to be collected: -1 unlimited, > 0 frame limit")
     args = parser.parse_args()
 
     training_data_collection(wavs_path=args.wav, timings_path=args.timing, output_path=args.output,

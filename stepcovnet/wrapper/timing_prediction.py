@@ -243,30 +243,32 @@ def timing_prediction(input_path,
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate arrow timings from .wav files.")
+    parser = argparse.ArgumentParser(description="Generate arrow timings from .wav files")
     parser.add_argument("-i" "--input",
                         type=str,
-                        help="input wav path")
+                        help="Input wav file/directory path")
     parser.add_argument("-o", "--output",
                         type=str,
-                        help="output txt path")
+                        help="Output txts path")
     parser.add_argument("--model",
                         type=str,
-                        help="trained model path")
+                        help="Input trained model path")
     parser.add_argument("--scaler",
                         type=str,
-                        help="scaler path")
+                        help="Input scalers path")
     parser.add_argument("--pca",
                         type=str,
-                        help="trained pca path")
+                        help="Input trained pca path")
     parser.add_argument("-mt" "--model_type",
                         type=int,
                         default=0,
-                        help="type of model: 0 - CNN; 1 - XGB; 2 - multi XGB")
+                        choices=[0, 1, 2],
+                        help="Type of model: 0 - CNN; 1 - XGB; 2 - multi XGB")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
-                        help="verbosity: 0 - none, 1 - full")
+                        choices=[0, 1],
+                        help="Verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
     timing_prediction(args.input,

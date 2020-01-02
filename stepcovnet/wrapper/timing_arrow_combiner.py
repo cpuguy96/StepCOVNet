@@ -112,20 +112,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Combine predicted timings and predicted arrows")
     parser.add_argument("-w", "--wav",
                         type=str,
-                        help="input wavs path")
+                        help="Input wav file/directory path")
     parser.add_argument("-t", "--timing",
                         type=str,
-                        help="input timings path")
+                        help="Input timings path")
     parser.add_argument("-a", "--arrow",
                         type=str,
-                        help="input arrows path")
+                        help="Input arrows path")
     parser.add_argument("-o", "--output",
                         type=str,
-                        help="output txt path")
+                        help="Output txts path")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
-                        help="verbosity: 0 - none, 1 - full")
+                        choices=[0, 1],
+                        help="Verbosity: 0 - none, 1 - full")
     args = parser.parse_args()
 
     timing_arrow_combiner(args.wav,
