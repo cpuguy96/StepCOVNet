@@ -1,6 +1,10 @@
 # StepCOVNet
 ![header_example](https://github.com/cpuguy96/StepCOVNet/blob/master/resources/header_example.gif)
 
+[![Coverage Status](https://coveralls.io/repos/github/cpuguy96/StepCOVNet/badge.svg?branch=master)](https://coveralls.io/github/cpuguy96/StepCOVNet?branch=master)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/a4ef846886e446229d04974cde24c6dd)](https://www.codacy.com/manual/cpuguy96/StepCOVNet?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=cpuguy96/StepCOVNet&amp;utm_campaign=Badge_Grade)
+![](https://github.com/cpuguy96/StepCOVNet/workflows/StepCOVNet%20Application/badge.svg)
+
 ## Running Audio to SM File Generator
 ### Currently only produces `.txt` files. Use [`smfile_writer.py`](https://github.com/jhaco/SMFile_Writer) to convert `.txt` to `.sm`
 ```.bash
@@ -12,6 +16,7 @@ python stepmania_note_generator.py -i --input <string> -o --output <string> -s -
 * **OPTIONAL:** `--timing_model` input directory path to beat timing model; default is `"models/timing_model.h5"`
 * **OPTIONAL:** `--arrow_model` input directory path to arrow selection model; default is `"models/retrained_arrow_model.h5"`
 * **OPTIONAL:** `-v` `--verbose` `1` shows full verbose, `0` shows no verbose; default is `0`
+
 
 
 
