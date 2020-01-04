@@ -1,9 +1,6 @@
 name: StepCOVNet Application
 
 on: [push]
-env:
-  COVERALLS_REPO_TOKEN: "${{ secrets.COVERALLS_REPO_TOKEN }}"
-  COVERALLS_GIT_BRANCH: "${{ github.ref }}"
 
 jobs:
   build:
@@ -32,8 +29,3 @@ jobs:
         pip install pytest
         pip install pytest-mock
         pytest
-    - name: Coveralls GitHub Action
-      uses: coverallsapp/github-action@v1.0.1
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-
