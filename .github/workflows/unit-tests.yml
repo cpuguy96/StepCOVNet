@@ -1,6 +1,9 @@
 name: StepCOVNet Application
 
 on: [push]
+env:
+  COVERALLS_REPO_TOKEN: "${{ secrets.COVERALLS_REPO_TOKEN }}"
+  COVERALLS_GIT_BRANCH: "${{ github.ref }}"
 
 jobs:
   build:
@@ -13,10 +16,6 @@ jobs:
       uses: actions/setup-python@v1
       with:
         python-version: 3.6    
-    - name: Coveralls
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install madmom dependencies
       run: |
         python -m pip install --upgrade pip
@@ -33,3 +32,8 @@ jobs:
         pip install pytest
         pip install pytest-mock
         pytest
+    - name: Coveralls GitHub Action
+      uses: coverallsapp/github-action@v1.0.1
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
