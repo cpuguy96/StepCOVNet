@@ -1,7 +1,6 @@
 # StepCOVNet
 ![header_example](https://github.com/cpuguy96/StepCOVNet/blob/master/resources/header_example.gif)
 
-[![Coverage Status](https://coveralls.io/repos/github/cpuguy96/StepCOVNet/badge.svg?branch=master)](https://coveralls.io/github/cpuguy96/StepCOVNet?branch=master)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/a4ef846886e446229d04974cde24c6dd)](https://www.codacy.com/manual/cpuguy96/StepCOVNet?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=cpuguy96/StepCOVNet&amp;utm_campaign=Badge_Grade)
 ![](https://github.com/cpuguy96/StepCOVNet/workflows/StepCOVNet%20Application/badge.svg)
 
