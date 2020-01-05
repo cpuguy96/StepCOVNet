@@ -1,5 +1,6 @@
 import joblib
 from sklearn.utils import compute_class_weight
+import numpy as np
 
 
 def load_data(filename_features,
@@ -28,6 +29,7 @@ def load_data(filename_features,
     for filename_scaler in filename_scalers:
         with open(filename_scaler, 'rb') as f:
             scaler.append(joblib.load(f))
+    scaler = np.array(scaler)
 
     if filename_pretrained_model is not None:
         from tensorflow.keras.models import load_model
@@ -37,6 +39,6 @@ def load_data(filename_features,
 
     class_weights = compute_class_weight('balanced', [0, 1], labels)
 
-    class_weights = {0: class_weights[0], 1: class_weights[1]}
+    class_weights = {0: class_weights[0] / 2, 1: class_weights[1] / 2}
 
     return features, extra_features, labels, sample_weights, class_weights, scaler, pretrained_model

@@ -13,20 +13,13 @@ from stepcovnet.training.network import build_stepcovnet
 
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
-tf.compat.v1.disable_eager_execution()
+tf.config.optimizer.set_jit(True)
 
 tf.random.set_seed(42)
 
 
-# tf.keras.backend.set_floatx('float16')
-
-# disabling until more stable
-# from keras_radam import RAdam
-# os.environ['TF_KERAS'] = '1'
-
-
 def train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, multi):
+                model_out_path, multi, log_path):
     indices_all = range(len(features))
     print("Number of samples: %s" % len(indices_all))
 
@@ -57,11 +50,15 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     training_scaler = get_scalers(features[indices_train], multi)
 
-    training_callbacks = [EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+    training_callbacks = [EarlyStopping(monitor='val_pr_auc', patience=3, verbose=0, mode="max"),
                           ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
-                                          monitor='val_loss',
+                                          monitor='pr_auc',
                                           verbose=0,
                                           save_best_only=True)]
+
+    if log_path is not None:
+        os.makedirs(os.path.join(log_path, "split_dataset"), exist_ok=True)
+        training_callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "split_dataset"), histogram_freq=1, profile_batch=100000000))
 
     print("\nCreating training and test sets...")
 
@@ -92,12 +89,12 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     model.save(os.path.join(model_out_path, model_name + ".h5"))
 
-    callbacks = [  # ModelCheckpoint(
-        # filepath=os.path.join(model_out_path, prefix + 'retrained_callback_timing_model.h5'),
-        # monitor='loss',
-        # verbose=0,
-        # save_best_only=True)
-    ]
+    callbacks = []
+
+    if log_path is not None:
+        os.makedirs(os.path.join(log_path, "whole_dataset"), exist_ok=True)
+        callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "whole_dataset"), histogram_freq=1, profile_batch=100000000))
+
     # train again use all train and validation set
     epochs_final = len(history.history['val_loss'])
 
@@ -127,8 +124,8 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
 
 def prepare_model(filename_features, filename_labels, filename_sample_weights, filename_scaler, input_shape, model_name,
-                  model_out_path, extra_input_shape, path_extra_features, lookback, multi, limit=-1,
-                  filename_pretrained_model=None):
+                  model_out_path, extra_input_shape, path_extra_features, lookback, multi, limit=-1, log_path=None,
+                  filename_pretrained_model=None, model_type="normal"):
     print("Loading data...")
     features, extra_features, labels, sample_weights, class_weights, all_scalers, pretrained_model = \
         load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler,
@@ -150,13 +147,39 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
     timeseries = True if lookback > 1 else False
 
     print("Building StepCOVNet...")
-    model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model)
 
-    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.15),
-                  optimizer=tf.keras.optimizers.Nadam(beta_1=0.99),
-                  metrics=["accuracy"])
+    metrics = [
+        tf.keras.metrics.TruePositives(name='tp'),
+        tf.keras.metrics.FalsePositives(name='fp'),
+        tf.keras.metrics.TrueNegatives(name='tn'),
+        tf.keras.metrics.FalseNegatives(name='fn'),
+        tf.keras.metrics.BinaryAccuracy(name='acc'),
+        tf.keras.metrics.Precision(name='pre'),
+        tf.keras.metrics.Recall(name='rec'),
+        tf.keras.metrics.AUC(curve="PR", name='pr_auc'),
+    ]
+
+    import numpy as np
+
+    b0 = np.log(labels.sum()/(len(labels) - labels.sum()))
+
+    model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model, model_type=model_type, output_bias_init=tf.keras.initializers.Constant(value=b0))
+
+    model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
+                  optimizer=tf.keras.optimizers.Nadam(beta_1=0.99, clipvalue=5),
+                  metrics=metrics)
 
     print(model.summary())
 
+    p0 = labels.sum()/len(labels)
+
+    # Best practices mentioned in https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+    expected_init_loss = -p0*np.log(p0)-(1-p0)*np.log(1-p0)
+    result_init_loss = model.evaluate(features[:1000], labels[:1000], batch_size=BATCH_SIZE, verbose=0)[0]
+    if not np.array_equal(np.around([expected_init_loss], decimals=1), np.around([result_init_loss], decimals=1)):
+        print("WARNING! Expected loss is not close enough to initial loss!")
+    print("Bias init b0 %s " % b0)
+    print("Loss should be %s. Actually is %s" % (expected_init_loss, result_init_loss))
+
     train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, multi)
+                model_out_path, multi, log_path)

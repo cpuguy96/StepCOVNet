@@ -4,6 +4,8 @@ output/
 
 saved_models/
 data/
+logs/
+_tmp/
 
 *.ini
 

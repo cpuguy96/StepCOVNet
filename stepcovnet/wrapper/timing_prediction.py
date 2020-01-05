@@ -11,7 +11,7 @@ from madmom.features.onsets import OnsetPeakPickingProcessor
 
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
 from stepcovnet.common.utils import feature_reshape, pre_process, get_filenames_from_folder, get_filename
-from stepcovnet.configuration.parameters import SAMPLE_RATE, HOPSIZE_T, THRESHOLDS
+from stepcovnet.configuration.parameters import SAMPLE_RATE, HOPSIZE_T, THRESHOLDS, BATCH_SIZE
 
 
 def smooth_obs(obs):
@@ -121,7 +121,7 @@ def generate_features(input_path,
             else:
                 log_mel = pca.transform(log_mel.reshape(log_mel.shape[0], log_mel.shape[1] * log_mel.shape[2]))
 
-        log_mel, _ = pre_process(log_mel, multi, scalers=scaler)
+        log_mel = pre_process(log_mel, multi, scalers=scaler)
 
         if extra:
             if verbose:
@@ -147,7 +147,7 @@ def generate_timings(model,
         for feature, wav_name in features_and_wav_names:
             if verbose:
                 print("Generating timings for %s" % wav_name)
-            pdfs.append(model.predict(feature, batch_size=2048))
+            pdfs.append(model.predict(feature, batch_size=BATCH_SIZE))
     else:
         import xgboost
         for feature, wav_name in features_and_wav_names:
