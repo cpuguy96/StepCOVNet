@@ -95,6 +95,7 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     multi = True if multi_int == 1 else False
     extra = True if extra_int == 1 else False
     under_sample = True if under_sample_int == 1 else False
+
     if limit < 0:
         limit = -1
     else:
@@ -134,6 +135,23 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     print("Getting scalers ...")
     scalers = get_scalers(feature_reshape(features[indices_used], multi), multi)
 
+    if multi:
+        print("Saving multi-features ...")
+        joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
+
+        print("Saving low scaler ...")
+        joblib.dump(np.array(scalers[0]), join(output_path, prefix + 'scaler_low.pkl'), compress=True)
+        print("Saving mid scaler ...")
+        joblib.dump(np.array(scalers[1]), join(output_path, prefix + 'scaler_mid.pkl'), compress=True)
+        print("Saving high scaler ...")
+        joblib.dump(np.array(scalers[2]), join(output_path, prefix + 'scaler_high.pkl'), compress=True)
+    else:
+        print("Saving features ...")
+        joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
+
+        print("Saving scaler ...")
+        joblib.dump(scalers, join(output_path, prefix + 'scaler.pkl'), compress=True)
+
     print("Saving labels ...")
     joblib.dump(labels[indices_used], join(output_path, prefix + 'labels.npz'), compress=True)
 
@@ -143,23 +161,6 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     if extra:
         print("Saving extra features ...")
         joblib.dump(extra_features[indices_used], join(output_path, prefix + 'extra_features.npz'), compress=True)
-
-    if multi:
-        print("Saving low scaler ...")
-        joblib.dump(np.array(scalers[0]), join(output_path, prefix + 'scaler_low.pkl'), compress=True)
-        print("Saving mid scaler ...")
-        joblib.dump(np.array(scalers[1]), join(output_path, prefix + 'scaler_mid.pkl'), compress=True)
-        print("Saving high scaler ...")
-        joblib.dump(np.array(scalers[2]), join(output_path, prefix + 'scaler_high.pkl'), compress=True)
-
-        print("Saving multi-features ...")
-        joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
-    else:
-        print("Saving scaler ...")
-        joblib.dump(scalers, join(output_path, prefix + 'scaler.pkl'), compress=True)
-
-        print("Saving features ...")
-        joblib.dump(features[indices_used], join(output_path, prefix + 'dataset_features.npz'), compress=True)
 
     end_time = time.time()
     print("\nElapsed time was %g seconds" % (end_time - start_time))

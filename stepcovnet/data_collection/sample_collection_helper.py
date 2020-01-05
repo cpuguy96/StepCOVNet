@@ -54,7 +54,7 @@ def dump_feature_onset_helper(wav_path, timing_path, file_name, multi):
     frames_onset = np.array(np.around(np.array(times_onset) / HOPSIZE_T), dtype=int)
 
     # line start and end frames
-    frame_start = 0
+    frame_start = frames_onset[0]  # first positive sample
     frame_end = mfcc.shape[0] - 1
 
     return mfcc, frames_onset, frame_start, frame_end
