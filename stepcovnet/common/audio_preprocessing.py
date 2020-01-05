@@ -9,7 +9,7 @@ from madmom.processors import SequentialProcessor, ParallelProcessor
 
 from stepcovnet.common.Fprev_sub import Fprev_sub
 from stepcovnet.configuration.parameters import MULTI_CHANNEL_FRAME_SIZES, SINGLE_CHANNEL_FRAME_SIZE, NUM_FREQ_BANDS, \
-    NUM_MULTI_CHANNELS
+    NUM_MULTI_CHANNELS, NUM_TIME_BANDS
 
 
 def get_feature_processors(sample_rate, hopsize_t, frame_size):
@@ -43,10 +43,10 @@ def get_madmom_log_mels(file_name, sample_rate, hopsize_t, multi):
         mfcc = SequentialProcessor([sig, single_proc])(file_name)
 
     if multi:
-        mfcc_conc = [nbf_2D(mfcc[:, :, i], 7) for i in range(NUM_MULTI_CHANNELS)]
+        mfcc_conc = [nbf_2D(mfcc[:, :, i], int(NUM_TIME_BANDS/2)) for i in range(NUM_MULTI_CHANNELS)]
         return np.stack(mfcc_conc, axis=2)
     else:
-        return nbf_2D(mfcc, 7)
+        return nbf_2D(mfcc, int(NUM_TIME_BANDS/2))
 
 
 def get_librosa_frames(file_name, sample_rate, hopsize_t):
