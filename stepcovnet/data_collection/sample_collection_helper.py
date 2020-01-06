@@ -3,7 +3,8 @@ from os.path import join
 import numpy as np
 
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
-from stepcovnet.configuration.parameters import SAMPLE_RATE, HOPSIZE_T
+from stepcovnet.common.parameters import HOPSIZE_T
+from stepcovnet.common.parameters import SAMPLE_RATE
 
 
 def remove_out_of_range(frames, frame_start, frame_end):

@@ -1,15 +1,22 @@
 import librosa
 import numpy as np
 from madmom.audio.filters import MelFilterbank
-from madmom.audio.signal import SignalProcessor, FramedSignalProcessor
-from madmom.audio.spectrogram import FilteredSpectrogramProcessor, LogarithmicSpectrogramProcessor
+from madmom.audio.signal import FramedSignalProcessor
+from madmom.audio.signal import SignalProcessor
+from madmom.audio.spectrogram import FilteredSpectrogramProcessor
+from madmom.audio.spectrogram import LogarithmicSpectrogramProcessor
 from madmom.audio.stft import ShortTimeFourierTransformProcessor
-from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
-from madmom.processors import SequentialProcessor, ParallelProcessor
+from madmom.features.beats import DBNBeatTrackingProcessor
+from madmom.features.beats import RNNBeatProcessor
+from madmom.processors import ParallelProcessor
+from madmom.processors import SequentialProcessor
 
 from stepcovnet.common.Fprev_sub import Fprev_sub
-from stepcovnet.configuration.parameters import MULTI_CHANNEL_FRAME_SIZES, SINGLE_CHANNEL_FRAME_SIZE, NUM_FREQ_BANDS, \
-    NUM_MULTI_CHANNELS, NUM_TIME_BANDS
+from stepcovnet.common.parameters import MULTI_CHANNEL_FRAME_SIZES
+from stepcovnet.common.parameters import NUM_FREQ_BANDS
+from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
+from stepcovnet.common.parameters import NUM_TIME_BANDS
+from stepcovnet.common.parameters import SINGLE_CHANNEL_FRAME_SIZE
 
 
 def get_feature_processors(sample_rate, hopsize_t, frame_size):
@@ -43,10 +50,10 @@ def get_madmom_log_mels(file_name, sample_rate, hopsize_t, multi):
         mfcc = SequentialProcessor([sig, single_proc])(file_name)
 
     if multi:
-        mfcc_conc = [nbf_2D(mfcc[:, :, i], int(NUM_TIME_BANDS/2)) for i in range(NUM_MULTI_CHANNELS)]
+        mfcc_conc = [nbf_2D(mfcc[:, :, i], int(NUM_TIME_BANDS / 2)) for i in range(NUM_MULTI_CHANNELS)]
         return np.stack(mfcc_conc, axis=2)
     else:
-        return nbf_2D(mfcc, int(NUM_TIME_BANDS/2))
+        return nbf_2D(mfcc, int(NUM_TIME_BANDS / 2))
 
 
 def get_librosa_frames(file_name, sample_rate, hopsize_t):

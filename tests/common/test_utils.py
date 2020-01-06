@@ -5,7 +5,7 @@ myPath = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(myPath + '/../../'))
 
 from stepcovnet.common.utils import *
-from stepcovnet.configuration.parameters import NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS
+from stepcovnet.common.parameters import NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS
 
 TEST_DATA_PATH = os.path.relpath("tests/data/")
 TEST_FILE = "scaler.pkl"
@@ -43,8 +43,8 @@ def test_get_features_mean_std():
     mean_std = get_features_mean_std(dummy_features)
 
     assert len(mean_std[0]) == len(mean_std[1]) == NUM_TIME_BANDS
-    assert all(mean-1e-1 < i < mean+1e-1 for i in mean_std[0])
-    assert all(std-1e-1 < i < std+1e-1 for i in mean_std[1])
+    assert all(mean - 1e-1 < i < mean + 1e-1 for i in mean_std[0])
+    assert all(std - 1e-1 < i < std + 1e-1 for i in mean_std[1])
 
 
 def test_get_features_mean_std_multi():
@@ -56,8 +56,8 @@ def test_get_features_mean_std_multi():
     mean_std = get_features_mean_std(dummy_features)
 
     assert np.array(mean_std).shape == (2, NUM_MULTI_CHANNELS)
-    assert all(mean-1e-1 < i < mean+1e-1 for i in mean_std[0])
-    assert all(std-1e-1 < i < std+1e-1 for i in mean_std[1])
+    assert all(mean - 1e-1 < i < mean + 1e-1 for i in mean_std[0])
+    assert all(std - 1e-1 < i < std + 1e-1 for i in mean_std[1])
 
 
 def test_get_scalers_not_reshaped():
@@ -139,11 +139,13 @@ def test_feature_reshape_multi():
     n_rows = NUM_FREQ_BANDS
     n_cols = NUM_TIME_BANDS
 
-    nd_a_array = np.arange(n_rows * n_cols * NUM_MULTI_CHANNELS).reshape((n_rows, n_cols, NUM_MULTI_CHANNELS), order='F')
-    dummy_features = np.concatenate([[nd_a_array]]*n_samples, axis=0)
+    nd_a_array = np.arange(n_rows * n_cols * NUM_MULTI_CHANNELS).reshape((n_rows, n_cols, NUM_MULTI_CHANNELS),
+                                                                         order='F')
+    dummy_features = np.concatenate([[nd_a_array]] * n_samples, axis=0)
 
-    flat_dummy = np.arange(n_rows * n_cols * NUM_MULTI_CHANNELS).reshape((n_rows * n_cols, NUM_MULTI_CHANNELS), order='F')
-    flat_dummy = np.concatenate([[flat_dummy]]*n_samples, axis=0)
+    flat_dummy = np.arange(n_rows * n_cols * NUM_MULTI_CHANNELS).reshape((n_rows * n_cols, NUM_MULTI_CHANNELS),
+                                                                         order='F')
+    flat_dummy = np.concatenate([[flat_dummy]] * n_samples, axis=0)
 
     reshaped_features = feature_reshape(flat_dummy, multi=True)
 

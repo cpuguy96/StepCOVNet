@@ -3,7 +3,9 @@ import re
 
 import numpy as np
 
-from stepcovnet.configuration.parameters import NUM_MULTI_CHANNELS, NUM_FREQ_BANDS, NUM_TIME_BANDS
+from stepcovnet.common.parameters import NUM_FREQ_BANDS
+from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
+from stepcovnet.common.parameters import NUM_TIME_BANDS
 
 
 def get_filenames_from_folder(mypath):
@@ -48,7 +50,8 @@ def get_scalers(features, multi):
     :return scalers: list - mean and std for each frequency band for each channel
     """
     # TODO: Add better check for non formatted features
-    if set(features.shape[1:]).intersection({NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
+    if set(features.shape[1:]).intersection(
+            {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
         raise ValueError('Need to reshape features before getting scalers')
 
     scalers = []

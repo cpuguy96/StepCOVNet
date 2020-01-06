@@ -1,15 +1,26 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
 
 import os
 
+import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint
 
-from stepcovnet.common.utils import get_scalers, feature_reshape, pre_process
-from stepcovnet.configuration.parameters import BATCH_SIZE, MAX_EPOCHS
+from stepcovnet.common.utils import feature_reshape
+from stepcovnet.common.utils import get_scalers
+from stepcovnet.training.data_preparation import FeatureGenerator
+from stepcovnet.training.data_preparation import get_init_bias_correction
+from stepcovnet.training.data_preparation import get_init_expected_loss
 from stepcovnet.training.data_preparation import load_data
 from stepcovnet.training.network import build_stepcovnet
+from stepcovnet.training.parameters import BATCH_SIZE
+from stepcovnet.training.parameters import MAX_EPOCHS
+from stepcovnet.training.parameters import PATIENCE
 
 os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH '] = 'true'
@@ -46,42 +57,57 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
         training_extra_features = None
         testing_extra_features = None
 
-    print("\nCreating training scalers..")
+    print("\nCreating training scalers...")
 
     training_scaler = get_scalers(features[indices_train], multi)
 
-    training_callbacks = [EarlyStopping(monitor='val_pr_auc', patience=3, verbose=0, mode="max"),
+    training_callbacks = [EarlyStopping(monitor='val_pr_auc', patience=PATIENCE, verbose=0, mode="max"),
                           ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
-                                          monitor='pr_auc',
+                                          monitor='val_pr_auc',
                                           verbose=0,
                                           save_best_only=True)]
 
     if log_path is not None:
         os.makedirs(os.path.join(log_path, "split_dataset"), exist_ok=True)
-        training_callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "split_dataset"), histogram_freq=1, profile_batch=100000000))
+        training_callbacks.append(
+            tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "split_dataset"), histogram_freq=1,
+                                           profile_batch=100000000))
 
     print("\nCreating training and test sets...")
 
     weights = model.get_weights()
 
-    x_train, y_train = pre_process(features[indices_train], multi, labels[indices_train], training_extra_features,
-                                   training_scaler)
+    train_gen = FeatureGenerator(features[indices_train], labels[indices_train],
+                                 sample_weights=sample_weights[indices_train], multi=multi, scaler=training_scaler,
+                                 extra_features=training_extra_features)
+    test_gen = FeatureGenerator(features[indices_validation], labels[indices_validation],
+                                sample_weights=sample_weights[indices_validation], multi=multi, scaler=training_scaler,
+                                extra_features=testing_extra_features)
 
-    x_test, y_test = pre_process(features[indices_validation], multi, labels[indices_validation],
-                                 testing_extra_features, training_scaler)
+    train_enqueuer = tf.keras.utils.OrderedEnqueuer(train_gen,
+                                                    use_multiprocessing=False,
+                                                    shuffle=False)
+    test_enqueuer = tf.keras.utils.OrderedEnqueuer(test_gen,
+                                                   use_multiprocessing=False,
+                                                   shuffle=False)
+
+    train_steps_per_epoch = int(np.ceil(len(indices_train) / BATCH_SIZE))
+    val_steps_per_epoch = int(np.ceil(len(indices_validation) / BATCH_SIZE))
 
     print("\nStarting training...")
 
-    history = model.fit(x=x_train,
-                        y=y_train,
-                        batch_size=BATCH_SIZE,
+    train_enqueuer.start()
+    test_enqueuer.start()
+    history = model.fit(train_enqueuer.get(),
                         epochs=MAX_EPOCHS,
+                        steps_per_epoch=train_steps_per_epoch,
+                        validation_steps=val_steps_per_epoch,
                         callbacks=training_callbacks,
                         class_weight=class_weights,
-                        sample_weight=sample_weights[indices_train],
-                        validation_data=(x_test, y_test, sample_weights[indices_validation]),
-                        shuffle="batch",
+                        validation_data=test_enqueuer.get(),
                         verbose=1)
+    train_enqueuer.stop()
+    test_enqueuer.stop()
 
     print("\n*****************************")
     print("***** TRAINING FINISHED *****")
@@ -93,28 +119,36 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
 
     if log_path is not None:
         os.makedirs(os.path.join(log_path, "whole_dataset"), exist_ok=True)
-        callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "whole_dataset"), histogram_freq=1, profile_batch=100000000))
+        callbacks.append(
+            tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "whole_dataset"), histogram_freq=1,
+                                           profile_batch=100000000))
 
-    # train again use all train and validation set
+    # train again using all data
     epochs_final = len(history.history['val_loss'])
 
     print("\nUsing entire dataset for training...")
 
-    all_x, all_y = pre_process(features, multi, labels, extra_features, all_scalers)
+    all_gen = FeatureGenerator(features, labels, sample_weights=sample_weights, multi=multi, scaler=all_scalers,
+                               extra_features=extra_features)
+
+    all_enqueuer = tf.keras.utils.OrderedEnqueuer(all_gen,
+                                                  use_multiprocessing=False,
+                                                  shuffle=False)
+
+    steps_per_epoch = int(np.ceil(len(indices_all) / BATCH_SIZE))
 
     model.set_weights(weights)
 
     print("\nStarting retraining...")
 
-    model.fit(x=all_x,
-              y=all_y,
-              batch_size=BATCH_SIZE,
+    all_enqueuer.start()
+    model.fit(all_enqueuer.get(),
+              steps_per_epoch=steps_per_epoch,
               epochs=epochs_final,
               callbacks=callbacks,
-              sample_weight=sample_weights,
               class_weight=class_weights,
-              shuffle="batch",
               verbose=1)
+    all_enqueuer.stop()
 
     print("\n*******************************")
     print("***** RETRAINING FINISHED *****")
@@ -149,37 +183,34 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
     print("Building StepCOVNet...")
 
     metrics = [
-        tf.keras.metrics.TruePositives(name='tp'),
-        tf.keras.metrics.FalsePositives(name='fp'),
-        tf.keras.metrics.TrueNegatives(name='tn'),
-        tf.keras.metrics.FalseNegatives(name='fn'),
+        # tf.keras.metrics.TruePositives(name='tp'),
+        # tf.keras.metrics.FalsePositives(name='fp'),
+        # tf.keras.metrics.TrueNegatives(name='tn'),
+        # tf.keras.metrics.FalseNegatives(name='fn'),
         tf.keras.metrics.BinaryAccuracy(name='acc'),
         tf.keras.metrics.Precision(name='pre'),
         tf.keras.metrics.Recall(name='rec'),
         tf.keras.metrics.AUC(curve="PR", name='pr_auc'),
     ]
 
-    import numpy as np
+    b0 = get_init_bias_correction(labels.sum(), len(labels))
 
-    b0 = np.log(labels.sum()/(len(labels) - labels.sum()))
-
-    model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model, model_type=model_type, output_bias_init=tf.keras.initializers.Constant(value=b0))
+    model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model, model_type=model_type,
+                             output_bias_init=tf.keras.initializers.Constant(value=b0))
 
     model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
-                  optimizer=tf.keras.optimizers.Nadam(beta_1=0.99, clipvalue=5),
+                  optimizer=tf.keras.optimizers.Nadam(beta_1=0.99),
                   metrics=metrics)
 
     print(model.summary())
 
-    p0 = labels.sum()/len(labels)
-
     # Best practices mentioned in https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
-    expected_init_loss = -p0*np.log(p0)-(1-p0)*np.log(1-p0)
+    expected_init_loss = get_init_expected_loss(labels.sum(), len(labels))
     result_init_loss = model.evaluate(features[:1000], labels[:1000], batch_size=BATCH_SIZE, verbose=0)[0]
-    if not np.array_equal(np.around([expected_init_loss], decimals=1), np.around([result_init_loss], decimals=1)):
-        print("WARNING! Expected loss is not close enough to initial loss!")
     print("Bias init b0 %s " % b0)
     print("Loss should be %s. Actually is %s" % (expected_init_loss, result_init_loss))
+    if not np.array_equal(np.around([expected_init_loss], decimals=1), np.around([result_init_loss], decimals=1)):
+        print("WARNING! Expected loss is not close enough to initial loss!")
 
     train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
                 model_out_path, multi, log_path)

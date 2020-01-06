@@ -7,8 +7,10 @@ from os.path import join
 
 import psutil
 
-from stepcovnet.common.utils import get_filenames_from_folder, get_filename, standardize_filename
-from stepcovnet.configuration.parameters import SAMPLE_RATE
+from stepcovnet.common.parameters import SAMPLE_RATE
+from stepcovnet.common.utils import get_filename
+from stepcovnet.common.utils import get_filenames_from_folder
+from stepcovnet.common.utils import standardize_filename
 
 
 def convert_file(input_path,

@@ -1,8 +1,11 @@
 import os
 
 from stepcovnet.common.audio_preprocessing import *
-from stepcovnet.configuration.parameters import HOPSIZE_T, SAMPLE_RATE, NUM_FREQ_BANDS, NUM_MULTI_CHANNELS, \
-    NUM_TIME_BANDS
+from stepcovnet.common.parameters import HOPSIZE_T
+from stepcovnet.common.parameters import NUM_FREQ_BANDS
+from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
+from stepcovnet.common.parameters import NUM_TIME_BANDS
+from stepcovnet.common.parameters import SAMPLE_RATE
 
 TEST_DATA_PATH = os.path.relpath("tests/data/")
 TEST_FILE = "vanessa.wav"

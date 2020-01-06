@@ -9,9 +9,15 @@ import numpy as np
 import psutil
 from madmom.features.onsets import OnsetPeakPickingProcessor
 
-from stepcovnet.common.audio_preprocessing import get_madmom_log_mels, get_madmom_librosa_features
-from stepcovnet.common.utils import feature_reshape, pre_process, get_filenames_from_folder, get_filename
-from stepcovnet.configuration.parameters import SAMPLE_RATE, HOPSIZE_T, THRESHOLDS, BATCH_SIZE
+from stepcovnet.common.audio_preprocessing import get_madmom_librosa_features
+from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
+from stepcovnet.common.parameters import HOPSIZE_T
+from stepcovnet.common.parameters import SAMPLE_RATE
+from stepcovnet.common.parameters import THRESHOLDS
+from stepcovnet.common.utils import feature_reshape
+from stepcovnet.common.utils import get_filename
+from stepcovnet.common.utils import get_filenames_from_folder
+from stepcovnet.common.utils import pre_process
 
 
 def smooth_obs(obs):
@@ -147,7 +153,7 @@ def generate_timings(model,
         for feature, wav_name in features_and_wav_names:
             if verbose:
                 print("Generating timings for %s" % wav_name)
-            pdfs.append(model.predict(feature, batch_size=BATCH_SIZE))
+            pdfs.append(model.predict(feature, batch_size=256))
     else:
         import xgboost
         for feature, wav_name in features_and_wav_names:

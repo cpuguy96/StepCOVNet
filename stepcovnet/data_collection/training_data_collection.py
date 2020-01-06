@@ -8,10 +8,14 @@ import numpy as np
 import psutil
 
 from stepcovnet.common.audio_preprocessing import get_madmom_librosa_features
-from stepcovnet.common.utils import get_filenames_from_folder, get_filename, get_scalers, feature_reshape
-from stepcovnet.configuration.parameters import HOPSIZE_T, SAMPLE_RATE
-from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights, \
-    dump_feature_onset_helper
+from stepcovnet.common.parameters import HOPSIZE_T
+from stepcovnet.common.parameters import SAMPLE_RATE
+from stepcovnet.common.utils import feature_reshape
+from stepcovnet.common.utils import get_filename
+from stepcovnet.common.utils import get_filenames_from_folder
+from stepcovnet.common.utils import get_scalers
+from stepcovnet.data_collection.sample_collection_helper import dump_feature_onset_helper
+from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 
 
 def collect_features(wav_path, timing_path, multi, extra, file_name):

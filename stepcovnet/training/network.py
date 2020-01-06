@@ -1,9 +1,17 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Input, Flatten
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 
-from stepcovnet.training.architectures import front, time_front, back, time_back, pretrained_back, pretrained_time_back, \
-    paper_front, paper_back
+from stepcovnet.training.architectures import back
+from stepcovnet.training.architectures import front
+from stepcovnet.training.architectures import paper_back
+from stepcovnet.training.architectures import paper_front
+from stepcovnet.training.architectures import pretrained_back
+from stepcovnet.training.architectures import pretrained_time_back
+from stepcovnet.training.architectures import time_back
+from stepcovnet.training.architectures import time_front
 
 
 def get_pretrained_front(model, x_input):

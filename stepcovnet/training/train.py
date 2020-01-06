@@ -1,8 +1,11 @@
 import datetime
 import os
 
-from stepcovnet.configuration.parameters import NUM_FREQ_BANDS, NUM_MULTI_CHANNELS, NUM_TIME_BANDS, BATCH_SIZE
+from stepcovnet.common.parameters import NUM_FREQ_BANDS
+from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
+from stepcovnet.common.parameters import NUM_TIME_BANDS
 from stepcovnet.training.modeling import prepare_model
+from stepcovnet.training.parameters import BATCH_SIZE
 
 
 def train(input_path, output_path, multi_int, extra_int, under_sample_int, lookback, limit, name, log_path,
