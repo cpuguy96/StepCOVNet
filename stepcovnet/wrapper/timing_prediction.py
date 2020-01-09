@@ -118,16 +118,12 @@ def generate_features(input_path,
 
         if model_type == 0:
             log_mel = feature_reshape(log_mel, multi)
-            if not multi:
-                log_mel = np.expand_dims(log_mel, axis=1)
         else:
             import xgboost
             if model_type == 1:
                 log_mel = pca.transform(log_mel)
             else:
                 log_mel = pca.transform(log_mel.reshape(log_mel.shape[0], log_mel.shape[1] * log_mel.shape[2]))
-
-        log_mel = pre_process(log_mel, multi, scalers=scaler)
 
         if extra:
             if verbose:
@@ -137,7 +133,9 @@ def generate_features(input_path,
         else:
             extra_features = None
 
-        return [log_mel, extra_features], wav_name
+        features = pre_process(log_mel, multi, extra_features=extra_features, scalers=scaler)
+
+        return features, wav_name
     except Exception as ex:
         if verbose:
             print("Error generating timings for %s: %r" % (wav_name, ex))
