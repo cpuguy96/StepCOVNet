@@ -50,16 +50,13 @@ def build_stepcovnet(input_shape,
         """ The net work architecture given by the paper: Dance Dance Convolution (https://arxiv.org/abs/1703.06891)
         """
         if input_shape[1] == 1:
-            channel = 1
             channel_order = 'channels_first'
         else:
-            channel = -1
             channel_order = 'channels_last'
 
         x = paper_front(x_input,
                         input_shape[1:],
-                        channel_order=channel_order,
-                        channel=channel)
+                        channel_order=channel_order)
         x = Flatten()(x)
         x = paper_back(x, input_shape[0], extra_input)
         x = Dense(1, activation="sigmoid",

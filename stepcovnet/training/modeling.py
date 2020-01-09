@@ -6,7 +6,6 @@ from __future__ import unicode_literals
 import os
 
 import numpy as np
-import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import ModelCheckpoint
 
@@ -21,22 +20,11 @@ from stepcovnet.training.network import build_stepcovnet
 from stepcovnet.training.parameters import BATCH_SIZE
 from stepcovnet.training.parameters import MAX_EPOCHS
 from stepcovnet.training.parameters import PATIENCE
-
-os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-gpu = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(gpu[0], True)
-tf.config.optimizer.set_jit(True)
-
-tf.random.set_seed(42)
-tf.compat.v1.set_random_seed(42)
+from stepcovnet.training.tf_config import *
 
 
 def train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
                 model_out_path, multi, log_path):
-
     indices_all, indices_train, indices_validation = get_split_indexes(labels, multi)
 
     print("Number of samples: %s" % len(indices_all))
