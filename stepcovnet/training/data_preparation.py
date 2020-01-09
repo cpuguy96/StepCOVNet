@@ -1,6 +1,7 @@
 import joblib
 import numpy as np
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
 from sklearn.utils import compute_class_weight
 
 from stepcovnet.common.utils import pre_process
@@ -42,7 +43,29 @@ def get_init_expected_loss(num_pos, num_all):
 
 
 def get_init_bias_correction(num_pos, num_all):
-    return np.log(num_pos / (num_all - num_pos))
+    num_neg = num_all - num_pos
+    return np.log(num_pos / num_neg)
+
+
+def get_split_indexes(labels, multi):
+    indices_all = range(len(labels))
+    if multi:
+        indices_train, indices_validation, _, _ = \
+            train_test_split(indices_all,
+                             indices_all,
+                             test_size=0.2,
+                             shuffle=False,
+                             random_state=42)
+    else:
+        indices_train, indices_validation, _, _ = \
+            train_test_split(indices_all,
+                             indices_all,
+                             test_size=0.2,
+                             stratify=labels,
+                             shuffle=True,
+                             random_state=42)
+
+    return indices_all, indices_train, indices_validation
 
 
 def load_data(filename_features,
