@@ -111,6 +111,11 @@ if __name__ == '__main__':
                         type=int,
                         default=-1,
                         help="Maximum number of frames to use when training: -1 unlimited, > 0 frame limit")
+    parser.add_argument("--model_type",
+                        type=int,
+                        default=0,
+                        choices=[0, 1],
+                        help="Type of model architecture to train with: 1 use model configuration given in DDC paper, 0 use custom model")
     parser.add_argument("--name",
                         type=str,
                         default=None,
@@ -119,16 +124,10 @@ if __name__ == '__main__':
                         type=str,
                         default=None,
                         help="Input path to pretrained model to use transfer learning")
-    parser.add_argument("--model_type",
-                        type=int,
-                        default=0,
-                        choices=[0, 1],
-                        help="Type of model architecture to train with: 0 use custom model, 1 use model configuration "
-                             "given in DDC paper")
     parser.add_argument("--log",
                         type=str,
                         default=None,
-                        help="Output log data path")
+                        help="Output log data path for tensorboard")
     args = parser.parse_args()
 
     train(args.input, args.output, args.multi, args.extra, args.lookback, args.limit, args.name,
