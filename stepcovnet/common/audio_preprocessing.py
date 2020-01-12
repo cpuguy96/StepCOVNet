@@ -83,8 +83,8 @@ def get_madmom_librosa_features(file_name, sample_rate, hopsize_t, num_frames, f
     madmom_frames = get_madmom_frames(file_name, hopsize_t)
 
     # fill in blanks and return
-    librosa_features = np.zeros((num_frames,))
-    madmom_features = np.zeros((num_frames,))
+    librosa_features = np.zeros((num_frames,)).astype("int8")
+    madmom_features = np.zeros((num_frames,)).astype("int8")
 
     librosa_features[librosa_frames - frame_start] = 1
     madmom_features[madmom_frames - frame_start] = 1

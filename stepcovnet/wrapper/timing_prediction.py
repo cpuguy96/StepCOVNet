@@ -133,7 +133,7 @@ def generate_features(input_path,
         else:
             extra_features = None
 
-        features = pre_process(log_mel, multi, extra_features=extra_features, scalers=scaler)
+        features = pre_process(log_mel, extra_features=extra_features, multi=multi, scalers=scaler)
 
         return features, wav_name
     except Exception as ex:

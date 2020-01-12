@@ -1,7 +1,11 @@
+import multiprocessing
 import os
 import re
 
 import numpy as np
+import psutil
+from joblib import delayed
+from joblib import Parallel
 
 from stepcovnet.common.parameters import NUM_FREQ_BANDS
 from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
@@ -42,6 +46,53 @@ def get_features_mean_std(features):
             np.mean(np.std(features, axis=1), axis=0, dtype="float32")]
 
 
+def sklearn_scaler_to_numpy(scalers, multi):
+    np_scaler = []
+    if multi:
+        for scaler in scalers:
+            np_scaler.append([[sca.mean_[0], np.sqrt(sca.var_[0])] for sca in scaler])
+    else:
+        np_scaler = [[scaler.mean_[0], np.sqrt(scaler.var_[0])] for scaler in scalers]
+
+    return np.array(np_scaler)
+
+
+def parital_fit_feature_slice(scaler, feat_slice):
+    return scaler.partial_fit(np.mean(feat_slice, axis=1).reshape(-1, 1))  # need to take mean slice has 15 time bands
+
+
+def get_sklearn_scalers(features, multi, existing_scalers=None, parallel=True):
+    from sklearn.preprocessing import StandardScaler
+    if set(features.shape[1:]).intersection(
+            {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
+        raise ValueError('Need to reshape features before getting scalers')
+
+    scalers = []
+    n_jobs = psutil.cpu_count(logical=False) if parallel else 1
+
+    if multi:
+        for channel in range(NUM_MULTI_CHANNELS):
+            if existing_scalers is not None:
+                channel_scalers = existing_scalers[channel]
+            else:
+                channel_scalers = [StandardScaler() for _ in range(NUM_FREQ_BANDS)]
+            feat_slice_gen = (features[:, i, :, channel] for i in range(NUM_FREQ_BANDS))
+            channel_scalers = Parallel(backend="loky", n_jobs=n_jobs)(
+                delayed(parital_fit_feature_slice)(sca, feat_slice) for sca, feat_slice in
+                zip(channel_scalers, feat_slice_gen))
+            scalers.append(channel_scalers)
+        return scalers
+    else:
+        if existing_scalers is not None:
+            scalers = existing_scalers
+        else:
+            scalers = [StandardScaler() for _ in range(NUM_FREQ_BANDS)]
+        feat_slice_gen = (features[:, i] for i in range(NUM_FREQ_BANDS))
+        scalers = Parallel(backend="loky", n_jobs=n_jobs)(
+            delayed(parital_fit_feature_slice)(sca, feat_slice) for sca, feat_slice in zip(scalers, feat_slice_gen))
+        return scalers
+
+
 def get_scalers(features, multi):
     """
     Gather scalers along the frequency axis
@@ -56,8 +107,6 @@ def get_scalers(features, multi):
 
     scalers = []
     if multi:
-        import multiprocessing
-        import psutil
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
             for result in pool.imap(get_features_mean_std, (features[:, i] for i in range(NUM_FREQ_BANDS))):
                 scalers.append(result)
@@ -66,24 +115,23 @@ def get_scalers(features, multi):
         return np.array(get_features_mean_std(np.transpose(features, (0, 2, 1))))
 
 
-def pre_process(features, multi, labels=None, extra_features=None, scalers=None):
+def pre_process(features, labels=None, extra_features=None, multi=False, scalers=None):
     features_copy = np.copy(features)
     if multi:
         if scalers is not None:
-            scalers_copy = np.transpose(np.copy(scalers), (2, 1, 0))
-            for i, scaler in enumerate(scalers_copy):
-                features_copy[:, i] = (features_copy[:, i] - scaler[0]) / scaler[1]
+            for i, scaler_channel in enumerate(scalers):
+                for j, scaler in enumerate(scaler_channel):
+                    features_copy[:, j, :, i] = scaler.transform(features_copy[:, j, :, i])
     else:
         if scalers is not None:
-            for i, scaler in enumerate(scalers.T):
-                features_copy[:, i] = (features_copy[:, i] - scaler[0]) / scaler[1]
+            for j, scaler in enumerate(scalers):
+                features_copy[:, j] = scaler.transform(features_copy[:, j])
         features_copy = np.expand_dims(np.squeeze(features_copy), axis=1)
 
     if extra_features is not None:
-        features_copy = [features_copy, extra_features]
+        features_copy = {"log_mel_input": features_copy, "extra_input": extra_features}
 
     if labels is not None:
-        labels = labels.reshape(-1, 1)
         return features_copy, labels
     else:
         return features_copy

@@ -9,37 +9,21 @@ import numpy as np
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import ModelCheckpoint
 
-from stepcovnet.common.utils import feature_reshape
-from stepcovnet.common.utils import get_scalers
+from stepcovnet.common.modeling_dataset import ModelDataset
+from stepcovnet.common.utils import get_sklearn_scalers
 from stepcovnet.training.data_preparation import FeatureGenerator
-from stepcovnet.training.data_preparation import get_init_bias_correction
-from stepcovnet.training.data_preparation import get_init_expected_loss
 from stepcovnet.training.data_preparation import get_split_indexes
 from stepcovnet.training.data_preparation import load_data
 from stepcovnet.training.network import build_stepcovnet
+from stepcovnet.training.network import get_init_bias_correction
 from stepcovnet.training.parameters import BATCH_SIZE
 from stepcovnet.training.parameters import MAX_EPOCHS
 from stepcovnet.training.parameters import PATIENCE
 from stepcovnet.training.tf_config import *
 
 
-def train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, multi, log_path):
-    indices_all, indices_train, indices_validation = get_split_indexes(labels, multi)
-
-    print("Number of samples: %s" % len(indices_all))
-
-    if extra_features is not None:
-        training_extra_features = extra_features[indices_train]
-        testing_extra_features = extra_features[indices_validation]
-    else:
-        training_extra_features = None
-        testing_extra_features = None
-
-    print("\nCreating training scalers...")
-
-    training_scaler = get_scalers(features[indices_train], multi)
-
+def train_model(model, dataset_path, multi, output_shape, output_types, index_all, index_train, index_val, all_scalers,
+                training_scaler, class_weights, model_name, model_out_path, log_path):
     training_callbacks = [EarlyStopping(monitor='val_pr_auc', patience=PATIENCE, verbose=0, mode="max"),
                           ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
                                           monitor='val_pr_auc',
@@ -52,41 +36,38 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
             tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "split_dataset"), histogram_freq=1,
                                            profile_batch=100000000))
 
-    print("\nCreating training and test sets...")
-
     weights = model.get_weights()
 
-    train_gen = FeatureGenerator(features[indices_train], labels[indices_train],
-                                 sample_weights=sample_weights[indices_train], multi=multi, scaler=training_scaler,
-                                 extra_features=training_extra_features)
-    test_gen = FeatureGenerator(features[indices_validation], labels[indices_validation],
-                                sample_weights=sample_weights[indices_validation], multi=multi, scaler=training_scaler,
-                                extra_features=testing_extra_features)
+    print("\nCreating training and test sets...")
 
-    train_enqueuer = tf.keras.utils.OrderedEnqueuer(train_gen,
-                                                    use_multiprocessing=False,
-                                                    shuffle=False)
-    test_enqueuer = tf.keras.utils.OrderedEnqueuer(test_gen,
-                                                   use_multiprocessing=False,
-                                                   shuffle=False)
+    train_steps_per_epoch = int(np.ceil(len(index_train) / BATCH_SIZE))
+    val_steps_per_epoch = int(np.ceil(len(index_val) / BATCH_SIZE))
 
-    train_steps_per_epoch = int(np.ceil(len(indices_train) / BATCH_SIZE))
-    val_steps_per_epoch = int(np.ceil(len(indices_validation) / BATCH_SIZE))
+    train_gen = FeatureGenerator(dataset_path, indexes=index_train, multi=multi, scaler=training_scaler, shuffle=True)
+    val_gen = FeatureGenerator(dataset_path, indexes=index_val, multi=multi, scaler=training_scaler, shuffle=False)
+
+    train_dataset = tf.data.Dataset.from_generator(
+        train_gen,
+        output_types=output_types,
+        output_shapes=output_shape,
+    ).prefetch(tf.data.experimental.AUTOTUNE)
+
+    val_dataset = tf.data.Dataset.from_generator(
+        val_gen,
+        output_types=output_types,
+        output_shapes=output_shape,
+    ).prefetch(tf.data.experimental.AUTOTUNE)
 
     print("\nStarting training...")
 
-    train_enqueuer.start()
-    test_enqueuer.start()
-    history = model.fit(train_enqueuer.get(),
+    history = model.fit(x=train_dataset,
                         epochs=MAX_EPOCHS,
                         steps_per_epoch=train_steps_per_epoch,
                         validation_steps=val_steps_per_epoch,
                         callbacks=training_callbacks,
                         class_weight=class_weights,
-                        validation_data=test_enqueuer.get(),
+                        validation_data=val_dataset,
                         verbose=1)
-    train_enqueuer.stop()
-    test_enqueuer.stop()
 
     print("\n*****************************")
     print("***** TRAINING FINISHED *****")
@@ -102,32 +83,30 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
             tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_path, "whole_dataset"), histogram_freq=1,
                                            profile_batch=100000000))
 
-    # train again using all data
+    model.set_weights(weights)
+
     epochs_final = len(history.history['val_loss'])
 
     print("\nUsing entire dataset for training...")
 
-    all_gen = FeatureGenerator(features, labels, sample_weights=sample_weights, multi=multi, scaler=all_scalers,
-                               extra_features=extra_features)
+    steps_per_epoch = int(np.ceil(len(index_all) / BATCH_SIZE))
 
-    all_enqueuer = tf.keras.utils.OrderedEnqueuer(all_gen,
-                                                  use_multiprocessing=False,
-                                                  shuffle=False)
+    all_gen = FeatureGenerator(dataset_path, indexes=index_all, multi=multi, scaler=all_scalers, shuffle=True)
 
-    steps_per_epoch = int(np.ceil(len(indices_all) / BATCH_SIZE))
-
-    model.set_weights(weights)
+    all_dataset = tf.data.Dataset.from_generator(
+        all_gen,
+        output_types=output_types,
+        output_shapes=output_shape,
+    ).prefetch(tf.data.experimental.AUTOTUNE)
 
     print("\nStarting retraining...")
 
-    all_enqueuer.start()
-    model.fit(all_enqueuer.get(),
+    model.fit(all_dataset,
               steps_per_epoch=steps_per_epoch,
               epochs=epochs_final,
               callbacks=callbacks,
               class_weight=class_weights,
               verbose=1)
-    all_enqueuer.stop()
 
     print("\n*******************************")
     print("***** RETRAINING FINISHED *****")
@@ -136,28 +115,31 @@ def train_model(model, features, extra_features, labels, sample_weights, class_w
     model.save(os.path.join(model_out_path, model_name + "_retrained.h5"))
 
 
-def prepare_model(filename_features, filename_labels, filename_sample_weights, filename_scaler, input_shape, model_name,
-                  model_out_path, extra_input_shape, path_extra_features, lookback, multi, limit=-1, log_path=None,
-                  filename_pretrained_model=None, model_type="normal"):
+def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=None, multi=False, extra=False,
+                  filename_scaler=None, filename_pretrained_model=None, limit=-1, lookback=1, log_path=None,
+                  model_name=None, model_type="normal"):
     print("Loading data...")
-    features, extra_features, labels, sample_weights, class_weights, all_scalers, pretrained_model = \
-        load_data(filename_features, path_extra_features, filename_labels, filename_sample_weights, filename_scaler,
-                  filename_pretrained_model)
-
-    if limit > 0:
-        features = features[:limit]
-        if extra_features is not None:
-            extra_features = extra_features[:limit]
-        labels = labels[:limit]
-        sample_weights = sample_weights[:limit]
-
-        if labels.sum() == 0:
-            raise ValueError("Not enough positive labels. Increase limit!")
-
-    print("Reshaping features...")
-    features = feature_reshape(features, multi)
+    all_scalers, pretrained_model = load_data(filename_scaler, filename_pretrained_model)
 
     timeseries = True if lookback > 1 else False
+
+    with ModelDataset(dataset_path) as dataset:
+        indices_all, indices_train, indices_validation = get_split_indexes(dataset, timeseries, limit)
+        if limit > 0 and dataset.labels[indices_all].sum() == 0:
+            raise ValueError("Not enough positive labels. Increase limit!")
+        if extra and dataset.extra_features is None:
+            raise ValueError("Modeling with extra features requested, but dataset doesn't have extra features.")
+        class_weights = {0: (dataset.num_samples / dataset.neg_samples) / 2.0,
+                         1: (dataset.num_samples / dataset.pos_samples) / 2.0}
+        # Best practices mentioned in https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
+        b0 = get_init_bias_correction(dataset.pos_samples, dataset.num_samples)
+
+        print("\nCreating training scalers...")
+
+        if all_scalers is not None:
+            training_scaler = get_sklearn_scalers(dataset.features[indices_train], multi)
+        else:
+            training_scaler = None
 
     print("Building StepCOVNet...")
 
@@ -172,8 +154,6 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
         tf.keras.metrics.AUC(curve="PR", name='pr_auc'),
     ]
 
-    b0 = get_init_bias_correction(labels.sum(), len(labels))
-
     model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model, model_type=model_type,
                              output_bias_init=tf.keras.initializers.Constant(value=b0))
 
@@ -183,13 +163,22 @@ def prepare_model(filename_features, filename_labels, filename_sample_weights, f
 
     print(model.summary())
 
-    # Best practices mentioned in https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
-    expected_init_loss = get_init_expected_loss(labels.sum(), len(labels))
-    result_init_loss = model.evaluate(features[:1000], labels[:1000], batch_size=BATCH_SIZE, verbose=0)[0]
-    print("Bias init b0 %s " % b0)
-    print("Loss should be %s. Actually is %s" % (expected_init_loss, result_init_loss))
-    if not np.array_equal(np.around([expected_init_loss], decimals=1), np.around([result_init_loss], decimals=1)):
-        print("WARNING! Expected loss is not close enough to initial loss!")
+    print("Number of samples: %s" % len(indices_all))
 
-    train_model(model, features, extra_features, labels, sample_weights, class_weights, all_scalers, model_name,
-                model_out_path, multi, log_path)
+    if timeseries:
+        input_shape = (None,) + input_shape[1:]
+    else:
+        input_shape = (None,) + input_shape
+
+    if extra:
+        output_types = (
+            {"log_mel_input": tf.dtypes.float16, "extra_input": tf.dtypes.int8}, tf.dtypes.int8, tf.dtypes.float16)
+        output_shape = (
+            {"log_mel_input": tf.TensorShape(input_shape), "extra_input": tf.TensorShape(extra_input_shape)},
+            tf.TensorShape([None]), tf.TensorShape([None]))
+    else:
+        output_types = (tf.dtypes.float16, tf.dtypes.int8, tf.dtypes.float16)
+        output_shape = (tf.TensorShape(input_shape), tf.TensorShape([None]), tf.TensorShape([None]))
+
+    train_model(model, dataset_path, multi, output_shape, output_types, indices_all, indices_train, indices_validation,
+                all_scalers, training_scaler, class_weights, model_name, model_out_path, log_path)

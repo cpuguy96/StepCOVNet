@@ -62,9 +62,6 @@ def test_get_features_mean_std_multi():
 
 def test_get_scalers_not_reshaped():
     n_samples = 10
-    mean = 0
-    std = np.sqrt(1)
-    # dummy_features = np.random.normal(mean, std, (n_samples, NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS))
 
     flat_features = np.arange(NUM_FREQ_BANDS * NUM_TIME_BANDS)
     flat_features = np.concatenate([[flat_features]] * n_samples, axis=0)

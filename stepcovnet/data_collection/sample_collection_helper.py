@@ -5,6 +5,7 @@ import numpy as np
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
 from stepcovnet.common.parameters import HOPSIZE_T
 from stepcovnet.common.parameters import SAMPLE_RATE
+from stepcovnet.common.utils import feature_reshape
 
 
 def remove_out_of_range(frames, frame_start, frame_end):
@@ -47,6 +48,7 @@ def timings_parser(timing_name):
 
 def dump_feature_onset_helper(wav_path, timing_path, file_name, multi):
     mfcc = get_madmom_log_mels(join(wav_path, file_name + '.wav'), SAMPLE_RATE, HOPSIZE_T, multi)
+    mfcc = feature_reshape(mfcc, multi)
 
     times_onset = timings_parser(join(timing_path, file_name + '.txt'))
     times_onset = [float(to) for to in times_onset]

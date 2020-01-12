@@ -51,14 +51,9 @@ def train(input_path, output_path, multi_int, extra_int, under_sample_int, lookb
     built_model_name = "multi_" if multi else ""
     built_model_name += "under_" if under_sample else ""
 
-    filename_labels = os.path.join(input_path, built_model_name + 'labels.npz')
-    filename_sample_weights = os.path.join(input_path, built_model_name + 'sample_weights.npz')
-
     if extra:
-        path_extra_features = os.path.join(input_path, built_model_name + 'extra_features.npz')
         extra_input_shape = (None, 2)
     else:
-        path_extra_features = None
         extra_input_shape = None
 
     filename_scaler = []
@@ -72,7 +67,8 @@ def train(input_path, output_path, multi_int, extra_int, under_sample_int, lookb
         input_shape = (lookback, 1, NUM_FREQ_BANDS, NUM_TIME_BANDS) if lookback > 1 else (
             1, NUM_FREQ_BANDS, NUM_TIME_BANDS)
         filename_scaler.append(os.path.join(input_path, built_model_name + 'scaler.pkl'))
-    filename_features = os.path.join(input_path, built_model_name + 'dataset_features.npz')
+
+    dataset_path = os.path.join(input_path, built_model_name + 'stepcovnet_dataset.hdf5')
 
     # adding this afterwards since we want to only rename the model
     built_model_name += "extra_" if extra else ""
@@ -86,10 +82,10 @@ def train(input_path, output_path, multi_int, extra_int, under_sample_int, lookb
 
     file_path_model = os.path.join(output_path)
 
-    prepare_model(filename_features, filename_labels, filename_sample_weights, filename_scaler, input_shape=input_shape,
-                  model_name=model_name, model_out_path=file_path_model, extra_input_shape=extra_input_shape,
-                  path_extra_features=path_extra_features, lookback=lookback, multi=multi, limit=limit,
-                  log_path=log_path, filename_pretrained_model=pretrained_model_path, model_type=model_type)
+    prepare_model(dataset_path, model_out_path=file_path_model, input_shape=input_shape,
+                  extra_input_shape=extra_input_shape, multi=multi, extra=extra, filename_scaler=filename_scaler,
+                  filename_pretrained_model=pretrained_model_path, limit=limit, lookback=lookback, log_path=log_path,
+                  model_name=model_name, model_type=model_type)
 
 
 if __name__ == '__main__':

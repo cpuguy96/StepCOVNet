@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Flatten
@@ -12,6 +13,11 @@ from stepcovnet.training.architectures import pretrained_back
 from stepcovnet.training.architectures import pretrained_time_back
 from stepcovnet.training.architectures import time_back
 from stepcovnet.training.architectures import time_front
+
+
+def get_init_bias_correction(num_pos, num_all):
+    num_neg = num_all - num_pos
+    return np.log(num_pos / num_neg)
 
 
 def get_pretrained_front(model, x_input):
