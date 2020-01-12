@@ -8,7 +8,7 @@ from stepcovnet.training.modeling import prepare_model
 from stepcovnet.training.parameters import BATCH_SIZE
 
 
-def train(input_path, output_path, multi_int, extra_int, under_sample_int, lookback, limit, name, log_path,
+def train(input_path, output_path, multi_int, extra_int, lookback, limit, name, log_path,
           pretrained_model_path, model_type_int):
     if not os.path.isdir(input_path):
         raise NotADirectoryError('Input path %s not found' % input_path)
@@ -22,9 +22,6 @@ def train(input_path, output_path, multi_int, extra_int, under_sample_int, lookb
 
     if lookback > BATCH_SIZE:
         raise ValueError('Lookback needs to be <= BATCH_SIZE (currently %s)' % BATCH_SIZE)
-
-    if lookback > 1 and under_sample_int == 1:
-        raise ValueError('Cannot use under sample when lookback > 1')
 
     if limit == 0:
         raise ValueError('Limit cannot be = 0')
@@ -44,12 +41,9 @@ def train(input_path, output_path, multi_int, extra_int, under_sample_int, lookb
 
     multi = True if multi_int == 1 else False
     extra = True if extra_int == 1 else False
-    under_sample = True if under_sample_int == 1 else False
-
     model_type = "normal" if model_type_int == 0 else "paper"
 
     built_model_name = "multi_" if multi else ""
-    built_model_name += "under_" if under_sample else ""
 
     if extra:
         extra_input_shape = (None, 2)
@@ -109,11 +103,6 @@ if __name__ == '__main__':
                         default=0,
                         choices=[0, 1],
                         help="Whether to use extra data from madmom and librosa: 0 - not used, 1 - used")
-    parser.add_argument("--under_sample",
-                        type=int,
-                        default=0,
-                        choices=[0, 1],
-                        help="Whether to under sample for balanced classes: 0 - not used, 1 - used")
     parser.add_argument("--lookback",
                         type=int,
                         default=1,
@@ -142,5 +131,5 @@ if __name__ == '__main__':
                         help="Output log data path")
     args = parser.parse_args()
 
-    train(args.input, args.output, args.multi, args.extra, args.under_sample, args.lookback, args.limit, args.name,
+    train(args.input, args.output, args.multi, args.extra, args.lookback, args.limit, args.name,
           args.log, args.pretrained_model, args.model_type)
