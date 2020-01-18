@@ -26,6 +26,8 @@ class FeatureGenerator(object):
     def __call__(self, *args, **kwargs):
         with ModelDataset(self.dataset_path) as dataset:
             while True:
+                if self.batch_index >= len(self.indexes_batch):
+                    self.batch_index = 0
                 batch = self.indexes_batch[self.batch_index]
                 self.batch_index += 1
                 feature_batch, label_batch, sample_weight_batch, extra_feature_batch = dataset[batch]
@@ -33,15 +35,13 @@ class FeatureGenerator(object):
                                                extra_features=extra_feature_batch, multi=self.multi,
                                                scalers=self.scaler)
                 yield x_batch, y_batch, sample_weight_batch
-                if self.batch_index >= len(self.indexes_batch):
-                    self.batch_index = 0
 
 
 def get_split_indexes(dataset, timeseries, limit):
     indices_all = range(dataset.num_samples)
     if limit > 0:
         indices_all = indices_all[:limit]
-    if timeseries:
+    if timeseries or not timeseries:  # removing stratify splits until we can get it working
         indices_train, indices_validation, _, _ = \
             train_test_split(indices_all,
                              indices_all,

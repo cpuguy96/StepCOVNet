@@ -55,7 +55,7 @@ def get_file_scalers(scaler_path, multi):
                 scaler.append(joblib.load(file))
         else:
             with open(join(scaler_path, "scaler.pkl"), "rb") as file:
-                scaler.append(joblib.load(file))
+                scaler.extend(joblib.load(file))
         return scaler
     else:
         return None

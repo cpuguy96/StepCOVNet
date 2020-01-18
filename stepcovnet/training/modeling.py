@@ -24,11 +24,14 @@ from stepcovnet.training.tf_config import *
 
 def train_model(model, dataset_path, multi, output_shape, output_types, index_all, index_train, index_val, all_scalers,
                 training_scaler, class_weights, model_name, model_out_path, log_path):
-    training_callbacks = [EarlyStopping(monitor='val_pr_auc', patience=PATIENCE, verbose=0, mode="max"),
-                          ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
+    training_callbacks = [ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
                                           monitor='val_pr_auc',
                                           verbose=0,
                                           save_best_only=True)]
+    if PATIENCE > 0:
+        training_callbacks.append(EarlyStopping(monitor='val_pr_auc', patience=PATIENCE, verbose=0, mode="max"))
+    elif PATIENCE == 0:
+        raise ValueError("Patience must be > 0")
 
     if log_path is not None:
         os.makedirs(os.path.join(log_path, "split_dataset"), exist_ok=True)
@@ -152,6 +155,7 @@ def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=N
         tf.keras.metrics.Precision(name='pre'),
         tf.keras.metrics.Recall(name='rec'),
         tf.keras.metrics.AUC(curve="PR", name='pr_auc'),
+        tf.keras.metrics.AUC(name='auc'),
     ]
 
     model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model, model_type=model_type,

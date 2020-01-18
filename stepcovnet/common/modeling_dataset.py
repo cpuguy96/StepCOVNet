@@ -23,7 +23,6 @@ class ModelDataset(object):
         try:
             data.append(self.extra_features[item])
         except Exception as ex:
-            print("Dataset doesn't have extra features. Defaulting extra features to None.")
             data.append(None)
 
         return data

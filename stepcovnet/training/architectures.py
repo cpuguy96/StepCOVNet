@@ -115,12 +115,12 @@ def time_back(model, lookback, extra_input=None):
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=True,
                                 kernel_initializer=tf.keras.initializers.glorot_uniform(42),
-                                kernel_regularizer=tf.keras.regularizers.L1L2(l2=1e-5)))(x)
+                                kernel_regularizer=tf.keras.regularizers.L1L2(l2=5e-6)))(x)
     x = LayerNormalization(axis=-1, epsilon=1e-6, dtype=tf.float32)(x)
     x = Bidirectional(CuDNNLSTM(128,
                                 return_sequences=False,
                                 kernel_initializer=tf.keras.initializers.glorot_uniform(42),
-                                kernel_regularizer=tf.keras.regularizers.L1L2(l2=1e-5)))(x)
+                                kernel_regularizer=tf.keras.regularizers.L1L2(l2=5e-6)))(x)
     x = Dense(256,
               kernel_initializer=tf.keras.initializers.he_uniform(42),
               bias_initializer=tf.keras.initializers.Constant(value=0.1))(x)
@@ -129,6 +129,7 @@ def time_back(model, lookback, extra_input=None):
     x = Dropout(0.5)(x)
     x = Dense(128,
               kernel_initializer=tf.keras.initializers.he_uniform(42),
+              kernel_regularizer=tf.keras.regularizers.L1L2(l2=1e-6),
               bias_initializer=tf.keras.initializers.Constant(value=0.1))(x)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
