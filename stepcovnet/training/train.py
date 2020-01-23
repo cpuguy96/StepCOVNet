@@ -8,7 +8,7 @@ from stepcovnet.training.modeling import prepare_model
 from stepcovnet.training.parameters import BATCH_SIZE
 
 
-def train(input_path, output_path, multi_int, extra_int, lookback, limit, name, log_path,
+def train(input_path, output_path, difficulty_int, multi_int, extra_int, lookback, limit, name, log_path,
           pretrained_model_path, model_type_int):
     if not os.path.isdir(input_path):
         raise NotADirectoryError('Input path %s not found' % input_path)
@@ -39,6 +39,7 @@ def train(input_path, output_path, multi_int, extra_int, lookback, limit, name, 
     if log_path is not None:
         log_path = os.path.join(log_path, "tensorboard", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
+    difficulty = ["challenge", "hard", "medium", "easy", "beginner"][difficulty_int]
     multi = True if multi_int == 1 else False
     extra = True if extra_int == 1 else False
     model_type = "normal" if model_type_int == 0 else "paper"
@@ -68,6 +69,7 @@ def train(input_path, output_path, multi_int, extra_int, lookback, limit, name, 
     built_model_name += "extra_" if extra else ""
     built_model_name += "time%s_" % lookback if lookback > 1 else ""
     built_model_name += "pretrained_" if pretrained_model_path is not None else ""
+    built_model_name += "difficulty_"
     # finally, specify training timing model
     built_model_name += "timing_model"
 
@@ -79,7 +81,7 @@ def train(input_path, output_path, multi_int, extra_int, lookback, limit, name, 
     prepare_model(dataset_path, model_out_path=file_path_model, input_shape=input_shape,
                   extra_input_shape=extra_input_shape, multi=multi, extra=extra, filename_scaler=filename_scaler,
                   filename_pretrained_model=pretrained_model_path, limit=limit, lookback=lookback, log_path=log_path,
-                  model_name=model_name, model_type=model_type)
+                  model_name=model_name, model_type=model_type, difficulty=difficulty)
 
 
 if __name__ == '__main__':
@@ -93,6 +95,11 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--output",
                         type=str,
                         help="Output stored model path")
+    parser.add_argument("-d", "--difficulty",
+                        type=int,
+                        default=0,
+                        choices=[0, 1, 2, 3, 4],
+                        help="Game difficulty to use when training: 0 - challenge, 1 - hard, 2 - medium, 3 - easy, 4, - beginner")
     parser.add_argument("--multi",
                         type=int,
                         default=0,
@@ -115,7 +122,8 @@ if __name__ == '__main__':
                         type=int,
                         default=0,
                         choices=[0, 1],
-                        help="Type of model architecture to train with: 1 use model configuration given in DDC paper, 0 use custom model")
+                        help="Type of model architecture to train with: 1 use model configuration given in DDC paper, "
+                             "0 use custom model")
     parser.add_argument("--name",
                         type=str,
                         default=None,
@@ -130,5 +138,5 @@ if __name__ == '__main__':
                         help="Output log data path for tensorboard")
     args = parser.parse_args()
 
-    train(args.input, args.output, args.multi, args.extra, args.lookback, args.limit, args.name,
+    train(args.input, args.output, args.difficulty, args.multi, args.extra, args.lookback, args.limit, args.name,
           args.log, args.pretrained_model, args.model_type)

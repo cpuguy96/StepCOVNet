@@ -1,3 +1,4 @@
+from collections import defaultdict
 from os.path import join
 
 import numpy as np
@@ -12,38 +13,53 @@ def remove_out_of_range(frames, frame_start, frame_end):
     return frames[np.all([frames <= frame_end, frames >= frame_start], axis=0)]
 
 
-def feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, mfcc):
-    frames_onset_p25 = np.hstack((frames_onset - 1, frames_onset + 1))
-    frames_onset_p25 = remove_out_of_range(frames_onset_p25, frame_start, frame_end)
+def feature_onset_phrase_label_sample_weights(frames_onset, mfcc):
+    frame_start = 0
+    frame_end = mfcc.shape[0] - 1
+    labels_dict = defaultdict(np.array)
+    sample_weights_dict = defaultdict(np.array)
 
-    len_line = frame_end - frame_start + 1
+    for key, value in frames_onset.items():
+        frames_onset_p25 = np.hstack((value - 1, value + 1))
+        frames_onset_p25 = remove_out_of_range(frames_onset_p25, frame_start, frame_end)
+
+        len_line = frame_end - frame_start + 1
+
+        sample_weights = np.ones((len_line,))
+        sample_weights[frames_onset_p25 - frame_start] = 0.25
+        sample_weights_dict[key] = sample_weights.astype("float16")
+
+        label = np.zeros((len_line,))
+        label[value - frame_start] = 1
+        label[frames_onset_p25 - frame_start] = 1
+        labels_dict[key] = label.astype("int8")
 
     mfcc_line = mfcc[frame_start:frame_end + 1, :]
 
-    sample_weights = np.ones((len_line,))
-    sample_weights[frames_onset_p25 - frame_start] = 0.25
-
-    label = np.zeros((len_line,))
-    label[frames_onset - frame_start] = 1
-    label[frames_onset_p25 - frame_start] = 1
-
-    return mfcc_line, label, sample_weights
+    return mfcc_line, labels_dict, sample_weights_dict
 
 
 def timings_parser(timing_name):
     """
-    Schluter onset time annotation parser
-    :param timing_name:
-    :return: onset time list
+    Read each line of note timings
+    :param timing_name: str - file name containing note timings
+    :return: defaultdict - key: timings difficulty; value: list containing note timings
     """
 
     with open(timing_name, 'r') as file:
-        lines = [line.replace("\n", "") for line in file.readlines()]
-        if "NOTES" in set(lines):
-            lines = lines[lines.index("NOTES") + 1:]
-            return [line.split(" ")[1] for line in lines]
-        else:
-            raise ValueError('Could not find NOTES line in file %s' % timing_name)
+        timings = defaultdict(list)
+        read_timings = False
+        curr_difficulty = None
+        for line in file.readlines():
+            line = line.replace("\n", "")
+            if line.startswith("NOTES"):
+                read_timings = True
+            elif read_timings:
+                if line.startswith("DIFFICULTY"):
+                    curr_difficulty = line.split()[1].lower()
+                elif curr_difficulty is not None:
+                    timings[curr_difficulty].append(float(line.split(" ")[1]))
+        return timings
 
 
 def dump_feature_onset_helper(wav_path, timing_path, file_name, multi):
@@ -51,13 +67,12 @@ def dump_feature_onset_helper(wav_path, timing_path, file_name, multi):
     mfcc = feature_reshape(mfcc, multi)
 
     times_onset = timings_parser(join(timing_path, file_name + '.txt'))
-    times_onset = [float(to) for to in times_onset]
 
-    # syllable onset frames
-    frames_onset = np.array(np.around(np.array(times_onset) / HOPSIZE_T), dtype=int)
+    # convert note timings into frame timings
+    frames_onset = defaultdict(np.array)
+    for key, value in times_onset.items():
+        frames_onset[key] = np.array(np.around(np.array(value) / HOPSIZE_T), dtype=int)
 
     # line start and end frames
-    frame_start = frames_onset[0]  # first positive sample
-    frame_end = mfcc.shape[0] - 1
 
-    return mfcc, frames_onset, frame_start, frame_end
+    return mfcc, frames_onset

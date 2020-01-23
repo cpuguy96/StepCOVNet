@@ -8,7 +8,7 @@ from os.path import join
 import psutil
 
 from stepcovnet.common.audio_preprocessing import get_madmom_librosa_features
-from stepcovnet.common.modeling_dataset import ModelDataset
+from stepcovnet.common.model_dataset import ModelDataset
 from stepcovnet.common.parameters import HOPSIZE_T
 from stepcovnet.common.parameters import SAMPLE_RATE
 from stepcovnet.common.utils import get_filename
@@ -22,24 +22,23 @@ def collect_features(wav_path, timing_path, multi, extra, file_name):
     # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
         print('Feature collecting: %s' % file_name)
-        log_mel, frames_onset, frame_start, frame_end = \
+        log_mel, frames_onset = \
             dump_feature_onset_helper(wav_path, timing_path, file_name, multi)
 
         # simple sample weighting
-        feature, label, sample_weights = \
-            feature_onset_phrase_label_sample_weights(frames_onset, frame_start, frame_end, log_mel)
+        feature, label_dict, sample_weights_dict = \
+            feature_onset_phrase_label_sample_weights(frames_onset, log_mel)
 
         if extra:
             # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
             extra_feature = get_madmom_librosa_features(join(wav_path, file_name + '.wav'),
                                                         SAMPLE_RATE,
                                                         HOPSIZE_T,
-                                                        len(label),
-                                                        frame_start)
+                                                        len(feature))
         else:
             extra_feature = None
 
-        return [feature.astype("float16"), label.astype("int8"), sample_weights.astype("float16"), extra_feature]
+        return [feature.astype("float16"), label_dict, sample_weights_dict, extra_feature]
     except Exception as ex:
         print("Error collecting features for %s: %r" % (file_name, ex))
         return None
@@ -63,7 +62,7 @@ def collect_data(wavs_path, timings_path, multi, extra, limit, output_path, pref
                 scalers = get_sklearn_scalers(features, multi, scalers, parallel=False)
                 if limit > 0:
                     song_count += 1
-                    if dataset.num_samples >= limit:
+                    if dataset.num_valid_samples >= limit:
                         print("Limit reached after %d songs. Breaking..." % song_count)
                         break
     if multi:

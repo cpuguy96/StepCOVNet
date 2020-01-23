@@ -3,16 +3,17 @@ import pickle
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from stepcovnet.common.modeling_dataset import ModelDataset
+from stepcovnet.common.model_dataset import ModelDataset
 from stepcovnet.common.utils import pre_process
 from stepcovnet.training.parameters import BATCH_SIZE
 
 
 class FeatureGenerator(object):
-    def __init__(self, dataset_path, indexes, multi, scaler=None, shuffle=True):
+    def __init__(self, dataset_path, indexes, multi, difficulty, scaler=None, shuffle=True):
         self.dataset_path = dataset_path
         self.scaler = scaler
         self.multi = multi
+        self.difficulty = difficulty
         self.shuffle = shuffle
         self.num_batches = int(np.ceil(len(indexes) / BATCH_SIZE))
         self.indexes_batch = [indexes[i * BATCH_SIZE:(i + 1) * BATCH_SIZE] for i in range(self.num_batches)]
@@ -25,6 +26,7 @@ class FeatureGenerator(object):
 
     def __call__(self, *args, **kwargs):
         with ModelDataset(self.dataset_path) as dataset:
+            dataset.set_difficulty(self.difficulty)
             while True:
                 if self.batch_index >= len(self.indexes_batch):
                     self.batch_index = 0
@@ -38,7 +40,7 @@ class FeatureGenerator(object):
 
 
 def get_split_indexes(dataset, timeseries, limit):
-    indices_all = range(dataset.num_samples)
+    indices_all = np.where(np.array(dataset.labels) >= 0)[0]
     if limit > 0:
         indices_all = indices_all[:limit]
     if timeseries or not timeseries:  # removing stratify splits until we can get it working

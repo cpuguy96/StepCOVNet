@@ -9,7 +9,7 @@ import numpy as np
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import ModelCheckpoint
 
-from stepcovnet.common.modeling_dataset import ModelDataset
+from stepcovnet.common.model_dataset import ModelDataset
 from stepcovnet.common.utils import get_sklearn_scalers
 from stepcovnet.training.data_preparation import FeatureGenerator
 from stepcovnet.training.data_preparation import get_split_indexes
@@ -23,7 +23,7 @@ from stepcovnet.training.tf_config import *
 
 
 def train_model(model, dataset_path, multi, output_shape, output_types, index_all, index_train, index_val, all_scalers,
-                training_scaler, class_weights, model_name, model_out_path, log_path):
+                training_scaler, class_weights, model_name, model_out_path, log_path, difficulty):
     training_callbacks = [ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'),
                                           monitor='val_pr_auc',
                                           verbose=0,
@@ -46,8 +46,10 @@ def train_model(model, dataset_path, multi, output_shape, output_types, index_al
     train_steps_per_epoch = int(np.ceil(len(index_train) / BATCH_SIZE))
     val_steps_per_epoch = int(np.ceil(len(index_val) / BATCH_SIZE))
 
-    train_gen = FeatureGenerator(dataset_path, indexes=index_train, multi=multi, scaler=training_scaler, shuffle=True)
-    val_gen = FeatureGenerator(dataset_path, indexes=index_val, multi=multi, scaler=training_scaler, shuffle=False)
+    train_gen = FeatureGenerator(dataset_path, indexes=index_train, multi=multi, scaler=training_scaler, shuffle=True,
+                                 difficulty=difficulty)
+    val_gen = FeatureGenerator(dataset_path, indexes=index_val, multi=multi, scaler=training_scaler, shuffle=False,
+                               difficulty=difficulty)
 
     train_dataset = tf.data.Dataset.from_generator(
         train_gen,
@@ -94,7 +96,8 @@ def train_model(model, dataset_path, multi, output_shape, output_types, index_al
 
     steps_per_epoch = int(np.ceil(len(index_all) / BATCH_SIZE))
 
-    all_gen = FeatureGenerator(dataset_path, indexes=index_all, multi=multi, scaler=all_scalers, shuffle=True)
+    all_gen = FeatureGenerator(dataset_path, indexes=index_all, multi=multi, scaler=all_scalers, shuffle=True,
+                               difficulty=difficulty)
 
     all_dataset = tf.data.Dataset.from_generator(
         all_gen,
@@ -120,22 +123,23 @@ def train_model(model, dataset_path, multi, output_shape, output_types, index_al
 
 def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=None, multi=False, extra=False,
                   filename_scaler=None, filename_pretrained_model=None, limit=-1, lookback=1, log_path=None,
-                  model_name=None, model_type="normal"):
+                  model_name=None, model_type="normal", difficulty="challenge"):
     print("Loading data...")
     all_scalers, pretrained_model = load_data(filename_scaler, filename_pretrained_model)
 
     timeseries = True if lookback > 1 else False
 
     with ModelDataset(dataset_path) as dataset:
+        dataset.set_difficulty(difficulty)
         indices_all, indices_train, indices_validation = get_split_indexes(dataset, timeseries, limit)
         if limit > 0 and dataset.labels[indices_all].sum() == 0:
             raise ValueError("Not enough positive labels. Increase limit!")
         if extra and dataset.extra_features is None:
             raise ValueError("Modeling with extra features requested, but dataset doesn't have extra features.")
-        class_weights = {0: (dataset.num_samples / dataset.neg_samples) / 2.0,
-                         1: (dataset.num_samples / dataset.pos_samples) / 2.0}
+        class_weights = {0: (dataset.num_valid_samples / dataset.neg_samples) / 2.0,
+                         1: (dataset.num_valid_samples / dataset.pos_samples) / 2.0}
         # Best practices mentioned in https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
-        b0 = get_init_bias_correction(dataset.pos_samples, dataset.num_samples)
+        b0 = get_init_bias_correction(dataset.pos_samples, dataset.num_valid_samples)
 
         print("\nCreating training scalers...")
 
@@ -185,4 +189,4 @@ def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=N
         output_shape = (tf.TensorShape(input_shape), tf.TensorShape([None]), tf.TensorShape([None]))
 
     train_model(model, dataset_path, multi, output_shape, output_types, indices_all, indices_train, indices_validation,
-                all_scalers, training_scaler, class_weights, model_name, model_out_path, log_path)
+                all_scalers, training_scaler, class_weights, model_name, model_out_path, log_path, difficulty)
