@@ -69,7 +69,7 @@ def train(input_path, output_path, difficulty_int, multi_int, extra_int, lookbac
     built_model_name += "extra_" if extra else ""
     built_model_name += "time%s_" % lookback if lookback > 1 else ""
     built_model_name += "pretrained_" if pretrained_model_path is not None else ""
-    built_model_name += "difficulty_"
+    built_model_name += "%s_" % difficulty
     # finally, specify training timing model
     built_model_name += "timing_model"
 
@@ -99,7 +99,8 @@ if __name__ == '__main__':
                         type=int,
                         default=0,
                         choices=[0, 1, 2, 3, 4],
-                        help="Game difficulty to use when training: 0 - challenge, 1 - hard, 2 - medium, 3 - easy, 4, - beginner")
+                        help="Game difficulty to use when training: 0 - challenge, 1 - hard, 2 - medium, 3 - easy, 4, "
+                             "- beginner")
     parser.add_argument("--multi",
                         type=int,
                         default=0,

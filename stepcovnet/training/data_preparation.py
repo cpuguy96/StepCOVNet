@@ -39,11 +39,11 @@ class FeatureGenerator(object):
                 yield x_batch, y_batch, sample_weight_batch
 
 
-def get_split_indexes(dataset, timeseries, limit):
-    indices_all = np.where(np.array(dataset.labels) >= 0)[0]
+def get_split_indexes(labels, timeseries=False, limit=-1):
+    indices_all = list(np.where(np.array(labels) >= 0)[0])
     if limit > 0:
         indices_all = indices_all[:limit]
-    if timeseries or not timeseries:  # removing stratify splits until we can get it working
+    if True or timeseries:  # removing stratify splits until we can get it working
         indices_train, indices_validation, _, _ = \
             train_test_split(indices_all,
                              indices_all,
@@ -55,7 +55,7 @@ def get_split_indexes(dataset, timeseries, limit):
             train_test_split(indices_all,
                              indices_all,
                              test_size=0.2,
-                             stratify=dataset.labels,
+                             stratify=labels,
                              shuffle=True,
                              random_state=42)
 

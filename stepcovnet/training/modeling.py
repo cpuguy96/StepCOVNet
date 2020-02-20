@@ -131,7 +131,7 @@ def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=N
 
     with ModelDataset(dataset_path) as dataset:
         dataset.set_difficulty(difficulty)
-        indices_all, indices_train, indices_validation = get_split_indexes(dataset, timeseries, limit)
+        indices_all, indices_train, indices_validation = get_split_indexes(dataset.labels, timeseries, limit)
         if limit > 0 and dataset.labels[indices_all].sum() == 0:
             raise ValueError("Not enough positive labels. Increase limit!")
         if extra and dataset.extra_features is None:

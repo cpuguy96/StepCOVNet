@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow.compat.v1.keras.layers import CuDNNLSTM
 from tensorflow.keras.layers import Activation
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.layers import Bidirectional
@@ -112,15 +111,15 @@ def time_back(model, lookback, extra_input=None):
         x = RepeatVector(lookback)(x)
     else:
         x = RepeatVector(lookback)(model)
-    x = Bidirectional(CuDNNLSTM(128,
-                                return_sequences=True,
-                                kernel_initializer=tf.keras.initializers.glorot_uniform(42),
-                                kernel_regularizer=tf.keras.regularizers.L1L2(l2=5e-6)))(x)
+    x = Bidirectional(LSTM(128,
+                           return_sequences=True,
+                           kernel_initializer=tf.keras.initializers.glorot_uniform(42),
+                           kernel_regularizer=tf.keras.regularizers.L1L2(l2=5e-6)))(x)
     x = LayerNormalization(axis=-1, epsilon=1e-6, dtype=tf.float32)(x)
-    x = Bidirectional(CuDNNLSTM(128,
-                                return_sequences=False,
-                                kernel_initializer=tf.keras.initializers.glorot_uniform(42),
-                                kernel_regularizer=tf.keras.regularizers.L1L2(l2=5e-6)))(x)
+    x = Bidirectional(LSTM(128,
+                           return_sequences=False,
+                           kernel_initializer=tf.keras.initializers.glorot_uniform(42),
+                           kernel_regularizer=tf.keras.regularizers.L1L2(l2=5e-6)))(x)
     x = Dense(256,
               kernel_initializer=tf.keras.initializers.he_uniform(42),
               bias_initializer=tf.keras.initializers.Constant(value=0.1))(x)
