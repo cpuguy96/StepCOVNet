@@ -8,7 +8,7 @@ from stepcovnet.common.parameters import NUM_TIME_BANDS
 from stepcovnet.common.parameters import SAMPLE_RATE
 
 TEST_DATA_PATH = os.path.relpath("tests/data/")
-TEST_FILE = "vanessa.wav"
+TEST_FILE = "tide.wav"
 
 
 def test_get_feature_processors():
