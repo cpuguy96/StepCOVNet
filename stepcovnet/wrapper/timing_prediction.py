@@ -18,6 +18,7 @@ from stepcovnet.common.utils import feature_reshape
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.common.utils import pre_process
+from stepcovnet.common.utils import write_file
 
 
 def smooth_obs(obs):
@@ -168,9 +169,9 @@ def write_predictions(output_path,
                       timing_and_wav_name):
     timings = timing_and_wav_name[0]
     wav_name = timing_and_wav_name[1]
-    with open(join(output_path, get_filename(wav_name, False) + ".timings"), "w") as timings_file:
-        for timing in timings:
-            timings_file.write(str(timing / 100) + "\n")
+    output_file = join(output_path, get_filename(wav_name, False) + ".timings")
+    output_timings = '\n'.join([str(timing / 100) for timing in timings])
+    write_file(output_path=output_file, output_data=output_timings)
 
 
 def run_process(input_path,

@@ -4,8 +4,8 @@ import re
 
 import numpy as np
 import psutil
-from joblib import delayed
 from joblib import Parallel
+from joblib import delayed
 
 from stepcovnet.common.parameters import NUM_FREQ_BANDS
 from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
@@ -27,6 +27,11 @@ def get_filename(file_path, with_ext=True):
 
 def standardize_filename(filename):
     return re.sub("[^a-z0-9-_]", "", filename.lower())
+
+
+def write_file(output_path, output_data, header=""):
+    with open(output_path, "w") as file:
+        file.write(header + output_data)
 
 
 def feature_reshape(feature, multi=False):

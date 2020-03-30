@@ -8,6 +8,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
+from stepcovnet.common.utils import write_file
 
 
 def get_binary_rep(arrow_values):
@@ -82,9 +83,10 @@ def generate_arrows(input_path, output_path, model, encoder, verbose, timing_nam
 
     arrows = get_arrows(timings, model, encoder)
 
-    with open(join(output_path, song_name + ".arrows"), "w") as arrows_file:
-        for arrow in arrows:
-            arrows_file.write(str(arrow) + "\n")
+    output_path = join(output_path, song_name + ".arrows")
+    output_arrows = '\n'.join([str(arrow) for arrow in arrows])
+
+    write_file(output_path=output_path, output_data=output_arrows)
 
 
 def run_process(input_path, output_path, model, encoder, verbose):

@@ -10,6 +10,7 @@ import psutil
 
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
+from stepcovnet.common.utils import write_file
 
 
 def get_bpm(wav_file_path):
@@ -52,12 +53,13 @@ def combine_data(timings_path,
     if verbose:
         print("Creating combined txt file for %s" % wav_name)
 
-    with open(join(output_path, "generated_" + song_name + ".txt"), "w") as comb_file:
-        comb_file.write("TITLE " + str(song_name) + "\n")
-        comb_file.write("BPM " + str(bpm) + "\n")
-        comb_file.write("NOTES \n")
-        for timing, arrow in zip(timings, arrows):
-            comb_file.write(str(arrow) + " " + str(timing) + "\n")
+    header = "TITLE " + str(song_name) + "\n" + \
+             "BPM " + str(bpm) + "\n" + \
+             "NOTES \n"
+    output_file = join(output_path, "generated_" + song_name + ".txt")
+    output_comb_data = '\n'.join([str(arrow) + " " + str(timing) for timing, arrow in zip(timings, arrows)])
+
+    write_file(output_path=output_file, output_data=output_comb_data, header=header)
 
 
 def run_process(timings_path,

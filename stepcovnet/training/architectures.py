@@ -2,17 +2,17 @@ import tensorflow as tf
 from tensorflow.keras.layers import Activation
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.layers import Bidirectional
-from tensorflow.keras.layers import concatenate
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import Flatten
-from tensorflow.keras.layers import LayerNormalization
 from tensorflow.keras.layers import LSTM
+from tensorflow.keras.layers import LayerNormalization
 from tensorflow.keras.layers import MaxPooling2D
 from tensorflow.keras.layers import RepeatVector
 from tensorflow.keras.layers import SpatialDropout1D
 from tensorflow.keras.layers import SpatialDropout2D
+from tensorflow.keras.layers import concatenate
 
 
 def time_front(x_input, reshape_dim, channel_order, channel):
