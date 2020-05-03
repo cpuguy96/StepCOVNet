@@ -19,7 +19,9 @@ python stepmania_note_generator.py -i --input <string> -o --output <string> -s -
 
 
 
-## Creating Dataset
+## Creating Training Dataset
+**Link to training data**: https://drive.google.com/open?id=1eCRYSf2qnbsSOzC-KmxPWcSbMzi1fLHi
+
 To create a training dataset, you need to parse the `.sm` files and convert sound files into `.wav` files: 
 * [`smfile_parser.py`](https://github.com/jhaco/SMFile_Parser) should be used to parse the `.sm` files into `.txt` files. 
 * [`wav_converter.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/wrapper/wav_converter.py) can be used to convert the audio files into `.wav` files. If a different `.wav` converter is uses, ensure the sample rate is `44100hz`.
