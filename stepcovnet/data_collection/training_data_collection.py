@@ -92,21 +92,16 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     if limit == 0:
         raise ValueError('Limit cannot be 0!')
 
-    start_time = time.time()
-
     multi = True if multi_int == 1 else False
     extra = True if extra_int == 1 else False
-
-    if limit < 0:
-        limit = -1
-    else:
-        limit = limit
+    limit = max(-1, limit)  # defaulting negative inputs to -1
 
     prefix = "multi_" if multi else ""
 
+    start_time = time.time()
     collect_data(wavs_path, timings_path, multi, extra, limit, output_path, prefix)
-
     end_time = time.time()
+
     print("\nElapsed time was %g seconds" % (end_time - start_time))
 
 

@@ -21,12 +21,16 @@ def convert_file(input_path,
         new_file_name = standardize_filename(get_filename(file_name, False))
         if verbose:
             print("Converting " + file_name)
+        file_input_path = join(input_path, file_name)
+        file_output_path = join(output_path, new_file_name + '.wav')
         subprocess.call(
-            ['ffmpeg', '-y', '-loglevel', 'quiet', '-i',
-             join(input_path, file_name), '-ar', str(SAMPLE_RATE), join(output_path, new_file_name + '.wav')])
+            ['ffmpeg', '-y', '-loglevel', 'quiet', '-i', file_input_path, '-ar', str(SAMPLE_RATE), file_output_path])
+    except FileNotFoundError as fnf:
+        print("Subprocess failed to find ffmpeg! Was ffmpeg installed correctly?")
+        raise fnf
     except Exception as ex:
         if verbose:
-            print("Failed to convert %s: %r", (file_name, ex))
+            print("Failed to convert %s: %r" % (file_name, ex))
 
 
 def run_process(input_path, output_path, verbose):
