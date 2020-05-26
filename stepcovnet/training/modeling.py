@@ -127,6 +127,9 @@ def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=N
     print("Loading data...")
     all_scalers, pretrained_model = load_data(filename_scaler, filename_pretrained_model)
 
+    # TODO: Removing using scalers until variety type is implemented
+    all_scalers = None
+
     timeseries = True if lookback > 1 else False
 
     with ModelDataset(dataset_path) as dataset:

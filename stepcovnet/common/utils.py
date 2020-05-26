@@ -6,6 +6,8 @@ import numpy as np
 import psutil
 from joblib import Parallel
 from joblib import delayed
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import OneHotEncoder
 
 from stepcovnet.common.parameters import NUM_FREQ_BANDS
 from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
@@ -140,3 +142,26 @@ def pre_process(features, labels=None, extra_features=None, multi=False, scalers
         return features_copy, labels
     else:
         return features_copy
+
+
+def get_all_note_combs():
+    all_note_combs = []
+
+    for first_digit in range(0, 4):
+        for second_digit in range(0, 4):
+            for third_digit in range(0, 4):
+                for fourth_digit in range(0, 4):
+                    all_note_combs.append(
+                        str(first_digit) + str(second_digit) + str(third_digit) + str(fourth_digit))
+    # Adding '0000' to possible note combinations. This will allow the arrow prediction model to predict an empty note.
+    # all_note_combs = all_note_combs[1:]
+
+    return all_note_combs
+
+
+def get_arrow_one_hot_encoder():
+    return OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
+
+
+def get_arrow_label_encoder():
+    return LabelEncoder().fit(np.asarray(get_all_note_combs()).reshape(-1, 1))

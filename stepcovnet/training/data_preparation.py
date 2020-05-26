@@ -32,7 +32,7 @@ class FeatureGenerator(object):
                     self.batch_index = 0
                 batch = self.indexes_batch[self.batch_index]
                 self.batch_index += 1
-                feature_batch, label_batch, sample_weight_batch, extra_feature_batch = dataset[batch]
+                feature_batch, label_batch, sample_weight_batch, arrows_batch, extra_feature_batch = dataset[batch]
                 x_batch, y_batch = pre_process(features=feature_batch, labels=label_batch,
                                                extra_features=extra_feature_batch, multi=self.multi,
                                                scalers=self.scaler)

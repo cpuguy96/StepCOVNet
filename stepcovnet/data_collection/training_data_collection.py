@@ -22,12 +22,12 @@ def collect_features(wav_path, timing_path, multi, extra, file_name):
     # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
         print('Feature collecting: %s' % file_name)
-        log_mel, frames_onset = \
+        log_mel, frames_onset, arrows = \
             dump_feature_onset_helper(wav_path, timing_path, file_name, multi)
 
         # simple sample weighting
-        feature, label_dict, sample_weights_dict = \
-            feature_onset_phrase_label_sample_weights(frames_onset, log_mel)
+        feature, label_dict, sample_weights_dict, arrows_dict = \
+            feature_onset_phrase_label_sample_weights(frames_onset, log_mel, arrows)
 
         if extra:
             # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
@@ -37,8 +37,8 @@ def collect_features(wav_path, timing_path, multi, extra, file_name):
                                                         len(feature))
         else:
             extra_feature = None
-
-        return [feature.astype("float16"), label_dict, sample_weights_dict, extra_feature]
+        # type casting features to float16 to save disk space
+        return [feature.astype("float16"), label_dict, sample_weights_dict, extra_feature, arrows_dict]
     except Exception as ex:
         print("Error collecting features for %s: %r" % (file_name, ex))
         return None
@@ -56,8 +56,8 @@ def collect_data(wavs_path, timings_path, multi, extra, limit, output_path, pref
             for result in pool.imap(func, file_names):
                 if result is None:
                     continue
-                features, labels, weights, extra_features = result
-                dataset.dump(features, labels, weights, extra_features)
+                features, labels, weights, extra_features, arrows = result
+                dataset.dump(features, labels, weights, extra_features, arrows)
                 # not using joblib parallel since we are already using multiprocessing
                 scalers = get_sklearn_scalers(features, multi, scalers, parallel=False)
                 if limit > 0:

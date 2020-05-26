@@ -16,13 +16,13 @@ class ModelDataset(object):
         if not self.overwrite:
             self.mode = "r"
         self.h5py_file = h5py.File(self.dataset_path, self.mode)
-        self.dataset_names = ["features", "labels", "sample_weights", "extra_features"]
+        self.dataset_names = ["features", "labels", "sample_weights", "extra_features", "arrows"]
         self.dataset_attr = {"num_samples", "num_valid_samples", "pos_samples", "neg_samples"}
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
         self.difficulty = "challenge"
 
     def __getitem__(self, item):
-        data = [self.features[item], self.labels[item], self.sample_weights[item]]
+        data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item]]
         try:
             data.append(self.extra_features[item])
         except Exception as ex:
@@ -63,19 +63,19 @@ class ModelDataset(object):
             self.h5py_file[difficulty_dataset_name].attrs["pos_samples"] += value.sum()
             self.h5py_file[difficulty_dataset_name].attrs["neg_samples"] += len(value) - value.sum()
 
-    def dump(self, features, labels, sample_weights, extra_features):
+    def dump(self, features, labels, sample_weights, extra_features, arrows):
         try:
             num_labels = len(labels[list(labels.keys())[0]])
-            all_data = [features, labels, sample_weights, extra_features]
+            all_data = [features, labels, sample_weights, extra_features, arrows]
             for dataset_name, data in zip(self.dataset_names, all_data):
                 if data is None:
                     continue
-                if dataset_name in {"labels", "sample_weights"}:
+                if dataset_name in {"labels", "sample_weights", "arrows"}:
                     diff_copy = self.difficulties.copy()
-                    for key, value in data.items():
-                        if key in diff_copy:
-                            diff_copy.remove(key)
-                        self.dump_difficulty_dataset(dataset_name, key, value)
+                    for difficulty, value in data.items():
+                        if difficulty in diff_copy:
+                            diff_copy.remove(difficulty)
+                        self.dump_difficulty_dataset(dataset_name, difficulty, value)
                     null_values = np.zeros((num_labels,))
                     null_values.fill(-1)
                     for remaining_diff in diff_copy:
@@ -122,6 +122,10 @@ class ModelDataset(object):
     @property
     def sample_weights(self):
         return self.h5py_file["sample_weights_" + self.difficulty]
+
+    @property
+    def arrows(self):
+        return self.h5py_file["arrows_" + self.difficulty]
 
     @property
     def extra_features(self):

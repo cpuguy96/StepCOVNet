@@ -4,8 +4,8 @@ from os.path import join
 
 import numpy as np
 from nltk.util import ngrams
-from sklearn.preprocessing import OneHotEncoder
 
+from stepcovnet.common.utils import get_arrow_one_hot_encoder
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.common.utils import write_file
@@ -23,20 +23,6 @@ def get_extended_binary_rep(arrow_combs):
             binary_rep[int(num), j] = 1
         extended_binary_rep.append(binary_rep.ravel())
     return np.asarray(extended_binary_rep)
-
-
-def get_all_note_combs():
-    all_note_combs = []
-
-    for first_digit in range(0, 4):
-        for second_digit in range(0, 4):
-            for third_digit in range(0, 4):
-                for fourth_digit in range(0, 4):
-                    all_note_combs.append(str(first_digit) + str(second_digit) + str(third_digit) + str(fourth_digit))
-
-    all_note_combs = all_note_combs[1:]
-
-    return all_note_combs
 
 
 def create_tokens(timings):
@@ -119,7 +105,7 @@ def arrow_prediction(input_path,
             print("Starting arrows prediction\n-----------------------------------------")
         from tensorflow.keras.models import load_model
         model = load_model(join(model_path), compile=False)
-        encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
+        encoder = get_arrow_one_hot_encoder()
         run_process(input_path, output_path, model, encoder, verbose)
     else:
         raise FileNotFoundError('Timing files path %s not found' % input_path)
