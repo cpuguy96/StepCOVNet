@@ -5,7 +5,7 @@
 ![](https://github.com/cpuguy96/StepCOVNet/workflows/StepCOVNet%20Application/badge.svg)
 
 ## Running Audio to SM File Generator
-### Currently only produces `.txt` files. Use [`smfile_writer.py`](https://github.com/jhaco/SMFile_Writer) to convert `.txt` to `.sm`
+### Currently only produces `.txt` files. Use [`SMDataTools`](https://github.com/jhaco/SMDataTools) to convert `.txt` to `.sm`
 ```.bash
 python stepmania_note_generator.py -i --input <string> -o --output <string> -s --scalers <string> --timing_model <string> --arrow_model <string> -v --verbose <int>
 ```
@@ -16,15 +16,12 @@ python stepmania_note_generator.py -i --input <string> -o --output <string> -s -
 * **OPTIONAL:** `--arrow_model` input directory path to arrow selection model; default is `"models/retrained_arrow_model.h5"`
 * **OPTIONAL:** `-v` `--verbose` `1` shows full verbose, `0` shows no verbose; default is `0`
 
-
-
-
 ## Creating Training Dataset
 **Link to training data**: https://drive.google.com/open?id=1eCRYSf2qnbsSOzC-KmxPWcSbMzi1fLHi
 
 To create a training dataset, you need to parse the `.sm` files and convert sound files into `.wav` files: 
-* [`smfile_parser.py`](https://github.com/jhaco/SMFile_Parser) should be used to parse the `.sm` files into `.txt` files. 
-* [`wav_converter.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/wrapper/wav_converter.py) can be used to convert the audio files into `.wav` files. If a different `.wav` converter is uses, ensure the sample rate is `44100hz`.
+* [`SMDataTools`](https://github.com/jhaco/SMDataTools) should be used to parse the `.sm` files into `.txt` files. 
+* [`wav_converter.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/wrapper/wav_converter.py) can be used to convert the audio files into `.wav` files. The default sample rate is `44100hz`.
 
 Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` files into separate directories and run [`training_data_collection.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/data_collection/training_data_collection.py).
 
@@ -57,10 +54,12 @@ python train.py -i --input <string> -o --output <string> --multi <int> --extra <
 * **OPTIONAL:** `--log` output directory path to store tensorboard data
 
 ## TODO
-* Add more support for training arrow selection model
+* Update to new model architecture
+* Extensive refactoring to reduce tech debt
 * End-to-end unit tests for all modules 
 
 
 ## Credits
 * Inspiration from the paper [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf)
 * Most of the source code derived from [musical-onset-efficient](https://github.com/ronggong/musical-onset-efficient)
+* [Jhaco](https://github.com/jhaco) for support and collaboration 
