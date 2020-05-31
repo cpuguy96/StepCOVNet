@@ -1,13 +1,12 @@
 import multiprocessing
 import os
-import subprocess
 import time
 from functools import partial
 from os.path import join
 
 import psutil
+import soundfile as sf
 
-from stepcovnet.common.parameters import SAMPLE_RATE
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.common.utils import standardize_filename
@@ -15,6 +14,7 @@ from stepcovnet.common.utils import standardize_filename
 
 def convert_file(input_path,
                  output_path,
+                 sample_frequency,
                  verbose,
                  file_name):
     try:
@@ -23,27 +23,24 @@ def convert_file(input_path,
             print("Converting " + file_name)
         file_input_path = join(input_path, file_name)
         file_output_path = join(output_path, new_file_name + '.wav')
-        subprocess.call(
-            ['ffmpeg', '-y', '-loglevel', 'quiet', '-i', file_input_path, '-ar', str(SAMPLE_RATE), file_output_path])
-    except FileNotFoundError as fnf:
-        print("Subprocess failed to find ffmpeg! Was ffmpeg installed correctly?")
-        raise fnf
+        input_audio_data, _ = sf.read(file_input_path)
+        sf.write(file_output_path, input_audio_data, sample_frequency)
     except Exception as ex:
         if verbose:
             print("Failed to convert %s: %r" % (file_name, ex))
 
 
-def run_process(input_path, output_path, verbose):
+def run_process(input_path, output_path, sample_frequency, verbose):
     if os.path.isfile(input_path):
-        convert_file(os.path.dirname(input_path), output_path, verbose, get_filename(input_path))
+        convert_file(os.path.dirname(input_path), output_path, sample_frequency, verbose, get_filename(input_path))
     else:
         file_names = get_filenames_from_folder(input_path)
-        func = partial(convert_file, input_path, output_path, verbose)
+        func = partial(convert_file, input_path, output_path, sample_frequency, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
             pool.map_async(func, file_names).get()
 
 
-def wav_converter(input_path, output_path, verbose_int=0):
+def wav_converter(input_path, output_path, sample_frequency, verbose_int=0):
     start_time = time.time()
     if verbose_int not in [0, 1]:
         raise ValueError('%s is not a valid verbose input. Choose 0 for none or 1 for full' % verbose_int)
@@ -56,7 +53,7 @@ def wav_converter(input_path, output_path, verbose_int=0):
     if os.path.isfile(input_path) or os.path.isdir(input_path):
         if verbose:
             print("Starting .wav conversion\n-----------------------------------------")
-        run_process(input_path, output_path, verbose)
+        run_process(input_path, output_path, sample_frequency, verbose)
     else:
         raise FileNotFoundError('Audio file(s) path %s not found' % input_path)
     end_time = time.time()
@@ -70,10 +67,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Convert audio files to .wav format")
     parser.add_argument("-i", "--input",
                         type=str,
+                        required=True,
                         help="Input audio file/directory path")
     parser.add_argument("-o", "--output",
                         type=str,
+                        required=True,
                         help="Output wavs path")
+    parser.add_argument("-sf", "--sample_frequency",
+                        type=int,
+                        default=44100,
+                        help="Sampling frequency to create wavs")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
@@ -83,4 +86,5 @@ if __name__ == '__main__':
 
     wav_converter(args.input,
                   args.output,
+                  args.sample_frequency,
                   args.verbose)
