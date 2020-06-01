@@ -20,6 +20,7 @@ class ModelDataset(object):
         self.dataset_attr = {"num_samples", "num_valid_samples", "pos_samples", "neg_samples"}
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
         self.difficulty = "challenge"
+        self.config = None
 
     def __getitem__(self, item):
         data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item]]
@@ -44,6 +45,7 @@ class ModelDataset(object):
                                       maxshape=data_shape)
 
     def extend_dataset(self, data, dataset_name):
+        # TODO: Remove appending and split by file. Will need to change indexing to allow this.
         self.h5py_file[dataset_name].resize((self.h5py_file[dataset_name].shape[0] + data.shape[0]), axis=0)
         self.h5py_file[dataset_name][-data.shape[0]:] = data
 

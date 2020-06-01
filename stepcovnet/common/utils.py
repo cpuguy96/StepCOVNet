@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 import re
+import time
 
 import numpy as np
 import psutil
@@ -12,6 +13,25 @@ from sklearn.preprocessing import OneHotEncoder
 from stepcovnet.common.parameters import NUM_FREQ_BANDS
 from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
 from stepcovnet.common.parameters import NUM_TIME_BANDS
+
+
+def timed(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        return_value = func(*args, **kwargs)
+        end_time = time.time()
+        print("\nElapsed time was %g seconds for %s" % ((end_time - start_time), func.__name__))
+        return return_value
+
+    return wrapper
+
+
+def timed(func, *args, **kwargs):
+    start_time = time.time()
+    return_value = func(*args, **kwargs)
+    end_time = time.time()
+    print("\nElapsed time was %g seconds for %s" % ((end_time - start_time), func.__name__))
+    return return_value
 
 
 def get_filenames_from_folder(mypath):
@@ -36,16 +56,21 @@ def write_file(output_path, output_data, header=""):
         file.write(header + output_data)
 
 
-def feature_reshape(feature, multi=False):
+def feature_reshape(feature, num_freq_bands, num_time_bands, num_channels, multi=False):
     """
     reshape mfccBands feature into n_sample * n_row * n_col
+    :param num_channels:
+    :param num_time_bands:
+    :param num_freq_bands:
+    :param multi:
     :param feature:
     :return:
     """
     if multi:
-        return feature.reshape((len(feature), NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS), order='F')
+        return feature.reshape((len(feature), num_time_bands, num_freq_bands, num_channels),
+                               order='F')
     else:
-        return feature.reshape((len(feature), NUM_FREQ_BANDS, NUM_TIME_BANDS), order='F')
+        return feature.reshape((len(feature), num_time_bands, num_freq_bands), order='F')
 
 
 def get_features_mean_std(features):
@@ -68,11 +93,11 @@ def parital_fit_feature_slice(scaler, feat_slice):
     return scaler.partial_fit(np.mean(feat_slice, axis=1).reshape(-1, 1))  # need to take mean slice has 15 time bands
 
 
-def get_sklearn_scalers(features, multi, existing_scalers=None, parallel=True):
+def get_sklearn_scalers(features, multi, config, existing_scalers=None, parallel=True):
     from sklearn.preprocessing import StandardScaler
-    if set(features.shape[1:]).intersection(
-            {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
-        raise ValueError('Need to reshape features before getting scalers')
+    # if set(features.shape[1:]).intersection(
+    #        {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
+    #    raise ValueError('Need to reshape features before getting scalers')
 
     scalers = []
     n_jobs = psutil.cpu_count(logical=False) if parallel else 1
@@ -82,8 +107,8 @@ def get_sklearn_scalers(features, multi, existing_scalers=None, parallel=True):
             if existing_scalers is not None:
                 channel_scalers = existing_scalers[channel]
             else:
-                channel_scalers = [StandardScaler() for _ in range(NUM_FREQ_BANDS)]
-            feat_slice_gen = (features[:, i, :, channel] for i in range(NUM_FREQ_BANDS))
+                channel_scalers = [StandardScaler() for _ in range(config["NUM_FREQ_BANDS"])]
+            feat_slice_gen = (features[:, i, :, channel] for i in range(config["NUM_FREQ_BANDS"]))
             channel_scalers = Parallel(backend="loky", n_jobs=n_jobs)(
                 delayed(parital_fit_feature_slice)(sca, feat_slice) for sca, feat_slice in
                 zip(channel_scalers, feat_slice_gen))
@@ -93,8 +118,8 @@ def get_sklearn_scalers(features, multi, existing_scalers=None, parallel=True):
         if existing_scalers is not None:
             scalers = existing_scalers
         else:
-            scalers = [StandardScaler() for _ in range(NUM_FREQ_BANDS)]
-        feat_slice_gen = (features[:, i] for i in range(NUM_FREQ_BANDS))
+            scalers = [StandardScaler() for _ in range(config["NUM_FREQ_BANDS"])]
+        feat_slice_gen = (features[:, :, i] for i in range(config["NUM_FREQ_BANDS"]))
         scalers = Parallel(backend="loky", n_jobs=n_jobs)(
             delayed(parital_fit_feature_slice)(sca, feat_slice) for sca, feat_slice in zip(scalers, feat_slice_gen))
         return scalers

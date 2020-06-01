@@ -202,9 +202,10 @@ def spectrogram_to_mel_matrix(num_mel_bins=20,
 
 
 def log_mel_spectrogram(data,
+                        fft_length,
+                        window_length_samples,
                         audio_sample_rate=8000,
                         log_offset=0.0,
-                        window_length_secs=0.025,
                         hop_length_secs=0.010,
                         **kwargs):
     """Convert waveform to a log magnitude mel-frequency spectrogram.
@@ -221,10 +222,7 @@ def log_mel_spectrogram(data,
     2D np.array of (num_frames, num_mel_bins) consisting of log mel filterbank
     magnitudes for successive frames.
   """
-    window_length_samples = int(round(audio_sample_rate * window_length_secs))
     hop_length_samples = int(round(audio_sample_rate * hop_length_secs))
-    fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
-    # fft_length = 1024
     spectrogram = stft_magnitude(
         data,
         fft_length=fft_length,

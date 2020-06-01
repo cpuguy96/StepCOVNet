@@ -10,7 +10,8 @@ psutil
 nltk
 sklearn
 madmom
-SoundFile
+soundfile
 scipy
 Cython
 mido
+resampy

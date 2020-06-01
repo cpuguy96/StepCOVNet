@@ -13,47 +13,53 @@ from madmom.processors import SequentialProcessor
 
 from stepcovnet.common.Fprev_sub import Fprev_sub
 from stepcovnet.common.parameters import MULTI_CHANNEL_FRAME_SIZES
-from stepcovnet.common.parameters import NUM_FREQ_BANDS
 from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
-from stepcovnet.common.parameters import NUM_TIME_BANDS
 from stepcovnet.common.parameters import SINGLE_CHANNEL_FRAME_SIZE
 
 
-def get_feature_processors(sample_rate, hopsize_t, frame_size):
+def get_feature_processors(sample_rate, hopsize_t, frame_size, config):
     frames = FramedSignalProcessor(frame_size=frame_size, hopsize=int(sample_rate * hopsize_t))
     stft = ShortTimeFourierTransformProcessor()  # caching FFT window
     filt = FilteredSpectrogramProcessor(
-        filterbank=MelFilterbank, num_bands=NUM_FREQ_BANDS, fmin=27.5, fmax=16000,
+        filterbank=MelFilterbank, num_bands=config["NUM_FREQ_BANDS"], fmin=config["MIN_FREQ"], fmax=config["MAX_FREQ"],
         norm_filters=True, unique_filters=False)
     spec = LogarithmicSpectrogramProcessor(log=np.log, add=np.spacing(1))
     return SequentialProcessor([frames, stft, filt, spec])
 
 
-def get_madmom_log_mels(file_name, sample_rate, hopsize_t, multi):
-    def nbf_2D(features, nlen):
+def get_madmom_log_mels(file_name, multi, config):
+    def nbf_2D(features, nlen, is_even):
         features = np.array(features).transpose()
         mfcc_out = np.array(features, copy=True)
         for ii in range(1, nlen + 1):
             mfcc_right_shift = Fprev_sub(features, w=ii)
             mfcc_left_shift = Fprev_sub(features, w=-ii)
-            mfcc_out = np.vstack((mfcc_right_shift, mfcc_out, mfcc_left_shift))
+            if is_even and ii == nlen:
+                mfcc_out = np.vstack((mfcc_right_shift, mfcc_out))
+            else:
+                mfcc_out = np.vstack((mfcc_right_shift, mfcc_out, mfcc_left_shift))
         features = mfcc_out.transpose()
         return features
 
+    sample_rate = config["SAMPLE_RATE"]
+    hopsize_t = config["STFT_HOP_LENGTH_SECONDS"]
     sig = SignalProcessor(num_channels=1, sample_rate=sample_rate)
     if multi:
-        multi_proc = ParallelProcessor([get_feature_processors(sample_rate, hopsize_t, frame_size)
+        multi_proc = ParallelProcessor([get_feature_processors(sample_rate, hopsize_t, frame_size, config)
                                         for frame_size in MULTI_CHANNEL_FRAME_SIZES])
         mfcc = SequentialProcessor([sig, multi_proc, np.dstack])(file_name)
     else:
-        single_proc = get_feature_processors(sample_rate, hopsize_t, SINGLE_CHANNEL_FRAME_SIZE)
+        single_proc = get_feature_processors(sample_rate, hopsize_t, SINGLE_CHANNEL_FRAME_SIZE, config)
         mfcc = SequentialProcessor([sig, single_proc])(file_name)
 
+    nlen = int(config["NUM_TIME_BANDS"] / 2)
+    is_even = config["NUM_TIME_BANDS"] % 2 == 0
+
     if multi:
-        mfcc_conc = [nbf_2D(mfcc[:, :, i], int(NUM_TIME_BANDS / 2)) for i in range(NUM_MULTI_CHANNELS)]
+        mfcc_conc = [nbf_2D(mfcc[:, :, i], nlen, is_even) for i in range(NUM_MULTI_CHANNELS)]
         return np.stack(mfcc_conc, axis=2)
     else:
-        return nbf_2D(mfcc, int(NUM_TIME_BANDS / 2))
+        return nbf_2D(mfcc, nlen, is_even)
 
 
 def get_librosa_frames(file_name, sample_rate, hopsize_t):
