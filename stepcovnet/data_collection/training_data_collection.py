@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import pickle
 import time
 from functools import partial
 from os.path import join
@@ -12,9 +13,9 @@ from stepcovnet.common.parameters import CONFIG
 from stepcovnet.common.parameters import HOPSIZE_T
 from stepcovnet.common.parameters import SAMPLE_RATE
 from stepcovnet.common.parameters import VGGISH_CONFIG
+from stepcovnet.common.utils import get_channel_scalers
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
-from stepcovnet.common.utils import timed
 from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 from stepcovnet.data_collection.sample_collection_helper import get_features_and_labels
 
@@ -48,16 +49,14 @@ def collect_features(wav_path, timing_path, multi, extra, config, file_name):
         return None
 
 
-@timed
-def collect_data(wavs_path, timings_path, multi, extra, limit, output_path, name_prefix, config, cores):
+def collect_data(wavs_path, timings_path, output_path, name_prefix, config, multi=False, extra=False, limit=-1,
+                 cores=1):
     func = partial(collect_features, wavs_path, timings_path, multi, extra, config)
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
-    # scalers = None
+    scalers = None
 
     with ModelDataset(os.path.join(output_path, name_prefix + "_dataset.hdf5"), overwrite=True) as dataset:
-        # Set the configuration dictionary used to collect data
-        dataset.config = config
         with multiprocessing.Pool(cores) as pool:
             song_count = 0
             for i, result in enumerate(pool.imap(func, file_names)):
@@ -66,27 +65,14 @@ def collect_data(wavs_path, timings_path, multi, extra, limit, output_path, name
                 features, labels, weights, extra_features, arrows = result
                 dataset.dump(features, labels, weights, extra_features, arrows)
                 # not using joblib parallel since we are already using multiprocessing
-                # Removing the use of scalers since log mel shouldn't be scaled
-                # scalers = get_sklearn_scalers(features, multi, config, scalers, parallel=False)
+                scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
+                # Save scalers after every run
+                pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
                 if limit > 0:
                     song_count += 1
                     if dataset.num_valid_samples >= limit:
                         print("Limit reached after %d songs. Breaking..." % song_count)
                         break
-    # Removing the use of scalers since log mel shouldn't be scaled
-    # Might use channel scalers in the future
-    """if multi:
-        # TODO: Change to allow any number of channels
-        # This also might not be used in the future if we deprecate scaling all other
-        print("Saving low scaler ...")
-        pickle.dump(scalers[0], open(join(output_path, name_prefix + '_scaler_low.pkl'), 'wb'))
-        print("Saving mid scaler ...")
-        pickle.dump(scalers[1], open(join(output_path, name_prefix + '_scaler_mid.pkl'), 'wb'))
-        print("Saving high scaler ...")
-        pickle.dump(scalers[2], open(join(output_path, name_prefix + '_scaler_high.pkl'), 'wb'))
-    else:
-        print("Saving scaler ...")
-        pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))"""
 
 
 def training_data_collection(wavs_path, timings_path, output_path, multi_int, extra_int, type_int, limit, cores, name):
@@ -120,7 +106,8 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
     name_prefix = name if name is not None else prefix + "stepcovnet"
 
     start_time = time.time()
-    collect_data(wavs_path, timings_path, multi, extra, limit, output_path, name_prefix, config, cores)
+    collect_data(wavs_path=wavs_path, timings_path=timings_path, output_path=output_path, name_prefix=name_prefix,
+                 config=config, multi=multi, extra=extra, limit=limit, cores=cores)
     end_time = time.time()
 
     print("\nElapsed time was %g seconds" % (end_time - start_time))

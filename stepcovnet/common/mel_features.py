@@ -212,9 +212,10 @@ def log_mel_spectrogram(data,
 
   Args:
     data: 1D np.array of waveform data.
+    fft_length: Size of the FFT to apply.
+    window_length_samples: Length of each block of samples to pass to FFT.
     audio_sample_rate: The sampling rate of data.
     log_offset: Add this to values when taking log to avoid -Infs.
-    window_length_secs: Duration of each window to analyze.
     hop_length_secs: Advance between successive analysis windows.
     **kwargs: Additional arguments to pass to spectrogram_to_mel_matrix.
 

@@ -116,16 +116,17 @@ def test_get_scalers_reshaped_multi():
 
 def test_feature_reshape():
     n_samples = 10
-    n_rows = NUM_FREQ_BANDS
-    n_cols = NUM_TIME_BANDS
+    n_rows = NUM_TIME_BANDS
+    n_cols = NUM_FREQ_BANDS
 
-    dummy_features = np.arange(n_rows * n_cols).reshape((n_rows, n_cols), order='F')
+    dummy_features = np.arange(n_rows * n_cols).reshape((n_rows, n_cols, 1), order='F')
     dummy_features = np.concatenate([[dummy_features]] * n_samples, axis=0)
 
     flat_features = np.arange(n_rows * n_cols)
     flat_features = np.concatenate([[flat_features]] * n_samples, axis=0)
 
-    reshaped_features = feature_reshape(flat_features, multi=False)
+    reshaped_features = feature_reshape_up(flat_features, num_time_bands=NUM_TIME_BANDS, num_freq_bands=NUM_FREQ_BANDS,
+                                           num_channels=NUM_MULTI_CHANNELS, multi=False)
 
     assert reshaped_features.shape == dummy_features.shape
     assert np.array_equal(reshaped_features, dummy_features)
@@ -133,8 +134,8 @@ def test_feature_reshape():
 
 def test_feature_reshape_multi():
     n_samples = 10
-    n_rows = NUM_FREQ_BANDS
-    n_cols = NUM_TIME_BANDS
+    n_rows = NUM_TIME_BANDS
+    n_cols = NUM_FREQ_BANDS
 
     nd_a_array = np.arange(n_rows * n_cols * NUM_MULTI_CHANNELS).reshape((n_rows, n_cols, NUM_MULTI_CHANNELS),
                                                                          order='F')
@@ -144,7 +145,8 @@ def test_feature_reshape_multi():
                                                                          order='F')
     flat_dummy = np.concatenate([[flat_dummy]] * n_samples, axis=0)
 
-    reshaped_features = feature_reshape(flat_dummy, multi=True)
+    reshaped_features = feature_reshape_up(flat_dummy, num_time_bands=NUM_TIME_BANDS, num_freq_bands=NUM_FREQ_BANDS,
+                                           num_channels=NUM_MULTI_CHANNELS, multi=True)
 
     assert reshaped_features.shape == dummy_features.shape
     assert np.array_equal(reshaped_features, dummy_features)

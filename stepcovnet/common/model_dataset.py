@@ -20,7 +20,6 @@ class ModelDataset(object):
         self.dataset_attr = {"num_samples", "num_valid_samples", "pos_samples", "neg_samples"}
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
         self.difficulty = "challenge"
-        self.config = None
 
     def __getitem__(self, item):
         data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item]]

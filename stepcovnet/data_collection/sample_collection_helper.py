@@ -7,7 +7,7 @@ import soundfile as sf
 
 from stepcovnet.common import mel_features
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
-from stepcovnet.common.utils import feature_reshape
+from stepcovnet.common.utils import feature_reshape_up
 
 
 def remove_out_of_range(frames, frame_start, frame_end):
@@ -142,7 +142,7 @@ def get_log_mels(audio_data, audio_data_sample_rate, config, multi=False):
     if multi:
         return np.stack(log_mels, axis=3)
     else:
-        return log_mels[0]
+        return np.expand_dims(log_mels[0], axis=-1)
 
 
 def get_audio_data(audio_file_path):
@@ -187,9 +187,10 @@ def get_features_and_labels(wav_path, note_data_path, file_name, multi, config):
 
 def get_features_and_labels_madmom(wav_path, note_data_path, file_name, multi, config):
     mfcc = get_madmom_log_mels(join(wav_path, file_name + '.wav'), multi, config=config)
-    log_mel_frames = feature_reshape(feature=mfcc, num_freq_bands=config["NUM_FREQ_BANDS"],
-                                     num_time_bands=config["NUM_TIME_BANDS"], num_channels=config["NUM_MULTI_CHANNELS"],
-                                     multi=multi)
+    log_mel_frames = feature_reshape_up(feature=mfcc, num_freq_bands=config["NUM_FREQ_BANDS"],
+                                        num_time_bands=config["NUM_TIME_BANDS"],
+                                        num_channels=config["NUM_MULTI_CHANNELS"],
+                                        multi=multi)
     note_data = timings_parser(join(note_data_path, file_name + '.txt'))
     onsets, arrows = convert_note_data(note_data=note_data, stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])
 

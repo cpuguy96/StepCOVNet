@@ -1,6 +1,7 @@
 import os
 
 from stepcovnet.common.audio_preprocessing import *
+from stepcovnet.common.parameters import CONFIG
 from stepcovnet.common.parameters import HOPSIZE_T
 from stepcovnet.common.parameters import NUM_FREQ_BANDS
 from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
@@ -12,7 +13,7 @@ TEST_FILE = "tide.wav"
 
 
 def test_get_feature_processors():
-    feature_processors = get_feature_processors(SAMPLE_RATE, HOPSIZE_T, SINGLE_CHANNEL_FRAME_SIZE)
+    feature_processors = get_feature_processors(SAMPLE_RATE, HOPSIZE_T, SINGLE_CHANNEL_FRAME_SIZE, config=CONFIG)
     assert isinstance(feature_processors, SequentialProcessor)
     assert len(feature_processors) == 4
     for processor in feature_processors:
@@ -22,8 +23,7 @@ def test_get_feature_processors():
 
 def test_get_madmom_log_mels():
     log_mels = get_madmom_log_mels(os.path.join(TEST_DATA_PATH, TEST_FILE),
-                                   SAMPLE_RATE,
-                                   HOPSIZE_T,
+                                   config=CONFIG,
                                    multi=False)
     assert len(log_mels.shape) == 2
     assert log_mels.shape[1] == NUM_FREQ_BANDS * NUM_TIME_BANDS
@@ -31,8 +31,7 @@ def test_get_madmom_log_mels():
 
 def test_get_madmom_log_mels_multi():
     multi_log_mels = get_madmom_log_mels(os.path.join(TEST_DATA_PATH, TEST_FILE),
-                                         SAMPLE_RATE,
-                                         HOPSIZE_T,
+                                         config=CONFIG,
                                          multi=True)
     assert len(multi_log_mels.shape) == 3
     assert multi_log_mels.shape[1] == NUM_FREQ_BANDS * NUM_TIME_BANDS

@@ -9,13 +9,14 @@ from joblib import Parallel
 from joblib import delayed
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import StandardScaler
 
 from stepcovnet.common.parameters import NUM_FREQ_BANDS
 from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
 from stepcovnet.common.parameters import NUM_TIME_BANDS
 
 
-def timed(func):
+def timed_function(func):
     def wrapper(*args, **kwargs):
         start_time = time.time()
         return_value = func(*args, **kwargs)
@@ -56,9 +57,17 @@ def write_file(output_path, output_data, header=""):
         file.write(header + output_data)
 
 
-def feature_reshape(feature, num_freq_bands, num_time_bands, num_channels, multi=False):
+def feature_reshape_down(features, order='C'):
+    if len(features.shape) != 4:
+        raise ValueError('Number of dims for features is %d (should be 4)')
+
+    return features.reshape(features.shape[0], features.shape[1] * features.shape[2], features.shape[3], order=order)
+
+
+def feature_reshape_up(feature, num_freq_bands, num_time_bands, num_channels, multi=False, order='F'):
     """
     reshape mfccBands feature into n_sample * n_row * n_col
+    :param order:
     :param num_channels:
     :param num_time_bands:
     :param num_freq_bands:
@@ -68,9 +77,29 @@ def feature_reshape(feature, num_freq_bands, num_time_bands, num_channels, multi
     """
     if multi:
         return feature.reshape((len(feature), num_time_bands, num_freq_bands, num_channels),
-                               order='F')
+                               order=order)
     else:
-        return feature.reshape((len(feature), num_time_bands, num_freq_bands), order='F')
+        return feature.reshape((len(feature), num_time_bands, num_freq_bands, 1), order=order)
+
+
+def get_channel_scalers(features, existing_scalers=None, n_jobs=1):
+    if len(features.shape) not in {3, 4}:
+        raise ValueError('Number of dims for features is %d (should be 3 or 4)' % len(features.shape))
+
+    if len(features.shape) == 4:
+        features = feature_reshape_down(features=features)
+
+    num_channels = features.shape[-1]
+
+    if existing_scalers is None:
+        channel_scalers = [StandardScaler() for _ in range(num_channels)]
+    else:
+        channel_scalers = existing_scalers
+    channel_scalers = Parallel(backend="loky", n_jobs=n_jobs)(
+        delayed(scaler.partial_fit)(features[:, :, i]) for i, scaler in
+        enumerate(channel_scalers))
+
+    return channel_scalers
 
 
 def get_features_mean_std(features):
@@ -94,7 +123,6 @@ def parital_fit_feature_slice(scaler, feat_slice):
 
 
 def get_sklearn_scalers(features, multi, config, existing_scalers=None, parallel=True):
-    from sklearn.preprocessing import StandardScaler
     # if set(features.shape[1:]).intersection(
     #        {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
     #    raise ValueError('Need to reshape features before getting scalers')
