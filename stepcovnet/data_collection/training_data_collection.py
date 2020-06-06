@@ -26,13 +26,15 @@ def collect_features(wav_path, timing_path, multi, extra, config, file_name):
         print('Feature collecting: %s' % file_name)
         # New version. Currently has memory constrain issues.
         # With enough memory, this method should perform much faster.
-        log_mel, onsets, arrows = get_features_and_labels(wav_path, timing_path, file_name, multi, config)
+        log_mel, onsets, arrows, encoded_arrows = get_features_and_labels(wav_path, timing_path, file_name, multi,
+                                                                          config)
         # Old version
-        # log_mel, onsets, arrows = get_features_and_labels_madmom(wav_path, timing_path, file_name, multi, config)
+        # log_mel, onsets, arrows, encoded_arrows =
+        # get_features_and_labels_madmom(wav_path, timing_path, file_name, multi, config)
 
         # simple sample weighting
-        feature, label_dict, sample_weights_dict, arrows_dict = \
-            feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows)
+        feature, label_dict, sample_weights_dict, arrows_dict, encoded_arrows_dict = \
+            feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, encoded_arrows)
 
         if extra:
             # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
@@ -43,7 +45,8 @@ def collect_features(wav_path, timing_path, multi, extra, config, file_name):
         else:
             extra_feature = None
         # type casting features to float16 to save disk space.
-        return [feature.astype("float16"), label_dict, sample_weights_dict, extra_feature, arrows_dict]
+        return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, extra_feature, arrows_dict,
+                encoded_arrows_dict]
     except Exception as ex:
         print("Error collecting features for %s: %r" % (file_name, ex))
         return None
@@ -62,17 +65,23 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, mult
             for i, result in enumerate(pool.imap(func, file_names)):
                 if result is None:
                     continue
-                features, labels, weights, extra_features, arrows = result
-                dataset.dump(features, labels, weights, extra_features, arrows)
+                file_name, features, labels, weights, extra_features, arrows, encoded_arrows = result
+                print("[%d/%d] Dumping to dataset: %s" % (i + 1, len(file_names), file_name))
+                dataset.dump(features, labels, weights, extra_features, arrows, encoded_arrows)
                 # not using joblib parallel since we are already using multiprocessing
+                print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
                 scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
-                # Save scalers after every run
-                pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
+                # Save scalers after every 10 runs
+                if i % 10 == 0:
+                    print("Saving scalers")
+                    pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
                 if limit > 0:
                     song_count += 1
                     if dataset.num_valid_samples >= limit:
                         print("Limit reached after %d songs. Breaking..." % song_count)
                         break
+    print("Saving scalers")
+    pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
 
 
 def training_data_collection(wavs_path, timings_path, output_path, multi_int, extra_int, type_int, limit, cores, name):

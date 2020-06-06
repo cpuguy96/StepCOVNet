@@ -16,13 +16,14 @@ class ModelDataset(object):
         if not self.overwrite:
             self.mode = "r"
         self.h5py_file = h5py.File(self.dataset_path, self.mode)
-        self.dataset_names = ["features", "labels", "sample_weights", "extra_features", "arrows"]
+        self.dataset_names = ["features", "labels", "sample_weights", "extra_features", "arrows", "encoded_arrows"]
         self.dataset_attr = {"num_samples", "num_valid_samples", "pos_samples", "neg_samples"}
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
         self.difficulty = "challenge"
 
     def __getitem__(self, item):
-        data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item]]
+        data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item],
+                self.encoded_arrows[item]]
         try:
             data.append(self.extra_features[item])
         except Exception as ex:
@@ -40,8 +41,7 @@ class ModelDataset(object):
             data_shape = (None,) + data.shape[1:]
         else:
             data_shape = (None,)
-        self.h5py_file.create_dataset(dataset_name, data=data, chunks=True, compression="lzf",
-                                      maxshape=data_shape)
+        self.h5py_file.create_dataset(dataset_name, data=data, chunks=True, compression="lzf", maxshape=data_shape)
 
     def extend_dataset(self, data, dataset_name):
         # TODO: Remove appending and split by file. Will need to change indexing to allow this.
@@ -59,25 +59,25 @@ class ModelDataset(object):
             self.extend_dataset(value, difficulty_dataset_name)
         if dataset_name == "labels":
             self.h5py_file[difficulty_dataset_name].attrs["num_samples"] += len(value)
-        if dataset_name == "labels" and value[0] >= 0:
-            self.h5py_file[difficulty_dataset_name].attrs["num_valid_samples"] += len(value)
-            self.h5py_file[difficulty_dataset_name].attrs["pos_samples"] += value.sum()
-            self.h5py_file[difficulty_dataset_name].attrs["neg_samples"] += len(value) - value.sum()
+            if value[0] >= 0:
+                self.h5py_file[difficulty_dataset_name].attrs["num_valid_samples"] += len(value)
+                self.h5py_file[difficulty_dataset_name].attrs["pos_samples"] += value.sum()
+                self.h5py_file[difficulty_dataset_name].attrs["neg_samples"] += len(value) - value.sum()
 
-    def dump(self, features, labels, sample_weights, extra_features, arrows):
+    def dump(self, features, labels, sample_weights, extra_features, arrows, encoded_arrows):
         try:
-            num_labels = len(labels[list(labels.keys())[0]])
-            all_data = [features, labels, sample_weights, extra_features, arrows]
+            all_data = [features, labels, sample_weights, extra_features, arrows, encoded_arrows]
             for dataset_name, data in zip(self.dataset_names, all_data):
                 if data is None:
                     continue
-                if dataset_name in {"labels", "sample_weights", "arrows"}:
+                if dataset_name in {"labels", "sample_weights", "arrows", "encoded_arrows"}:
                     diff_copy = self.difficulties.copy()
                     for difficulty, value in data.items():
                         if difficulty in diff_copy:
                             diff_copy.remove(difficulty)
                         self.dump_difficulty_dataset(dataset_name, difficulty, value)
-                    null_values = np.zeros((num_labels,))
+                    data_shape = data[next(iter(data))].shape
+                    null_values = np.zeros(data_shape)
                     null_values.fill(-1)
                     for remaining_diff in diff_copy:
                         self.dump_difficulty_dataset(dataset_name, remaining_diff, null_values)
@@ -127,6 +127,10 @@ class ModelDataset(object):
     @property
     def arrows(self):
         return self.h5py_file["arrows_" + self.difficulty]
+
+    @property
+    def encoded_arrows(self):
+        return self.h5py_file["encoded_arrows_" + self.difficulty]
 
     @property
     def extra_features(self):
