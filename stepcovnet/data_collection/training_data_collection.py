@@ -49,12 +49,11 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, mult
 
     scalers = None
 
+    Dataset = ModelDataset
     if distrubted:
         Dataset = DistributedModelDataset
         output_path = os.path.join(output_path, name_prefix + "_dataset")
         os.makedirs(output_path, exist_ok=True)
-    else:
-        Dataset = ModelDataset
 
     with Dataset(os.path.join(output_path, name_prefix + "_dataset"), overwrite=True) as dataset:
         with multiprocessing.Pool(cores) as pool:

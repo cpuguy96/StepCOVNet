@@ -17,7 +17,9 @@ class ModelDataset(object):
         if not self.overwrite:
             self.mode = "r"
         self.dataset_names = ["features", "labels", "sample_weights", "arrows", "encoded_arrows"]
-        self.dataset_attr = {"labels": {"num_samples", "num_valid_samples", "pos_samples", "neg_samples"}}
+        self.difficulty_dataset_names = ["labels", "sample_weights", "arrows", "encoded_arrows"]
+        self.dataset_attr = {"labels": {"num_samples", "num_valid_samples", "pos_samples", "neg_samples"},
+                             "features": {"file_names"}}
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
         self.difficulty = "challenge"
         self.h5py_file = None
@@ -43,7 +45,6 @@ class ModelDataset(object):
         self.h5py_file.create_dataset(dataset_name, data=data, chunks=True, compression="lzf", maxshape=data_shape)
 
     def extend_dataset(self, data, dataset_name):
-        # TODO: Remove appending and split by file. Will need to change indexing to allow this.
         self.h5py_file[dataset_name].resize((self.h5py_file[dataset_name].shape[0] + data.shape[0]), axis=0)
         self.h5py_file[dataset_name][-data.shape[0]:] = data
 
@@ -64,14 +65,20 @@ class ModelDataset(object):
                     h5py_file[dataset_name].attrs[dataset_attr] = saved_attributes[dataset_attr]
                 else:
                     h5py_file[dataset_name].attrs[dataset_attr] = 0
+        elif "features" in dataset_name:
+            for dataset_attr in self.dataset_attr["features"]:
+                if saved_attributes is not None and dataset_attr in saved_attributes:
+                    h5py_file[dataset_name].attrs[dataset_attr] = saved_attributes[dataset_attr]
+                else:
+                    h5py_file[dataset_name].attrs[dataset_attr] = np.array([], dtype='S1024')
 
-    def dump(self, features, labels, sample_weights, arrows, encoded_arrows, **kwargs):
+    def dump(self, features, labels, sample_weights, arrows, encoded_arrows, file_name):
         try:
             all_data = [features, labels, sample_weights, arrows, encoded_arrows]
             for dataset_name, data in zip(self.dataset_names, all_data):
                 if data is None:
                     continue
-                if dataset_name in {"labels", "sample_weights", "arrows", "encoded_arrows"}:
+                if dataset_name in self.difficulty_dataset_names:
                     diff_copy = self.difficulties.copy()
                     for difficulty, value in data.items():
                         if difficulty in diff_copy:
@@ -81,10 +88,17 @@ class ModelDataset(object):
                     null_values = np.full(data_shape, fill_value=-1)
                     for remaining_diff in diff_copy:
                         self.dump_difficulty_dataset(dataset_name, remaining_diff, null_values)
+                    continue
                 elif not self.h5py_file.get(dataset_name):
                     self.create_dataset(data, dataset_name)
                 else:
                     self.extend_dataset(data, dataset_name)
+                saved_attributes = self.save_attributes(self.h5py_file, dataset_name)
+                self.set_dataset_attrs(self.h5py_file, dataset_name, saved_attributes)
+                if "features" in dataset_name:
+                    self.update_dataset_attrs(self.h5py_file, dataset_name, file_name)
+                else:
+                    self.update_dataset_attrs(self.h5py_file, dataset_name, data)
             self.h5py_file.flush()
         except Exception as ex:
             self.close()
@@ -116,6 +130,9 @@ class ModelDataset(object):
                 h5py_file[dataset_name].attrs["num_valid_samples"] += len(attr_value)
             h5py_file[dataset_name].attrs["pos_samples"] += attr_value.sum()
             h5py_file[dataset_name].attrs["neg_samples"] += len(attr_value) - attr_value.sum()
+        elif "features" in dataset_name:
+            h5py_file[dataset_name].attrs["file_names"] = np.append(h5py_file[dataset_name].attrs["file_names"],
+                                                                    np.string_(attr_value))
 
     @staticmethod
     def get_read_only_dataset(dataset_path):
@@ -128,6 +145,10 @@ class ModelDataset(object):
     @staticmethod
     def append_difficulty(dataset_name, difficulty):
         return "%s_%s" % (dataset_name, difficulty)
+
+    @property
+    def file_names(self):
+        return [file_name.decode("ascii") for file_name in self.h5py_file["features"].attrs["file_names"]]
 
     @property
     def num_samples(self):
