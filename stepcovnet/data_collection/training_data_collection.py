@@ -14,6 +14,7 @@ from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 from stepcovnet.data_collection.sample_collection_helper import get_features_and_labels
+from stepcovnet.dataset.DistributedModelDataset import DistributedModelDataset
 from stepcovnet.dataset.ModelDataset import ModelDataset
 
 
@@ -42,13 +43,20 @@ def collect_features(wav_path, timing_path, multi, config, file_name):
 
 
 def collect_data(wavs_path, timings_path, output_path, name_prefix, config, multi=False, limit=-1,
-                 cores=1):
+                 cores=1, distrubted=False):
     func = partial(collect_features, wavs_path, timings_path, multi, config)
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     scalers = None
 
-    with ModelDataset(os.path.join(output_path, name_prefix + "_dataset"), overwrite=True) as dataset:
+    if distrubted:
+        Dataset = DistributedModelDataset
+        output_path = os.path.join(output_path, name_prefix + "_dataset")
+        os.makedirs(output_path, exist_ok=True)
+    else:
+        Dataset = ModelDataset
+
+    with Dataset(os.path.join(output_path, name_prefix + "_dataset"), overwrite=True) as dataset:
         with multiprocessing.Pool(cores) as pool:
             song_count = 0
             for i, result in enumerate(pool.imap(func, file_names)):
@@ -56,7 +64,8 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, mult
                     continue
                 file_name, features, labels, weights, arrows, encoded_arrows = result
                 print("[%d/%d] Dumping to dataset: %s" % (i + 1, len(file_names), file_name))
-                dataset.dump(features, labels, weights, arrows, encoded_arrows)
+                dataset.dump(features=features, labels=labels, sample_weights=weights, arrows=arrows,
+                             encoded_arrows=encoded_arrows, file_name=file_name)
                 # not using joblib parallel since we are already using multiprocessing
                 print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
                 scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
@@ -66,14 +75,16 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, mult
                     pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
                 if limit > 0:
                     song_count += 1
-                    if dataset.num_valid_samples >= limit:
+                    print("[%d/%d] Features collected: %s " % (dataset.num_samples, limit, file_name))
+                    if dataset.num_samples >= limit:
                         print("Limit reached after %d songs. Breaking..." % song_count)
                         break
     print("Saving scalers")
     pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
 
 
-def training_data_collection(wavs_path, timings_path, output_path, multi_int, type_int, limit, cores, name):
+def training_data_collection(wavs_path, timings_path, output_path, multi_int, type_int, limit, cores, name,
+                             distrubted_int):
     if not os.path.isdir(wavs_path):
         raise NotADirectoryError('Audio path %s not found' % wavs_path)
 
@@ -97,6 +108,7 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ty
     config = VGGISH_CONFIG if type_int == 1 else CONFIG
     limit = max(-1, limit)  # defaulting negative inputs to -1
     cores = psutil.cpu_count(logical=False) if cores < 0 else cores
+    distrubted = True if distrubted_int == 1 else False
 
     prefix = "multi_%d_channel_" % config["NUM_MULTI_CHANNELS"] if multi else ""
 
@@ -104,7 +116,7 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ty
 
     start_time = time.time()
     collect_data(wavs_path=wavs_path, timings_path=timings_path, output_path=output_path, name_prefix=name_prefix,
-                 config=config, multi=multi, limit=limit, cores=cores)
+                 config=config, multi=multi, limit=limit, cores=cores, distrubted=distrubted)
     end_time = time.time()
 
     print("\nElapsed time was %g seconds" % (end_time - start_time))
@@ -149,8 +161,13 @@ if __name__ == '__main__':
                         type=str,
                         default=None,
                         help="Name to give model dataset")
+    parser.add_argument("--distributed",
+                        type=int,
+                        default=0,
+                        choices=[0, 1],
+                        help="Whether to create a single dataset or a distributed dataset: 0 - single, 1 - distributed")
     args = parser.parse_args()
 
     training_data_collection(wavs_path=args.wav, timings_path=args.timing, output_path=args.output,
                              multi_int=args.multi, type_int=args.type,
-                             limit=args.limit, cores=args.cores, name=args.name)
+                             limit=args.limit, cores=args.cores, name=args.name, distrubted_int=args.distributed)
