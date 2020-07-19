@@ -100,8 +100,9 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ty
     if name is not None and not name:
         raise ValueError('Model name cannot be empty')
 
-    if cores > os.cpu_count():
-        raise ValueError('Number of cores selected cannot be greater than the number cpu cores (%d)' % os.cpu_count())
+    if cores > os.cpu_count() or cores == 0:
+        raise ValueError(
+            'Number of cores selected must not be 0 and must be less than the number cpu cores (%d)' % os.cpu_count())
 
     multi = True if multi_int == 1 else False
     config = VGGISH_CONFIG if type_int == 1 else CONFIG

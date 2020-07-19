@@ -33,7 +33,10 @@ python training_data_collection.py -w --wav <string> -t --timing <string> -o --o
 * `-t` `--timing` input directory path to timing files
 * `-o` `--output` output directory path to output dataset
 * **OPTIONAL:** `--multi` `1` collects STFTs using `frame_size` of `[2048, 1024, 4096]`, `0` collects STFTs using `frame_size` of `[2048]`; default is `0`
-* **OPTIONAL:** `--limit` `> 0` stops data collection and resizes output to match limit, `-1` means unlimited; default is `-1`
+* **OPTIONAL:** `--limit` `> 0` stops data collection at limit, `-1` means unlimited; default is `-1`
+* **OPTIONAL:** `--cores` `> 0` sets the number of cores to use when collecting data; `-1` means uses the number of physical cores; default is `1`
+* **OPTIONAL:** `--name` name to give the dataset; default names dataset based on the configuration parameters
+* **OPTIONAL:** `--distributed` `0` creates a single dataset, `1` creates a distributed dataset; default is `0`
 
 ## Training Model
 Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/training/train.py).
@@ -47,7 +50,7 @@ python train.py -i --input <string> -o --output <string> --multi <int> --lookbac
 * **OPTIONAL:** `--lookback` `> 1` is uses timeseries based on `lookback` when modeling, `1` uses non timeseries; default is `1`
 * **OPTIONAL:** `--limit` `> 0` limits the amount of training samples used during training, `-1` uses all the samples; default is `-1`
 * **OPTIONAL:** `--model_type` `1` uses model configuration given by [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf) paper; 0 uses custom model; default is `1`
-* **OPTIONAL:** `--name` name to give the finished model; default names model based on dataset used
+* **OPTIONAL:** `--name` name to give the finished model; default names model based on dat aset used
 * **OPTIONAL:** `--pretrained_model` input path to pretrained model
 * **OPTIONAL:** `--log` output directory path to store tensorboard data
 
