@@ -5,8 +5,9 @@ import numpy as np
 
 
 class ModelDataset(object):
-    def __init__(self, dataset_path, overwrite=False, mode='a'):
-        self.dataset_path = dataset_path
+    def __init__(self, dataset_name, overwrite=False, mode='a'):
+        self.dataset_name = dataset_name
+        self.dataset_path = self.append_file_type(self.dataset_name)
         self.overwrite = overwrite
         self.mode = mode
         if self.overwrite and self.mode not in {"a", "r+", "w", "w+", "x", "w-"}:
@@ -15,22 +16,20 @@ class ModelDataset(object):
             os.remove(self.dataset_path)
         if not self.overwrite:
             self.mode = "r"
-        self.h5py_file = h5py.File(self.dataset_path, self.mode)
-        self.dataset_names = ["features", "labels", "sample_weights", "extra_features", "arrows", "encoded_arrows"]
+        self.dataset_names = ["features", "labels", "sample_weights", "arrows", "encoded_arrows"]
         self.dataset_attr = {"num_samples", "num_valid_samples", "pos_samples", "neg_samples"}
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
         self.difficulty = "challenge"
+        self.h5py_file = None
 
     def __getitem__(self, item):
         data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item],
                 self.encoded_arrows[item]]
-        try:
-            data.append(self.extra_features[item])
-        except Exception as ex:
-            data.append(None)
         return data
 
     def __enter__(self):
+        if self.h5py_file is None:
+            self.h5py_file = h5py.File(self.dataset_path, self.mode)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -64,9 +63,9 @@ class ModelDataset(object):
                 self.h5py_file[difficulty_dataset_name].attrs["pos_samples"] += value.sum()
                 self.h5py_file[difficulty_dataset_name].attrs["neg_samples"] += len(value) - value.sum()
 
-    def dump(self, features, labels, sample_weights, extra_features, arrows, encoded_arrows):
+    def dump(self, features, labels, sample_weights, arrows, encoded_arrows):
         try:
-            all_data = [features, labels, sample_weights, extra_features, arrows, encoded_arrows]
+            all_data = [features, labels, sample_weights, arrows, encoded_arrows]
             for dataset_name, data in zip(self.dataset_names, all_data):
                 if data is None:
                     continue
@@ -77,8 +76,7 @@ class ModelDataset(object):
                             diff_copy.remove(difficulty)
                         self.dump_difficulty_dataset(dataset_name, difficulty, value)
                     data_shape = data[next(iter(data))].shape
-                    null_values = np.zeros(data_shape)
-                    null_values.fill(-1)
+                    null_values = np.full(data_shape, fill_value=-1)
                     for remaining_diff in diff_copy:
                         self.dump_difficulty_dataset(dataset_name, remaining_diff, null_values)
                 elif not self.h5py_file.get(dataset_name):
@@ -99,6 +97,14 @@ class ModelDataset(object):
             raise ValueError(
                 "%s is not a vaild difficulty! Choose a valid difficulty: %s" % (difficulty, self.difficulties))
         self.difficulty = difficulty
+
+    @staticmethod
+    def get_read_only_dataset(dataset_path):
+        return ModelDataset(dataset_name=dataset_path, overwrite=False)
+
+    @staticmethod
+    def append_file_type(path):
+        return path + '.hdf5'
 
     @property
     def num_samples(self):
@@ -131,13 +137,6 @@ class ModelDataset(object):
     @property
     def encoded_arrows(self):
         return self.h5py_file["encoded_arrows_" + self.difficulty]
-
-    @property
-    def extra_features(self):
-        if self.h5py_file.get("extra_features"):
-            return self.h5py_file["extra_features"]
-        else:
-            return None
 
     @property
     def features(self):

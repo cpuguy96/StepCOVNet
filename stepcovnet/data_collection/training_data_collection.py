@@ -7,20 +7,17 @@ from os.path import join
 
 import psutil
 
-from stepcovnet.common.audio_preprocessing import get_madmom_librosa_features
-from stepcovnet.common.model_dataset import ModelDataset
 from stepcovnet.common.parameters import CONFIG
-from stepcovnet.common.parameters import HOPSIZE_T
-from stepcovnet.common.parameters import SAMPLE_RATE
 from stepcovnet.common.parameters import VGGISH_CONFIG
 from stepcovnet.common.utils import get_channel_scalers
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 from stepcovnet.data_collection.sample_collection_helper import get_features_and_labels
+from stepcovnet.dataset.ModelDataset import ModelDataset
 
 
-def collect_features(wav_path, timing_path, multi, extra, config, file_name):
+def collect_features(wav_path, timing_path, multi, config, file_name):
     # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
         print('Feature collecting: %s' % file_name)
@@ -36,38 +33,30 @@ def collect_features(wav_path, timing_path, multi, extra, config, file_name):
         feature, label_dict, sample_weights_dict, arrows_dict, encoded_arrows_dict = \
             feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, encoded_arrows)
 
-        if extra:
-            # beat frames predicted by madmom DBNBeatTrackingProcess and librosa.onset.onset_decect
-            extra_feature = get_madmom_librosa_features(join(wav_path, file_name + '.wav'),
-                                                        SAMPLE_RATE,
-                                                        HOPSIZE_T,
-                                                        len(feature))
-        else:
-            extra_feature = None
         # type casting features to float16 to save disk space.
-        return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, extra_feature, arrows_dict,
+        return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, arrows_dict,
                 encoded_arrows_dict]
     except Exception as ex:
         print("Error collecting features for %s: %r" % (file_name, ex))
         return None
 
 
-def collect_data(wavs_path, timings_path, output_path, name_prefix, config, multi=False, extra=False, limit=-1,
+def collect_data(wavs_path, timings_path, output_path, name_prefix, config, multi=False, limit=-1,
                  cores=1):
-    func = partial(collect_features, wavs_path, timings_path, multi, extra, config)
+    func = partial(collect_features, wavs_path, timings_path, multi, config)
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     scalers = None
 
-    with ModelDataset(os.path.join(output_path, name_prefix + "_dataset.hdf5"), overwrite=True) as dataset:
+    with ModelDataset(os.path.join(output_path, name_prefix + "_dataset"), overwrite=True) as dataset:
         with multiprocessing.Pool(cores) as pool:
             song_count = 0
             for i, result in enumerate(pool.imap(func, file_names)):
                 if result is None:
                     continue
-                file_name, features, labels, weights, extra_features, arrows, encoded_arrows = result
+                file_name, features, labels, weights, arrows, encoded_arrows = result
                 print("[%d/%d] Dumping to dataset: %s" % (i + 1, len(file_names), file_name))
-                dataset.dump(features, labels, weights, extra_features, arrows, encoded_arrows)
+                dataset.dump(features, labels, weights, arrows, encoded_arrows)
                 # not using joblib parallel since we are already using multiprocessing
                 print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
                 scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
@@ -84,7 +73,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, mult
     pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
 
 
-def training_data_collection(wavs_path, timings_path, output_path, multi_int, extra_int, type_int, limit, cores, name):
+def training_data_collection(wavs_path, timings_path, output_path, multi_int, type_int, limit, cores, name):
     if not os.path.isdir(wavs_path):
         raise NotADirectoryError('Audio path %s not found' % wavs_path)
 
@@ -105,7 +94,6 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
         raise ValueError('Number of cores selected cannot be greater than the number cpu cores (%d)' % os.cpu_count())
 
     multi = True if multi_int == 1 else False
-    extra = True if extra_int == 1 else False
     config = VGGISH_CONFIG if type_int == 1 else CONFIG
     limit = max(-1, limit)  # defaulting negative inputs to -1
     cores = psutil.cpu_count(logical=False) if cores < 0 else cores
@@ -116,7 +104,7 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ex
 
     start_time = time.time()
     collect_data(wavs_path=wavs_path, timings_path=timings_path, output_path=output_path, name_prefix=name_prefix,
-                 config=config, multi=multi, extra=extra, limit=limit, cores=cores)
+                 config=config, multi=multi, limit=limit, cores=cores)
     end_time = time.time()
 
     print("\nElapsed time was %g seconds" % (end_time - start_time))
@@ -143,11 +131,6 @@ if __name__ == '__main__':
                         default=0,
                         choices=[0, 1],
                         help="Whether multiple STFT window time-lengths are captured: 0 - single, 1 - multi")
-    parser.add_argument("--extra",
-                        type=int,
-                        default=0,
-                        choices=[0, 1],
-                        help="Whether to gather extra data from madmom and librosa: 0 - not collected, 1 - collected")
     parser.add_argument("--type",
                         type=int,
                         default=0,
@@ -169,5 +152,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     training_data_collection(wavs_path=args.wav, timings_path=args.timing, output_path=args.output,
-                             multi_int=args.multi, extra_int=args.extra, type_int=args.type,
+                             multi_int=args.multi, type_int=args.type,
                              limit=args.limit, cores=args.cores, name=args.name)

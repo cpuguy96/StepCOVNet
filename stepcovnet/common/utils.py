@@ -7,6 +7,7 @@ import numpy as np
 import psutil
 from joblib import Parallel
 from joblib import delayed
+from nltk.util import ngrams
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler
@@ -64,22 +65,17 @@ def feature_reshape_down(features, order='C'):
     return features.reshape(features.shape[0], features.shape[1] * features.shape[2], features.shape[3], order=order)
 
 
-def feature_reshape_up(feature, num_freq_bands, num_time_bands, num_channels, multi=False, order='F'):
+def feature_reshape_up(feature, num_freq_bands, num_time_bands, num_channels, order='F'):
     """
     reshape mfccBands feature into n_sample * n_row * n_col
     :param order:
     :param num_channels:
     :param num_time_bands:
     :param num_freq_bands:
-    :param multi:
     :param feature:
     :return:
     """
-    if multi:
-        return feature.reshape((len(feature), num_time_bands, num_freq_bands, num_channels),
-                               order=order)
-    else:
-        return feature.reshape((len(feature), num_time_bands, num_freq_bands, 1), order=order)
+    return feature.reshape((len(feature), num_time_bands, num_freq_bands, num_channels), order=order)
 
 
 def get_channel_scalers(features, existing_scalers=None, n_jobs=1):
@@ -175,7 +171,29 @@ def get_scalers(features, multi):
         return np.array(get_features_mean_std(np.transpose(features, (0, 2, 1))))
 
 
-def pre_process(features, labels=None, extra_features=None, multi=False, scalers=None):
+def apply_scalers(features, scalers):
+    if scalers is None:
+        return features
+    if features.shape not in {3, 4}:
+        raise ValueError('Features dimensions must be 3 or 4 (received dimension %d)' % len(features.shape))
+    original_features_shape = features.shape
+    if len(features.shape) == 4:
+        features = feature_reshape_down(features=features)
+    if type(scalers) is not list:
+        scalers = [scalers]
+    if len(scalers) != features.shape[-1]:
+        raise ValueError('Number of scalers (%d) does not equal number of feature channels (%d)' % (
+            len(scalers), features.shape[-1]))
+    for i, scaler in enumerate(scalers):
+        features[:, :, i] = scaler.transform(features[:, :, i])
+
+    if len(original_features_shape) == 4:
+        return feature_reshape_up(features, original_features_shape[1], original_features_shape[2],
+                                  original_features_shape[3], order='C')
+    return features
+
+
+def pre_process(features, labels=None, multi=False, scalers=None):
     features_copy = np.copy(features)
     if multi:
         if scalers is not None:
@@ -187,9 +205,6 @@ def pre_process(features, labels=None, extra_features=None, multi=False, scalers
             for j, scaler in enumerate(scalers):
                 features_copy[:, j] = scaler.transform(features_copy[:, j])
         features_copy = np.expand_dims(np.squeeze(features_copy), axis=1)
-
-    if extra_features is not None:
-        features_copy = {"log_mel_input": features_copy, "extra_input": extra_features}
 
     if labels is not None:
         return features_copy, labels
@@ -218,3 +233,9 @@ def get_arrow_one_hot_encoder():
 
 def get_arrow_label_encoder():
     return LabelEncoder().fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
+
+
+def get_ngram(data, lookback, padding_value=0):
+    padding = np.full((lookback, data.shape[1]), fill_value=padding_value)
+    data_w_padding = np.append(padding, data, axis=0)
+    return np.asarray(list(ngrams(data_w_padding, lookback)))

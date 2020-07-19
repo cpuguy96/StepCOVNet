@@ -35,7 +35,6 @@ def get_pretrained_front(model, x_input):
 
 def build_stepcovnet(input_shape,
                      timeseries=False,
-                     extra_input_shape=None,
                      pretrained_model=None,
                      model_type="normal",
                      output_bias_init=tf.keras.initializers.Constant(value=0.0),
@@ -45,12 +44,7 @@ def build_stepcovnet(input_shape,
     else:
         x_input = Input(input_shape, dtype=tf.float32, name="log_mel_input")
 
-    if extra_input_shape is not None:
-        extra_input = Input((extra_input_shape[1],), dtype=tf.float32, name="extra_input")
-        inputs = [x_input if pretrained_model is None else pretrained_model.layers[0].input, extra_input]
-    else:
-        extra_input = None
-        inputs = x_input if pretrained_model is None else pretrained_model.layers[0].input
+    inputs = x_input if pretrained_model is None else pretrained_model.layers[0].input
 
     if model_type == "paper":
         """ The net work architecture given by the paper: Dance Dance Convolution (https://arxiv.org/abs/1703.06891)
@@ -64,7 +58,7 @@ def build_stepcovnet(input_shape,
                         input_shape[1:],
                         channel_order=channel_order)
         x = Flatten()(x)
-        x = paper_back(x, input_shape[0], extra_input)
+        x = paper_back(x, input_shape[0])
         x = Dense(1, activation="sigmoid",
                   kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=(1 / x.get_shape()[-1])),
                   bias_initializer=tf.keras.initializers.Constant(value=0.0),
@@ -80,14 +74,14 @@ def build_stepcovnet(input_shape,
 
             if pretrained_model is not None:
                 x = get_pretrained_front(pretrained_model, inputs)
-                x = pretrained_time_back(x, input_shape[0], extra_input)
+                x = pretrained_time_back(x, input_shape[0])
             else:
                 x = time_front(x_input,
                                input_shape[1:],
                                channel_order=channel_order,
                                channel=channel)
                 x = Flatten()(x)
-                x = time_back(x, input_shape[0], extra_input)
+                x = time_back(x, input_shape[0])
         else:
             if input_shape[0] == 1:
                 channel = 1
@@ -98,14 +92,14 @@ def build_stepcovnet(input_shape,
 
             if pretrained_model is not None:
                 x = get_pretrained_front(pretrained_model, inputs)
-                x = pretrained_back(x, extra_input)
+                x = pretrained_back(x)
             else:
                 x = front(x_input,
                           input_shape,
                           channel_order=channel_order,
                           channel=channel)
                 x = Flatten()(x)
-                x = back(x, extra_input)
+                x = back(x)
 
         x = Dense(1, activation="sigmoid",
                   kernel_initializer=tf.keras.initializers.glorot_uniform(42),

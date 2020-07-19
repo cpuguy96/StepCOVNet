@@ -8,7 +8,7 @@ from stepcovnet.training.modeling import prepare_model
 from stepcovnet.training.parameters import BATCH_SIZE
 
 
-def train(input_path, output_path, difficulty_int, multi_int, extra_int, lookback, limit, name, log_path,
+def train(input_path, output_path, difficulty_int, multi_int, lookback, limit, name, log_path,
           pretrained_model_path, model_type_int):
     if not os.path.isdir(input_path):
         raise NotADirectoryError('Input path %s not found' % input_path)
@@ -41,15 +41,9 @@ def train(input_path, output_path, difficulty_int, multi_int, extra_int, lookbac
 
     difficulty = ["challenge", "hard", "medium", "easy", "beginner"][difficulty_int]
     multi = True if multi_int == 1 else False
-    extra = True if extra_int == 1 else False
     model_type = "normal" if model_type_int == 0 else "paper"
 
     built_model_name = "multi_" if multi else ""
-
-    if extra:
-        extra_input_shape = (None, 2)
-    else:
-        extra_input_shape = None
 
     filename_scaler = []
     if multi:
@@ -66,7 +60,6 @@ def train(input_path, output_path, difficulty_int, multi_int, extra_int, lookbac
     dataset_path = os.path.join(input_path, built_model_name + 'stepcovnet_dataset.hdf5')
 
     # adding this afterwards since we want to only rename the model
-    built_model_name += "extra_" if extra else ""
     built_model_name += "time%s_" % lookback if lookback > 1 else ""
     built_model_name += "pretrained_" if pretrained_model_path is not None else ""
     built_model_name += "%s_" % difficulty
@@ -78,8 +71,7 @@ def train(input_path, output_path, difficulty_int, multi_int, extra_int, lookbac
 
     file_path_model = os.path.join(output_path)
 
-    prepare_model(dataset_path, model_out_path=file_path_model, input_shape=input_shape,
-                  extra_input_shape=extra_input_shape, multi=multi, extra=extra, filename_scaler=filename_scaler,
+    prepare_model(dataset_path, model_out_path=file_path_model, multi=multi, filename_scaler=filename_scaler,
                   filename_pretrained_model=pretrained_model_path, limit=limit, lookback=lookback, log_path=log_path,
                   model_name=model_name, model_type=model_type, difficulty=difficulty)
 
@@ -106,11 +98,6 @@ if __name__ == '__main__':
                         default=0,
                         choices=[0, 1],
                         help="Whether multiple STFT window time-lengths are used in training: 0 - single, 1 - multi")
-    parser.add_argument("--extra",
-                        type=int,
-                        default=0,
-                        choices=[0, 1],
-                        help="Whether to use extra data from madmom and librosa: 0 - not used, 1 - used")
     parser.add_argument("--lookback",
                         type=int,
                         default=1,
@@ -139,5 +126,5 @@ if __name__ == '__main__':
                         help="Output log data path for tensorboard")
     args = parser.parse_args()
 
-    train(args.input, args.output, args.difficulty, args.multi, args.extra, args.lookback, args.limit, args.name,
+    train(args.input, args.output, args.difficulty, args.multi, args.lookback, args.limit, args.name,
           args.log, args.pretrained_model, args.model_type)

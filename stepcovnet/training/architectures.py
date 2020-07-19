@@ -5,14 +5,12 @@ from tensorflow.keras.layers import Bidirectional
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Dropout
-from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import LSTM
 from tensorflow.keras.layers import LayerNormalization
 from tensorflow.keras.layers import MaxPooling2D
 from tensorflow.keras.layers import RepeatVector
 from tensorflow.keras.layers import SpatialDropout1D
 from tensorflow.keras.layers import SpatialDropout2D
-from tensorflow.keras.layers import concatenate
 
 
 def time_front(x_input, reshape_dim, channel_order, channel):
@@ -105,12 +103,8 @@ def time_front(x_input, reshape_dim, channel_order, channel):
 """
 
 
-def time_back(model, lookback, extra_input=None):
-    if extra_input is not None:
-        x = concatenate([Flatten()(model), extra_input])
-        x = RepeatVector(lookback)(x)
-    else:
-        x = RepeatVector(lookback)(model)
+def time_back(model, lookback):
+    x = RepeatVector(lookback)(model)
     x = Bidirectional(LSTM(128,
                            return_sequences=True,
                            kernel_initializer=tf.keras.initializers.glorot_uniform(42),
@@ -136,11 +130,8 @@ def time_back(model, lookback, extra_input=None):
     return x
 
 
-""" if extra_input is not None:
-    x = concatenate([Flatten()(model), extra_input], dtype=dtype)
-    x = RepeatVector(lookback)(x)
-else:
-    x = RepeatVector(lookback)(model)
+"""
+x = RepeatVector(lookback)(model)
 x = Bidirectional(CuDNNLSTM(128,
                             return_sequences=True,
                             kernel_regularizer=l2(1e-6),
@@ -207,12 +198,8 @@ def front(x_input, reshape_dim, channel_order, channel):
     return x
 
 
-def back(model, extra_input=None):
-    if extra_input is not None:
-        x = concatenate([model, extra_input])
-        x = Dense(256, kernel_initializer='glorot_normal')(x)
-    else:
-        x = Dense(256, kernel_initializer='glorot_normal')(model)
+def back(model):
+    x = Dense(256, kernel_initializer='glorot_normal')(model)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
     # x = Dropout(0.10)(x)
@@ -224,12 +211,8 @@ def back(model, extra_input=None):
     return x
 
 
-def pretrained_time_back(model, lookback, extra_input=None, dtype=tf.float32):
-    if extra_input is not None:
-        x = concatenate([Flatten()(model), extra_input], dtype=dtype)
-        x = RepeatVector(lookback)(x)
-    else:
-        x = RepeatVector(lookback)(model)
+def pretrained_time_back(model, lookback, dtype=tf.float32):
+    x = RepeatVector(lookback)(model)
     x = Bidirectional(LSTM(128,
                            return_sequences=True,
                            kernel_regularizer=tf.keras.regularizers.L1L2(l2=1e-6),
@@ -256,12 +239,8 @@ def pretrained_time_back(model, lookback, extra_input=None, dtype=tf.float32):
     return x
 
 
-def pretrained_back(model, extra_input=None):
-    if extra_input is not None:
-        x = concatenate([model, extra_input])
-        x = Dense(256, kernel_initializer='glorot_normal')(x)
-    else:
-        x = Dense(256, kernel_initializer='glorot_normal')(model)
+def pretrained_back(model):
+    x = Dense(256, kernel_initializer='glorot_normal')(model)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
     # x = Dropout(0.10)(x)
@@ -298,12 +277,8 @@ def paper_front(x_input, reshape_dim, channel_order):
     return x
 
 
-def paper_back(model, lookback, extra_input=None):
-    if extra_input is not None:
-        x = concatenate([Flatten()(model), extra_input])
-        x = RepeatVector(lookback)(x)
-    else:
-        x = RepeatVector(lookback)(model)
+def paper_back(model, lookback):
+    x = RepeatVector(lookback)(model)
     x = LSTM(200,
              return_sequences=True,
              kernel_initializer=tf.keras.initializers.VarianceScaling(scale=1.0),

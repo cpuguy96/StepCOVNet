@@ -9,12 +9,11 @@ import numpy as np
 import psutil
 from madmom.features.onsets import OnsetPeakPickingProcessor
 
-from stepcovnet.common.audio_preprocessing import get_madmom_librosa_features
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
 from stepcovnet.common.parameters import HOPSIZE_T
 from stepcovnet.common.parameters import SAMPLE_RATE
 from stepcovnet.common.parameters import THRESHOLDS
-from stepcovnet.common.utils import feature_reshape
+from stepcovnet.common.utils import feature_reshape_up
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.common.utils import pre_process
@@ -62,49 +61,22 @@ def get_file_scalers(scaler_path, multi):
         return None
 
 
-def get_model(model_path,
-              model_type,
-              pca_path):
-    extra = False
-    pca = None
+def get_model(model_path):
+    from tensorflow.keras.models import load_model
 
-    if model_type == 0:
-        from tensorflow.keras.models import load_model
+    custom_objects = {}
 
-        custom_objects = {}
-
-        model = load_model(join(model_path), custom_objects=custom_objects, compile=False)
-        if model.layers[0].input_shape[0][1] != 1:
-            multi = True
-        else:
-            multi = False
-        try:
-            # try to find second input which indicates extra features
-            if model.get_layer('extra_input'):
-                extra = True
-            else:
-                extra = False
-        except ValueError:
-            # if not, then there is no extra features
-            extra = False
+    model = load_model(join(model_path), custom_objects=custom_objects, compile=False)
+    if model.layers[0].input_shape[0][1] != 1:
+        multi = True
     else:
-        import xgboost
-        model = xgboost.Booster({'nthread': -1})
-        model.load_model(join(model_path))
-        pca = joblib.load(join(pca_path))
-        if model_type == 1:
-            multi = False
-        else:
-            multi = True
-    return model, multi, extra, pca
+        multi = False
+    return model, multi
 
 
 def generate_features(input_path,
                       multi,
-                      extra,
-                      model_type,
                       scaler,
-                      pca,
                       verbose,
                       wav_name):
     if not wav_name.endswith(".wav"):
@@ -115,26 +87,13 @@ def generate_features(input_path,
         if verbose:
             print("Generating features for %s" % get_filename(wav_name, False))
 
+        # TODO: Fix this. Need to find a way to persist config
         log_mel = get_madmom_log_mels(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T, multi)
 
-        if model_type == 0:
-            log_mel = feature_reshape(log_mel, multi)
-        else:
-            import xgboost
-            if model_type == 1:
-                log_mel = pca.transform(log_mel)
-            else:
-                log_mel = pca.transform(log_mel.reshape(log_mel.shape[0], log_mel.shape[1] * log_mel.shape[2]))
+        # TODO: Fix this.
+        log_mel = feature_reshape_up(log_mel, )
 
-        if extra:
-            if verbose:
-                print("Generating extra features for %s" % get_filename(wav_name, False))
-            extra_features = get_madmom_librosa_features(join(input_path, wav_name), SAMPLE_RATE, HOPSIZE_T,
-                                                         len(log_mel))
-        else:
-            extra_features = None
-
-        features = pre_process(log_mel, extra_features=extra_features, multi=multi, scalers=scaler)
+        features = pre_process(log_mel, multi=multi, scalers=scaler)
 
         return features, wav_name
     except Exception as ex:
@@ -144,21 +103,13 @@ def generate_features(input_path,
 
 
 def generate_timings(model,
-                     model_type,
                      verbose,
                      features_and_wav_names):
     pdfs = []
-    if model_type == 0:
-        for feature, wav_name in features_and_wav_names:
-            if verbose:
-                print("Generating timings for %s" % wav_name)
-            pdfs.append(model.predict(feature, batch_size=256))
-    else:
-        import xgboost
-        for feature, wav_name in features_and_wav_names:
-            if verbose:
-                print("Generating timings for %s" % wav_name)
-            pdfs.append(model.predict(xgboost.DMatrix(feature)))
+    for feature, wav_name in features_and_wav_names:
+        if verbose:
+            print("Generating timings for %s" % wav_name)
+        pdfs.append(model.predict(feature, batch_size=256))
 
     timings = [boundary_decoding(obs_i=smooth_obs(np.squeeze(pdf)), threshold=THRESHOLDS['expert'])
                for pdf in pdfs]
@@ -177,22 +128,19 @@ def write_predictions(output_path,
 def run_process(input_path,
                 output_path,
                 model,
-                model_type,
                 multi,
                 scaler,
-                extra,
-                pca,
                 verbose):
     if os.path.isfile(input_path):
-        features_and_wav_name = generate_features(os.path.dirname(input_path), multi, extra, model_type, scaler, pca,
-                                                  verbose, get_filename(input_path))
+        features_and_wav_name = generate_features(os.path.dirname(input_path), multi, scaler, verbose,
+                                                  get_filename(input_path))
         if features_and_wav_name[0] is None:
             return
-        timing = generate_timings(model, model_type, verbose, [features_and_wav_name])
+        timing = generate_timings(model, verbose, [features_and_wav_name])
         write_predictions(output_path, (timing, features_and_wav_name[1]))
     else:
         wav_names = get_filenames_from_folder(input_path)
-        func = partial(generate_features, input_path, multi, extra, model_type, scaler, pca, verbose)
+        func = partial(generate_features, input_path, multi, model_type, scaler, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
             features_and_wav_names = pool.map_async(func, wav_names).get()
         features, used_wav_names = [], []
@@ -200,7 +148,7 @@ def run_process(input_path,
             if feature is not None:
                 features.append(feature)
                 used_wav_names.append(get_filename(wav_name))
-        timings = generate_timings(model, model_type, verbose, zip(features, used_wav_names))
+        timings = generate_timings(model, verbose, zip(features, used_wav_names))
         timings_and_wav_names = [(timing, wav_name) for timing, wav_name in zip(timings, used_wav_names)]
         func = partial(write_predictions, output_path)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
@@ -211,8 +159,6 @@ def timing_prediction(input_path,
                       output_path,
                       model_path,
                       scaler_path=None,
-                      pca_path=None,
-                      model_type=0,
                       verbose_int=0):
     start_time = time.time()
     if verbose_int not in [0, 1]:
@@ -226,18 +172,12 @@ def timing_prediction(input_path,
     if not os.path.isfile(model_path):
         raise FileNotFoundError('Model %s is not found' % model_path)
 
-    if model_type not in [0, 1, 2]:
-        raise ValueError('Model type %s is not a valid model' % model_type)
-
-    if model_type in [1, 2] and not os.path.isfile(pca_path):
-        raise FileNotFoundError('PCA %s is not found' % pca_path)
-
     if os.path.isfile(input_path) or os.path.isdir(input_path):
         if verbose:
             print("Starting timings prediction\n-----------------------------------------")
-        model, multi, extra, pca = get_model(model_path, model_type, pca_path)
+        model, multi = get_model(model_path)
         scaler = get_file_scalers(scaler_path, multi)
-        run_process(input_path, output_path, model, model_type, multi, scaler, extra, pca, verbose)
+        run_process(input_path, output_path, model, multi, scaler, verbose)
     else:
         raise FileNotFoundError('Wav file(s) path %s not found' % input_path)
     end_time = time.time()
@@ -261,14 +201,6 @@ if __name__ == '__main__':
     parser.add_argument("--scaler",
                         type=str,
                         help="Input scalers path")
-    parser.add_argument("--pca",
-                        type=str,
-                        help="Input trained pca path")
-    parser.add_argument("-mt" "--model_type",
-                        type=int,
-                        default=0,
-                        choices=[0, 1, 2],
-                        help="Type of model: 0 - CNN; 1 - XGB; 2 - multi XGB")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
@@ -280,6 +212,4 @@ if __name__ == '__main__':
                       args.output,
                       args.model,
                       args.scaler,
-                      args.pca,
-                      args.model_type,
                       args.verbose)

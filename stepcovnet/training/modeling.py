@@ -9,8 +9,8 @@ import numpy as np
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import ModelCheckpoint
 
-from stepcovnet.common.model_dataset import ModelDataset
 from stepcovnet.common.utils import get_sklearn_scalers
+from stepcovnet.dataset.ModelDataset import ModelDataset
 from stepcovnet.training.data_preparation import FeatureGenerator
 from stepcovnet.training.data_preparation import get_split_indexes
 from stepcovnet.training.data_preparation import load_data
@@ -121,8 +121,8 @@ def train_model(model, dataset_path, multi, output_shape, output_types, index_al
     model.save(os.path.join(model_out_path, model_name + "_retrained.h5"))
 
 
-def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=None, multi=False, extra=False,
-                  filename_scaler=None, filename_pretrained_model=None, limit=-1, lookback=1, log_path=None,
+def prepare_model(dataset_path, model_out_path, input_shape, multi=False, filename_scaler=None,
+                  filename_pretrained_model=None, limit=-1, lookback=1, log_path=None,
                   model_name=None, model_type="normal", difficulty="challenge"):
     print("Loading data...")
     all_scalers, pretrained_model = load_data(filename_scaler, filename_pretrained_model)
@@ -137,8 +137,6 @@ def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=N
         indices_all, indices_train, indices_validation = get_split_indexes(dataset.labels, timeseries, limit)
         if limit > 0 and dataset.labels[indices_all].sum() == 0:
             raise ValueError("Not enough positive labels. Increase limit!")
-        if extra and dataset.extra_features is None:
-            raise ValueError("Modeling with extra features requested, but dataset doesn't have extra features.")
         class_weights = {0: (dataset.num_valid_samples / dataset.neg_samples) / 2.0,
                          1: (dataset.num_valid_samples / dataset.pos_samples) / 2.0}
         # Best practices mentioned in https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
@@ -165,7 +163,7 @@ def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=N
         tf.keras.metrics.AUC(name='auc'),
     ]
 
-    model = build_stepcovnet(input_shape, timeseries, extra_input_shape, pretrained_model, model_type=model_type,
+    model = build_stepcovnet(input_shape, timeseries, pretrained_model, model_type=model_type,
                              output_bias_init=tf.keras.initializers.Constant(value=b0))
 
     model.compile(loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),
@@ -181,15 +179,8 @@ def prepare_model(dataset_path, model_out_path, input_shape, extra_input_shape=N
     else:
         input_shape = (None,) + input_shape
 
-    if extra:
-        output_types = (
-            {"log_mel_input": tf.dtypes.float16, "extra_input": tf.dtypes.int8}, tf.dtypes.int8, tf.dtypes.float16)
-        output_shape = (
-            {"log_mel_input": tf.TensorShape(input_shape), "extra_input": tf.TensorShape(extra_input_shape)},
-            tf.TensorShape([None]), tf.TensorShape([None]))
-    else:
-        output_types = (tf.dtypes.float16, tf.dtypes.int8, tf.dtypes.float16)
-        output_shape = (tf.TensorShape(input_shape), tf.TensorShape([None]), tf.TensorShape([None]))
+    output_types = (tf.dtypes.float16, tf.dtypes.int8, tf.dtypes.float16)
+    output_shape = (tf.TensorShape(input_shape), tf.TensorShape([None]), tf.TensorShape([None]))
 
     train_model(model, dataset_path, multi, output_shape, output_types, indices_all, indices_train, indices_validation,
                 all_scalers, training_scaler, class_weights, model_name, model_out_path, log_path, difficulty)

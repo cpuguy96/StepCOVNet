@@ -202,8 +202,7 @@ def get_features_and_labels_madmom(wav_path, note_data_path, file_name, multi, c
     mfcc = get_madmom_log_mels(join(wav_path, file_name + '.wav'), multi, config=config)
     log_mel_frames = feature_reshape_up(feature=mfcc, num_freq_bands=config["NUM_FREQ_BANDS"],
                                         num_time_bands=config["NUM_TIME_BANDS"],
-                                        num_channels=config["NUM_MULTI_CHANNELS"],
-                                        multi=multi)
+                                        num_channels=config["NUM_MULTI_CHANNELS"])
     note_data = timings_parser(join(note_data_path, file_name + '.txt'))
     onsets, arrows, encoded_arrows = convert_note_data(note_data=note_data,
                                                        stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])

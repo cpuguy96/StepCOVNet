@@ -27,25 +27,23 @@ Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` fi
 
 ```.bash
 cd stepcovnet/data_collection
-python training_data_collection.py -w --wav <string> -t --timing <string> -o --output <string> --multi <int> --extra <int> --limit <int>
+python training_data_collection.py -w --wav <string> -t --timing <string> -o --output <string> --multi <int> --limit <int>
 ```
 * `-w` `--wav` input directory path to `.wav` files
 * `-t` `--timing` input directory path to timing files
 * `-o` `--output` output directory path to output dataset
-*  **OPTIONAL:** `--multi` `1` collects STFTs using `frame_size` of `[2048, 1024, 4096]`, `0` collects STFTs using `frame_size` of `[2048]`; default is `0`
-* **OPTIONAL:** `extra` `1` collects extra features for modeling (**WARNING:** takes MUCH longer to run), `0` does not collect extra features;  default is `0`
+* **OPTIONAL:** `--multi` `1` collects STFTs using `frame_size` of `[2048, 1024, 4096]`, `0` collects STFTs using `frame_size` of `[2048]`; default is `0`
 * **OPTIONAL:** `--limit` `> 0` stops data collection and resizes output to match limit, `-1` means unlimited; default is `-1`
 
 ## Training Model
 Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/training/train.py).
 ```.bash
 cd stepcovnet/training
-python train.py -i --input <string> -o --output <string> --multi <int> --extra <int> --lookback <int> --limit <int> --model_type <int> --name <string> --pretrained_model <string> --log <string>
+python train.py -i --input <string> -o --output <string> --multi <int> --lookback <int> --limit <int> --model_type <int> --name <string> --pretrained_model <string> --log <string>
 ``` 
 * `-i` `--input` input directory path to training dataset
 * `-o` `--output` output directory path to save model 
 * **OPTIONAL:** `--multi` `1` uses STFTs with multiple `frame_size`, `0` uses STFTs single `frame_size`;  default is `0`
-* **OPTIONAL:** `--extra` `1` use extra features for modeling, `0` does not use extra features;  default is `0` 
 * **OPTIONAL:** `--lookback` `> 1` is uses timeseries based on `lookback` when modeling, `1` uses non timeseries; default is `1`
 * **OPTIONAL:** `--limit` `> 0` limits the amount of training samples used during training, `-1` uses all the samples; default is `-1`
 * **OPTIONAL:** `--model_type` `1` uses model configuration given by [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf) paper; 0 uses custom model; default is `1`
