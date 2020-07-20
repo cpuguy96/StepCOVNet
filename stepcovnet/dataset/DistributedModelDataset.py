@@ -8,7 +8,6 @@ from stepcovnet.dataset.ModelDataset import ModelDataset
 class DistributedModelDataset(ModelDataset):
     def __init__(self, *args, **kwargs):
         super(DistributedModelDataset, self).__init__(*args, **kwargs)
-        self.sub_datasets = []
         self.virtual_dataset = None
 
     def __enter__(self):
@@ -16,32 +15,46 @@ class DistributedModelDataset(ModelDataset):
             self.virtual_dataset = h5py.File(self.dataset_path, self.mode, libver='latest')
         return self
 
+    def __len__(self):
+        try:
+            return len(self.file_names)
+        except KeyError:
+            return 0
+
+    def get_sub_dataset(self, index):
+        sub_dataset_names = self.file_names
+        return ModelDataset.get_read_only_dataset(self.append_file_type(sub_dataset_names[index]))
+
     def close(self):
         self.virtual_dataset.close()
 
     def dump(self, *args, **kwargs):
-        file_name = kwargs["file_name"]
-        self.sub_datasets.append(file_name)
-        sub_dataset_path = self.format_sub_dataset_name(file_name)
+        sub_dataset_name = self.format_sub_dataset_name(kwargs["file_name"])
+        sub_dataset_path = self.append_file_type(sub_dataset_name)
         if os.path.isfile(sub_dataset_path):
             os.remove(sub_dataset_path)
         self.h5py_file = h5py.File(sub_dataset_path, self.mode)
         super(DistributedModelDataset, self).dump(*args, **kwargs)
-        self.build_virtual_dataset()
+        try:
+            sub_dataset_names = self.file_names + [sub_dataset_name]
+        except KeyError:
+            sub_dataset_names = [sub_dataset_name]
+            pass
+        self.build_virtual_dataset(sub_dataset_names)
 
     def format_sub_dataset_name(self, file_name):
-        return self.append_file_type('%s_%s' % (self.dataset_name, file_name))
+        return '%s_%s' % (self.dataset_name, file_name)
 
-    def build_virtual_dataset(self):
-        if not self.sub_datasets:
+    def build_virtual_dataset(self, sub_dataset_names):
+        if not sub_dataset_names:
             raise ValueError('Cannot build virtual dataset until data is dumped')
         if self.virtual_dataset is None:
             self.virtual_dataset = h5py.File(self.dataset_path, self.mode, libver='latest')
         for dataset_name in self.dataset_names:
             if dataset_name in self.difficulty_dataset_names:
                 dataset_name = self.append_difficulty(dataset_name, self.difficulty)
-            virtual_sources, virtual_source_shape, virtual_dtype = self.build_virtual_sources(
-                dataset_name)
+            virtual_sources, virtual_source_shape, virtual_dtype = self.build_virtual_sources(dataset_name,
+                                                                                              sub_dataset_names)
             virtual_layout = self.build_virtual_layout(virtual_sources, virtual_source_shape, virtual_dtype)
             saved_attributes = self.save_attributes(self.virtual_dataset, dataset_name)
             if dataset_name in self.virtual_dataset:
@@ -52,16 +65,15 @@ class DistributedModelDataset(ModelDataset):
                 self.update_dataset_attrs(self.virtual_dataset, dataset_name,
                                           self.h5py_file[dataset_name].attrs["file_names"])
             else:
-                self.update_dataset_attrs(self.virtual_dataset, dataset_name,
-                                          self.h5py_file[dataset_name][:])
+                self.update_dataset_attrs(self.virtual_dataset, dataset_name, self.h5py_file[dataset_name][:])
 
-    def build_virtual_sources(self, dataset_name):
+    def build_virtual_sources(self, dataset_name, sub_dataset_names):
         sources = []
         dtype = None
         source_shape = None
-        for parent_dataset_name in self.sub_datasets:
-            with h5py.File(self.format_sub_dataset_name(parent_dataset_name), 'r') as parent_dataset:
-                vsource = h5py.VirtualSource(parent_dataset[dataset_name])
+        for sub_dataset_name in sub_dataset_names:
+            with h5py.File(self.append_file_type(sub_dataset_name), 'r') as sub_dataset:
+                vsource = h5py.VirtualSource(sub_dataset[dataset_name])
                 if source_shape is None:
                     source_shape = vsource.shape
                 else:
@@ -69,7 +81,7 @@ class DistributedModelDataset(ModelDataset):
                     if len(vsource.shape) > 1:
                         source_shape = source_shape + vsource.shape[1:]
                 # should be fine to keep overriding this
-                dtype = parent_dataset[dataset_name].dtype
+                dtype = sub_dataset[dataset_name].dtype
                 sources.append(vsource)
 
         return sources, source_shape, dtype
@@ -87,7 +99,8 @@ class DistributedModelDataset(ModelDataset):
 
     @property
     def file_names(self):
-        return [file_name.decode("ascii") for file_name in self.virtual_dataset["features"].attrs["file_names"]]
+        return [self.format_sub_dataset_name(file_name.decode("ascii")) for file_name in
+                self.virtual_dataset["features"].attrs["file_names"]]
 
     @property
     def num_samples(self):
