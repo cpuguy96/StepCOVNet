@@ -1,7 +1,9 @@
+import json
 import multiprocessing
 import os
 import pickle
 import time
+from datetime import datetime
 from functools import partial
 from os.path import join
 
@@ -18,6 +20,23 @@ from stepcovnet.dataset.DistributedModelDataset import DistributedModelDataset
 from stepcovnet.dataset.ModelDataset import ModelDataset
 
 
+def build_all_metadata(**kwargs):
+    kwargs["creation_time"] = datetime.utcnow().strftime("%b %d %Y %H:%M:%S UTC")
+    return kwargs
+
+
+def update_all_metadata(all_metadata, metadata):
+    for key, value in metadata.items():
+        if isinstance(value, list):
+            if key not in all_metadata:
+                all_metadata[key] = [value]
+            else:
+                all_metadata[key].append(value)
+        else:
+            all_metadata[key] = value
+    return all_metadata
+
+
 def collect_features(wav_path, timing_path, multi, config, file_name):
     # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
@@ -30,7 +49,6 @@ def collect_features(wav_path, timing_path, multi, config, file_name):
         # log_mel, onsets, arrows, encoded_arrows =
         # get_features_and_labels_madmom(wav_path, timing_path, file_name, multi, config)
 
-        # simple sample weighting
         feature, label_dict, sample_weights_dict, arrows_dict, encoded_arrows_dict = \
             feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, encoded_arrows)
 
@@ -42,20 +60,16 @@ def collect_features(wav_path, timing_path, multi, config, file_name):
         return None
 
 
-def collect_data(wavs_path, timings_path, output_path, name_prefix, config, multi=False, limit=-1,
-                 cores=1, distrubted=False):
+def collect_data(wavs_path, timings_path, output_path, name_prefix, name_postfix, config, multi=False,
+                 distributed=False, limit=-1, cores=1):
     func = partial(collect_features, wavs_path, timings_path, multi, config)
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     scalers = None
+    all_metadata = build_all_metadata(dataset_name=name_prefix, config=config)
+    Dataset = DistributedModelDataset if distributed else ModelDataset
 
-    Dataset = ModelDataset
-    if distrubted:
-        Dataset = DistributedModelDataset
-        output_path = os.path.join(output_path, name_prefix + "_dataset")
-        os.makedirs(output_path, exist_ok=True)
-
-    with Dataset(os.path.join(output_path, name_prefix + "_dataset"), overwrite=True) as dataset:
+    with Dataset(os.path.join(output_path, name_prefix + name_postfix), overwrite=True) as dataset:
         with multiprocessing.Pool(cores) as pool:
             song_count = 0
             for i, result in enumerate(pool.imap(func, file_names)):
@@ -64,10 +78,11 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, mult
                 file_name, features, labels, weights, arrows, encoded_arrows = result
                 print("[%d/%d] Dumping to dataset: %s" % (i + 1, len(file_names), file_name))
                 dataset.dump(features=features, labels=labels, sample_weights=weights, arrows=arrows,
-                             encoded_arrows=encoded_arrows, file_name=file_name)
+                             encoded_arrows=encoded_arrows, file_names=file_name)
                 # not using joblib parallel since we are already using multiprocessing
                 print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
                 scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
+                all_metadata = update_all_metadata(all_metadata, {"file_name": file_name})
                 # Save scalers after every 10 runs
                 if i % 10 == 0:
                     print("Saving scalers")
@@ -80,19 +95,18 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, mult
                         break
     print("Saving scalers")
     pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
+    print("Saving metadata")
+    with open(join(output_path, name_prefix + '_metadata.json'), 'w') as json_file:
+        json_file.write(json.dumps(all_metadata))
 
 
 def training_data_collection(wavs_path, timings_path, output_path, multi_int, type_int, limit, cores, name,
-                             distrubted_int):
+                             distributed_int):
     if not os.path.isdir(wavs_path):
         raise NotADirectoryError('Audio path %s not found' % wavs_path)
 
     if not os.path.isdir(timings_path):
         raise NotADirectoryError('Annotation path %s not found' % timings_path)
-
-    if not os.path.isdir(output_path):
-        print('Output path not found. Creating directory...')
-        os.makedirs(output_path, exist_ok=True)
 
     if limit == 0:
         raise ValueError('Limit cannot be 0!')
@@ -108,15 +122,20 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ty
     config = VGGISH_CONFIG if type_int == 1 else CONFIG
     limit = max(-1, limit)  # defaulting negative inputs to -1
     cores = psutil.cpu_count(logical=False) if cores < 0 else cores
-    distrubted = True if distrubted_int == 1 else False
+    distributed = True if distributed_int == 1 else False
 
     prefix = "multi_%d_channel_" % config["NUM_MULTI_CHANNELS"] if multi else ""
-
     name_prefix = name if name is not None else prefix + "stepcovnet"
+    name_postfix = "" if distributed is False else "_distributed"
+    name_postfix += "_dataset"
+
+    output_path = os.path.join(output_path, name_prefix + name_postfix)
+    os.makedirs(output_path, exist_ok=True)
 
     start_time = time.time()
     collect_data(wavs_path=wavs_path, timings_path=timings_path, output_path=output_path, name_prefix=name_prefix,
-                 config=config, multi=multi, limit=limit, cores=cores, distrubted=distrubted)
+                 name_postfix=name_postfix, config=config, multi=multi, distributed=distributed, limit=limit,
+                 cores=cores)
     end_time = time.time()
 
     print("\nElapsed time was %g seconds" % (end_time - start_time))
@@ -169,5 +188,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     training_data_collection(wavs_path=args.wav, timings_path=args.timing, output_path=args.output,
-                             multi_int=args.multi, type_int=args.type,
-                             limit=args.limit, cores=args.cores, name=args.name, distrubted_int=args.distributed)
+                             multi_int=args.multi, type_int=args.type, limit=args.limit, cores=args.cores,
+                             name=args.name, distributed_int=args.distributed)
