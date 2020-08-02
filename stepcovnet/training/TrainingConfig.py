@@ -5,14 +5,12 @@ from stepcovnet.common.utils import get_channel_scalers
 
 
 class TrainingConfig(object):
-    def __init__(self, dataset, dataset_config, hyperparameters, all_scalers=None, limit=-1, lookback=1,
-                 difficulty="challenge"):
+    def __init__(self, dataset, dataset_config, hyperparameters, all_scalers=None, limit=-1, lookback=1):
         self.dataset_config = dataset_config
         self.hyperparameters = hyperparameters
         self.all_scalers = all_scalers
         self.limit = limit
         self.lookback = lookback
-        self.difficulty = difficulty
 
         # Song level indexes
         self.all_indexes, self.train_indexes, self.val_indexes = self.get_train_val_split(dataset, limit)
@@ -25,24 +23,23 @@ class TrainingConfig(object):
 
     @staticmethod
     def get_train_val_split(training_dataset, limit=-1):
+        all_indexes = []
         with training_dataset as dataset:
-            if limit > 0:  # find the first song that exceeds the limit
-                last_index = 1
-                for song_start_index, _ in dataset.song_index_ranges:
-                    if song_start_index > limit:
+            total_samples = 0
+            for i, song_start_index, song_end_index in enumerate(dataset.song_index_ranges):
+                if not any(dataset.labels[song_start_index: song_end_index] < 0):
+                    all_indexes.append(i)
+                    total_samples += song_end_index - song_start_index
+                    if 0 < limit < total_samples:
                         break
-                    else:
-                        last_index += 1
-            else:
-                last_index = len(dataset.song_index_ranges)
-            all_indexes = np.arange(last_index)
-            train_indexes, val_indexes, _, _ = \
-                train_test_split(all_indexes,
-                                 all_indexes,
-                                 test_size=0.2,
-                                 shuffle=True,
-                                 random_state=42)
-            return all_indexes, train_indexes, val_indexes
+        all_indexes = np.array(all_indexes)
+        train_indexes, val_indexes, _, _ = \
+            train_test_split(all_indexes,
+                             all_indexes,
+                             test_size=0.2,
+                             shuffle=True,
+                             random_state=42)
+        return all_indexes, train_indexes, val_indexes
 
     def get_class_weights(self):
         # TODO: Implement later

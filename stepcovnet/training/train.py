@@ -18,7 +18,7 @@ def load_training_data(input_path):
     metadata = json.load(open(os.path.join(input_path, "metadata.json"), 'r'))
     dataset_name = metadata["dataset_name"]
     dataset_type = metadata["dataset_type"]
-    dataset = ModelDatasetTypes[dataset_type].value(os.path.join(input_path, dataset_name + "_dataset.hdf5"))
+    dataset = ModelDatasetTypes[dataset_type].value(os.path.join(input_path, dataset_name + "_dataset"))
     scalers = pickle.load(open(os.path.join(input_path, dataset_name + "_scaler.pkl"), 'rb'))
     dataset_config = metadata["config"]
     return dataset, scalers, dataset_config
@@ -26,6 +26,7 @@ def load_training_data(input_path):
 
 def run_training(input_path, output_path, model_name, limit, lookback, difficulty, log_path):
     dataset, scalers, dataset_config = load_training_data(input_path)
+    dataset.set_difficulty(difficulty)
 
     hyperparameters = TrainingHyperparameters(log_path=log_path)
 

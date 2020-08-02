@@ -6,7 +6,6 @@ from stepcovnet.training.TrainingFeatureGenerator import TrainingFeatureGenerato
 class TrainingInput(object):
     def __init__(self, dataset, training_config):
         self.training_config = training_config
-        dataset.set_difficulty(training_config.difficulty)
         self.output_types = (
             {"arrow_input": tf.dtypes.float16,
              "audio_input": tf.dtypes.int16},

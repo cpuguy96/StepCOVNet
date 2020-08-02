@@ -15,6 +15,7 @@ class TrainingExecutor(object):
     def __init__(self, training_input, stepcovnet_model):
         self.training_input = training_input
         self.stepcovnet_model = stepcovnet_model
+        self.configure_tensorflow()
 
     def execute(self):
         retrain = self.training_input.training_config.hyperparameters.retrain
@@ -22,8 +23,6 @@ class TrainingExecutor(object):
         loss = self.training_input.training_config.hyperparameters.loss
         metrics = self.training_input.training_config.hyperparameters.metrics
         optimizer = self.training_input.training_config.hyperparameters.optimizer
-
-        self.configure_tensorflow()
 
         self.stepcovnet_model.model.compile(loss=loss, metrics=metrics, optimizer=optimizer)
         print(self.stepcovnet_model.model.summary())
