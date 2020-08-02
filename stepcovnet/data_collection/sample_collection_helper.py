@@ -51,7 +51,7 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_
 
         arrows_list = arrows[difficulty]
         label_encoded_arrows_list = label_encoded_arrows[difficulty].reshape(-1)
-        binary_encoded_arrows_list = binary_encoded_arrows[difficulty].reshape(-1)
+        binary_encoded_arrows_list = binary_encoded_arrows[difficulty]
         i = 0
         for onset, arrow, label_encoded_arrow, binary_encoded_arrow in zip(onsets, arrows_list,
                                                                            label_encoded_arrows_list,
@@ -107,8 +107,7 @@ def timings_parser(timing_file_path):
                     label_encoded_arrows = label_encoder.transform([arrows])[0]
                     binary_encoded_arrows = binary_encoder.encode(arrows)
                     data[curr_difficulty][float(timing)] = [np.array(list(arrows), dtype=int),
-                                                            label_encoded_arrows,
-                                                            binary_encoded_arrows]
+                                                            label_encoded_arrows, binary_encoded_arrows]
         return data
 
 

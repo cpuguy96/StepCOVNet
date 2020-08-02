@@ -31,8 +31,7 @@ class ModelDataset(object):
 
     def __getitem__(self, item):
         data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item],
-                self.label_encoded_arrows[item],
-                self.binary_encoded_arrows[item]]
+                self.label_encoded_arrows[item], self.binary_encoded_arrows[item]]
         return data
 
     def __len__(self):
