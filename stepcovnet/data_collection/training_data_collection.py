@@ -16,8 +16,7 @@ from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 from stepcovnet.data_collection.sample_collection_helper import get_features_and_labels
-from stepcovnet.dataset.DistributedModelDataset import DistributedModelDataset
-from stepcovnet.dataset.ModelDataset import ModelDataset
+from stepcovnet.dataset.ModelDatasetTypes import ModelDatasetTypes
 
 
 def build_all_metadata(**kwargs):
@@ -43,42 +42,44 @@ def collect_features(wav_path, timing_path, multi, config, file_name):
         print('Feature collecting: %s' % file_name)
         # New version. Currently has memory constrain issues.
         # With enough memory, this method should perform much faster.
-        log_mel, onsets, arrows, encoded_arrows = get_features_and_labels(wav_path, timing_path, file_name, multi,
-                                                                          config)
+        log_mel, onsets, arrows, label_encoded_arrows, binary_encoded_arrows = get_features_and_labels(wav_path,
+                                                                                                       timing_path,
+                                                                                                       file_name, multi,
+                                                                                                       config)
         # Old version
         # log_mel, onsets, arrows, encoded_arrows =
         # get_features_and_labels_madmom(wav_path, timing_path, file_name, multi, config)
-
-        feature, label_dict, sample_weights_dict, arrows_dict, encoded_arrows_dict = \
-            feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, encoded_arrows)
+        feature, label_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict = \
+            feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, label_encoded_arrows,
+                                                      binary_encoded_arrows)
 
         # type casting features to float16 to save disk space.
         return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, arrows_dict,
-                encoded_arrows_dict]
+                label_encoded_arrows_dict, binary_encoded_arrows_dict]
     except Exception as ex:
         print("Error collecting features for %s: %r" % (file_name, ex))
         return None
 
 
-def collect_data(wavs_path, timings_path, output_path, name_prefix, name_postfix, config, multi=False,
-                 distributed=False, limit=-1, cores=1):
+def collect_data(wavs_path, timings_path, output_path, name_prefix, config, training_dataset, dataset_type, multi=False,
+                 limit=-1, cores=1):
     func = partial(collect_features, wavs_path, timings_path, multi, config)
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     scalers = None
-    all_metadata = build_all_metadata(dataset_name=name_prefix, config=config)
-    Dataset = DistributedModelDataset if distributed else ModelDataset
+    all_metadata = build_all_metadata(dataset_name=name_prefix, dataset_type=dataset_type.name, config=config)
 
-    with Dataset(os.path.join(output_path, name_prefix + name_postfix), overwrite=True) as dataset:
+    with training_dataset as dataset:
         with multiprocessing.Pool(cores) as pool:
             song_count = 0
             for i, result in enumerate(pool.imap(func, file_names)):
                 if result is None:
                     continue
-                file_name, features, labels, weights, arrows, encoded_arrows = result
+                file_name, features, labels, weights, arrows, label_encoded_arrows, binary_encoded_arrows = result
                 print("[%d/%d] Dumping to dataset: %s" % (i + 1, len(file_names), file_name))
                 dataset.dump(features=features, labels=labels, sample_weights=weights, arrows=arrows,
-                             encoded_arrows=encoded_arrows, file_names=file_name)
+                             label_encoded_arrows=label_encoded_arrows, binary_encoded_arrows=binary_encoded_arrows,
+                             file_names=file_name)
                 # not using joblib parallel since we are already using multiprocessing
                 print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
                 scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
@@ -96,7 +97,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, name_postfix
     print("Saving scalers")
     pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
     print("Saving metadata")
-    with open(join(output_path, name_prefix + '_metadata.json'), 'w') as json_file:
+    with open(join(output_path, 'metadata.json'), 'w') as json_file:
         json_file.write(json.dumps(all_metadata))
 
 
@@ -128,14 +129,16 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ty
     name_prefix = name if name is not None else prefix + "stepcovnet"
     name_postfix = "" if distributed is False else "_distributed"
     name_postfix += "_dataset"
-
+    
     output_path = os.path.join(output_path, name_prefix + name_postfix)
     os.makedirs(output_path, exist_ok=True)
+    dataset_type = ModelDatasetTypes.DISTRIBUTED_DATASET if distributed else ModelDatasetTypes.SINGULAR_DATASET
+    training_dataset = dataset_type.value(os.path.join(output_path, name_prefix + name_postfix), overwrite=True)
 
     start_time = time.time()
     collect_data(wavs_path=wavs_path, timings_path=timings_path, output_path=output_path, name_prefix=name_prefix,
-                 name_postfix=name_postfix, config=config, multi=multi, distributed=distributed, limit=limit,
-                 cores=cores)
+                 config=config, multi=multi, limit=limit, cores=cores, training_dataset=training_dataset,
+                 dataset_type=dataset_type)
     end_time = time.time()
 
     print("\nElapsed time was %g seconds" % (end_time - start_time))

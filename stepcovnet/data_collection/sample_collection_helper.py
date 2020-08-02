@@ -6,7 +6,9 @@ import resampy
 import soundfile as sf
 
 from stepcovnet.common import mel_features
+from stepcovnet.common.BinaryArrowEncoder import BinaryArrowEncoder
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
+from stepcovnet.common.parameters import NUM_ARROW_TYPES
 from stepcovnet.common.utils import feature_reshape_up
 from stepcovnet.common.utils import get_arrow_label_encoder
 
@@ -15,7 +17,7 @@ def remove_out_of_range(frames, frame_start, frame_end):
     return frames[np.all([frames <= frame_end, frames >= frame_start], axis=0)]
 
 
-def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, encoded_arrows):
+def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_encoded_arrows, binary_encoded_arrows):
     # Depending on modeling results, it may be beneficial to clip all data from the first onset detected
     # to the last onset. This may affect how models interpret long periods of empty notes.
     frame_start = 0
@@ -23,7 +25,8 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, encode
     labels_dict = defaultdict(np.array)
     sample_weights_dict = defaultdict(np.array)
     arrows_dict = defaultdict(np.array)
-    encoded_arrows_dict = defaultdict(np.array)
+    label_encoded_arrows_dict = defaultdict(np.array)
+    binary_encoded_arrows_dict = defaultdict(np.array)
 
     for difficulty, onsets in frames_onset.items():
         # Might remove this functionality of poses issues with modeling
@@ -43,27 +46,37 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, encode
         labels_dict[difficulty] = label.astype("int8")
 
         arrows_array = np.zeros((len_line, 4))
-        encoded_arrows_array = np.zeros((len_line,))
+        label_encoded_arrows_array = np.zeros((len_line,))
+        binary_encoded_arrows_array = np.zeros((len_line, 4 * NUM_ARROW_TYPES))
+
         arrows_list = arrows[difficulty]
-        encoded_arrows_list = encoded_arrows[difficulty].reshape(-1)
+        label_encoded_arrows_list = label_encoded_arrows[difficulty].reshape(-1)
+        binary_encoded_arrows_list = binary_encoded_arrows[difficulty].reshape(-1)
         i = 0
-        for onset, arrow, encoded_arrow in zip(onsets, arrows_list, encoded_arrows_list):
+        for onset, arrow, label_encoded_arrow, binary_encoded_arrow in zip(onsets, arrows_list,
+                                                                           label_encoded_arrows_list,
+                                                                           binary_encoded_arrows_list):
             arrows_array[onset - frame_start] = arrow
-            encoded_arrows_array[onset - frame_start] = encoded_arrow
+            label_encoded_arrows_array[onset - frame_start] = label_encoded_arrow
+            binary_encoded_arrows_array[onset - frame_start] = binary_encoded_arrow
             # This should be fine since timings should never be right next to each other
             if 2 * i < len(frames_onsets_p25):
                 arrows_array[frames_onsets_p25[2 * i] - frame_start] = arrow
-                encoded_arrows_array[frames_onsets_p25[2 * i] - frame_start] = encoded_arrow
+                label_encoded_arrows_array[frames_onsets_p25[2 * i] - frame_start] = label_encoded_arrow
+                binary_encoded_arrows_array[frames_onsets_p25[2 * i] - frame_start] = binary_encoded_arrow
             if 2 * i + 1 < len(frames_onsets_p25):
                 arrows_array[frames_onsets_p25[2 * i + 1] - frame_start] = arrow
-                encoded_arrows_array[frames_onsets_p25[2 * i + 1] - frame_start] = encoded_arrow
+                label_encoded_arrows_array[frames_onsets_p25[2 * i + 1] - frame_start] = label_encoded_arrow
+                binary_encoded_arrows_array[frames_onsets_p25[2 * i + 1] - frame_start] = binary_encoded_arrow
+
             i += 1
         arrows_dict[difficulty] = arrows_array.astype("int8")
-        encoded_arrows_dict[difficulty] = encoded_arrows_array.astype("int16")
+        label_encoded_arrows_dict[difficulty] = label_encoded_arrows_array.astype("int16")
+        binary_encoded_arrows_dict[difficulty] = binary_encoded_arrows_array.astype("int8")
 
     mfcc_line = mfcc[frame_start:frame_end + 1, :]
 
-    return mfcc_line, labels_dict, sample_weights_dict, arrows_dict, encoded_arrows_dict
+    return mfcc_line, labels_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict
 
 
 def timings_parser(timing_file_path):
@@ -77,7 +90,8 @@ def timings_parser(timing_file_path):
         data = defaultdict(dict)
         read_timings = False
         curr_difficulty = None
-        encoder = get_arrow_label_encoder()
+        label_encoder = get_arrow_label_encoder()
+        binary_encoder = BinaryArrowEncoder()
         for line in file.readlines():
             line = line.replace("\n", "")
             if line.startswith("NOTES"):
@@ -89,9 +103,12 @@ def timings_parser(timing_file_path):
                         raise ValueError("Same difficulty detected in the song data.")
                     curr_difficulty = new_difficulty
                 elif curr_difficulty is not None:
-                    arrow, timing = line.split(" ")[0:2]
-                    encoded_arrow = encoder.transform([arrow])[0]
-                    data[curr_difficulty][float(timing)] = [np.array(list(arrow), dtype=int), encoded_arrow]
+                    arrows, timing = line.split(" ")[0:2]
+                    label_encoded_arrows = label_encoder.transform([arrows])[0]
+                    binary_encoded_arrows = binary_encoder.encode(arrows)
+                    data[curr_difficulty][float(timing)] = [np.array(list(arrows), dtype=int),
+                                                            label_encoded_arrows,
+                                                            binary_encoded_arrows]
         return data
 
 
@@ -169,15 +186,17 @@ def convert_note_data(note_data, stft_hop_length_secs=0.01):
     # convert note timings into frame timings
     frames_onset = defaultdict(np.array)
     arrows_dict = defaultdict(np.array)
-    encoded_arrows_dict = defaultdict(np.array)
+    label_encoded_arrows_dict = defaultdict(np.array)
+    binary_encoded_arrows_dict = defaultdict(np.array)
 
     for difficulty, data in note_data.items():
         timings, arrows = list(data.keys()), list(data.values())
         frames_onset[difficulty] = np.array(np.around(np.array(timings) / stft_hop_length_secs), dtype=int)
         arrows_dict[difficulty] = np.array([arrow[0] for arrow in arrows], dtype=np.int8)
-        encoded_arrows_dict[difficulty] = np.array([arrow[1] for arrow in arrows], dtype=np.int16)
+        label_encoded_arrows_dict[difficulty] = np.array([arrow[1] for arrow in arrows], dtype=np.int16)
+        binary_encoded_arrows_dict[difficulty] = np.array([arrow[2] for arrow in arrows], dtype=np.int8)
 
-    return frames_onset, arrows_dict, encoded_arrows_dict
+    return frames_onset, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict
 
 
 def get_features_and_labels(wav_path, note_data_path, file_name, multi, config):
@@ -192,10 +211,11 @@ def get_features_and_labels(wav_path, note_data_path, file_name, multi, config):
     del audio_data
     gc.collect()
     # Parse notes data to get onsets and arrows
-    onsets, arrows, encoded_arrows = convert_note_data(note_data=note_data,
-                                                       stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])
+    onsets, arrows, label_encoded_arrows, binary_encoded_arrows = convert_note_data(note_data=note_data,
+                                                                                    stft_hop_length_secs=config[
+                                                                                        "STFT_HOP_LENGTH_SECONDS"])
 
-    return log_mel_frames, onsets, arrows, encoded_arrows
+    return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows
 
 
 def get_features_and_labels_madmom(wav_path, note_data_path, file_name, multi, config):
@@ -204,7 +224,8 @@ def get_features_and_labels_madmom(wav_path, note_data_path, file_name, multi, c
                                         num_time_bands=config["NUM_TIME_BANDS"],
                                         num_channels=config["NUM_MULTI_CHANNELS"])
     note_data = timings_parser(join(note_data_path, file_name + '.txt'))
-    onsets, arrows, encoded_arrows = convert_note_data(note_data=note_data,
-                                                       stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])
+    onsets, arrows, label_encoded_arrows, binary_encoded_arrows = convert_note_data(note_data=note_data,
+                                                                                    stft_hop_length_secs=config[
+                                                                                        "STFT_HOP_LENGTH_SECONDS"])
 
-    return log_mel_frames, onsets, arrows, encoded_arrows
+    return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows

@@ -121,13 +121,17 @@ class DistributedModelDataset(ModelDataset):
         return self.virtual_dataset[self.append_difficulty("arrows", self.difficulty)]
 
     @property
-    def encoded_arrows(self):
-        return self.virtual_dataset[self.append_difficulty("encoded_arrows", self.difficulty)]
+    def label_encoded_arrows(self):
+        return self.virtual_dataset[self.append_difficulty("label_encoded_arrows", self.difficulty)]
+
+    @property
+    def binary_encoded_arrows(self):
+        return self.virtual_dataset[self.append_difficulty("binary_encoded_arrows", self.difficulty)]
 
     @property
     def file_names(self):
-        return [self.format_sub_dataset_name(file_name.decode('ascii')) for file_name in
-                self.virtual_dataset["file_names"]]
+        return [self.format_sub_dataset_name(file_name.decode('ascii'))
+                for file_name in self.virtual_dataset["file_names"]]
 
     @property
     def song_index_ranges(self):

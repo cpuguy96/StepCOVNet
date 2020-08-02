@@ -18,9 +18,10 @@ class ModelDataset(object):
         if not self.overwrite:
             self.mode = "r"
         # ensure these dataset names are somewhat unique
-        self.dataset_names = ["features", "labels", "sample_weights", "arrows", "encoded_arrows", "file_names",
-                              "song_index_ranges"]
-        self.difficulty_dataset_names = ["labels", "sample_weights", "arrows", "encoded_arrows"]
+        self.dataset_names = ["features", "labels", "sample_weights", "arrows", "label_encoded_arrows",
+                              "binary_encoded_arrows", "file_names", "song_index_ranges"]
+        self.difficulty_dataset_names = ["labels", "sample_weights", "arrows", "label_encoded_arrows",
+                                         "binary_encoded_arrows"]
         self.scaler_dataset_names = ["file_names"]
         self.dataset_attr = {"labels": {"num_valid_samples", "pos_samples", "neg_samples"},
                              "features": {"num_samples"}}
@@ -30,7 +31,8 @@ class ModelDataset(object):
 
     def __getitem__(self, item):
         data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item],
-                self.encoded_arrows[item]]
+                self.label_encoded_arrows[item],
+                self.binary_encoded_arrows[item]]
         return data
 
     def __len__(self):
@@ -76,13 +78,14 @@ class ModelDataset(object):
         self.set_dataset_attrs(self.h5py_file, difficulty_dataset_name, saved_attributes)
         self.update_dataset_attrs(self.h5py_file, difficulty_dataset_name, value)
 
-    def dump(self, features, labels, sample_weights, arrows, encoded_arrows, file_names):
+    def dump(self, features, labels, sample_weights, arrows, label_encoded_arrows, binary_encoded_arrows, file_names):
         try:
             all_data = self.get_dataset_name_to_data_map(features=features,
                                                          labels=labels,
                                                          sample_weights=sample_weights,
                                                          arrows=arrows,
-                                                         encoded_arrows=encoded_arrows,
+                                                         label_encoded_arrows=label_encoded_arrows,
+                                                         binary_encoded_arrows=binary_encoded_arrows,
                                                          file_names=file_names,
                                                          song_index_ranges=[[len(self), len(self) + len(features)]])
             for dataset_name, data in all_data.items():
@@ -155,8 +158,8 @@ class ModelDataset(object):
         if "labels" in dataset_name:
             if not any(attr_value < 0):
                 h5py_file[dataset_name].attrs["num_valid_samples"] += len(attr_value)
-            h5py_file[dataset_name].attrs["pos_samples"] += attr_value.sum()
-            h5py_file[dataset_name].attrs["neg_samples"] += len(attr_value) - attr_value.sum()
+                h5py_file[dataset_name].attrs["pos_samples"] += attr_value.sum()
+                h5py_file[dataset_name].attrs["neg_samples"] += len(attr_value) - attr_value.sum()
         elif "features" in dataset_name:
             h5py_file[dataset_name].attrs["num_samples"] += len(attr_value)
 
@@ -209,8 +212,12 @@ class ModelDataset(object):
         return self.h5py_file[self.append_difficulty("arrows", self.difficulty)]
 
     @property
-    def encoded_arrows(self):
-        return self.h5py_file[self.append_difficulty("encoded_arrows", self.difficulty)]
+    def label_encoded_arrows(self):
+        return self.h5py_file[self.append_difficulty("label_encoded_arrows", self.difficulty)]
+
+    @property
+    def binary_encoded_arrows(self):
+        return self.h5py_file[self.append_difficulty("binary_encoded_arrows", self.difficulty)]
 
     @property
     def file_names(self):

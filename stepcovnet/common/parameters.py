@@ -14,6 +14,8 @@ NUM_TIME_BANDS = 15
 
 THRESHOLDS = {'expert': 0.5}
 
+NUM_ARROW_TYPES = 4
+
 CONFIG = {
     "NUM_FREQ_BANDS": 80,
     "NUM_TIME_BANDS": 15,
