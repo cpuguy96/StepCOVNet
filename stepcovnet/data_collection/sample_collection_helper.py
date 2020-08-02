@@ -8,7 +8,6 @@ import soundfile as sf
 from stepcovnet.common import mel_features
 from stepcovnet.common.BinaryArrowEncoder import BinaryArrowEncoder
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
-from stepcovnet.common.parameters import NUM_ARROW_TYPES
 from stepcovnet.common.utils import feature_reshape_up
 from stepcovnet.common.utils import get_arrow_label_encoder
 
@@ -17,7 +16,8 @@ def remove_out_of_range(frames, frame_start, frame_end):
     return frames[np.all([frames <= frame_end, frames >= frame_start], axis=0)]
 
 
-def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_encoded_arrows, binary_encoded_arrows):
+def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_encoded_arrows, binary_encoded_arrows,
+                                              num_arrow_types=4):
     # Depending on modeling results, it may be beneficial to clip all data from the first onset detected
     # to the last onset. This may affect how models interpret long periods of empty notes.
     frame_start = 0
@@ -47,7 +47,7 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_
 
         arrows_array = np.zeros((len_line, 4))
         label_encoded_arrows_array = np.zeros((len_line,))
-        binary_encoded_arrows_array = np.zeros((len_line, 4 * NUM_ARROW_TYPES))
+        binary_encoded_arrows_array = np.zeros((len_line, 4 * num_arrow_types))
 
         arrows_list = arrows[difficulty]
         label_encoded_arrows_list = label_encoded_arrows[difficulty].reshape(-1)

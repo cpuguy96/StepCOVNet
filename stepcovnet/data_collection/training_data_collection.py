@@ -51,7 +51,7 @@ def collect_features(wav_path, timing_path, multi, config, file_name):
         # get_features_and_labels_madmom(wav_path, timing_path, file_name, multi, config)
         feature, label_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict = \
             feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, label_encoded_arrows,
-                                                      binary_encoded_arrows)
+                                                      binary_encoded_arrows, config["NUM_ARROW_TYPES"])
 
         # type casting features to float16 to save disk space.
         return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, arrows_dict,
@@ -129,7 +129,7 @@ def training_data_collection(wavs_path, timings_path, output_path, multi_int, ty
     name_prefix = name if name is not None else prefix + "stepcovnet"
     name_postfix = "" if distributed is False else "_distributed"
     name_postfix += "_dataset"
-    
+
     output_path = os.path.join(output_path, name_prefix + name_postfix)
     os.makedirs(output_path, exist_ok=True)
     dataset_type = ModelDatasetTypes.DISTRIBUTED_DATASET if distributed else ModelDatasetTypes.SINGULAR_DATASET

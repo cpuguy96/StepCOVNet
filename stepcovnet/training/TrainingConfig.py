@@ -5,12 +5,14 @@ from stepcovnet.common.utils import get_channel_scalers
 
 
 class TrainingConfig(object):
-    def __init__(self, dataset, dataset_config, hyperparameters, all_scalers=None, limit=-1, lookback=1):
+    def __init__(self, dataset, dataset_config, hyperparameters, all_scalers=None, limit=-1, lookback=1,
+                 difficulty="challenge"):
         self.dataset_config = dataset_config
         self.hyperparameters = hyperparameters
         self.all_scalers = all_scalers
         self.limit = limit
         self.lookback = lookback
+        self.difficulty = difficulty
 
         # Song level indexes
         self.all_indexes, self.train_indexes, self.val_indexes = self.get_train_val_split(dataset, limit)
@@ -89,3 +91,7 @@ class TrainingConfig(object):
     def audio_input_shape(self):
         # return lookback + 1 to include current audio sample
         return (self.lookback + 1, self.dataset_config["NUM_TIME_BANDS"], self.dataset_config["NUM_FREQ_BANDS"], 1)
+
+    @property
+    def label_shape(self):
+        return (4 * self.dataset_config["NUM_ARROW_TYPES"])

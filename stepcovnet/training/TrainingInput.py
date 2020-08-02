@@ -13,9 +13,9 @@ class TrainingInput(object):
             tf.dtypes.float16  # sample weights
         )
         self.output_shape = (
-            {"arrow_input": tf.TensorShape(self.training_config.arrow_input_shape),
-             "audio_input": tf.TensorShape(self.training_config.audio_input_shape)},
-            tf.TensorShape([None]),  # labels
+            {"arrow_input": tf.TensorShape((None,) + self.training_config.arrow_input_shape),
+             "audio_input": tf.TensorShape((None,) + self.training_config.audio_input_shape)},
+            tf.TensorShape((None,) + self.training_config.label_shape),  # labels
             tf.TensorShape([None])  # sample weights
         )
         self.train_feature_generator = TrainingFeatureGenerator(dataset,
