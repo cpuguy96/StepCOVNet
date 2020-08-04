@@ -8,27 +8,32 @@ class TrainingInput(object):
         self.training_config = training_config
         self.output_types = (
             {"arrow_input": tf.dtypes.float16,
+             "arrow_mask": tf.dtypes.int8,
              "audio_input": tf.dtypes.int16},
             tf.dtypes.int8,  # labels
             tf.dtypes.float16  # sample weights
         )
         self.output_shape = (
             {"arrow_input": tf.TensorShape((None,) + self.training_config.arrow_input_shape),
+             "arrow_mask": tf.TensorShape((None,) + self.training_config.arrow_mask_shape),
              "audio_input": tf.TensorShape((None,) + self.training_config.audio_input_shape)},
             tf.TensorShape((None,) + self.training_config.label_shape),  # labels
             tf.TensorShape([None])  # sample weights
         )
         self.train_feature_generator = TrainingFeatureGenerator(dataset,
+                                                                lookback=self.training_config.lookback,
                                                                 batch_size=self.training_config.hyperparameters.batch_size,
                                                                 indexes=self.training_config.train_indexes,
                                                                 num_samples=self.training_config.num_train_samples,
                                                                 scalers=self.training_config.train_scalers)
         self.val_feature_generator = TrainingFeatureGenerator(dataset,
+                                                              lookback=self.training_config.lookback,
                                                               batch_size=self.training_config.hyperparameters.batch_size,
                                                               indexes=self.training_config.val_indexes,
                                                               num_samples=self.training_config.num_val_samples,
                                                               scalers=self.training_config.train_scalers)
         self.all_feature_generator = TrainingFeatureGenerator(dataset,
+                                                              lookback=self.training_config.lookback,
                                                               batch_size=self.training_config.hyperparameters.batch_size,
                                                               indexes=self.training_config.all_indexes,
                                                               num_samples=self.training_config.num_samples,

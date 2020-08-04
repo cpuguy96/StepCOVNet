@@ -88,6 +88,10 @@ class TrainingConfig(object):
         return (self.lookback,)
 
     @property
+    def arrow_mask_shape(self):
+        return (self.lookback,)
+
+    @property
     def audio_input_shape(self):
         # return lookback + 1 to include current audio sample
         return (self.lookback + 1, self.dataset_config["NUM_TIME_BANDS"], self.dataset_config["NUM_FREQ_BANDS"], 1)

@@ -236,6 +236,6 @@ def get_arrow_label_encoder():
 
 
 def get_ngram(data, lookback, padding_value=0):
-    padding = np.full((lookback, data.shape[1]), fill_value=padding_value)
+    padding = np.full((lookback,) + data.shape[1:], fill_value=padding_value)
     data_w_padding = np.append(padding, data, axis=0)
     return np.asarray(list(ngrams(data_w_padding, lookback)))
