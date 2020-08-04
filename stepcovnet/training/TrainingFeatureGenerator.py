@@ -44,14 +44,21 @@ class TrainingFeatureGenerator(object):
                         sample_weights_batch = np.append(sample_weights_batch,
                                                          dataset.sample_weights[start_index: end_index])
                         if len(y_batch) >= self.batch_size:
-                            scaled_audio_features = apply_scalers(features=features["audio_features"],
-                                                                  scalers=self.scalers)
-                            x_batch = [features["arrow_features"], features["arrow_mask"], scaled_audio_features]
-                            yield x_batch, y_batch, sample_weights_batch
+                            self.yield_samples(features, y_batch, sample_weights_batch)
+                            # Reset samples for next batch
                             features.clear()
                             y_batch = np.array([])
                             sample_weights_batch = np.array([])
                         start_index = end_index
+                # Yield at the end to ensure all samples are yielded
+                self.yield_samples(features, y_batch, sample_weights_batch)
+
+    def yield_samples(self, features, y_batch, sample_weights_batch):
+        if len(y_batch) > 0:
+            scaled_audio_features = apply_scalers(features=features["audio_features"],
+                                                  scalers=self.scalers)
+            x_batch = [features["arrow_features"], features["arrow_mask"], scaled_audio_features]
+            yield x_batch, y_batch, sample_weights_batch
 
     def get_samples_ngram_with_mask(self, dataset, start_index, end_index, squeeze=True):
         samples = dataset[start_index:start_index + end_index]
