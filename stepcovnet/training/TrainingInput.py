@@ -7,9 +7,9 @@ class TrainingInput(object):
     def __init__(self, dataset, training_config):
         self.training_config = training_config
         self.output_types = (
-            {"arrow_input": tf.dtypes.float16,
-             "arrow_mask": tf.dtypes.int8,
-             "audio_input": tf.dtypes.int16},
+            {"arrow_input": tf.dtypes.int32,
+             "arrow_mask": tf.dtypes.int32,
+             "audio_input": tf.dtypes.float64},
             tf.dtypes.int8,  # labels
             tf.dtypes.float16  # sample weights
         )

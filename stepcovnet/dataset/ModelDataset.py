@@ -117,6 +117,7 @@ class ModelDataset(object):
     def close(self):
         self.h5py_file.flush()
         self.h5py_file.close()
+        self.h5py_file = None
 
     def set_difficulty(self, difficulty):
         if difficulty not in self.difficulties:

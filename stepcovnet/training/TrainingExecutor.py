@@ -1,21 +1,17 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
 import os
 
-import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.callbacks import TensorBoard
+
+from stepcovnet.modeling.tf_config import tf_init
 
 
 class TrainingExecutor(object):
     def __init__(self, training_input, stepcovnet_model):
         self.training_input = training_input
         self.stepcovnet_model = stepcovnet_model
-        self.configure_tensorflow()
+        tf_init()
 
     def execute(self):
         retrain = self.training_input.training_config.hyperparameters.retrain
@@ -105,16 +101,3 @@ class TrainingExecutor(object):
             model.save(os.path.join(model_out_path, model_name + "_retrained.h5"))
         else:
             model.save(os.path.join(model_out_path, model_name + ".h5"))
-
-    @staticmethod
-    def configure_tensorflow():
-        gpu = tf.config.experimental.list_physical_devices('GPU')
-        tf.config.experimental.set_memory_growth(gpu[0], True)
-
-        policy = tf.keras.mixed_precision.experimental.Policy('mixed_float16')
-        tf.keras.mixed_precision.experimental.set_policy(policy)
-
-        tf.config.optimizer.set_jit(True)
-
-        tf.random.set_seed(42)
-        tf.compat.v1.set_random_seed(42)

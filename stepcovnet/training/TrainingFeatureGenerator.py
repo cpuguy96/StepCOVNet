@@ -16,12 +16,12 @@ class TrainingFeatureGenerator(object):
         self.batch_size = batch_size
 
     def __len__(self):
-        return int(np.ceil(len(self.num_samples) / self.batch_size))
+        return int(np.ceil(self.num_samples / self.batch_size))
 
     def __call__(self, *args, **kwargs):
         with self.dataset as dataset:
             while True:
-                features = defaultdict(np.array)
+                features = defaultdict(lambda: np.array([]))
                 y_batch = np.array([])
                 sample_weights_batch = np.array([])
                 for song_index in self.train_indexes:
@@ -36,10 +36,22 @@ class TrainingFeatureGenerator(object):
                         # Lookback data from ngram returns empty value in index 0. Also, arrow features should only 
                         # contain previously seen features. Therefore, removing last element and last lookback from 
                         # arrows features and first element from audio features.
-                        features["arrow_features"] = np.append(features["arrow_features"],
-                                                               arrow_features[:-1, 1:], axis=0)
-                        features["arrow_mask"] = np.append(features["arrow_mask"], arrow_mask[:-1, 1:], axis=0)
-                        features["audio_features"] = np.append(features["audio_features"], audio_features[1:], axis=0)
+                        if "arrow_features" in features:
+                            features["arrow_features"] = np.concatenate((features["arrow_features"],
+                                                                         arrow_features[:-1, 1:]), axis=0)
+                        else:
+                            features["arrow_features"] = arrow_features[:-1, 1:]
+                        if "arrow_mask" in features:
+                            features["arrow_mask"] = np.concatenate((features["arrow_mask"], arrow_mask[:-1, 1:]),
+                                                                    axis=0)
+                        else:
+                            features["arrow_mask"] = arrow_mask[:-1, 1:]
+                        if "audio_features" in features:
+                            features["audio_features"] = np.concatenate(
+                                (features["audio_features"], audio_features[1:]),
+                                axis=0)
+                        else:
+                            features["audio_features"] = audio_features[1:]
                         y_batch = np.append(y_batch, dataset.binary_encoded_arrows[start_index: end_index])
                         sample_weights_batch = np.append(sample_weights_batch,
                                                          dataset.sample_weights[start_index: end_index])
@@ -47,8 +59,8 @@ class TrainingFeatureGenerator(object):
                             self.yield_samples(features, y_batch, sample_weights_batch)
                             # Reset samples for next batch
                             features.clear()
-                            y_batch = np.array([])
-                            sample_weights_batch = np.array([])
+                            y_batch = []
+                            sample_weights_batch = []
                         start_index = end_index
                 # Yield at the end to ensure all samples are yielded
                 self.yield_samples(features, y_batch, sample_weights_batch)

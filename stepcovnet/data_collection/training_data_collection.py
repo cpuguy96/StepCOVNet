@@ -67,6 +67,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     scalers = None
+    config["NUM_CHANNELS"] = config["NUM_MULTI_CHANNELS"] if multi else 1
     all_metadata = build_all_metadata(dataset_name=name_prefix, dataset_type=dataset_type.name, config=config)
 
     with training_dataset as dataset:

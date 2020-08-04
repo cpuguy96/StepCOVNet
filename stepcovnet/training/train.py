@@ -29,14 +29,13 @@ def run_training(input_path, output_path, model_name, limit, lookback, difficult
     dataset.set_difficulty(difficulty)
 
     hyperparameters = TrainingHyperparameters(log_path=log_path)
-
     training_config = TrainingConfig(dataset=dataset, dataset_config=dataset_config, hyperparameters=hyperparameters,
                                      all_scalers=scalers, limit=limit, lookback=lookback, difficulty=difficulty)
     training_input = TrainingInput(dataset, training_config)
 
     arrow_model = ArrowModel(training_input.training_config)
     audio_model = AudioModel(training_input.training_config)
-    model = ClassifierModel(training_input.training_config, arrow_model, audio_model)
+    model = ClassifierModel(training_input.training_config, arrow_model, audio_model).model
     stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=model)
 
     TrainingExecutor(training_input=training_input, stepcovnet_model=stepcovnet_model).execute()

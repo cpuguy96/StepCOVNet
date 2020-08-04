@@ -21,6 +21,7 @@ class DistributedModelDataset(ModelDataset):
 
     def close(self):
         self.virtual_dataset.close()
+        self.virtual_dataset = None
 
     def dump(self, *args, **kwargs):
         sub_dataset_name = self.format_sub_dataset_name(kwargs["file_names"])
