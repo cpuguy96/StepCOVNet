@@ -42,16 +42,14 @@ python training_data_collection.py -w --wav <string> -t --timing <string> -o --o
 Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/training/train.py).
 ```.bash
 cd stepcovnet/training
-python train.py -i --input <string> -o --output <string> --multi <int> --lookback <int> --limit <int> --model_type <int> --name <string> --pretrained_model <string> --log <string>
+python train.py -i --input <string> -o --output <string> --difficulty <int> --lookback <int> --limit <int> --name <string> --log <string>
 ``` 
 * `-i` `--input` input directory path to training dataset
 * `-o` `--output` output directory path to save model 
-* **OPTIONAL:** `--multi` `1` uses STFTs with multiple `frame_size`, `0` uses STFTs single `frame_size`;  default is `0`
+* **OPTIONAL:** `-d` `--difficulty` `[0, 1, 2, 3, 4]` sets the song difficulty to use when training to ["challenge", "hard", "medium", "easy", "beginner"], respectively; default is `0` or "challenge"
 * **OPTIONAL:** `--lookback` `> 1` is uses timeseries based on `lookback` when modeling, `1` uses non timeseries; default is `1`
 * **OPTIONAL:** `--limit` `> 0` limits the amount of training samples used during training, `-1` uses all the samples; default is `-1`
-* **OPTIONAL:** `--model_type` `1` uses model configuration given by [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf) paper; 0 uses custom model; default is `1`
 * **OPTIONAL:** `--name` name to give the finished model; default names model based on dat aset used
-* **OPTIONAL:** `--pretrained_model` input path to pretrained model
 * **OPTIONAL:** `--log` output directory path to store tensorboard data
 
 ## TODO
