@@ -17,6 +17,6 @@ tf.random.set_seed(42)
 tf.compat.v1.set_random_seed(42)
 
 
-# work around to get above configurations intitialized during runtime
+# work around to get above configurations initialized during runtime
 def tf_init():
     pass

@@ -4,7 +4,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.callbacks import TensorBoard
 
-from stepcovnet.modeling.tf_config import tf_init
+from stepcovnet.common.tf_config import tf_init
 
 
 class TrainingExecutor(object):
