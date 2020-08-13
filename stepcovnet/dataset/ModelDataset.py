@@ -41,8 +41,7 @@ class ModelDataset(object):
             return 0
 
     def __enter__(self):
-        if self.h5py_file is None:
-            self.h5py_file = h5py.File(self.dataset_path, self.mode)
+        self.h5py_file = h5py.File(self.dataset_path, self.mode)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -117,7 +116,6 @@ class ModelDataset(object):
     def close(self):
         self.h5py_file.flush()
         self.h5py_file.close()
-        self.h5py_file = None
 
     def set_difficulty(self, difficulty):
         if difficulty not in self.difficulties:
