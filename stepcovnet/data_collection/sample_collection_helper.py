@@ -198,22 +198,28 @@ def convert_note_data(note_data, stft_hop_length_secs=0.01):
     return frames_onset, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict
 
 
-def get_features_and_labels(wav_path, note_data_path, file_name, multi, config):
-    # Read data from timings file
-    note_data = timings_parser(timing_file_path=join(note_data_path, file_name + '.txt'))
+def get_features(wav_path, file_name, multi, config):
     # Read audio data (needs to be a wav)
     audio_data, audio_data_sample_rate = get_audio_data(audio_file_path=join(wav_path, file_name + '.wav'))
     # Create log mel features
     log_mel_frames = get_log_mels(audio_data=audio_data, audio_data_sample_rate=audio_data_sample_rate,
                                   config=config, multi=multi)
-    import gc
-    del audio_data
-    gc.collect()
+    return log_mel_frames
+
+
+def get_labels(note_data_path, file_name, config):
+    # Read data from timings file
+    note_data = timings_parser(timing_file_path=join(note_data_path, file_name + '.txt'))
     # Parse notes data to get onsets and arrows
     onsets, arrows, label_encoded_arrows, binary_encoded_arrows = convert_note_data(note_data=note_data,
-                                                                                    stft_hop_length_secs=config[
-                                                                                        "STFT_HOP_LENGTH_SECONDS"])
+                                                                                    stft_hop_length_secs=
+                                                                                    config["STFT_HOP_LENGTH_SECONDS"])
+    return onsets, arrows, label_encoded_arrows, binary_encoded_arrows
 
+
+def get_features_and_labels(wav_path, note_data_path, file_name, multi, config):
+    log_mel_frames = get_features(wav_path, file_name, multi, config)
+    onsets, arrows, label_encoded_arrows, binary_encoded_arrows = get_labels(note_data_path, file_name, config)
     return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows
 
 
@@ -224,7 +230,7 @@ def get_features_and_labels_madmom(wav_path, note_data_path, file_name, multi, c
                                         num_channels=config["NUM_MULTI_CHANNELS"])
     note_data = timings_parser(join(note_data_path, file_name + '.txt'))
     onsets, arrows, label_encoded_arrows, binary_encoded_arrows = convert_note_data(note_data=note_data,
-                                                                                    stft_hop_length_secs=config[
-                                                                                        "STFT_HOP_LENGTH_SECONDS"])
+                                                                                    stft_hop_length_secs=
+                                                                                    config["STFT_HOP_LENGTH_SECONDS"])
 
     return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows
