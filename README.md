@@ -47,7 +47,7 @@ python train.py -i --input <string> -o --output <string> --difficulty <int> --lo
 * `-i` `--input` input directory path to training dataset
 * `-o` `--output` output directory path to save model 
 * **OPTIONAL:** `-d` `--difficulty` `[0, 1, 2, 3, 4]` sets the song difficulty to use when training to ["challenge", "hard", "medium", "easy", "beginner"], respectively; default is `0` or "challenge"
-* **OPTIONAL:** `--lookback` `> 1` is uses timeseries based on `lookback` when modeling, `1` uses non timeseries; default is `1`
+* **OPTIONAL:** `--lookback` `> 2` uses timeseries based on `lookback` when modeling; default is `3`
 * **OPTIONAL:** `--limit` `> 0` limits the amount of training samples used during training, `-1` uses all the samples; default is `-1`
 * **OPTIONAL:** `--name` name to give the finished model; default names model based on dat aset used
 * **OPTIONAL:** `--log` output directory path to store tensorboard data
