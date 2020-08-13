@@ -17,26 +17,26 @@ from stepcovnet.training.TrainingInput import TrainingInput
 def load_training_data(input_path):
     metadata = json.load(open(os.path.join(input_path, "metadata.json"), 'r'))
     dataset_name = metadata["dataset_name"]
-    dataset_type = metadata["dataset_type"]
-    dataset = ModelDatasetTypes[dataset_type].value(os.path.join(input_path, dataset_name + "_dataset"))
+    dataset_type = ModelDatasetTypes[metadata["dataset_type"]].value
+    dataset_path = os.path.join(input_path, dataset_name + "_dataset")
     scalers = pickle.load(open(os.path.join(input_path, dataset_name + "_scaler.pkl"), 'rb'))
     dataset_config = metadata["config"]
-    return dataset, scalers, dataset_config
+    return dataset_path, dataset_type, scalers, dataset_config
 
 
 def run_training(input_path, output_path, model_name, limit, lookback, difficulty, log_path):
-    dataset, scalers, dataset_config = load_training_data(input_path)
-    dataset.set_difficulty(difficulty)
+    dataset_path, dataset_type, scalers, dataset_config = load_training_data(input_path)
 
-    hyperparameters = TrainingHyperparameters(log_path=log_path)
-    training_config = TrainingConfig(dataset=dataset, dataset_config=dataset_config, hyperparameters=hyperparameters,
+    hyperparameters = TrainingHyperparameters(log_path=log_path, loss=TrainingHyperparameters.macro_double_soft_f1)
+    training_config = TrainingConfig(dataset_path=dataset_path, dataset_type=dataset_type,
+                                     dataset_config=dataset_config, hyperparameters=hyperparameters,
                                      all_scalers=scalers, limit=limit, lookback=lookback, difficulty=difficulty)
-    training_input = TrainingInput(dataset, training_config)
+    training_input = TrainingInput(training_config)
 
     arrow_model = ArrowModel(training_input.training_config)
     audio_model = AudioModel(training_input.training_config)
-    model = ClassifierModel(training_input.training_config, arrow_model, audio_model).model
-    stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=model)
+    model = ClassifierModel(training_input.training_config, arrow_model, audio_model)
+    stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=model.model)
 
     TrainingExecutor(training_input=training_input, stepcovnet_model=stepcovnet_model).execute()
 
@@ -49,8 +49,8 @@ def train(input_path, output_path, difficulty_int, lookback, limit, name, log_pa
         print("Model output path not found. Creating directory...")
         os.makedirs(output_path, exist_ok=True)
 
-    if lookback <= 0:
-        raise ValueError('Lookback needs to be >= 1')
+    if lookback <= 1:
+        raise ValueError('Lookback needs to be > 1')
 
     if limit == 0:
         raise ValueError('Limit cannot be = 0')
@@ -101,7 +101,7 @@ if __name__ == '__main__':
                              "- beginner")
     parser.add_argument("--lookback",
                         type=int,
-                        default=1,
+                        default=2,
                         help="Number of frames to lookback when training: 1 - non timeseries, > 1 timeseries")
     parser.add_argument("--limit",
                         type=int,

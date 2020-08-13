@@ -4,7 +4,7 @@ from stepcovnet.training.TrainingFeatureGenerator import TrainingFeatureGenerato
 
 
 class TrainingInput(object):
-    def __init__(self, dataset, training_config):
+    def __init__(self, training_config):
         self.training_config = training_config
         self.output_types = (
             {"arrow_input": tf.dtypes.int32,
@@ -18,26 +18,34 @@ class TrainingInput(object):
              "arrow_mask": tf.TensorShape((None,) + self.training_config.arrow_mask_shape),
              "audio_input": tf.TensorShape((None,) + self.training_config.audio_input_shape)},
             tf.TensorShape((None,) + self.training_config.label_shape),  # labels
-            tf.TensorShape([None])  # sample weights
+            tf.TensorShape((None,))  # sample weights
         )
-        self.train_feature_generator = TrainingFeatureGenerator(dataset,
+        self.train_feature_generator = TrainingFeatureGenerator(dataset_path=self.training_config.dataset_path,
+                                                                dataset_type=self.training_config.dataset_type,
                                                                 lookback=self.training_config.lookback,
                                                                 batch_size=self.training_config.hyperparameters.batch_size,
                                                                 indexes=self.training_config.train_indexes,
                                                                 num_samples=self.training_config.num_train_samples,
-                                                                scalers=self.training_config.train_scalers)
-        self.val_feature_generator = TrainingFeatureGenerator(dataset,
+                                                                scalers=self.training_config.train_scalers,
+                                                                difficulty=self.training_config.difficulty,
+                                                                warmup=True)
+        self.val_feature_generator = TrainingFeatureGenerator(dataset_path=self.training_config.dataset_path,
+                                                              dataset_type=self.training_config.dataset_type,
                                                               lookback=self.training_config.lookback,
                                                               batch_size=self.training_config.hyperparameters.batch_size,
                                                               indexes=self.training_config.val_indexes,
                                                               num_samples=self.training_config.num_val_samples,
-                                                              scalers=self.training_config.train_scalers)
-        self.all_feature_generator = TrainingFeatureGenerator(dataset,
+                                                              scalers=self.training_config.train_scalers,
+                                                              difficulty=self.training_config.difficulty)
+        self.all_feature_generator = TrainingFeatureGenerator(dataset_path=self.training_config.dataset_path,
+                                                              dataset_type=self.training_config.dataset_type,
                                                               lookback=self.training_config.lookback,
                                                               batch_size=self.training_config.hyperparameters.batch_size,
                                                               indexes=self.training_config.all_indexes,
                                                               num_samples=self.training_config.num_samples,
-                                                              scalers=self.training_config.all_scalers)
+                                                              scalers=self.training_config.all_scalers,
+                                                              difficulty=self.training_config.difficulty,
+                                                              warmup=True)
 
     def get_tf_dataset(self, generator):
         return tf.data.Dataset.from_generator(

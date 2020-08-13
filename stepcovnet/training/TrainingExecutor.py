@@ -1,7 +1,7 @@
+import json
 import os
 
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.callbacks import TensorBoard
 
 from stepcovnet.common.tf_config import tf_init
@@ -21,24 +21,23 @@ class TrainingExecutor(object):
         optimizer = self.training_input.training_config.hyperparameters.optimizer
 
         self.stepcovnet_model.model.compile(loss=loss, metrics=metrics, optimizer=optimizer)
-        print(self.stepcovnet_model.model.summary())
+        self.stepcovnet_model.model.summary()
         history = self.train(self.get_training_callbacks())
-        self.save(retrained=False)
+        self.save(training_history=history, retrained=False)
 
         if retrain:
             epochs_final = len(history.history['val_loss'])
-            self.retrain(saved_original_weights=weights, epochs=epochs_final, callbacks=self.get_retraining_callbacks())
-            self.save(retrained=True)
+            retraining_history = self.retrain(saved_original_weights=weights, epochs=epochs_final,
+                                              callbacks=self.get_retraining_callbacks())
+            self.save(training_history=retraining_history, retrained=True)
 
     def get_training_callbacks(self):
         model_out_path = self.stepcovnet_model.model_path
         model_name = self.stepcovnet_model.model_name
         log_path = self.training_input.training_config.hyperparameters.log_path
         patience = self.training_input.training_config.hyperparameters.patience
-        callbacks = [
-            ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback.h5'), monitor='val_pr_auc',
-                            verbose=0,
-                            save_best_only=True)]
+        # callbacks = [ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback'), monitor='val_pr_auc', verbose=0, save_best_only=True)]
+        callbacks = []
         if patience > 0:
             callbacks.append(EarlyStopping(monitor='val_pr_auc', patience=patience, verbose=0, mode="max"))
         elif patience == 0:
@@ -46,9 +45,8 @@ class TrainingExecutor(object):
 
         if log_path is not None:
             os.makedirs(os.path.join(log_path, "split_dataset"), exist_ok=True)
-            callbacks.append(
-                TensorBoard(log_dir=os.path.join(log_path, "split_dataset"), histogram_freq=1,
-                            profile_batch=100000000))
+            callbacks.append(TensorBoard(log_dir=os.path.join(log_path, "split_dataset"),
+                                         histogram_freq=1, profile_batch=100000000))
 
         return callbacks
 
@@ -58,9 +56,8 @@ class TrainingExecutor(object):
 
         if log_path is not None:
             os.makedirs(os.path.join(log_path, "whole_dataset"), exist_ok=True)
-            callbacks.append(
-                TensorBoard(log_dir=os.path.join(log_path, "whole_dataset"), histogram_freq=1,
-                            profile_batch=100000000))
+            callbacks.append(TensorBoard(log_dir=os.path.join(log_path, "whole_dataset"),
+                                         histogram_freq=1, profile_batch=100000000))
 
         return callbacks
 
@@ -71,7 +68,7 @@ class TrainingExecutor(object):
                                                   steps_per_epoch=len(self.training_input.train_feature_generator),
                                                   validation_steps=len(self.training_input.val_feature_generator),
                                                   callbacks=callbacks,
-                                                  class_weight=self.training_input.training_config.class_weights,
+                                                  # class_weight=self.training_input.training_config.class_weights,
                                                   validation_data=self.training_input.val_generator,
                                                   verbose=1)
         print("\n*****************************")
@@ -86,18 +83,23 @@ class TrainingExecutor(object):
                                                   epochs=epochs,
                                                   steps_per_epoch=len(self.training_input.all_feature_generator),
                                                   callbacks=callbacks,
-                                                  class_weight=self.training_input.training_config.class_weights,
+                                                  # class_weight=self.training_input.training_config.class_weights,
                                                   verbose=1)
         print("\n*****************************")
         print("***** RETRAINING FINISHED *****")
         print("*****************************\n")
         return history
 
-    def save(self, retrained):
+    def save(self, retrained, training_history):
         model_out_path = self.stepcovnet_model.model_path
         model_name = self.stepcovnet_model.model_name
-        model = self.stepcovnet_model.model
-        if retrained:
-            model.save(os.path.join(model_out_path, model_name + "_retrained.h5"))
-        else:
-            model.save(os.path.join(model_out_path, model_name + ".h5"))
+        model_name += model_name + '_retrained' if retrained else ""
+        print("Saving model \"%s\" at %s" % (model_name, model_out_path))
+        self.stepcovnet_model.model.save(os.path.join(model_out_path, model_name))
+        if self.stepcovnet_model.metadata is None:
+            self.stepcovnet_model.build_metadata_from_training_config(self.training_input.training_config)
+        history_name = "retraining_history" if retrained else "training_history"
+        self.stepcovnet_model.metadata[history_name] = training_history.history
+        print("Saving model metadata at %s" % model_out_path)
+        with open(os.path.join(model_out_path, 'metadata.json'), 'w') as json_file:
+            json_file.write(json.dumps(self.stepcovnet_model.metadata))
