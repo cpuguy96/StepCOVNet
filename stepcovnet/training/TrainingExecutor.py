@@ -62,6 +62,9 @@ class TrainingExecutor(object):
         return callbacks
 
     def train(self, callbacks):
+        print("Training on %d samples and validating on %d samples" % (
+            self.training_input.train_feature_generator.num_samples,
+            self.training_input.val_feature_generator.num_samples))
         print("\nStarting training...")
         history = self.stepcovnet_model.model.fit(x=self.training_input.train_generator,
                                                   epochs=self.training_input.training_config.hyperparameters.epochs,
@@ -77,6 +80,7 @@ class TrainingExecutor(object):
         return history
 
     def retrain(self, saved_original_weights, epochs, callbacks):
+        print("Training on %d samples" % self.training_input.all_feature_generator.num_samples)
         print("\nStarting retraining...")
         self.stepcovnet_model.model.set_weights(saved_original_weights)
         history = self.stepcovnet_model.model.fit(x=self.training_input.all_generator,
@@ -93,7 +97,7 @@ class TrainingExecutor(object):
     def save(self, retrained, training_history):
         model_out_path = self.stepcovnet_model.model_path
         model_name = self.stepcovnet_model.model_name
-        model_name += model_name + '_retrained' if retrained else ""
+        model_name += '_retrained' if retrained else ""
         print("Saving model \"%s\" at %s" % (model_name, model_out_path))
         self.stepcovnet_model.model.save(os.path.join(model_out_path, model_name))
         if self.stepcovnet_model.metadata is None:

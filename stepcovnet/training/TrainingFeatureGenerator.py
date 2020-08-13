@@ -31,65 +31,72 @@ class TrainingFeatureGenerator(object):
     def __call__(self):
         with self.dataset_type(self.dataset_path) as dataset:
             dataset.set_difficulty(self.difficulty)
-            self.song_index = self.train_indexes[0]
+            self.song_index = 0
             self.song_start_index = None
-            print("\nnumber of batches", len(self))
             while True:
                 features = defaultdict(lambda: np.array([]))
                 y_batch = None
                 sample_weights_batch = None
                 if self.song_index >= len(self.train_indexes):
-                    self.song_index = self.train_indexes[0]
-                song_start_index, song_end_index = dataset.song_index_ranges[self.song_index]
-                if self.song_start_index is None or self.song_start_index >= song_end_index or self.song_start_index < song_start_index or self.warmup_countdown > 0:
+                    self.song_index = 0
+                song_start_index, song_end_index = dataset.song_index_ranges[self.train_indexes[self.song_index]]
+                if self.song_start_index is None or self.song_start_index >= song_end_index or \
+                        self.song_start_index < song_start_index or self.warmup_countdown > 0:
                     self.song_start_index = song_start_index
                     self.warmup_countdown -= 1
-                    print("song ends at:", song_end_index)
                 # We only return partial batches when at the end of the training data
                 # Just to make it easy, let's allow partial batches for now
-                start_index = self.song_start_index
-                end_index = min(start_index + self.batch_size, song_end_index)
-                print(" index:", start_index, end_index)
-                arrow_features, arrow_mask = self.get_samples_ngram_with_mask(dataset.label_encoded_arrows,
-                                                                              start_index, end_index,
-                                                                              reshape=True)
-                audio_features, _ = self.get_samples_ngram_with_mask(dataset.features,
-                                                                     start_index, end_index, squeeze=False)
-                # Lookback data from ngram returns empty value in index 0. Also, arrow features should only
-                # contain previously seen features. Therefore, removing last element and last lookback from
-                # arrows features and first element from audio features.
-                if "arrow_features" in features:
-                    features["arrow_features"] = np.concatenate((features["arrow_features"],
-                                                                 arrow_features[:-1, 1:]), axis=0)
-                else:
-                    features["arrow_features"] = arrow_features[:-1, 1:]
-                if "arrow_mask" in features:
-                    features["arrow_mask"] = np.concatenate((features["arrow_mask"], arrow_mask[:-1, 1:]),
-                                                            axis=0)
-                else:
-                    features["arrow_mask"] = arrow_mask[:-1, 1:]
-                if "audio_features" in features:
-                    features["audio_features"] = np.concatenate(
-                        (features["audio_features"], audio_features[1:]),
-                        axis=0)
-                else:
-                    features["audio_features"] = audio_features[1:]
-                if y_batch is not None:
-                    y_batch = np.concatenate((y_batch, dataset.binary_encoded_arrows[start_index: end_index]),
-                                             axis=0)
-                else:
-                    y_batch = dataset.binary_encoded_arrows[start_index: end_index]
-                if sample_weights_batch is not None:
-                    sample_weights_batch = np.concatenate((sample_weights_batch,
-                                                           dataset.sample_weights[start_index: end_index]),
-                                                          axis=0)
-                else:
-                    sample_weights_batch = dataset.sample_weights[start_index: end_index]
+                while y_batch is None or self.song_index < len(self.train_indexes):
+                    start_index = self.song_start_index
+                    y_batch_len = 0 if y_batch is None else len(y_batch)
+                    end_index = min(start_index + self.batch_size - y_batch_len, song_end_index)
+                    arrow_features, arrow_mask = self.get_samples_ngram_with_mask(dataset.label_encoded_arrows,
+                                                                                  start_index, end_index,
+                                                                                  reshape=True)
+                    audio_features, _ = self.get_samples_ngram_with_mask(dataset.features,
+                                                                         start_index, end_index, squeeze=False)
+                    # Lookback data from ngram returns empty value in index 0. Also, arrow features should only
+                    # contain previously seen features. Therefore, removing last element and last lookback from
+                    # arrows features and first element from audio features.
+                    if "arrow_features" in features:
+                        features["arrow_features"] = np.concatenate((features["arrow_features"],
+                                                                     arrow_features[:-1, 1:]), axis=0)
+                    else:
+                        features["arrow_features"] = arrow_features[:-1, 1:]
+                    if "arrow_mask" in features:
+                        features["arrow_mask"] = np.concatenate((features["arrow_mask"], arrow_mask[:-1, 1:]),
+                                                                axis=0)
+                    else:
+                        features["arrow_mask"] = arrow_mask[:-1, 1:]
+                    if "audio_features" in features:
+                        features["audio_features"] = np.concatenate(
+                            (features["audio_features"], audio_features[1:]),
+                            axis=0)
+                    else:
+                        features["audio_features"] = audio_features[1:]
+                    if y_batch is not None:
+                        y_batch = np.concatenate((y_batch, dataset.binary_encoded_arrows[start_index: end_index]),
+                                                 axis=0)
+                    else:
+                        y_batch = dataset.binary_encoded_arrows[start_index: end_index]
+                    if sample_weights_batch is not None:
+                        sample_weights_batch = np.concatenate((sample_weights_batch,
+                                                               dataset.sample_weights[start_index: end_index]),
+                                                              axis=0)
+                    else:
+                        sample_weights_batch = dataset.sample_weights[start_index: end_index]
 
-                self.song_start_index = end_index
+                    self.song_start_index = end_index
+                    if len(y_batch) >= self.batch_size or self.song_index + 1 >= len(self.train_indexes):
+                        break
+                    else:
+                        self.song_index += 1
+                        song_start_index, song_end_index = dataset.song_index_ranges[
+                            self.train_indexes[self.song_index]]
+                        self.song_start_index = song_start_index
+
                 if self.song_start_index >= song_end_index:
                     self.song_index += 1
-                    print("next song:", self.song_index)
 
                 if y_batch is not None:
                     scaled_audio_features = apply_timeseries_scalers(features=features["audio_features"],
