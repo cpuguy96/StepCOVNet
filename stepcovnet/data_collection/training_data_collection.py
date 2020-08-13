@@ -26,13 +26,13 @@ def build_all_metadata(**kwargs):
 
 def update_all_metadata(all_metadata, metadata):
     for key, value in metadata.items():
-        if isinstance(value, list):
-            if key not in all_metadata:
-                all_metadata[key] = [value]
-            else:
-                all_metadata[key].append(value)
-        else:
+        if key not in all_metadata or not isinstance(value, list):
             all_metadata[key] = value
+        elif isinstance(value, list):
+            all_metadata[key] += value
+        else:
+            all_metadata[key].append(value)
+
     return all_metadata
 
 
@@ -84,7 +84,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
                 # not using joblib parallel since we are already using multiprocessing
                 print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
                 scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
-                all_metadata = update_all_metadata(all_metadata, {"file_name": file_name})
+                all_metadata = update_all_metadata(all_metadata, {"file_name": [file_name]})
                 # Save scalers after every 10 runs
                 if i % 10 == 0:
                     print("Saving scalers")
