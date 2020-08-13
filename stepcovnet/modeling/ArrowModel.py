@@ -6,7 +6,7 @@ from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import LSTM
 
 from stepcovnet.modeling.AbstractModel import AbstractModel
-from stepcovnet.modeling.DefaultModels import DefaultModels
+from stepcovnet.modeling.PretrainedModels import PretrainedModels
 
 
 class ArrowModel(AbstractModel):
@@ -16,7 +16,7 @@ class ArrowModel(AbstractModel):
         model_input = [arrow_input, arrow_mask]
 
         if architecture is None:
-            gp2_model = DefaultModels.gpt2_model()
+            gp2_model = PretrainedModels.gpt2_model()
             model_output = gp2_model(arrow_input, attention_mask=arrow_mask)[0]
             # GPT-2 model returns feature maps for avg/max pooling. Using LSTM for additional feature extraction.
             # Might be able to replace this with another method in the future

@@ -27,13 +27,14 @@ class ClassifierModel(AbstractModel):
             # TODO: Add support for existing classifier models
             raise NotImplementedError("No support yet for existing architectures")
 
-        model = Dense(16, bias_initializer=Constant(value=training_config.init_bias_correction),
+        num_arrow_types = training_config.dataset_config["NUM_ARROW_TYPES"]
+        model = Dense(4 * num_arrow_types,
+                      bias_initializer=Constant(value=training_config.init_bias_correction),
                       kernel_initializer=glorot_uniform(42),
                       dtype=tf.float32
                       )(model)
-        num_arrow_types = training_config.dataset_config["NUM_ARROW_TYPES"]
         arrow_softmax = [tf.nn.softmax(model[:, i * num_arrow_types:(i + 1) * num_arrow_types])
-                         for i in range(training_config.dataset_config["NUM_ARROW_TYPES"])]
+                         for i in range(num_arrow_types)]
 
         model_output = concatenate(arrow_softmax)
 

@@ -10,7 +10,7 @@ from tensorflow.keras.layers import LSTM
 from tensorflow.keras.layers import TimeDistributed
 
 from stepcovnet.modeling.AbstractModel import AbstractModel
-from stepcovnet.modeling.DefaultModels import DefaultModels
+from stepcovnet.modeling.PretrainedModels import PretrainedModels
 
 
 class AudioModel(AbstractModel):
@@ -29,8 +29,8 @@ class AudioModel(AbstractModel):
             else:
                 vggish_input = model_input
             vggish_input = BatchNormalization()(vggish_input)
-            vggish_model = DefaultModels.vggish_model(input_shape=training_config.audio_input_shape,
-                                                      input_tensor=vggish_input, lookback=training_config.lookback)
+            vggish_model = PretrainedModels.vggish_model(input_shape=training_config.audio_input_shape,
+                                                         input_tensor=vggish_input, lookback=training_config.lookback)
             model_output = vggish_model(vggish_input)
             # VGGish model returns feature maps for avg/max pooling. Using LSTM for additional feature extraction.
             # Might be able to replace this with another method in the future

@@ -11,7 +11,7 @@ from transformers import TFGPT2Model
 VGGISH_WEIGHTS_PATH = "../pretrained_models/vggish_audioset_weights.h5"
 
 
-class DefaultModels(object):
+class PretrainedModels(object):
     @staticmethod
     def gpt2_model(freeze=True, configuration=None):
         if configuration is None:
