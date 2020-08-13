@@ -62,7 +62,8 @@ def feature_reshape_down(features, order='C'):
     if len(features.shape) != 4:
         raise ValueError('Number of dims for features is %d (should be 4)')
 
-    return features.reshape(features.shape[0], features.shape[1] * features.shape[2], features.shape[3], order=order)
+    return features.reshape((features.shape[0], features.shape[1] * features.shape[2], features.shape[3]),
+                            order=order)
 
 
 def feature_reshape_up(feature, num_freq_bands, num_time_bands, num_channels, order='F'):
@@ -171,10 +172,24 @@ def get_scalers(features, multi):
         return np.array(get_features_mean_std(np.transpose(features, (0, 2, 1))))
 
 
+def apply_timeseries_scalers(features, scalers):
+    if scalers is None:
+        return features
+    if len(features.shape) not in {4, 5}:
+        raise ValueError('Features dimensions must be 4 or 5 (received dimension %d)' % len(features.shape))
+    if len(features.shape) == 4:
+        for time_slice in range(features.shape[0]):
+            features[time_slice] = apply_scalers(features=features[time_slice], scalers=scalers)
+    else:
+        for time_slice in range(features.shape[1]):
+            features[:, time_slice] = apply_scalers(features=features[:, time_slice], scalers=scalers)
+    return features
+
+
 def apply_scalers(features, scalers):
     if scalers is None:
         return features
-    if features.shape not in {3, 4}:
+    if len(features.shape) not in {3, 4}:
         raise ValueError('Features dimensions must be 3 or 4 (received dimension %d)' % len(features.shape))
     original_features_shape = features.shape
     if len(features.shape) == 4:
@@ -188,8 +203,9 @@ def apply_scalers(features, scalers):
         features[:, :, i] = scaler.transform(features[:, :, i])
 
     if len(original_features_shape) == 4:
-        return feature_reshape_up(features, original_features_shape[1], original_features_shape[2],
-                                  original_features_shape[3], order='C')
+        return feature_reshape_up(features, num_time_bands=original_features_shape[1],
+                                  num_freq_bands=original_features_shape[2], num_channels=original_features_shape[3],
+                                  order='C')
     return features
 
 
