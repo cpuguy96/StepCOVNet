@@ -16,7 +16,7 @@ class ClassifierModel(AbstractModel):
 
         feature_concat = concatenate([arrow_model.output, audio_model.output])
         if architecture is None:
-            model = Dense(128,
+            model = Dense(256,
                           kernel_initializer=tf.keras.initializers.he_uniform(42),
                           bias_initializer=tf.keras.initializers.Constant(value=0.1)
                           )(feature_concat)
