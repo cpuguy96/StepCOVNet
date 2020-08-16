@@ -12,9 +12,9 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler
 
-from stepcovnet.common.parameters import NUM_FREQ_BANDS
-from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
-from stepcovnet.common.parameters import NUM_TIME_BANDS
+from stepcovnet.common.constants import NUM_FREQ_BANDS
+from stepcovnet.common.constants import NUM_MULTI_CHANNELS
+from stepcovnet.common.constants import NUM_TIME_BANDS
 
 
 def timed_function(func):
@@ -255,3 +255,18 @@ def get_ngram(data, lookback, padding_value=0):
     padding = np.full((lookback,) + data.shape[1:], fill_value=padding_value)
     data_w_padding = np.append(padding, data, axis=0)
     return np.asarray(list(ngrams(data_w_padding, lookback)))
+
+
+def get_samples_ngram_with_mask(samples, lookback, squeeze=True, reshape=False):
+    if reshape:
+        ngram_samples = get_ngram(samples.reshape(-1, 1), lookback)
+    else:
+        ngram_samples = get_ngram(samples, lookback)
+    mask = np.zeros((samples.shape[0], 1), dtype=int)
+    ngram_mask = get_ngram(mask, lookback, padding_value=1)
+
+    if squeeze:
+        ngram_samples = np.squeeze(ngram_samples)
+    ngram_mask = np.squeeze(ngram_mask)
+
+    return ngram_samples, ngram_mask

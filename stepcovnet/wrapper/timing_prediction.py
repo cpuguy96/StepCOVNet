@@ -10,9 +10,9 @@ import psutil
 from madmom.features.onsets import OnsetPeakPickingProcessor
 
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
-from stepcovnet.common.parameters import HOPSIZE_T
-from stepcovnet.common.parameters import SAMPLE_RATE
-from stepcovnet.common.parameters import THRESHOLDS
+from stepcovnet.common.constants import HOPSIZE_T
+from stepcovnet.common.constants import SAMPLE_RATE
+from stepcovnet.common.constants import THRESHOLDS
 from stepcovnet.common.utils import feature_reshape_up
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder

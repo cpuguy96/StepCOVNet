@@ -1,6 +1,8 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 
+from stepcovnet.common.constants import NUM_ARROWS
+from stepcovnet.common.constants import NUM_ARROW_TYPES
 from stepcovnet.common.utils import get_channel_scalers
 
 
@@ -103,4 +105,4 @@ class TrainingConfig(object):
 
     @property
     def label_shape(self):
-        return (4 * self.dataset_config["NUM_ARROW_TYPES"],)
+        return (NUM_ARROWS * NUM_ARROW_TYPES,)

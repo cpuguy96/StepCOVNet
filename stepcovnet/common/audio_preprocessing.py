@@ -12,9 +12,9 @@ from madmom.processors import ParallelProcessor
 from madmom.processors import SequentialProcessor
 
 from stepcovnet.common.Fprev_sub import Fprev_sub
-from stepcovnet.common.parameters import MULTI_CHANNEL_FRAME_SIZES
-from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
-from stepcovnet.common.parameters import SINGLE_CHANNEL_FRAME_SIZE
+from stepcovnet.common.constants import MULTI_CHANNEL_FRAME_SIZES
+from stepcovnet.common.constants import NUM_MULTI_CHANNELS
+from stepcovnet.common.constants import SINGLE_CHANNEL_FRAME_SIZE
 
 
 def get_feature_processors(sample_rate, hopsize_t, frame_size, config):

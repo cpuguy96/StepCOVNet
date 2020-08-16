@@ -5,7 +5,7 @@ myPath = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(myPath + '/../../'))
 
 from stepcovnet.common.utils import *
-from stepcovnet.common.parameters import NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS
+from stepcovnet.common.constants import NUM_FREQ_BANDS, NUM_TIME_BANDS, NUM_MULTI_CHANNELS
 
 TEST_DATA_PATH = os.path.relpath("tests/data/")
 TEST_FILE = "scaler.pkl"

@@ -1,12 +1,12 @@
 import os
 
 from stepcovnet.common.audio_preprocessing import *
-from stepcovnet.common.parameters import CONFIG
-from stepcovnet.common.parameters import HOPSIZE_T
-from stepcovnet.common.parameters import NUM_FREQ_BANDS
-from stepcovnet.common.parameters import NUM_MULTI_CHANNELS
-from stepcovnet.common.parameters import NUM_TIME_BANDS
-from stepcovnet.common.parameters import SAMPLE_RATE
+from stepcovnet.common.constants import CONFIG
+from stepcovnet.common.constants import HOPSIZE_T
+from stepcovnet.common.constants import NUM_FREQ_BANDS
+from stepcovnet.common.constants import NUM_MULTI_CHANNELS
+from stepcovnet.common.constants import NUM_TIME_BANDS
+from stepcovnet.common.constants import SAMPLE_RATE
 
 TEST_DATA_PATH = os.path.relpath("tests/data/")
 TEST_FILE = "tide.wav"
