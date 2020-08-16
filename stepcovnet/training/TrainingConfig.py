@@ -18,19 +18,19 @@ class TrainingConfig(object):
         self.lookback = lookback
         self.difficulty = difficulty
 
-        # Song level indexes
+        # Combine some of these to reduce the number of loops and save I/O reads
         self.all_indexes, self.train_indexes, self.val_indexes = self.get_train_val_split()
         self.num_samples = self.get_num_samples(self.all_indexes)
         self.num_train_samples = self.get_num_samples(self.train_indexes)
         self.num_val_samples = self.get_num_samples(self.val_indexes)
-        self.class_weights = self.get_class_weights()
+        self.train_class_weights = self.get_class_weights(self.train_indexes)
+        self.all_class_weights = self.get_class_weights(self.all_indexes)
         self.init_bias_correction = self.get_init_bias_correction()
         self.train_scalers = self.get_train_scalers()
 
     def get_train_val_split(self):
         all_indexes = []
-        with self.dataset_type(self.dataset_path) as dataset:
-            dataset.set_difficulty(self.difficulty)
+        with self.enter_dataset as dataset:
             total_samples = 0
             index = 0
             for song_start_index, song_end_index in dataset.song_index_ranges:
@@ -49,12 +49,26 @@ class TrainingConfig(object):
                              random_state=42)
         return all_indexes, train_indexes, val_indexes
 
-    def get_class_weights(self):
-        # TODO: Implement later
-        # Should be something like this
-        #         class_weights = {0: (dataset.num_valid_samples / dataset.neg_samples) / 2.0,
-        #                          1: (dataset.num_valid_samples / dataset.pos_samples) / 2.0}
-        return None
+    def get_class_weights(self, indexes):
+        num_all = 0
+        num_pos = 0
+        with self.enter_dataset as dataset:
+            for index in indexes:
+                song_start_index, song_end_index = dataset.song_index_ranges[index]
+                num_pos += dataset.labels[song_start_index:song_end_index].sum()
+                num_all += len(dataset.labels[song_start_index:song_end_index])
+        num_neg = num_all - num_pos
+        # Setting all labels except 0 and 1 to 0 until this bug is fixed:
+        # https://github.com/tensorflow/tensorflow/issues/40070
+        class_weights = dict(
+            zip(list(range(NUM_ARROWS * NUM_ARROW_TYPES)), list(0 for _ in range(NUM_ARROWS * NUM_ARROW_TYPES))))
+
+        # Currently looking for samples that all arrows aren't only all 0's.
+        # Might change this in the future to balance by arrow position/type
+        class_weights[0] = (num_all / num_neg) / 2.0
+        class_weights[1] = (num_all / num_pos) / 2.0
+
+        return class_weights
 
     def get_init_bias_correction(self):
         # Best practices mentioned in
@@ -62,8 +76,7 @@ class TrainingConfig(object):
         # Not completely correct but works for now
         num_all = self.num_train_samples
         num_pos = 0
-        with self.dataset_type(self.dataset_path) as dataset:
-            dataset.set_difficulty(self.difficulty)
+        with self.enter_dataset as dataset:
             for index in self.train_indexes:
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
                 num_pos += dataset.labels[song_start_index:song_end_index].sum()
@@ -72,8 +85,7 @@ class TrainingConfig(object):
 
     def get_train_scalers(self):
         training_scalers = None
-        with self.dataset_type(self.dataset_path) as dataset:
-            dataset.set_difficulty(self.difficulty)
+        with self.enter_dataset as dataset:
             for index in self.train_indexes:
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
                 features = dataset.features[range(song_start_index, song_end_index)]
@@ -82,8 +94,7 @@ class TrainingConfig(object):
 
     def get_num_samples(self, indexes):
         num_all = 0
-        with self.dataset_type(self.dataset_path) as dataset:
-            dataset.set_difficulty(self.difficulty)
+        with self.enter_dataset as dataset:
             for index in indexes:
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
                 num_all += song_end_index - song_start_index
@@ -106,3 +117,7 @@ class TrainingConfig(object):
     @property
     def label_shape(self):
         return (NUM_ARROWS * NUM_ARROW_TYPES,)
+
+    @property
+    def enter_dataset(self):
+        return self.dataset_type(self.dataset_path, difficulty=self.difficulty).__enter__()

@@ -6,7 +6,7 @@ import numpy as np
 
 
 class ModelDataset(object):
-    def __init__(self, dataset_name, overwrite=False, mode='a'):
+    def __init__(self, dataset_name, overwrite=False, mode='a', difficulty="challenge"):
         self.dataset_name = dataset_name
         self.dataset_path = self.append_file_type(self.dataset_name)
         self.overwrite = overwrite
@@ -26,7 +26,7 @@ class ModelDataset(object):
         self.dataset_attr = {"labels": {"num_valid_samples", "pos_samples", "neg_samples"},
                              "features": {"num_samples"}}
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
-        self.difficulty = "challenge"
+        self.difficulty = difficulty
         self.h5py_file = None
 
     def __getitem__(self, item):
@@ -42,6 +42,7 @@ class ModelDataset(object):
 
     def __enter__(self):
         self.h5py_file = h5py.File(self.dataset_path, self.mode)
+        self.set_difficulty(difficulty=self.difficulty)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

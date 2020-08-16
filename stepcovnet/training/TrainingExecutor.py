@@ -75,7 +75,7 @@ class TrainingExecutor(object):
                                                   steps_per_epoch=len(self.training_input.train_feature_generator),
                                                   validation_steps=len(self.training_input.val_feature_generator),
                                                   callbacks=callbacks,
-                                                  # class_weight=self.training_input.training_config.class_weights,
+                                                  class_weight=self.training_input.training_config.train_class_weights,
                                                   validation_data=self.training_input.val_generator,
                                                   verbose=1)
         print("\n*****************************")
@@ -92,7 +92,7 @@ class TrainingExecutor(object):
                                                   epochs=epochs,
                                                   steps_per_epoch=len(self.training_input.all_feature_generator),
                                                   callbacks=callbacks,
-                                                  # class_weight=self.training_input.training_config.class_weights,
+                                                  class_weight=self.training_input.training_config.all_class_weights,
                                                   verbose=1)
         print("\n*****************************")
         print("***** RETRAINING FINISHED *****")
