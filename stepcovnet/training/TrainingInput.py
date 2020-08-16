@@ -36,7 +36,8 @@ class TrainingInput(object):
                                                               indexes=self.training_config.val_indexes,
                                                               num_samples=self.training_config.num_val_samples,
                                                               scalers=self.training_config.train_scalers,
-                                                              difficulty=self.training_config.difficulty)
+                                                              difficulty=self.training_config.difficulty,
+                                                              shuffle=False)
         self.all_feature_generator = TrainingFeatureGenerator(dataset_path=self.training_config.dataset_path,
                                                               dataset_type=self.training_config.dataset_type,
                                                               lookback=self.training_config.lookback,

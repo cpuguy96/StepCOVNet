@@ -3,6 +3,7 @@ import os
 
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.python.keras.callbacks import ModelCheckpoint
 
 from stepcovnet.common.tf_config import tf_init
 
@@ -36,8 +37,9 @@ class TrainingExecutor(object):
         model_name = self.stepcovnet_model.model_name
         log_path = self.training_input.training_config.hyperparameters.log_path
         patience = self.training_input.training_config.hyperparameters.patience
-        # callbacks = [ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback'), monitor='val_pr_auc', verbose=0, save_best_only=True)]
-        callbacks = []
+        callbacks = [
+            ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback'), monitor='val_loss',
+                            verbose=0, save_best_only=True)]
         if patience > 0:
             callbacks.append(EarlyStopping(monitor='val_pr_auc', patience=patience, verbose=0, mode="max"))
         elif patience == 0:
@@ -62,9 +64,11 @@ class TrainingExecutor(object):
         return callbacks
 
     def train(self, callbacks):
-        print("Training on %d samples and validating on %d samples" % (
+        print("Training on %d samples (%d songs) and validating on %d samples (%d songs)" % (
             self.training_input.train_feature_generator.num_samples,
-            self.training_input.val_feature_generator.num_samples))
+            len(self.training_input.train_feature_generator.train_indexes),
+            self.training_input.val_feature_generator.num_samples,
+            len(self.training_input.val_feature_generator.train_indexes)))
         print("\nStarting training...")
         history = self.stepcovnet_model.model.fit(x=self.training_input.train_generator,
                                                   epochs=self.training_input.training_config.hyperparameters.epochs,
@@ -80,7 +84,8 @@ class TrainingExecutor(object):
         return history
 
     def retrain(self, saved_original_weights, epochs, callbacks):
-        print("Training on %d samples" % self.training_input.all_feature_generator.num_samples)
+        print("Training on %d samples (%d songs)" % (self.training_input.all_feature_generator.num_samples,
+                                                     len(self.training_input.all_feature_generator.train_indexes)))
         print("\nStarting retraining...")
         self.stepcovnet_model.model.set_weights(saved_original_weights)
         history = self.stepcovnet_model.model.fit(x=self.training_input.all_generator,
