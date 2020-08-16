@@ -194,7 +194,7 @@ def apply_scalers(features, scalers):
     original_features_shape = features.shape
     if len(features.shape) == 4:
         features = feature_reshape_down(features=features)
-    if type(scalers) is not list:
+    if not isinstance(scalers, list):
         scalers = [scalers]
     if len(scalers) != features.shape[-1]:
         raise ValueError('Number of scalers (%d) does not equal number of feature channels (%d)' % (

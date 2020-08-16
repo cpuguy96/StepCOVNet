@@ -40,7 +40,7 @@ def run_process(input_path, output_path, sample_frequency, verbose):
             pool.map_async(func, file_names).get()
 
 
-def wav_converter(input_path, output_path, sample_frequency, verbose_int=0):
+def wav_converter(input_path, output_path, sample_frequency=16000, verbose_int=0):
     start_time = time.time()
     if verbose_int not in [0, 1]:
         raise ValueError('%s is not a valid verbose input. Choose 0 for none or 1 for full' % verbose_int)
@@ -75,7 +75,7 @@ if __name__ == '__main__':
                         help="Output wavs path")
     parser.add_argument("-sf", "--sample_frequency",
                         type=int,
-                        default=44100,
+                        default=16000,
                         help="Sampling frequency to create wavs")
     parser.add_argument("-v", "--verbose",
                         type=int,
