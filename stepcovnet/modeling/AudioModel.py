@@ -4,7 +4,6 @@ from tensorflow.keras.initializers import he_uniform
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.layers import Bidirectional
 from tensorflow.keras.layers import Conv2D
-from tensorflow.keras.layers import GlobalAveragePooling1D
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import LSTM
 from tensorflow.keras.layers import TimeDistributed
@@ -34,9 +33,8 @@ class AudioModel(AbstractModel):
             model_output = vggish_model(vggish_input)
             # VGGish model returns feature maps for avg/max pooling. Using LSTM for additional feature extraction.
             # Might be able to replace this with another method in the future
-            model_output = Bidirectional(LSTM(128, return_sequences=True, kernel_initializer=glorot_uniform(42))
+            model_output = Bidirectional(LSTM(128, return_sequences=False, kernel_initializer=glorot_uniform(42))
                                          )(model_output)
-            model_output = GlobalAveragePooling1D()(model_output)
         else:
             # TODO: Add support for existing audio models
             raise NotImplementedError("No support yet for existing architectures")

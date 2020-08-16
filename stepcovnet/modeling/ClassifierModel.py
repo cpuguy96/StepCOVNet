@@ -7,6 +7,7 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import concatenate
 
+from stepcovnet.common.constants import ARROW_NAMES
 from stepcovnet.modeling.AbstractModel import AbstractModel
 
 
@@ -27,15 +28,10 @@ class ClassifierModel(AbstractModel):
             # TODO: Add support for existing classifier models
             raise NotImplementedError("No support yet for existing architectures")
 
-        num_arrow_types = training_config.dataset_config["NUM_ARROW_TYPES"]
-        model = Dense(4 * num_arrow_types,
-                      bias_initializer=Constant(value=training_config.init_bias_correction),
-                      kernel_initializer=glorot_uniform(42),
-                      dtype=tf.float32
-                      )(model)
-        arrow_softmax = [tf.nn.softmax(model[:, i * num_arrow_types:(i + 1) * num_arrow_types])
-                         for i in range(num_arrow_types)]
-
-        model_output = concatenate(arrow_softmax)
+        model_output = [Dense(training_config.dataset_config["NUM_ARROW_TYPES"], activation="softmax",
+                              bias_initializer=Constant(value=training_config.init_bias_correction),
+                              kernel_initializer=glorot_uniform(42), dtype=tf.float32, name=arrow_name)(model)
+                        for i, arrow_name in enumerate(ARROW_NAMES)]
+        model_output = concatenate(model_output)
 
         super(ClassifierModel, self).__init__(model_input=model_input, model_output=model_output, name=name)
