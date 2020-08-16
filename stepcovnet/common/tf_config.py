@@ -5,11 +5,12 @@ from __future__ import unicode_literals
 
 import tensorflow as tf
 
-gpu = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(gpu[0], True)
+tf.config.experimental.set_memory_growth(tf.config.experimental.list_physical_devices('GPU')[0], True)
 
-# policy = tf.keras.mixed_precision.experimental.Policy('mixed_float16')
-# tf.keras.mixed_precision.experimental.set_policy(policy)
+MIXED_PRECISION_POLICY = tf.keras.mixed_precision.experimental.Policy('mixed_float16')
+# Disabling global mixed precision since there is a bug in huggingface when using mixed precision in Tensorflow
+# Re-enabling once the issue has been resolved: https://github.com/huggingface/transformers/issues/3320
+# tf.keras.mixed_precision.experimental.set_policy(MIXED_PRECISION_POLICY)
 
 # tf.config.optimizer.set_jit(True)
 

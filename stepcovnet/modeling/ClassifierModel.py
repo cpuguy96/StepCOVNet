@@ -8,6 +8,7 @@ from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import concatenate
 
 from stepcovnet.common.constants import ARROW_NAMES
+from stepcovnet.common.tf_config import MIXED_PRECISION_POLICY
 from stepcovnet.modeling.AbstractModel import AbstractModel
 
 
@@ -19,7 +20,8 @@ class ClassifierModel(AbstractModel):
         if architecture is None:
             model = Dense(256,
                           kernel_initializer=tf.keras.initializers.he_uniform(42),
-                          bias_initializer=tf.keras.initializers.Constant(value=0.1)
+                          bias_initializer=tf.keras.initializers.Constant(value=0.1),
+                          dtype=MIXED_PRECISION_POLICY
                           )(feature_concat)
             model = BatchNormalization()(model)
             model = Activation('relu')(model)
