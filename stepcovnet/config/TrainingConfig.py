@@ -4,9 +4,10 @@ from sklearn.model_selection import train_test_split
 from stepcovnet.common.constants import NUM_ARROWS
 from stepcovnet.common.constants import NUM_ARROW_TYPES
 from stepcovnet.common.utils import get_channel_scalers
+from stepcovnet.config.AbstractConfig import AbstractConfig
 
 
-class TrainingConfig(object):
+class TrainingConfig(AbstractConfig):
     def __init__(self, dataset_path, dataset_type, dataset_config, hyperparameters, all_scalers=None, limit=-1,
                  lookback=1, difficulty="challenge"):
         self.dataset_path = dataset_path
@@ -27,6 +28,7 @@ class TrainingConfig(object):
         self.all_class_weights = self.get_class_weights(self.all_indexes)
         self.init_bias_correction = self.get_init_bias_correction()
         self.train_scalers = self.get_train_scalers()
+        super(TrainingConfig, self).__init__()
 
     def get_train_val_split(self):
         all_indexes = []

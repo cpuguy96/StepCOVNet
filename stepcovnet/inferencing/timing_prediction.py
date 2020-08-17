@@ -140,7 +140,7 @@ def run_process(input_path,
         write_predictions(output_path, (timing, features_and_wav_name[1]))
     else:
         wav_names = get_filenames_from_folder(input_path)
-        func = partial(generate_features, input_path, multi, model_type, scaler, verbose)
+        func = partial(generate_features, input_path, multi, scaler, verbose)
         with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
             features_and_wav_names = pool.map_async(func, wav_names).get()
         features, used_wav_names = [], []
@@ -195,9 +195,9 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--output",
                         type=str,
                         help="Output txts path")
-    parser.add_argument("--model",
+    parser.add_argument("--stepcovnet_model",
                         type=str,
-                        help="Input trained model path")
+                        help="Input trained stepcovnet_model path")
     parser.add_argument("--scaler",
                         type=str,
                         help="Input scalers path")

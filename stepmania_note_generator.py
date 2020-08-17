@@ -2,10 +2,16 @@ import os
 import time
 import warnings
 from os.path import join
-from shutil import copyfile, rmtree
+from shutil import copyfile
+from shutil import rmtree
 
-from stepcovnet.common.utils import get_filenames_from_folder, get_filename, standardize_filename
-from stepcovnet.wrapper import wav_converter, timing_prediction, arrow_prediction, timing_arrow_combiner
+from stepcovnet.common.utils import get_filename
+from stepcovnet.common.utils import get_filenames_from_folder
+from stepcovnet.common.utils import standardize_filename
+from stepcovnet.inferencing.arrow_prediction import arrow_prediction
+from stepcovnet.inferencing.timing_arrow_combiner import timing_arrow_combiner
+from stepcovnet.inferencing.timing_prediction import timing_prediction
+from stepcovnet.wrapper import wav_converter
 
 warnings.filterwarnings("ignore")
 

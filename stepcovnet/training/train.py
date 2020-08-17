@@ -3,15 +3,15 @@ import json
 import os
 import pickle
 
+from stepcovnet.config.TrainingConfig import TrainingConfig
 from stepcovnet.dataset.ModelDatasetTypes import ModelDatasetTypes
+from stepcovnet.executor.TrainingExecutor import TrainingExecutor
+from stepcovnet.model_input.TrainingInput import TrainingInput
 from stepcovnet.modeling.ArrowModel import ArrowModel
 from stepcovnet.modeling.AudioModel import AudioModel
 from stepcovnet.modeling.ClassifierModel import ClassifierModel
 from stepcovnet.modeling.StepCOVNetModel import StepCOVNetModel
-from stepcovnet.training.TrainingConfig import TrainingConfig
-from stepcovnet.training.TrainingExecutor import TrainingExecutor
 from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
-from stepcovnet.training.TrainingInput import TrainingInput
 
 
 def load_training_data(input_path):
@@ -33,9 +33,9 @@ def run_training(input_path, output_path, model_name, limit, lookback, difficult
                                      all_scalers=scalers, limit=limit, lookback=lookback, difficulty=difficulty)
     training_input = TrainingInput(training_config)
 
-    arrow_model = ArrowModel(training_input.training_config)
-    audio_model = AudioModel(training_input.training_config)
-    model = ClassifierModel(training_input.training_config, arrow_model, audio_model)
+    arrow_model = ArrowModel(training_input.config)
+    audio_model = AudioModel(training_input.config)
+    model = ClassifierModel(training_input.config, arrow_model, audio_model)
     stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=model.model)
 
     TrainingExecutor(training_input=training_input, stepcovnet_model=stepcovnet_model).execute()

@@ -5,21 +5,20 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 
-from stepcovnet.common.tf_config import tf_init
+from stepcovnet.executor.AbstractExecutor import AbstractExecutor
+from stepcovnet.model_input.TrainingInput import TrainingInput
 
 
-class TrainingExecutor(object):
-    def __init__(self, training_input, stepcovnet_model):
-        self.training_input = training_input
-        self.stepcovnet_model = stepcovnet_model
-        tf_init()
+class TrainingExecutor(AbstractExecutor):
+    def __init__(self, training_input: TrainingInput, stepcovnet_model):
+        super(TrainingExecutor, self).__init__(input_data=training_input, stepcovnet_model=stepcovnet_model)
 
     def execute(self):
-        retrain = self.training_input.training_config.hyperparameters.retrain
+        retrain = self.input_data.config.hyperparameters.retrain
         weights = self.stepcovnet_model.model.get_weights() if retrain else None
-        loss = self.training_input.training_config.hyperparameters.loss
-        metrics = self.training_input.training_config.hyperparameters.metrics
-        optimizer = self.training_input.training_config.hyperparameters.optimizer
+        loss = self.input_data.config.hyperparameters.loss
+        metrics = self.input_data.config.hyperparameters.metrics
+        optimizer = self.input_data.config.hyperparameters.optimizer
 
         self.stepcovnet_model.model.compile(loss=loss, metrics=metrics, optimizer=optimizer)
         self.stepcovnet_model.model.summary()
@@ -35,8 +34,8 @@ class TrainingExecutor(object):
     def get_training_callbacks(self):
         model_out_path = self.stepcovnet_model.model_path
         model_name = self.stepcovnet_model.model_name
-        log_path = self.training_input.training_config.hyperparameters.log_path
-        patience = self.training_input.training_config.hyperparameters.patience
+        log_path = self.input_data.config.hyperparameters.log_path
+        patience = self.input_data.config.hyperparameters.patience
         callbacks = [
             ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback'), monitor='val_loss',
                             verbose=0, save_best_only=True)]
@@ -53,7 +52,7 @@ class TrainingExecutor(object):
         return callbacks
 
     def get_retraining_callbacks(self):
-        log_path = self.training_input.training_config.hyperparameters.log_path
+        log_path = self.input_data.config.hyperparameters.log_path
         callbacks = []
 
         if log_path is not None:
@@ -65,18 +64,18 @@ class TrainingExecutor(object):
 
     def train(self, callbacks):
         print("Training on %d samples (%d songs) and validating on %d samples (%d songs)" % (
-            self.training_input.train_feature_generator.num_samples,
-            len(self.training_input.train_feature_generator.train_indexes),
-            self.training_input.val_feature_generator.num_samples,
-            len(self.training_input.val_feature_generator.train_indexes)))
+            self.input_data.train_feature_generator.num_samples,
+            len(self.input_data.train_feature_generator.train_indexes),
+            self.input_data.val_feature_generator.num_samples,
+            len(self.input_data.val_feature_generator.train_indexes)))
         print("\nStarting training...")
-        history = self.stepcovnet_model.model.fit(x=self.training_input.train_generator,
-                                                  epochs=self.training_input.training_config.hyperparameters.epochs,
-                                                  steps_per_epoch=len(self.training_input.train_feature_generator),
-                                                  validation_steps=len(self.training_input.val_feature_generator),
+        history = self.stepcovnet_model.model.fit(x=self.input_data.train_generator,
+                                                  epochs=self.input_data.config.hyperparameters.epochs,
+                                                  steps_per_epoch=len(self.input_data.train_feature_generator),
+                                                  validation_steps=len(self.input_data.val_feature_generator),
                                                   callbacks=callbacks,
-                                                  class_weight=self.training_input.training_config.train_class_weights,
-                                                  validation_data=self.training_input.val_generator,
+                                                  class_weight=self.input_data.config.train_class_weights,
+                                                  validation_data=self.input_data.val_generator,
                                                   verbose=1)
         print("\n*****************************")
         print("***** TRAINING FINISHED *****")
@@ -84,15 +83,15 @@ class TrainingExecutor(object):
         return history
 
     def retrain(self, saved_original_weights, epochs, callbacks):
-        print("Training on %d samples (%d songs)" % (self.training_input.all_feature_generator.num_samples,
-                                                     len(self.training_input.all_feature_generator.train_indexes)))
+        print("Training on %d samples (%d songs)" % (self.input_data.all_feature_generator.num_samples,
+                                                     len(self.input_data.all_feature_generator.train_indexes)))
         print("\nStarting retraining...")
         self.stepcovnet_model.model.set_weights(saved_original_weights)
-        history = self.stepcovnet_model.model.fit(x=self.training_input.all_generator,
+        history = self.stepcovnet_model.model.fit(x=self.input_data.all_generator,
                                                   epochs=epochs,
-                                                  steps_per_epoch=len(self.training_input.all_feature_generator),
+                                                  steps_per_epoch=len(self.input_data.all_feature_generator),
                                                   callbacks=callbacks,
-                                                  class_weight=self.training_input.training_config.all_class_weights,
+                                                  class_weight=self.input_data.config.all_class_weights,
                                                   verbose=1)
         print("\n*****************************")
         print("***** RETRAINING FINISHED *****")
@@ -106,7 +105,7 @@ class TrainingExecutor(object):
         print("Saving model \"%s\" at %s" % (model_name, model_out_path))
         self.stepcovnet_model.model.save(os.path.join(model_out_path, model_name))
         if self.stepcovnet_model.metadata is None:
-            self.stepcovnet_model.build_metadata_from_training_config(self.training_input.training_config)
+            self.stepcovnet_model.build_metadata_from_training_config(self.input_data.config)
         history_name = "retraining_history" if retrained else "training_history"
         self.stepcovnet_model.metadata[history_name] = training_history.history
         print("Saving model metadata at %s" % model_out_path)
