@@ -14,7 +14,7 @@ NUM_TIME_BANDS = 15
 
 THRESHOLDS = {'expert': 0.5}
 
-NUM_ARROW_TYPES = 4
+NUM_ARROW_TYPES = 4  # TODO: Move this to dataset config
 
 ARROW_NAMES = ["left_arrow", "down_arrow", "up_arrow", "right_arrow"]
 

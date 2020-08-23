@@ -10,14 +10,12 @@ from stepcovnet.config.AbstractConfig import AbstractConfig
 class TrainingConfig(AbstractConfig):
     def __init__(self, dataset_path, dataset_type, dataset_config, hyperparameters, all_scalers=None, limit=-1,
                  lookback=1, difficulty="challenge"):
+        super(TrainingConfig, self).__init__(dataset_config=dataset_config, lookback=lookback, difficulty=difficulty)
         self.dataset_path = dataset_path
         self.dataset_type = dataset_type
-        self.dataset_config = dataset_config
         self.hyperparameters = hyperparameters
         self.all_scalers = all_scalers
         self.limit = limit
-        self.lookback = lookback
-        self.difficulty = difficulty
 
         # Combine some of these to reduce the number of loops and save I/O reads
         self.all_indexes, self.train_indexes, self.val_indexes = self.get_train_val_split()
@@ -28,7 +26,6 @@ class TrainingConfig(AbstractConfig):
         self.all_class_weights = self.get_class_weights(self.all_indexes)
         self.init_bias_correction = self.get_init_bias_correction()
         self.train_scalers = self.get_train_scalers()
-        super(TrainingConfig, self).__init__()
 
     def get_train_val_split(self):
         all_indexes = []
@@ -101,24 +98,6 @@ class TrainingConfig(AbstractConfig):
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
                 num_all += song_end_index - song_start_index
         return num_all
-
-    @property
-    def arrow_input_shape(self):
-        # return lookback - 1 to not include current arrow sample
-        return (self.lookback - 1,)
-
-    @property
-    def arrow_mask_shape(self):
-        # return lookback - 1 to not include current arrow sample
-        return (self.lookback - 1,)
-
-    @property
-    def audio_input_shape(self):
-        return self.lookback, self.dataset_config["NUM_TIME_BANDS"], self.dataset_config["NUM_FREQ_BANDS"], 1,
-
-    @property
-    def label_shape(self):
-        return (NUM_ARROWS * NUM_ARROW_TYPES,)
 
     @property
     def enter_dataset(self):
