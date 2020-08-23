@@ -36,16 +36,14 @@ def update_all_metadata(all_metadata, metadata):
     return all_metadata
 
 
-def collect_features(wav_path, timing_path, multi, config, file_name):
+def collect_features(wav_path, timing_path, config, file_name):
     # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
         print('Feature collecting: %s' % file_name)
         # New version. Currently has memory constrain issues.
         # With enough memory, this method should perform much faster.
-        log_mel, onsets, arrows, label_encoded_arrows, binary_encoded_arrows = get_features_and_labels(wav_path,
-                                                                                                       timing_path,
-                                                                                                       file_name, multi,
-                                                                                                       config)
+        log_mel, onsets, arrows, label_encoded_arrows, binary_encoded_arrows = \
+            get_features_and_labels(wav_path, timing_path, file_name, config)
         # Old version
         # log_mel, onsets, arrows, encoded_arrows =
         # get_features_and_labels_madmom(wav_path, timing_path, file_name, multi, config)
@@ -63,13 +61,12 @@ def collect_features(wav_path, timing_path, multi, config, file_name):
 
 def collect_data(wavs_path, timings_path, output_path, name_prefix, config, training_dataset, dataset_type, multi=False,
                  limit=-1, cores=1):
-    func = partial(collect_features, wavs_path, timings_path, multi, config)
-    file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
-
     scalers = None
     features_batch = None
     config["NUM_CHANNELS"] = config["NUM_MULTI_CHANNELS"] if multi else 1
     all_metadata = build_all_metadata(dataset_name=name_prefix, dataset_type=dataset_type.name, config=config)
+    func = partial(collect_features, wavs_path, timings_path, config)
+    file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     with training_dataset as dataset:
         with multiprocessing.Pool(cores) as pool:
@@ -115,10 +112,10 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
 def training_data_collection(wavs_path, timings_path, output_path, multi_int, type_int, limit, cores, name,
                              distributed_int):
     if not os.path.isdir(wavs_path):
-        raise NotADirectoryError('Audio path %s not found' % wavs_path)
+        raise NotADirectoryError('Audio path %s not found' % os.path.abspath(wavs_path))
 
     if not os.path.isdir(timings_path):
-        raise NotADirectoryError('Annotation path %s not found' % timings_path)
+        raise NotADirectoryError('Annotation path %s not found' % os.path.abspath(timings_path))
 
     if limit == 0:
         raise ValueError('Limit cannot be 0!')
