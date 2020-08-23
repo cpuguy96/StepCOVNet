@@ -21,7 +21,7 @@ python stepmania_note_generator.py -i --input <string> -o --output <string> -s -
 
 To create a training dataset, you need to parse the `.sm` files and convert sound files into `.wav` files: 
 *   [`SMDataTools`](https://github.com/jhaco/SMDataTools) should be used to parse the `.sm` files into `.txt` files. 
-*   [`wav_converter.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/wrapper/wav_converter.py) can be used to convert the audio files into `.wav` files. The default sample rate is `44100hz`.
+*   [`wav_converter.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/wav_converter.py) can be used to convert the audio files into `.wav` files. The default sample rate is `16000hz`.
 
 Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` files into separate directories and run [`training_data_collection.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/data_collection/training_data_collection.py).
 
@@ -39,7 +39,7 @@ python training_data_collection.py -w --wav <string> -t --timing <string> -o --o
 *   **OPTIONAL:** `--distributed` `0` creates a single dataset, `1` creates a distributed dataset; default is `0`
 
 ## Training Model
-Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/training/train.py).
+Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/train.py).
 ```.bash
 cd stepcovnet/training
 python train.py -i --input <string> -o --output <string> --difficulty <int> --lookback <int> --limit <int> --name <string> --log <string>

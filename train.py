@@ -39,12 +39,12 @@ def run_training(input_path, output_path, model_name, limit, lookback, difficult
     classifier_model = ClassifierModel(training_input.config, arrow_model, audio_model)
     stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=classifier_model.model)
 
-    TrainingExecutor(training_input=training_input, stepcovnet_model=stepcovnet_model).execute()
+    TrainingExecutor(stepcovnet_model=stepcovnet_model).execute(input_data=training_input)
 
 
 def train(input_path, output_path, difficulty_int, lookback, limit, name, log_path):
     if not os.path.isdir(input_path):
-        raise NotADirectoryError('Input path %s not found' % input_path)
+        raise NotADirectoryError('Input path %s not found' % os.path.abspath(input_path))
 
     if not os.path.isdir(output_path):
         print("Model output path not found. Creating directory...")

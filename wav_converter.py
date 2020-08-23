@@ -30,17 +30,17 @@ def convert_file(input_path,
             print("Failed to convert %s: %r" % (file_name, ex))
 
 
-def run_process(input_path, output_path, sample_frequency, verbose):
+def run_process(input_path, output_path, sample_frequency, cores, verbose):
     if os.path.isfile(input_path):
         convert_file(os.path.dirname(input_path), output_path, sample_frequency, verbose, get_filename(input_path))
     else:
         file_names = get_filenames_from_folder(input_path)
         func = partial(convert_file, input_path, output_path, sample_frequency, verbose)
-        with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
+        with multiprocessing.Pool(cores) as pool:
             pool.map_async(func, file_names).get()
 
 
-def wav_converter(input_path, output_path, sample_frequency=16000, verbose_int=0):
+def wav_converter(input_path, output_path, sample_frequency=16000, cores=1, verbose_int=0):
     start_time = time.time()
     if verbose_int not in [0, 1]:
         raise ValueError('%s is not a valid verbose input. Choose 0 for none or 1 for full' % verbose_int)
@@ -50,12 +50,18 @@ def wav_converter(input_path, output_path, sample_frequency=16000, verbose_int=0
         print("Wavs output path not found. Creating directory...")
         os.makedirs(output_path, exist_ok=True)
 
+    if cores > os.cpu_count() or cores == 0:
+        raise ValueError(
+            'Number of cores selected must not be 0 and must be less than the number cpu cores (%d)' % os.cpu_count())
+
+    cores = psutil.cpu_count(logical=False) if cores < 0 else cores
+
     if os.path.isfile(input_path) or os.path.isdir(input_path):
         if verbose:
             print("Starting .wav conversion\n-----------------------------------------")
-        run_process(input_path, output_path, sample_frequency, verbose)
+        run_process(input_path, output_path, sample_frequency, cores, verbose)
     else:
-        raise FileNotFoundError('Audio file(s) path %s not found' % input_path)
+        raise FileNotFoundError('Audio file(s) path %s not found' % os.path.abspath(input_path))
     end_time = time.time()
     if verbose:
         print("Elapsed time was %g seconds\n" % (end_time - start_time))
@@ -77,6 +83,10 @@ if __name__ == '__main__':
                         type=int,
                         default=16000,
                         help="Sampling frequency to create wavs")
+    parser.add_argument("--cores",
+                        type=int,
+                        default=1,
+                        help="Number of processor cores to use for parallel processing: -1 max number of physical cores")
     parser.add_argument("-v", "--verbose",
                         type=int,
                         default=0,
@@ -87,4 +97,5 @@ if __name__ == '__main__':
     wav_converter(args.input,
                   args.output,
                   args.sample_frequency,
+                  args.cores,
                   args.verbose)
