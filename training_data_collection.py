@@ -37,20 +37,13 @@ def update_all_metadata(all_metadata, metadata):
 
 
 def collect_features(wav_path, timing_path, config, file_name):
-    # from the annotation to get feature, frame start and frame end of each line, frames_onset
     try:
         print('Feature collecting: %s' % file_name)
-        # New version. Currently has memory constrain issues.
-        # With enough memory, this method should perform much faster.
         log_mel, onsets, arrows, label_encoded_arrows, binary_encoded_arrows = \
             get_features_and_labels(wav_path, timing_path, file_name, config)
-        # Old version
-        # log_mel, onsets, arrows, encoded_arrows =
-        # get_features_and_labels_madmom(wav_path, timing_path, file_name, multi, config)
         feature, label_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict = \
             feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, label_encoded_arrows,
                                                       binary_encoded_arrows, config["NUM_ARROW_TYPES"])
-
         # type casting features to float16 to save disk space.
         return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, arrows_dict,
                 label_encoded_arrows_dict, binary_encoded_arrows_dict]
