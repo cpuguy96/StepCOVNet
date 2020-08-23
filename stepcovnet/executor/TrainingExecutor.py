@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import TensorBoard
@@ -22,6 +23,7 @@ class TrainingExecutor(AbstractExecutor):
 
         self.stepcovnet_model.model.compile(loss=loss, metrics=metrics, optimizer=optimizer)
         self.stepcovnet_model.model.summary()
+        self.save(pretrained=True, retrained=False)  # Saving pretrained model in the case of errors during training
         history = self.train(self.get_training_callbacks())
         self.save(training_history=history, retrained=False)
 
@@ -93,21 +95,28 @@ class TrainingExecutor(AbstractExecutor):
                                                   callbacks=callbacks,
                                                   class_weight=self.input_data.config.all_class_weights,
                                                   verbose=1)
-        print("\n*****************************")
+        print("\n*******************************")
         print("***** RETRAINING FINISHED *****")
-        print("*****************************\n")
+        print("*******************************\n")
         return history
 
-    def save(self, retrained, training_history):
+    def save(self, retrained, training_history=None, pretrained=False):
         model_out_path = self.stepcovnet_model.model_path
         model_name = self.stepcovnet_model.model_name
-        model_name += '_retrained' if retrained else ""
+        if pretrained:
+            if self.input_data.config.all_scalers is not None:
+                pickle.dump(self.input_data.config.all_scalers,
+                            open(os.path.join(model_out_path, model_name + '_scaler.pkl'), 'wb'))
+            model_name += '_pretrained'
+        elif retrained:
+            model_name += '_retrained'
         print("Saving model \"%s\" at %s" % (model_name, model_out_path))
         self.stepcovnet_model.model.save(os.path.join(model_out_path, model_name))
         if self.stepcovnet_model.metadata is None:
             self.stepcovnet_model.build_metadata_from_training_config(self.input_data.config)
-        history_name = "retraining_history" if retrained else "training_history"
-        self.stepcovnet_model.metadata[history_name] = training_history.history
+        if training_history is not None and not pretrained:
+            history_name = "retraining_history" if retrained else "training_history"
+            self.stepcovnet_model.metadata[history_name] = training_history.history
         print("Saving model metadata at %s" % model_out_path)
         with open(os.path.join(model_out_path, 'metadata.json'), 'w') as json_file:
             json_file.write(json.dumps(self.stepcovnet_model.metadata))
