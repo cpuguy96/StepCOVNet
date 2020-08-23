@@ -2,11 +2,11 @@ import json
 import os
 from datetime import datetime
 
-from tensorflow.keras.models import load_model
+import tensorflow as tf
 
 
 class StepCOVNetModel(object):
-    def __init__(self, model_path, model_name="StepCOVNet", model=None, metadata=None):
+    def __init__(self, model_path, model_name="StepCOVNet", model: tf.keras.Model = None, metadata=None):
         self.model_path = os.path.abspath(model_path)
         self.model_name = model_name
         self.model = model
@@ -31,5 +31,5 @@ class StepCOVNetModel(object):
         model_name = metadata["model_name"]
         model_path = os.path.join(input_path, model_name + '_retrained') if retrained \
             else os.path.join(input_path, model_name)
-        model = load_model(model_path, compile=False)
+        model = tf.saved_model.load(model_path)
         return StepCOVNetModel(model_path=input_path, model_name=model_name, model=model, metadata=metadata)
