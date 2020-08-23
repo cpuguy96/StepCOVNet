@@ -1,7 +1,7 @@
 import json
 import os
-import pickle
 
+import joblib
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.python.keras.callbacks import ModelCheckpoint
@@ -105,7 +105,7 @@ class TrainingExecutor(AbstractExecutor):
         model_name = self.stepcovnet_model.model_name
         if pretrained:
             if self.input_data.config.all_scalers is not None:
-                pickle.dump(self.input_data.config.all_scalers,
+                joblib.dump(self.input_data.config.all_scalers,
                             open(os.path.join(model_out_path, model_name + '_scaler.pkl'), 'wb'))
             model_name += '_pretrained'
         elif retrained:

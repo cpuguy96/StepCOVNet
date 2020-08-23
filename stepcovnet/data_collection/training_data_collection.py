@@ -1,12 +1,12 @@
 import json
 import multiprocessing
 import os
-import pickle
 import time
 from datetime import datetime
 from functools import partial
 from os.path import join
 
+import joblib
 import psutil
 
 from stepcovnet.common.parameters import CONFIG
@@ -95,7 +95,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
                     scalers = get_channel_scalers(features_batch, existing_scalers=scalers, n_jobs=1)
                     features_batch = None
                     print("Saving scalers")
-                    pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
+                    joblib.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
                 if limit > 0:
                     song_count += 1
                     print("[%d/%d] Features collected: %s " % (dataset.num_samples, limit, file_name))
@@ -106,7 +106,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
         print("Creating scalers before final save")
         scalers = get_channel_scalers(features_batch, existing_scalers=scalers, n_jobs=1)
     print("Saving scalers")
-    pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
+    joblib.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
     print("Saving metadata")
     with open(join(output_path, 'metadata.json'), 'w') as json_file:
         json_file.write(json.dumps(all_metadata))

@@ -1,7 +1,8 @@
 import datetime
 import json
 import os
-import pickle
+
+import joblib
 
 from stepcovnet.config.TrainingConfig import TrainingConfig
 from stepcovnet.dataset.ModelDatasetTypes import ModelDatasetTypes
@@ -19,7 +20,7 @@ def load_training_data(input_path):
     dataset_name = metadata["dataset_name"]
     dataset_type = ModelDatasetTypes[metadata["dataset_type"]].value
     dataset_path = os.path.join(input_path, dataset_name + "_dataset")
-    scalers = pickle.load(open(os.path.join(input_path, dataset_name + "_scaler.pkl"), 'rb'))
+    scalers = joblib.load(open(os.path.join(input_path, dataset_name + "_scaler.pkl"), 'rb'))
     dataset_config = metadata["config"]
     return dataset_path, dataset_type, scalers, dataset_config
 
@@ -35,8 +36,8 @@ def run_training(input_path, output_path, model_name, limit, lookback, difficult
 
     arrow_model = ArrowModel(training_input.config)
     audio_model = AudioModel(training_input.config)
-    model = ClassifierModel(training_input.config, arrow_model, audio_model)
-    stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=model.model)
+    classifier_model = ClassifierModel(training_input.config, arrow_model, audio_model)
+    stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=classifier_model.model)
 
     TrainingExecutor(training_input=training_input, stepcovnet_model=stepcovnet_model).execute()
 
