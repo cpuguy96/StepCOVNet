@@ -37,24 +37,15 @@ def frame(data, window_length, hop_length):
     (N+1)-D np.array with as many rows as there are complete frames that can be
     extracted.
   """
-    if len(data.shape) > 1:
+    num_samples = data.shape[0]
+    num_frames = 1 + int(np.floor((num_samples - window_length) / hop_length))
+    if len(data.shape) > 1 and num_samples - num_frames > 0:  # adds zero padding to not drop frames
+        data = np.pad(data, ((0, num_samples - num_frames), (0, 0)), 'constant', constant_values=((0, 0), (0, 0)))
         num_samples = data.shape[0]
         num_frames = 1 + int(np.floor((num_samples - window_length) / hop_length))
-        diff = num_samples - num_frames
-        if diff > 0:  # adds zero padding to not drop frames
-            data = np.pad(data, ((0, diff), (0, 0)), 'constant', constant_values=((0, 0), (0, 0)))
-            num_samples = data.shape[0]
-            num_frames = 1 + int(np.floor((num_samples - window_length) / hop_length))
-
-        shape = (num_frames, window_length) + data.shape[1:]
-        strides = (data.strides[0] * hop_length,) + data.strides
-        return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides, writeable=False)
-    else:
-        num_samples = data.shape[0]
-        num_frames = 1 + int(np.floor((num_samples - window_length) / hop_length))
-        shape = (num_frames, window_length) + data.shape[1:]
-        strides = (data.strides[0] * hop_length,) + data.strides
-        return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides, writeable=False)
+    shape = (num_frames, window_length) + data.shape[1:]
+    strides = (data.strides[0] * hop_length,) + data.strides
+    return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides, writeable=False)
 
 
 def periodic_hann(window_length):
