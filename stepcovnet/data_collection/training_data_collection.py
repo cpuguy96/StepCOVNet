@@ -67,6 +67,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     scalers = None
+    features_batch = None
     config["NUM_CHANNELS"] = config["NUM_MULTI_CHANNELS"] if multi else 1
     all_metadata = build_all_metadata(dataset_name=name_prefix, dataset_type=dataset_type.name, config=config)
 
@@ -81,12 +82,18 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
                 dataset.dump(features=features, labels=labels, sample_weights=weights, arrows=arrows,
                              label_encoded_arrows=label_encoded_arrows, binary_encoded_arrows=binary_encoded_arrows,
                              file_names=file_name)
-                # not using joblib parallel since we are already using multiprocessing
-                print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
-                scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
                 all_metadata = update_all_metadata(all_metadata, {"file_name": [file_name]})
-                # Save scalers after every 10 runs
-                if i % 10 == 0:
+                if features_batch is None:
+                    features_batch = features
+                else:
+                    import numpy as np
+                    features_batch = np.concatenate((features_batch, features), axis=0)
+                # Save scalers after every 5 runs
+                if i % 5 == 0:
+                    # not using joblib parallel since we are already using multiprocessing
+                    print("Creating scalers")
+                    scalers = get_channel_scalers(features_batch, existing_scalers=scalers, n_jobs=1)
+                    features_batch = None
                     print("Saving scalers")
                     pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
                 if limit > 0:
@@ -95,6 +102,9 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
                     if dataset.num_samples >= limit:
                         print("Limit reached after %d songs. Breaking..." % song_count)
                         break
+    if features_batch is not None:
+        print("Creating scalers before final save")
+        scalers = get_channel_scalers(features_batch, existing_scalers=scalers, n_jobs=1)
     print("Saving scalers")
     pickle.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
     print("Saving metadata")
