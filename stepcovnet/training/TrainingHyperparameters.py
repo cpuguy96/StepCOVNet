@@ -9,7 +9,7 @@ class TrainingHyperparameters(object):
         tf.keras.metrics.AUC(curve="PR", name='pr_auc'),
         tf.keras.metrics.AUC(name='auc')
     ]
-    DEFAULT_LOSS = tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1)
+    DEFAULT_LOSS = tf.keras.losses.BinaryCrossentropy(label_smoothing=0.025)
     DEFAULT_OPTIMIZER = tf.keras.optimizers.Nadam(beta_1=0.99)
     DEFAULT_EPOCHS = 5
     DEFAULT_PATIENCE = 2
