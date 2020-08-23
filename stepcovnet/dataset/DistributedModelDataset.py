@@ -2,10 +2,10 @@ import os
 
 import h5py
 
-from stepcovnet.dataset.AbstractModelDataset import AbstractModelDataset
+from stepcovnet.dataset.ModelDataset import ModelDataset
 
 
-class DistributedModelDataset(AbstractModelDataset):
+class DistributedModelDataset(ModelDataset):
     def __init__(self, *args, **kwargs):
         super(DistributedModelDataset, self).__init__(*args, **kwargs)
 
