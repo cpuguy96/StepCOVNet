@@ -6,10 +6,10 @@ import resampy
 import soundfile as sf
 
 from stepcovnet.common import mel_features
-from stepcovnet.common.BinaryArrowEncoder import BinaryArrowEncoder
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
 from stepcovnet.common.utils import feature_reshape_up
-from stepcovnet.common.utils import get_arrow_label_encoder
+from stepcovnet.encoder.BinaryArrowEncoder import BinaryArrowEncoder
+from stepcovnet.encoder.LabelArrowEncoder import LabelArrowEncoder
 
 
 def remove_out_of_range(frames, frame_start, frame_end):
@@ -90,7 +90,7 @@ def timings_parser(timing_file_path):
         data = defaultdict(dict)
         read_timings = False
         curr_difficulty = None
-        label_encoder = get_arrow_label_encoder()
+        label_encoder = LabelArrowEncoder()
         binary_encoder = BinaryArrowEncoder()
         for line in file.readlines():
             line = line.replace("\n", "")
@@ -104,7 +104,7 @@ def timings_parser(timing_file_path):
                     curr_difficulty = new_difficulty
                 elif curr_difficulty is not None:
                     arrows, timing = line.split(" ")[0:2]
-                    label_encoded_arrows = label_encoder.transform([arrows])[0]
+                    label_encoded_arrows = label_encoder.encode(arrows)
                     binary_encoded_arrows = binary_encoder.encode(arrows)
                     data[curr_difficulty][float(timing)] = [np.array(list(arrows), dtype=int),
                                                             label_encoded_arrows, binary_encoded_arrows]
@@ -130,7 +130,7 @@ def get_fft_lengths(audio_sample_rate, window_length_secs=0.025, multi=False, nu
     return fft_lengths, window_length_samples
 
 
-def get_log_mels(audio_data, audio_data_sample_rate, config, multi=False):
+def get_log_mels(audio_data, audio_data_sample_rate, config):
     # Convert to mono.
     if audio_data.shape[1] > 1:
         audio_data = np.mean(audio_data, axis=1)
@@ -139,7 +139,7 @@ def get_log_mels(audio_data, audio_data_sample_rate, config, multi=False):
     # Resample to the rate specified in config.
     if audio_data_sample_rate != config["SAMPLE_RATE"]:
         audio_data = resampy.resample(audio_data, audio_data_sample_rate, config["SAMPLE_RATE"])
-
+    multi = True if config["NUM_CHANNELS"] > 1 else False
     fft_lengths, window_length_samples = get_fft_lengths(audio_sample_rate=config["SAMPLE_RATE"],
                                                          window_length_secs=config["STFT_WINDOW_LENGTH_SECONDS"],
                                                          multi=multi, num_multi_channels=config["NUM_MULTI_CHANNELS"])
@@ -198,12 +198,11 @@ def convert_note_data(note_data, stft_hop_length_secs=0.01):
     return frames_onset, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict
 
 
-def get_audio_features(wav_path, file_name, multi, config):
+def get_audio_features(wav_path, file_name, config):
     # Read audio data (needs to be a wav)
     audio_data, audio_data_sample_rate = get_audio_data(audio_file_path=join(wav_path, file_name + '.wav'))
     # Create log mel features
-    log_mel_frames = get_log_mels(audio_data=audio_data, audio_data_sample_rate=audio_data_sample_rate,
-                                  config=config, multi=multi)
+    log_mel_frames = get_log_mels(audio_data=audio_data, audio_data_sample_rate=audio_data_sample_rate, config=config)
     return log_mel_frames
 
 
@@ -211,14 +210,13 @@ def get_labels(note_data_path, file_name, config):
     # Read data from timings file
     note_data = timings_parser(timing_file_path=join(note_data_path, file_name + '.txt'))
     # Parse notes data to get onsets and arrows
-    onsets, arrows, label_encoded_arrows, binary_encoded_arrows = convert_note_data(note_data=note_data,
-                                                                                    stft_hop_length_secs=
-                                                                                    config["STFT_HOP_LENGTH_SECONDS"])
+    onsets, arrows, label_encoded_arrows, binary_encoded_arrows = \
+        convert_note_data(note_data=note_data, stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])
     return onsets, arrows, label_encoded_arrows, binary_encoded_arrows
 
 
-def get_features_and_labels(wav_path, note_data_path, file_name, multi, config):
-    log_mel_frames = get_audio_features(wav_path, file_name, multi, config)
+def get_features_and_labels(wav_path, note_data_path, file_name, config):
+    log_mel_frames = get_audio_features(wav_path, file_name, config)
     onsets, arrows, label_encoded_arrows, binary_encoded_arrows = get_labels(note_data_path, file_name, config)
     return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows
 
@@ -229,8 +227,7 @@ def get_features_and_labels_madmom(wav_path, note_data_path, file_name, multi, c
                                         num_time_bands=config["NUM_TIME_BANDS"],
                                         num_channels=config["NUM_MULTI_CHANNELS"])
     note_data = timings_parser(join(note_data_path, file_name + '.txt'))
-    onsets, arrows, label_encoded_arrows, binary_encoded_arrows = convert_note_data(note_data=note_data,
-                                                                                    stft_hop_length_secs=
-                                                                                    config["STFT_HOP_LENGTH_SECONDS"])
+    onsets, arrows, label_encoded_arrows, binary_encoded_arrows = \
+        convert_note_data(note_data=note_data, stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])
 
     return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows

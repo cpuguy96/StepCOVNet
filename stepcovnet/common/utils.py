@@ -1,39 +1,17 @@
 import multiprocessing
 import os
 import re
-import time
 
 import numpy as np
 import psutil
 from joblib import Parallel
 from joblib import delayed
 from nltk.util import ngrams
-from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler
 
 from stepcovnet.common.constants import NUM_FREQ_BANDS
 from stepcovnet.common.constants import NUM_MULTI_CHANNELS
 from stepcovnet.common.constants import NUM_TIME_BANDS
-
-
-def timed_function(func):
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        return_value = func(*args, **kwargs)
-        end_time = time.time()
-        print("\nElapsed time was %g seconds for %s" % ((end_time - start_time), func.__name__))
-        return return_value
-
-    return wrapper
-
-
-def timed(func, *args, **kwargs):
-    start_time = time.time()
-    return_value = func(*args, **kwargs)
-    end_time = time.time()
-    print("\nElapsed time was %g seconds for %s" % ((end_time - start_time), func.__name__))
-    return return_value
 
 
 def get_filenames_from_folder(mypath):
@@ -226,29 +204,6 @@ def pre_process(features, labels=None, multi=False, scalers=None):
         return features_copy, labels
     else:
         return features_copy
-
-
-def get_all_note_combs():
-    all_note_combs = []
-
-    for first_digit in range(0, 4):
-        for second_digit in range(0, 4):
-            for third_digit in range(0, 4):
-                for fourth_digit in range(0, 4):
-                    all_note_combs.append(
-                        str(first_digit) + str(second_digit) + str(third_digit) + str(fourth_digit))
-    # Adding '0000' to possible note combinations. This will allow the arrow prediction model to predict an empty note.
-    # all_note_combs = all_note_combs[1:]
-
-    return all_note_combs
-
-
-def get_arrow_one_hot_encoder():
-    return OneHotEncoder(categories='auto', sparse=False).fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
-
-
-def get_arrow_label_encoder():
-    return LabelEncoder().fit(np.asarray(get_all_note_combs()).reshape(-1, 1))
 
 
 def get_ngram(data, lookback, padding_value=0):
