@@ -11,7 +11,7 @@ python stepmania_note_generator.py -i --input <string> -o --output <string> --ti
 ```
 *   `-i` `--input` input directory path to audio files
 *   `-o` `--output` output directory path to `.txt` files
-*   `-i` `--model` input directory path to StepCOVNet model````
+*   `-m` `--model` input directory path to StepCOVNet model````
 *   **OPTIONAL:** `-v` `--verbose` `1` shows full verbose, `0` shows no verbose; default is `0`
 
 ## Creating Training Dataset
