@@ -67,7 +67,9 @@ class TrainingConfig(AbstractConfig):
         class_weights[0] = (num_all / num_neg) / 2.0
         class_weights[1] = (num_all / num_pos) / 2.0
 
-        return class_weights
+        # Removing the use of class weights for testing
+        # return class_weights
+        return None
 
     def get_init_bias_correction(self):
         # Best practices mentioned in

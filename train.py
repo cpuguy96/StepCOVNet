@@ -28,7 +28,7 @@ def load_training_data(input_path):
 def run_training(input_path, output_path, model_name, limit, lookback, difficulty, log_path):
     dataset_path, dataset_type, scalers, dataset_config = load_training_data(input_path)
 
-    hyperparameters = TrainingHyperparameters(log_path=log_path)
+    hyperparameters = TrainingHyperparameters(log_path=log_path, loss=TrainingHyperparameters.macro_double_soft_f1)
     training_config = TrainingConfig(dataset_path=dataset_path, dataset_type=dataset_type,
                                      dataset_config=dataset_config, hyperparameters=hyperparameters,
                                      all_scalers=scalers, limit=limit, lookback=lookback, difficulty=difficulty)
