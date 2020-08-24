@@ -27,18 +27,17 @@ class TrainingExecutor(AbstractExecutor):
         self.stepcovnet_model.model.summary()
         # Saving pretrained model in the case of errors during training
         self.save(input_data.config, pretrained=True, retrained=False)
-        stepcovnet_model, history = self.train(input_data, self.get_training_callbacks(hyperparameters))
+        history = self.train(input_data, self.get_training_callbacks(hyperparameters))
         self.save(input_data.config, training_history=history, retrained=False)
 
         if hyperparameters.retrain:
             epochs_final = len(history.history['val_loss'])
-            stepcovnet_model, retraining_history = self.retrain(input_data,
-                                                                saved_original_weights=weights,
-                                                                epochs=epochs_final,
-                                                                callbacks=self.get_retraining_callbacks(
-                                                                    hyperparameters))
+            retraining_history = self.retrain(input_data,
+                                              saved_original_weights=weights,
+                                              epochs=epochs_final,
+                                              callbacks=self.get_retraining_callbacks(hyperparameters))
             self.save(input_data.config, training_history=retraining_history, retrained=True)
-        return stepcovnet_model
+        return self.stepcovnet_model
 
     def get_training_callbacks(self, hyperparameters: TrainingHyperparameters):
         model_out_path = self.stepcovnet_model.model_path
