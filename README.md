@@ -7,7 +7,7 @@
 ## Running Audio to SM File Generator
 ### Currently only produces `.txt` files. Use [`SMDataTools`](https://github.com/jhaco/SMDataTools) to convert `.txt` to `.sm`
 ```.bash
-python stepmania_note_generator.py -i --input <string> -o --output <string> --timing_model <string> -v --verbose <int>
+python stepmania_note_generator.py -i --input <string> -o --output <string> --model <string> -v --verbose <int>
 ```
 *   `-i` `--input` input directory path to audio files
 *   `-o` `--output` output directory path to `.txt` files
@@ -24,7 +24,7 @@ To create a training dataset, you need to parse the `.sm` files and convert soun
 Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` files into separate directories and run [`training_data_collection.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/data_collection/training_data_collection.py).
 
 ```.bash
-python training_data_collection.py -w --wav <string> -t --timing <string> -o --output <string> --multi <int> --limit <int>
+python training_data_collection.py -w --wav <string> -t --timing <string> -o --output <string> --multi <int> --limit <int> --cores <int> --name <string> --distributed <int>
 ```
 *   `-w` `--wav` input directory path to `.wav` files
 *   `-t` `--timing` input directory path to timing files
@@ -38,7 +38,7 @@ python training_data_collection.py -w --wav <string> -t --timing <string> -o --o
 ## Training Model
 Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/train.py).
 ```.bash
-python train.py -i --input <string> -o --output <string> --difficulty <int> --lookback <int> --limit <int> --name <string> --log <string>
+python train.py -i --input <string> -o --output <string> -d --difficulty <int> --lookback <int> --limit <int> --name <string> --log <string>
 ``` 
 *   `-i` `--input` input directory path to training dataset
 *   `-o` `--output` output directory path to save model 
