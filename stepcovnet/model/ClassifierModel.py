@@ -34,6 +34,6 @@ class ClassifierModel(AbstractModel):
                               bias_initializer=Constant(value=training_config.init_bias_correction),
                               kernel_initializer=glorot_uniform(42), dtype=tf.float32, name=arrow_name)(model)
                         for i, arrow_name in enumerate(ARROW_NAMES)]
-        model_output = concatenate(model_output)
+        model_output = concatenate(model_output, name="binary_encoded_arrows")
 
         super(ClassifierModel, self).__init__(model_input=model_input, model_output=model_output, name=name)
