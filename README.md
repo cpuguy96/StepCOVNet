@@ -7,13 +7,11 @@
 ## Running Audio to SM File Generator
 ### Currently only produces `.txt` files. Use [`SMDataTools`](https://github.com/jhaco/SMDataTools) to convert `.txt` to `.sm`
 ```.bash
-python stepmania_note_generator.py -i --input <string> -o --output <string> -s --scalers <string> --timing_model <string> --arrow_model <string> -v --verbose <int>
+python stepmania_note_generator.py -i --input <string> -o --output <string> --timing_model <string> -v --verbose <int>
 ```
 *   `-i` `--input` input directory path to audio files
-*   `-o` `--output` output directory path to `.sm` files
-*   **OPTIONAL:** `-s` `--scalers` input directory path to scalers used in training; default is `"training_data/"`
-*   **OPTIONAL:** `--timing_model` input directory path to beat timing model; default is `"models/timing_model.h5"`
-*   **OPTIONAL:** `--arrow_model` input directory path to arrow selection model; default is `"models/retrained_arrow_model.h5"`
+*   `-o` `--output` output directory path to `.txt` files
+*   `-i` `--model` input directory path to StepCOVNet model````
 *   **OPTIONAL:** `-v` `--verbose` `1` shows full verbose, `0` shows no verbose; default is `0`
 
 ## Creating Training Dataset
@@ -26,7 +24,6 @@ To create a training dataset, you need to parse the `.sm` files and convert soun
 Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` files into separate directories and run [`training_data_collection.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/data_collection/training_data_collection.py).
 
 ```.bash
-cd stepcovnet/data_collection
 python training_data_collection.py -w --wav <string> -t --timing <string> -o --output <string> --multi <int> --limit <int>
 ```
 *   `-w` `--wav` input directory path to `.wav` files
@@ -41,7 +38,6 @@ python training_data_collection.py -w --wav <string> -t --timing <string> -o --o
 ## Training Model
 Once training dataset has been created, run [`train.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/train.py).
 ```.bash
-cd stepcovnet/training
 python train.py -i --input <string> -o --output <string> --difficulty <int> --lookback <int> --limit <int> --name <string> --log <string>
 ``` 
 *   `-i` `--input` input directory path to training dataset
@@ -53,8 +49,6 @@ python train.py -i --input <string> -o --output <string> --difficulty <int> --lo
 *   **OPTIONAL:** `--log` output directory path to store tensorboard data
 
 ## TODO
-*   Update to new model architecture
-*   Extensive refactoring to reduce tech debt
 *   End-to-end unit tests for all modules 
 
 ## Credits
