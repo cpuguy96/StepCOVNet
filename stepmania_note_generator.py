@@ -10,8 +10,8 @@ from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.common.utils import standardize_filename
 from stepcovnet.config.InferenceConfig import InferenceConfig
 from stepcovnet.executor.InferenceExecutor import InferenceExecutor
-from stepcovnet.model_input.InferenceInput import InferenceInput
-from stepcovnet.modeling.StepCOVNetModel import StepCOVNetModel
+from stepcovnet.inputs.InferenceInput import InferenceInput
+from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 from wav_converter import wav_converter
 
 warnings.filterwarnings("ignore")
@@ -42,7 +42,7 @@ def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
     dataset_config = stepcovnet_model.metadata["dataset_config"]
     lookback = stepcovnet_model.metadata["training_config"]["lookback"]
     difficulty = stepcovnet_model.metadata["training_config"]["difficulty"]
-    sample_frequency = 44100  # stepcovnet_model.metadata["dataset_config"]["SAMPLE_RATE"]
+    sample_frequency = stepcovnet_model.metadata["dataset_config"]["SAMPLE_RATE"]
     audio_files_path = join(tmp_dir, "wav/")
 
     # Convert audio clip into a wav before preprocessing

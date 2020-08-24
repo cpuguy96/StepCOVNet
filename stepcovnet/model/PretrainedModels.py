@@ -10,7 +10,7 @@ from transformers import TFGPT2Model
 
 from stepcovnet.common.tf_config import MIXED_PRECISION_POLICY
 
-VGGISH_WEIGHTS_PATH = "../pretrained_models/vggish_audioset_weights.h5"
+VGGISH_WEIGHTS_PATH = "stepcovnet/pretrained_models/vggish_audioset_weights.h5"
 
 
 class PretrainedModels(object):

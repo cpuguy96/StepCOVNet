@@ -7,11 +7,11 @@ import joblib
 from stepcovnet.config.TrainingConfig import TrainingConfig
 from stepcovnet.dataset.ModelDatasetTypes import ModelDatasetTypes
 from stepcovnet.executor.TrainingExecutor import TrainingExecutor
-from stepcovnet.model_input.TrainingInput import TrainingInput
-from stepcovnet.modeling.ArrowModel import ArrowModel
-from stepcovnet.modeling.AudioModel import AudioModel
-from stepcovnet.modeling.ClassifierModel import ClassifierModel
-from stepcovnet.modeling.StepCOVNetModel import StepCOVNetModel
+from stepcovnet.inputs.TrainingInput import TrainingInput
+from stepcovnet.model.ArrowModel import ArrowModel
+from stepcovnet.model.AudioModel import AudioModel
+from stepcovnet.model.ClassifierModel import ClassifierModel
+from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
 

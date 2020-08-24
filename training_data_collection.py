@@ -7,6 +7,7 @@ from functools import partial
 from os.path import join
 
 import joblib
+import numpy as np
 import psutil
 
 from stepcovnet.common.parameters import CONFIG
@@ -76,7 +77,6 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
                 if features_batch is None:
                     features_batch = features
                 else:
-                    import numpy as np
                     features_batch = np.concatenate((features_batch, features), axis=0)
                 # Save scalers after every 5 runs
                 if i % 5 == 0:
@@ -102,8 +102,8 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
         json_file.write(json.dumps(all_metadata))
 
 
-def training_data_collection(wavs_path, timings_path, output_path, multi_int, type_int, limit, cores, name,
-                             distributed_int):
+def training_data_collection(wavs_path, timings_path, output_path, multi_int=0, type_int=0, limit=-1, cores=1,
+                             name=None, distributed_int=0):
     if not os.path.isdir(wavs_path):
         raise NotADirectoryError('Audio path %s not found' % os.path.abspath(wavs_path))
 

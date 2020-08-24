@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from stepcovnet.config.TrainingConfig import TrainingConfig
-from stepcovnet.model_input.AbstractInput import AbstractInput
+from stepcovnet.inputs.AbstractInput import AbstractInput
 from stepcovnet.training.TrainingFeatureGenerator import TrainingFeatureGenerator
 
 

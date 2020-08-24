@@ -2,7 +2,7 @@ from abc import ABC
 from abc import abstractmethod
 
 from stepcovnet.common.tf_config import tf_init
-from stepcovnet.modeling.StepCOVNetModel import StepCOVNetModel
+from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 
 
 class AbstractExecutor(ABC, object):

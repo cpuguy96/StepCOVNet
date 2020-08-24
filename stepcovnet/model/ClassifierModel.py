@@ -9,7 +9,7 @@ from tensorflow.keras.layers import concatenate
 
 from stepcovnet.common.constants import ARROW_NAMES
 from stepcovnet.common.tf_config import MIXED_PRECISION_POLICY
-from stepcovnet.modeling.AbstractModel import AbstractModel
+from stepcovnet.model.AbstractModel import AbstractModel
 
 
 class ClassifierModel(AbstractModel):

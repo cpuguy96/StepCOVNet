@@ -13,7 +13,7 @@ class TrainingHyperparameters(object):
     DEFAULT_OPTIMIZER = tf.keras.optimizers.Nadam(beta_1=0.99)
     DEFAULT_EPOCHS = 5
     DEFAULT_PATIENCE = 2
-    DEFAULT_BATCH_SIZE = 32
+    DEFAULT_BATCH_SIZE = 8
 
     def __init__(self, optimizer=None, loss=None, metrics=None, batch_size=None, epochs=None, patience=None,
                  log_path=None, retrain=None):

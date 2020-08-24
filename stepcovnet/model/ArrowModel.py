@@ -3,8 +3,8 @@ from tensorflow.keras.layers import GlobalMaxPool1D
 from tensorflow.keras.layers import Input
 
 from stepcovnet.common.tf_config import MIXED_PRECISION_POLICY
-from stepcovnet.modeling.AbstractModel import AbstractModel
-from stepcovnet.modeling.PretrainedModels import PretrainedModels
+from stepcovnet.model.AbstractModel import AbstractModel
+from stepcovnet.model.PretrainedModels import PretrainedModels
 
 
 class ArrowModel(AbstractModel):

@@ -8,7 +8,7 @@ from tensorflow.python.keras.callbacks import ModelCheckpoint
 
 from stepcovnet.config.TrainingConfig import TrainingConfig
 from stepcovnet.executor.AbstractExecutor import AbstractExecutor
-from stepcovnet.model_input.TrainingInput import TrainingInput
+from stepcovnet.inputs.TrainingInput import TrainingInput
 from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
 

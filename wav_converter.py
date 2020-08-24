@@ -4,7 +4,9 @@ import time
 from functools import partial
 from os.path import join
 
+import numpy as np
 import psutil
+import resampy
 import soundfile as sf
 
 from stepcovnet.common.utils import get_filename
@@ -23,7 +25,15 @@ def convert_file(input_path,
             print("Converting " + file_name)
         file_input_path = join(input_path, file_name)
         file_output_path = join(output_path, new_file_name + '.wav')
-        input_audio_data, _ = sf.read(file_input_path)
+        input_audio_data, input_audio_sample_rate = sf.read(file_input_path)
+        if input_audio_data.shape[1] > 1:
+            input_audio_data = np.mean(input_audio_data, axis=1)
+        else:
+            input_audio_data = np.squeeze(input_audio_data)
+        if input_audio_sample_rate != sample_frequency:
+            input_audio_data = resampy.resample(input_audio_data,
+                                                sr_orig=input_audio_sample_rate,
+                                                sr_new=sample_frequency)
         sf.write(file_output_path, input_audio_data, sample_frequency)
     except Exception as ex:
         if verbose:

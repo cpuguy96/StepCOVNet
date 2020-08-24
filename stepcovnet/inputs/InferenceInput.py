@@ -3,7 +3,7 @@ import numpy as np
 from stepcovnet.common.utils import get_samples_ngram_with_mask
 from stepcovnet.config.InferenceConfig import InferenceConfig
 from stepcovnet.data_collection.sample_collection_helper import get_audio_features
-from stepcovnet.model_input.AbstractInput import AbstractInput
+from stepcovnet.inputs.AbstractInput import AbstractInput
 
 
 class InferenceInput(AbstractInput):

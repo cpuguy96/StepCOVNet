@@ -7,7 +7,7 @@ from stepcovnet.common.utils import get_samples_ngram_with_mask
 from stepcovnet.encoder.BinaryArrowEncoder import BinaryArrowEncoder
 from stepcovnet.encoder.LabelArrowEncoder import LabelArrowEncoder
 from stepcovnet.executor.AbstractExecutor import AbstractExecutor
-from stepcovnet.model_input.InferenceInput import InferenceInput
+from stepcovnet.inputs.InferenceInput import InferenceInput
 
 
 class InferenceExecutor(AbstractExecutor):
@@ -36,7 +36,6 @@ class InferenceExecutor(AbstractExecutor):
             binary_encoded_arrows = []
             for i in range(NUM_ARROWS):
                 binary_arrow_prob = binary_arrows_probs[NUM_ARROW_TYPES * i: NUM_ARROW_TYPES * (i + 1)]
-                # encoded_arrow = np.argmax(binary_arrow_prob)
                 encoded_arrow = np.random.choice(NUM_ARROW_TYPES, 1, p=binary_arrow_prob)[0]
                 binary_encoded_arrows.append(str(encoded_arrow))
             arrows = "".join(binary_encoded_arrows)
