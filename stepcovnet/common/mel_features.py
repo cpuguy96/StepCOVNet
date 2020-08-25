@@ -39,8 +39,13 @@ def frame(data, window_length, hop_length):
   """
     num_samples = data.shape[0]
     num_frames = 1 + int(np.floor((num_samples - window_length) / hop_length))
-    if len(data.shape) > 1 and num_samples - num_frames > 0:  # adds zero padding to not drop frames
-        data = np.pad(data, ((0, num_samples - num_frames), (0, 0)), 'constant', constant_values=((0, 0), (0, 0)))
+    padding_diff = int(np.floor(num_samples / hop_length) - num_frames)
+    if padding_diff > 0:  # adds zero padding to not drop frames
+        padding = padding_diff * hop_length
+        if len(data.shape) > 1:
+            data = np.pad(data, ((0, padding), (0, 0)), 'constant', constant_values=((0, 0), (0, 0)))
+        else:
+            data = np.pad(data, (0, padding), 'constant', constant_values=(0, 0))
         num_samples = data.shape[0]
         num_frames = 1 + int(np.floor((num_samples - window_length) / hop_length))
     shape = (num_frames, window_length) + data.shape[1:]
