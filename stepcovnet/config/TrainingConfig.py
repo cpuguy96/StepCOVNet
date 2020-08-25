@@ -1,8 +1,6 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from stepcovnet.common.constants import NUM_ARROWS
-from stepcovnet.common.constants import NUM_ARROW_TYPES
 from stepcovnet.common.utils import get_channel_scalers
 from stepcovnet.config.AbstractConfig import AbstractConfig
 
@@ -49,27 +47,24 @@ class TrainingConfig(AbstractConfig):
         return all_indexes, train_indexes, val_indexes
 
     def get_class_weights(self, indexes):
-        num_all = 0
-        num_pos = 0
+        labels = None
         with self.enter_dataset as dataset:
             for index in indexes:
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
-                num_pos += dataset.labels[song_start_index:song_end_index].sum()
-                num_all += len(dataset.labels[song_start_index:song_end_index])
-        num_neg = num_all - num_pos
-        # Setting all labels except 0 and 1 to 0 until this bug is fixed:
-        # https://github.com/tensorflow/tensorflow/issues/40070
-        class_weights = dict(
-            zip(list(range(NUM_ARROWS * NUM_ARROW_TYPES)), list(0 for _ in range(NUM_ARROWS * NUM_ARROW_TYPES))))
+                binary_encoded_arrows = dataset.binary_encoded_arrows[song_start_index:song_end_index]
+                if labels is None:
+                    labels = binary_encoded_arrows
+                else:
+                    labels = np.concatenate((labels, binary_encoded_arrows), axis=0)
 
-        # Currently looking for samples that all arrows aren't only all 0's.
-        # Might change this in the future to balance by arrow position/type
-        class_weights[0] = (num_all / num_neg) / 2.0
-        class_weights[1] = (num_all / num_pos) / 2.0
+        class_counts = [labels[:, class_index].sum() for class_index in range(labels.shape[1])]
 
-        # Removing the use of class weights for testing
-        # return class_weights
-        return None
+        class_weights = dict(zip(
+            list(range(len(class_counts))),
+            list((len(labels) / class_count) / len(class_counts) for class_count in class_counts)
+        ))
+
+        return dict(enumerate(class_weights))
 
     def get_init_bias_correction(self):
         # Best practices mentioned in
