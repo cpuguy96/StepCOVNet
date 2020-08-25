@@ -7,6 +7,7 @@ import soundfile as sf
 
 from stepcovnet.common import mel_features
 from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
+from stepcovnet.common.constants import NUM_ARROWS
 from stepcovnet.common.utils import feature_reshape_up
 from stepcovnet.encoder.BinaryArrowEncoder import BinaryArrowEncoder
 from stepcovnet.encoder.LabelArrowEncoder import LabelArrowEncoder
@@ -48,6 +49,9 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_
         arrows_array = np.zeros((len_line, 4))
         label_encoded_arrows_array = np.zeros((len_line,))
         binary_encoded_arrows_array = np.zeros((len_line, 4 * num_arrow_types))
+        # Set first index of each binary encoded arrow to 1 to default to empty arrow
+        for i in range(NUM_ARROWS):
+            binary_encoded_arrows_array[:, i * num_arrow_types] = 1
 
         arrows_list = arrows[difficulty]
         label_encoded_arrows_list = label_encoded_arrows[difficulty].reshape(-1)
