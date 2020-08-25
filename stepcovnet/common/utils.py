@@ -28,7 +28,7 @@ def get_filename(file_path, with_ext=True):
 
 
 def standardize_filename(filename):
-    return re.sub("[^a-z0-9-_]", "", filename.lower())
+    return re.sub(' ', '_', re.sub('[^a-z0-9-_ ]', '', filename.lower()))
 
 
 def write_file(output_path, output_data, header=""):
