@@ -7,7 +7,6 @@ from functools import partial
 from os.path import join
 
 import joblib
-import numpy as np
 import psutil
 
 from stepcovnet.common.parameters import CONFIG
@@ -56,7 +55,6 @@ def collect_features(wav_path, timing_path, config, file_name):
 def collect_data(wavs_path, timings_path, output_path, name_prefix, config, training_dataset, dataset_type, multi=False,
                  limit=-1, cores=1):
     scalers = None
-    features_batch = None
     config["NUM_CHANNELS"] = config["NUM_MULTI_CHANNELS"] if multi else 1
     all_metadata = build_all_metadata(dataset_name=name_prefix, dataset_type=dataset_type.name, config=config)
     func = partial(collect_features, wavs_path, timings_path, config)
@@ -74,27 +72,15 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
                              label_encoded_arrows=label_encoded_arrows, binary_encoded_arrows=binary_encoded_arrows,
                              file_names=file_name)
                 all_metadata = update_all_metadata(all_metadata, {"file_name": [file_name]})
-                if features_batch is None:
-                    features_batch = features
-                else:
-                    features_batch = np.concatenate((features_batch, features), axis=0)
-                # Save scalers after every 5 runs
-                if i % 5 == 0:
-                    # not using joblib parallel since we are already using multiprocessing
-                    print("Creating scalers")
-                    scalers = get_channel_scalers(features_batch, existing_scalers=scalers, n_jobs=1)
-                    features_batch = None
-                    print("Saving scalers")
-                    joblib.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
+                # not using joblib parallel since we are already using multiprocessing
+                print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
+                scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
                 if limit > 0:
                     song_count += 1
-                    print("[%d/%d] Features collected: %s " % (dataset.num_samples, limit, file_name))
+                    print("[%d/%d] Features collected: %s" % (dataset.num_samples, limit, file_name))
                     if dataset.num_samples >= limit:
                         print("Limit reached after %d songs. Breaking..." % song_count)
                         break
-    if features_batch is not None:
-        print("Creating scalers before final save")
-        scalers = get_channel_scalers(features_batch, existing_scalers=scalers, n_jobs=1)
     print("Saving scalers")
     joblib.dump(scalers, open(join(output_path, name_prefix + '_scaler.pkl'), 'wb'))
     print("Saving metadata")
