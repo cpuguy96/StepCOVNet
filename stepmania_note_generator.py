@@ -39,6 +39,8 @@ def save_pred_arrows(pred_arrows, output_path, file_name):
 
 
 def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
+    verbose = True if verbose_int == 1 else False
+
     dataset_config = stepcovnet_model.metadata["dataset_config"]
     lookback = stepcovnet_model.metadata["training_config"]["lookback"]
     difficulty = stepcovnet_model.metadata["training_config"]["difficulty"]
@@ -53,14 +55,20 @@ def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
 
     audio_file_names = [get_filename(file_name, with_ext=False)
                         for file_name in get_filenames_from_folder(audio_files_path)]
-    inference_executor = InferenceExecutor(stepcovnet_model=stepcovnet_model)
+    inference_executor = InferenceExecutor(stepcovnet_model=stepcovnet_model, verbose=verbose)
 
     for audio_file_name in audio_file_names:
+        start_time = time.time()
+        if verbose:
+            print("Generating notes for %s\n-----------------------------------------\n" % audio_file_name)
         inference_config = InferenceConfig(audio_path=audio_files_path, file_name=audio_file_name,
                                            dataset_config=dataset_config, lookback=lookback, difficulty=difficulty)
         inference_input = InferenceInput(inference_config=inference_config)
         pred_arrows = inference_executor.execute(input_data=inference_input)
         save_pred_arrows(pred_arrows=pred_arrows, output_path=output_path, file_name=audio_file_name)
+        end_time = time.time()
+        if verbose:
+            print("Elapsed time was %g seconds\n" % (end_time - start_time))
 
 
 def stepmania_note_generator(input_path, output_path, model_path, verbose_int=0):
@@ -82,7 +90,12 @@ def stepmania_note_generator(input_path, output_path, model_path, verbose_int=0)
             build_tmp_dir(tmp_dir)
             copy_to_tmp_dir(input_path, tmp_dir, batch)
             if verbose:
-                print("Loading StepCOVNet model\n-----------------------------------------\n")
+                print("Loading StepCOVNet retrained model")
+            try:
+                stepcovnet_model = StepCOVNetModel.load(input_path=model_path, retrained=True)
+            except OSError:
+                if verbose:
+                    print("Failed to retrieve retrained StepCOVNet model. Loading non-retrained model")
                 stepcovnet_model = StepCOVNetModel.load(input_path=model_path, retrained=False)
             if verbose:
                 print("Starting audio to txt generation\n-----------------------------------------\n")

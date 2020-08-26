@@ -11,8 +11,9 @@ from stepcovnet.inputs.InferenceInput import InferenceInput
 
 
 class InferenceExecutor(AbstractExecutor):
-    def __init__(self, stepcovnet_model):
+    def __init__(self, stepcovnet_model, verbose=False):
         super(InferenceExecutor, self).__init__(stepcovnet_model=stepcovnet_model)
+        self.verbose = verbose
         self.binary_arrow_encoder = BinaryArrowEncoder()
         self.label_arrow_encoder = LabelArrowEncoder()
 
@@ -45,4 +46,6 @@ class InferenceExecutor(AbstractExecutor):
             arrow_mask = np.roll(arrow_mask, -1, axis=0)
             arrow_input[0][-1] = self.label_arrow_encoder.encode(arrows)
             arrow_mask[0][-1] = 0
+            if self.verbose and audio_features_index % 100 == 0:
+                print("[%d/%d] Samples generated" % (audio_features_index, len(input_data.audio_features)))
         return pred_arrows
