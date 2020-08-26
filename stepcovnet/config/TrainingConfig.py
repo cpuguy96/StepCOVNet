@@ -20,8 +20,9 @@ class TrainingConfig(AbstractConfig):
         self.num_samples = self.get_num_samples(self.all_indexes)
         self.num_train_samples = self.get_num_samples(self.train_indexes)
         self.num_val_samples = self.get_num_samples(self.val_indexes)
-        self.train_class_weights = self.get_class_weights(self.train_indexes)
-        self.all_class_weights = self.get_class_weights(self.all_indexes)
+        # Disabling class weights since model currently performs better when disabled.
+        self.train_class_weights = None  # self.get_class_weights(self.train_indexes)
+        self.all_class_weights = None  # self.get_class_weights(self.all_indexes)
         self.init_bias_correction = self.get_init_bias_correction()
         self.train_scalers = self.get_train_scalers()
 
