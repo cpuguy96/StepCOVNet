@@ -36,7 +36,7 @@ def update_all_metadata(all_metadata, metadata):
     return all_metadata
 
 
-def collect_features(wav_path, timing_path, config, file_name):
+def collect_features(wav_path, timing_path, config, cores, file_name):
     try:
         print('Feature collecting: %s' % file_name)
         log_mel, onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows = \
@@ -44,6 +44,10 @@ def collect_features(wav_path, timing_path, config, file_name):
         feature, label_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict = \
             feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, label_encoded_arrows,
                                                       binary_encoded_arrows, string_arrows, config["NUM_ARROW_TYPES"])
+        # Sleep for 2 seconds per core to prevent high RAM usage since this function is much faster than the main loop.
+        # TODO: Figure out how to block this function call when collected features for each core
+        if cores > 1:
+            time.sleep(cores * 2)
         # type casting features to float16 to save disk space.
         return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, arrows_dict,
                 label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict]
@@ -57,7 +61,7 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
     scalers = None
     config["NUM_CHANNELS"] = config["NUM_MULTI_CHANNELS"] if multi else 1
     all_metadata = build_all_metadata(dataset_name=name_prefix, dataset_type=dataset_type.name, config=config)
-    func = partial(collect_features, wavs_path, timings_path, config)
+    func = partial(collect_features, wavs_path, timings_path, config, cores)
     file_names = [get_filename(file_name, with_ext=False) for file_name in get_filenames_from_folder(timings_path)]
 
     with training_dataset as dataset:
