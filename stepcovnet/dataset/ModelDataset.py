@@ -111,7 +111,12 @@ class ModelDataset(object):
                             diff_copy.remove(difficulty)
                         self.dump_difficulty_dataset(dataset_name, difficulty, value)
                     data_shape = data[next(iter(data))].shape
-                    null_values = np.full(data_shape, fill_value=-1)
+                    dtype = data[next(iter(data))].dtype
+                    if dtype == np.dtype('S4'):
+                        null_values = np.chararray(data_shape, itemsize=4)
+                        null_values[:] = '0000'
+                    else:
+                        null_values = np.full(data_shape, fill_value=-1)
                     for remaining_diff in diff_copy:
                         self.dump_difficulty_dataset(dataset_name, remaining_diff, null_values)
                     continue
