@@ -25,7 +25,7 @@ class TrainingExecutor(AbstractExecutor):
                                             metrics=hyperparameters.metrics,
                                             optimizer=hyperparameters.optimizer)
         self.stepcovnet_model.model.summary()
-        # Saving pretrained model in the case of errors during training
+        # Saving scalers and metadata in the case of errors during training
         self.save(input_data.config, pretrained=True, retrained=False)
         history = self.train(input_data, self.get_training_callbacks(hyperparameters))
         self.save(input_data.config, training_history=history, retrained=False)
@@ -48,9 +48,7 @@ class TrainingExecutor(AbstractExecutor):
             ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback'), monitor='val_loss',
                             verbose=0, save_best_only=True)]
         if patience > 0:
-            callbacks.append(EarlyStopping(monitor='val_pr_auc', patience=patience, verbose=0, mode="max"))
-        elif patience == 0:
-            raise ValueError("Patience must be > 0")
+            callbacks.append(EarlyStopping(monitor='val_loss', patience=patience, verbose=0, mode="max"))
 
         if log_path is not None:
             os.makedirs(os.path.join(log_path, "split_dataset"), exist_ok=True)
@@ -112,11 +110,11 @@ class TrainingExecutor(AbstractExecutor):
             if training_config.all_scalers is not None:
                 joblib.dump(training_config.all_scalers,
                             open(os.path.join(model_out_path, model_name + '_scaler.pkl'), 'wb'))
-            model_name += '_pretrained'
         elif retrained:
             model_name += '_retrained'
-        print("Saving model \"%s\" at %s" % (model_name, model_out_path))
-        self.stepcovnet_model.model.save(os.path.join(model_out_path, model_name))
+        if not pretrained:
+            print("Saving model \"%s\" at %s" % (model_name, model_out_path))
+            self.stepcovnet_model.model.save(os.path.join(model_out_path, model_name))
         if self.stepcovnet_model.metadata is None:
             self.stepcovnet_model.build_metadata_from_training_config(training_config)
         if training_history is not None and not pretrained:
