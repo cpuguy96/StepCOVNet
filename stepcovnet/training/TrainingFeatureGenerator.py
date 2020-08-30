@@ -107,6 +107,7 @@ class TrainingFeatureGenerator(object):
                         new_song = True
 
                 if self.song_start_index >= song_end_index:
+                    new_song = True
                     self.song_index += 1
 
                 if len(features["y_batch"]) > 0:
@@ -118,8 +119,7 @@ class TrainingFeatureGenerator(object):
                     yield x_batch, features["y_batch"], features["sample_weights_batch"]
 
     @staticmethod
-    def append_existing_data(features, arrow_features, arrow_mask, audio_features, arrows,
-                             sample_weights):
+    def append_existing_data(features, arrow_features, arrow_mask, audio_features, arrows, sample_weights):
         # Append or set features/labels/sample weights based on if existing data is present
         if not features or any(len(value) == 0 for value in features.values()):
             features["arrow_features"] = arrow_features
