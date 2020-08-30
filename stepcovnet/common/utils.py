@@ -65,14 +65,9 @@ def get_channel_scalers(features, existing_scalers=None, n_jobs=1):
         features = feature_reshape_down(features=features)
 
     num_channels = features.shape[-1]
-
-    if existing_scalers is None:
-        channel_scalers = [StandardScaler() for _ in range(num_channels)]
-    else:
-        channel_scalers = existing_scalers
-    channel_scalers = Parallel(backend="loky", n_jobs=n_jobs)(
-        delayed(scaler.partial_fit)(features[:, :, i]) for i, scaler in
-        enumerate(channel_scalers))
+    channel_scalers = existing_scalers if existing_scalers is not None \
+        else [StandardScaler() for _ in range(num_channels)]
+    channel_scalers = [scaler.partial_fit(features[:, :, i]) for i, scaler in enumerate(channel_scalers)]
 
     return channel_scalers
 
@@ -212,13 +207,14 @@ def get_ngram(data, lookback, padding_value=0):
     return np.asarray(list(ngrams(data_w_padding, lookback)))
 
 
-def get_samples_ngram_with_mask(samples, lookback, squeeze=True, reshape=False):
+def get_samples_ngram_with_mask(samples, lookback, squeeze=True, reshape=False, sample_padding_value=0,
+                                mask_padding_value=1):
     if reshape:
-        ngram_samples = get_ngram(samples.reshape(-1, 1), lookback)
+        ngram_samples = get_ngram(samples.reshape(-1, 1), lookback, padding_value=sample_padding_value)
     else:
         ngram_samples = get_ngram(samples, lookback)
-    mask = np.zeros((samples.shape[0], 1), dtype=int)
-    ngram_mask = get_ngram(mask, lookback, padding_value=1)
+    mask = np.ones((samples.shape[0], 1), dtype=np.int32)
+    ngram_mask = get_ngram(mask, lookback, padding_value=mask_padding_value)
 
     if squeeze:
         ngram_samples = np.squeeze(ngram_samples)

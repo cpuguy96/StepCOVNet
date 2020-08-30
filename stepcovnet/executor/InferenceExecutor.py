@@ -45,7 +45,7 @@ class InferenceExecutor(AbstractExecutor):
             arrow_input = np.roll(arrow_input, -1, axis=0)
             arrow_mask = np.roll(arrow_mask, -1, axis=0)
             arrow_input[0][-1] = self.label_arrow_encoder.encode(arrows)
-            arrow_mask[0][-1] = 0
+            arrow_mask[0][-1] = 1
             if self.verbose and audio_features_index % 100 == 0:
                 print("[%d/%d] Samples generated" % (audio_features_index, len(input_data.audio_features)))
         return pred_arrows

@@ -12,13 +12,11 @@ class AbstractConfig(ABC, object):
 
     @property
     def arrow_input_shape(self):
-        # return lookback - 1 to not include current arrow sample
-        return (self.lookback - 1,)
+        return (None,)
 
     @property
     def arrow_mask_shape(self):
-        # return lookback - 1 to not include current arrow sample
-        return (self.lookback - 1,)
+        return (None,)
 
     @property
     def audio_input_shape(self):

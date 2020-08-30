@@ -30,7 +30,8 @@ class TrainingInput(AbstractInput):
                                                                 num_samples=self.config.num_train_samples,
                                                                 scalers=self.config.train_scalers,
                                                                 difficulty=self.config.difficulty,
-                                                                warmup=True)
+                                                                warmup=True,
+                                                                tokenizer=self.config.hyperparameters.tokenizer)
         self.val_feature_generator = TrainingFeatureGenerator(dataset_path=self.config.dataset_path,
                                                               dataset_type=self.config.dataset_type,
                                                               lookback=self.config.lookback,
@@ -39,7 +40,8 @@ class TrainingInput(AbstractInput):
                                                               num_samples=self.config.num_val_samples,
                                                               scalers=self.config.train_scalers,
                                                               difficulty=self.config.difficulty,
-                                                              shuffle=False)
+                                                              shuffle=False,
+                                                              tokenizer=self.config.hyperparameters.tokenizer)
         self.all_feature_generator = TrainingFeatureGenerator(dataset_path=self.config.dataset_path,
                                                               dataset_type=self.config.dataset_type,
                                                               lookback=self.config.lookback,
@@ -48,7 +50,8 @@ class TrainingInput(AbstractInput):
                                                               num_samples=self.config.num_samples,
                                                               scalers=self.config.all_scalers,
                                                               difficulty=self.config.difficulty,
-                                                              warmup=True)
+                                                              warmup=True,
+                                                              tokenizer=self.config.hyperparameters.tokenizer)
 
     def get_tf_dataset(self, generator):
         return tf.data.Dataset.from_generator(

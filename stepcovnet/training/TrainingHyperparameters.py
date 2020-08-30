@@ -1,4 +1,5 @@
 import tensorflow as tf
+from transformers import GPT2Tokenizer
 
 
 class TrainingHyperparameters(object):
@@ -14,9 +15,10 @@ class TrainingHyperparameters(object):
     DEFAULT_EPOCHS = 5
     DEFAULT_PATIENCE = 2
     DEFAULT_BATCH_SIZE = 32
+    DEFAULT_TOKENIZER = GPT2Tokenizer.from_pretrained('gpt2')
 
     def __init__(self, optimizer=None, loss=None, metrics=None, batch_size=None, epochs=None, patience=None,
-                 log_path=None, retrain=None):
+                 log_path=None, retrain=None, tokenizer=None):
         self.optimizer = optimizer if optimizer is not None else self.DEFAULT_OPTIMIZER
         self.loss = loss if loss is not None else self.DEFAULT_LOSS
         self.metrics = metrics if metrics is not None else self.DEFAULT_METRICS
@@ -25,6 +27,7 @@ class TrainingHyperparameters(object):
         self.batch_size = batch_size if batch_size is not None else self.DEFAULT_BATCH_SIZE
         self.retrain = retrain if retrain is not None else True
         self.log_path = log_path
+        self.tokenizer = tokenizer if tokenizer is not None else self.DEFAULT_TOKENIZER
 
     def __str__(self):
         str_dict = {}

@@ -14,6 +14,7 @@ class InferenceInput(AbstractInput):
                                                  config=self.config.dataset_config)
         self.arrow_input_init, self.arrow_mask_init = get_samples_ngram_with_mask(samples=np.array([0]),
                                                                                   lookback=self.config.lookback,
-                                                                                  reshape=True)
+                                                                                  reshape=True,
+                                                                                  mask_padding_value=0)
         self.arrow_input_init = self.arrow_input_init[:-1, 1:]
         self.arrow_mask_init = self.arrow_mask_init[:-1, 1:]
