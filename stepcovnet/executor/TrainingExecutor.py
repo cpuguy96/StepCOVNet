@@ -48,7 +48,7 @@ class TrainingExecutor(AbstractExecutor):
             ModelCheckpoint(filepath=os.path.join(model_out_path, model_name + '_callback'), monitor='val_loss',
                             verbose=0, save_best_only=True)]
         if patience > 0:
-            callbacks.append(EarlyStopping(monitor='val_loss', patience=patience, verbose=0, mode="max"))
+            callbacks.append(EarlyStopping(monitor='val_loss', patience=patience, verbose=0))
 
         if log_path is not None:
             os.makedirs(os.path.join(log_path, "split_dataset"), exist_ok=True)
