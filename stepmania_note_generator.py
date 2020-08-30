@@ -5,9 +5,11 @@ import warnings
 from os.path import join
 from shutil import copyfile
 
+from stepcovnet.common.utils import get_bpm
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
 from stepcovnet.common.utils import standardize_filename
+from stepcovnet.common.utils import write_file
 from stepcovnet.config.InferenceConfig import InferenceConfig
 from stepcovnet.executor.InferenceExecutor import InferenceExecutor
 from stepcovnet.inputs.InferenceInput import InferenceInput
@@ -32,10 +34,22 @@ def build_tmp_dir(tmp_dir_name):
     os.makedirs(join(tmp_dir_name, "wav"), exist_ok=True)
 
 
-def save_pred_arrows(pred_arrows, output_path, file_name):
-    with open(join(output_path, "pred_" + file_name + ".txt"), "w") as f:
-        for arrow in pred_arrows:
-            f.write(str(arrow) + "\n")
+def get_timings_arrow_mapping(pred_arrows, hopsize):
+    timings_arrow_mapping = {}
+    for i, pred_arrow in enumerate(pred_arrows):
+        if pred_arrow != "0000":
+            timings_arrow_mapping[str(i * hopsize)] = pred_arrow
+    return timings_arrow_mapping
+
+
+def save_pred_arrows(timings_arrows_mapping, output_path, file_name, bpm):
+    header = "TITLE " + str(file_name) + "\n" + \
+             "BPM " + str(bpm) + "\n" + \
+             "NOTES \n"
+    output_data = ""
+    for timing, arrow in timings_arrows_mapping.items():
+        output_data += str(arrow) + " " + str(timing) + "\n"
+    write_file(join(output_path, "pred_" + file_name + ".txt"), output_data, header=header)
 
 
 def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
@@ -44,7 +58,8 @@ def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
     dataset_config = stepcovnet_model.metadata["dataset_config"]
     lookback = stepcovnet_model.metadata["training_config"]["lookback"]
     difficulty = stepcovnet_model.metadata["training_config"]["difficulty"]
-    sample_frequency = stepcovnet_model.metadata["dataset_config"]["SAMPLE_RATE"]
+    sample_frequency = dataset_config["SAMPLE_RATE"]
+    hopsize = dataset_config["STFT_HOP_LENGTH_SECONDS"]
     audio_files_path = join(tmp_dir, "wav/")
 
     # Convert audio clip into a wav before preprocessing
@@ -64,8 +79,12 @@ def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
         inference_config = InferenceConfig(audio_path=audio_files_path, file_name=audio_file_name,
                                            dataset_config=dataset_config, lookback=lookback, difficulty=difficulty)
         inference_input = InferenceInput(inference_config=inference_config)
+        bpm = get_bpm(wav_file_path=join(audio_files_path, audio_file_name + ".wav"))
         pred_arrows = inference_executor.execute(input_data=inference_input)
-        save_pred_arrows(pred_arrows=pred_arrows, output_path=output_path, file_name=audio_file_name)
+
+        timings_arrows_mapping = get_timings_arrow_mapping(pred_arrows, hopsize=hopsize)
+        save_pred_arrows(timings_arrows_mapping=timings_arrows_mapping, output_path=output_path,
+                         file_name=audio_file_name, bpm=bpm)
         end_time = time.time()
         if verbose:
             print("Elapsed time was %g seconds\n" % (end_time - start_time))

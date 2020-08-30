@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import re
 
+import librosa
 import numpy as np
 import psutil
 from joblib import Parallel
@@ -34,6 +35,11 @@ def standardize_filename(filename):
 def write_file(output_path, output_data, header=""):
     with open(output_path, "w") as file:
         file.write(header + output_data)
+
+
+def get_bpm(wav_file_path):
+    y, sr = librosa.load(wav_file_path)
+    return librosa.beat.beat_track(y=y, sr=sr)[0]
 
 
 def feature_reshape_down(features, order='C'):
