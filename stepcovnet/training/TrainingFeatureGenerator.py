@@ -61,40 +61,17 @@ class TrainingFeatureGenerator(object):
                     lookback_index_padding_start = max(start_index - self.lookback, song_start_index)
                     lookback_padding_added = start_index - lookback_index_padding_start
                     if self.tokenizer is not None:
-                        string_arrows = dataset.string_arrows[lookback_index_padding_start:end_index]
-                        arrow_features, arrow_mask = get_samples_ngram_with_mask(string_arrows, self.lookback,
-                                                                                 reshape=True,
-                                                                                 sample_padding_value='0000',
-                                                                                 mask_padding_value=mask_padding_value)
-                        arrow_features = arrow_features[lookback_padding_added:]
-                        arrow_mask = arrow_mask[lookback_padding_added:]
-                        decoded_arrows = [" ".join(line) for line in arrow_features]
-                        arrow_features = [self.tokenizer(line, return_tensors='tf',
-                                                         add_prefix_space=True)['input_ids']
-                                              .numpy()[0][1:].astype(np.int32)
-                                          for line in decoded_arrows]
-                        arrow_features = arrow_features[:-1]
-                        arrow_mask = list(arrow_mask[:-1, 1:])
-                        for i in range(len(arrow_mask)):
-                            len_diff = len(arrow_features[i]) - len(arrow_mask[i])
-                            if len_diff > 0:
-                                arrow_mask[i] = np.concatenate((arrow_mask[i], np.zeros((len_diff,))), axis=0)
-                            elif len_diff < 0:
-                                arrow_mask[i] = arrow_mask[i][:-len_diff]
+                        arrows = dataset.string_arrows[lookback_index_padding_start:end_index]
+                        arrow_features, arrow_mask = self.get_tokenized_arrow_features(arrows, mask_padding_value,
+                                                                                       lookback_padding_added)
                     else:
-                        encoded_arrows = dataset.label_encoded_arrows[lookback_index_padding_start:end_index]
-                        arrow_features, arrow_mask = get_samples_ngram_with_mask(encoded_arrows, self.lookback,
-                                                                                 reshape=True,
-                                                                                 mask_padding_value=mask_padding_value)
-                        arrow_features = arrow_features[lookback_padding_added:]
-                        arrow_mask = arrow_mask[lookback_padding_added:]
-                        arrow_features = arrow_features[:-1, 1:]
-                        arrow_mask = arrow_mask[:-1, 1:]
-                    audio_features, _ = get_samples_ngram_with_mask(
-                        dataset.features[lookback_index_padding_start:end_index],
-                        self.lookback, squeeze=False)
-                    audio_features = audio_features[lookback_padding_added:]
-                    audio_features = audio_features[1:]
+                        arrows = dataset.label_encoded_arrows[lookback_index_padding_start:end_index]
+                        arrow_features, arrow_mask = self.get_arrow_features(arrows, mask_padding_value,
+                                                                             lookback_padding_added)
+
+                    audio_data = dataset.features[lookback_index_padding_start:end_index]
+                    audio_features = self.get_audio_features(audio_data, lookback_padding_added)
+
                     arrows = dataset.binary_encoded_arrows[start_index: end_index]
                     sample_weights = dataset.sample_weights[start_index: end_index]
 
@@ -148,3 +125,44 @@ class TrainingFeatureGenerator(object):
                                                               axis=0)
 
         return features
+
+    def get_tokenized_arrow_features(self, arrows, mask_padding_value, lookback_padding_added):
+        arrow_features, arrow_mask = get_samples_ngram_with_mask(arrows, self.lookback,
+                                                                 reshape=True,
+                                                                 sample_padding_value='0000',
+                                                                 mask_padding_value=mask_padding_value)
+        arrow_features = arrow_features[lookback_padding_added:]
+        arrow_mask = arrow_mask[lookback_padding_added:].astype(np.int32)
+        decoded_arrows = [" ".join(line) for line in arrow_features]
+        arrow_features = [self.tokenizer(line, return_tensors='tf',
+                                         add_prefix_space=True)['input_ids']
+                              .numpy()[0][1:].astype(np.int32)
+                          for line in decoded_arrows]
+        arrow_features = arrow_features[:-1]
+        arrow_mask = list(arrow_mask[:-1, 1:])
+        for i in range(len(arrow_mask)):
+            len_diff = len(arrow_features[i]) - len(arrow_mask[i])
+            if len_diff > 0:
+                arrow_mask[i] = np.concatenate((arrow_mask[i], np.zeros((len_diff,))), axis=0)
+            elif len_diff < 0:
+                arrow_mask[i] = arrow_mask[i][:-len_diff]
+
+        return arrow_features, arrow_mask
+
+    def get_arrow_features(self, arrows, mask_padding_value, lookback_padding_added):
+        arrow_features, arrow_mask = get_samples_ngram_with_mask(arrows, self.lookback,
+                                                                 reshape=True,
+                                                                 mask_padding_value=mask_padding_value)
+        arrow_features = arrow_features[lookback_padding_added:]
+        arrow_mask = arrow_mask[lookback_padding_added:]
+        arrow_features = arrow_features[:-1, 1:]
+        arrow_mask = arrow_mask[:-1, 1:]
+
+        return arrow_features.astype(np.int32), arrow_mask.astype(np.int32)
+
+    def get_audio_features(self, audio_data, lookback_padding_added):
+        audio_features, _ = get_samples_ngram_with_mask(audio_data, self.lookback, squeeze=False)
+        audio_features = audio_features[lookback_padding_added:]
+        audio_features = audio_features[1:]
+
+        return audio_features
