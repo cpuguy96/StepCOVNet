@@ -24,11 +24,11 @@ class InferenceExecutor(AbstractExecutor):
         pred_arrows = []
         inferer = self.stepcovnet_model.model.signatures["serving_default"]
         for audio_features_index in range(len(input_data.audio_features)):
-            audio_features, _ = get_samples_ngram_with_mask(
+            audio_features = get_samples_ngram_with_mask(
                 samples=input_data.audio_features[
                         max(audio_features_index + 1 - input_data.config.lookback, 0): audio_features_index + 1],
                 lookback=input_data.config.lookback,
-                squeeze=False)[-1]
+                squeeze=False)[0][-1]
             audio_input = apply_scalers(features=audio_features, scalers=input_data.config.scalers)
             binary_arrows_probs = inferer(arrow_input=tf.convert_to_tensor(arrow_input),
                                           arrow_mask=tf.convert_to_tensor(arrow_mask),
