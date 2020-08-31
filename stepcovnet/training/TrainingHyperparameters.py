@@ -10,9 +10,9 @@ class TrainingHyperparameters(object):
         tf.keras.metrics.AUC(curve="PR", name='pr_auc'),
         tf.keras.metrics.AUC(name='auc')
     ]
-    DEFAULT_LOSS = tf.keras.losses.BinaryCrossentropy(label_smoothing=0.025)
+    DEFAULT_LOSS = tf.keras.losses.BinaryCrossentropy(label_smoothing=0.05)
     DEFAULT_OPTIMIZER = tf.keras.optimizers.Nadam(beta_1=0.99)
-    DEFAULT_EPOCHS = 5
+    DEFAULT_EPOCHS = 10
     DEFAULT_PATIENCE = 2
     DEFAULT_BATCH_SIZE = 32
     DEFAULT_TOKENIZER = GPT2Tokenizer.from_pretrained('gpt2')
