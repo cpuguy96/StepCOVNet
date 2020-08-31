@@ -40,7 +40,7 @@ class TrainingExecutor(AbstractExecutor):
         return self.stepcovnet_model
 
     def get_training_callbacks(self, hyperparameters: TrainingHyperparameters):
-        model_out_path = self.stepcovnet_model.model_path
+        model_out_path = self.stepcovnet_model.model_root_path
         model_name = self.stepcovnet_model.model_name
         log_path = hyperparameters.log_path
         patience = hyperparameters.patience
@@ -104,7 +104,7 @@ class TrainingExecutor(AbstractExecutor):
         return history
 
     def save(self, training_config: TrainingConfig, retrained, training_history=None, pretrained=False):
-        model_out_path = self.stepcovnet_model.model_path
+        model_out_path = self.stepcovnet_model.model_root_path
         model_name = self.stepcovnet_model.model_name
         if pretrained:
             if training_config.all_scalers is not None:

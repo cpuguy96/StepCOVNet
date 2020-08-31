@@ -6,8 +6,8 @@ import tensorflow as tf
 
 
 class StepCOVNetModel(object):
-    def __init__(self, model_path, model_name="StepCOVNet", model: tf.keras.Model = None, metadata=None):
-        self.model_path = os.path.abspath(model_path)
+    def __init__(self, model_root_path, model_name="StepCOVNet", model: tf.keras.Model = None, metadata=None):
+        self.model_root_path = os.path.abspath(model_root_path)
         self.model_name = model_name
         self.model = model
         self.metadata = metadata
@@ -32,4 +32,4 @@ class StepCOVNetModel(object):
         model_path = os.path.join(input_path, model_name + '_retrained') if retrained \
             else os.path.join(input_path, model_name)
         model = tf.saved_model.load(model_path)
-        return StepCOVNetModel(model_path=input_path, model_name=model_name, model=model, metadata=metadata)
+        return StepCOVNetModel(model_root_path=input_path, model_name=model_name, model=model, metadata=metadata)

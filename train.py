@@ -37,7 +37,7 @@ def run_training(input_path, output_path, model_name, limit, lookback, difficult
     arrow_model = ArrowModel(training_input.config)
     audio_model = AudioModel(training_input.config)
     classifier_model = ClassifierModel(training_input.config, arrow_model, audio_model)
-    stepcovnet_model = StepCOVNetModel(model_path=output_path, model_name=model_name, model=classifier_model.model)
+    stepcovnet_model = StepCOVNetModel(model_root_path=output_path, model_name=model_name, model=classifier_model.model)
 
     TrainingExecutor(stepcovnet_model=stepcovnet_model).execute(input_data=training_input)
 
