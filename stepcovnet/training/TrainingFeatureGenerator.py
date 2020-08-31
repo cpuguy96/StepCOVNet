@@ -100,7 +100,7 @@ class TrainingFeatureGenerator(object):
                                                                      scalers=self.scalers)
                     x_batch = {"arrow_input": features["arrow_features"],
                                "arrow_mask": features["arrow_mask"],
-                               "audio_input": scaled_audio_features.astype(np.float64)}
+                               "audio_input": scaled_audio_features}
                     yield x_batch, features["y_batch"], features["sample_weights_batch"]
 
     @staticmethod
@@ -165,4 +165,4 @@ class TrainingFeatureGenerator(object):
         audio_features = audio_features[lookback_padding_added:]
         audio_features = audio_features[1:]
 
-        return audio_features
+        return audio_features.astype(np.float64)
