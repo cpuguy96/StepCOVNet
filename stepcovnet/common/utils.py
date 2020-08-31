@@ -226,4 +226,4 @@ def get_samples_ngram_with_mask(samples, lookback, squeeze=True, reshape=False, 
         ngram_samples = np.squeeze(ngram_samples)
     ngram_mask = np.squeeze(ngram_mask)
 
-    return ngram_samples, ngram_mask
+    return ngram_samples.astype(np.int32), ngram_mask.astype(np.int32)
