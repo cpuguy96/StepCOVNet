@@ -63,7 +63,7 @@ def feature_reshape_up(feature, num_freq_bands, num_time_bands, num_channels, or
     return feature.reshape((len(feature), num_time_bands, num_freq_bands, num_channels), order=order)
 
 
-def get_channel_scalers(features, existing_scalers=None, n_jobs=1):
+def get_channel_scalers(features, existing_scalers=None):
     if len(features.shape) not in {3, 4}:
         raise ValueError('Number of dims for features is %d (should be 3 or 4)' % len(features.shape))
 

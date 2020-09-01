@@ -19,9 +19,10 @@ class ModelDataset(object):
             self.mode = "r"
         # ensure these dataset names are somewhat unique
         self.dataset_names = ["features", "labels", "sample_weights", "arrows", "label_encoded_arrows",
-                              "binary_encoded_arrows", "string_arrows", "file_names", "song_index_ranges"]
+                              "binary_encoded_arrows", "string_arrows", "onehot_encoded_arrows", "file_names",
+                              "song_index_ranges"]
         self.difficulty_dataset_names = ["labels", "sample_weights", "arrows", "label_encoded_arrows",
-                                         "binary_encoded_arrows", "string_arrows"]
+                                         "binary_encoded_arrows", "string_arrows", "onehot_encoded_arrows"]
         self.scaler_dataset_names = ["file_names"]
         self.dataset_attr = {"labels": {"num_valid_samples", "pos_samples", "neg_samples"},
                              "features": {"num_samples"}}
@@ -31,7 +32,8 @@ class ModelDataset(object):
 
     def __getitem__(self, item):
         data = [self.features[item], self.labels[item], self.sample_weights[item], self.arrows[item],
-                self.label_encoded_arrows[item], self.binary_encoded_arrows[item]]
+                self.label_encoded_arrows[item], self.binary_encoded_arrows[item], self.string_arrows[item],
+                self.onehot_encoded_arrows[item]]
         return data
 
     def __len__(self):
@@ -90,7 +92,7 @@ class ModelDataset(object):
         self.update_dataset_attrs(self.h5py_file, difficulty_dataset_name, value)
 
     def dump(self, features, labels, sample_weights, arrows, label_encoded_arrows, binary_encoded_arrows, file_names,
-             string_arrows):
+             string_arrows, onehot_encoded_arrows):
         try:
             all_data = self.get_dataset_name_to_data_map(features=features,
                                                          labels=labels,
@@ -99,6 +101,7 @@ class ModelDataset(object):
                                                          label_encoded_arrows=label_encoded_arrows,
                                                          binary_encoded_arrows=binary_encoded_arrows,
                                                          string_arrows=string_arrows,
+                                                         onehot_encoded_arrows=onehot_encoded_arrows,
                                                          file_names=file_names,
                                                          song_index_ranges=[[len(self), len(self) + len(features)]])
             for dataset_name, data in all_data.items():
@@ -232,6 +235,10 @@ class ModelDataset(object):
     @property
     def string_arrows(self):
         return self.h5py_file[self.append_difficulty("string_arrows", self.difficulty)]
+
+    @property
+    def onehot_encoded_arrows(self):
+        return self.h5py_file[self.append_difficulty("onehot_encoded_arrows", self.difficulty)]
 
     @property
     def file_names(self):

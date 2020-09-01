@@ -39,18 +39,19 @@ def update_all_metadata(all_metadata, metadata):
 def collect_features(wav_path, timing_path, config, cores, file_name):
     try:
         print('Feature collecting: %s' % file_name)
-        log_mel, onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows = \
+        log_mel, onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows = \
             get_features_and_labels(wav_path, timing_path, file_name, config)
-        feature, label_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict = \
+        feature, label_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict, onehot_encoded_arrows_dict = \
             feature_onset_phrase_label_sample_weights(onsets, log_mel, arrows, label_encoded_arrows,
-                                                      binary_encoded_arrows, string_arrows, config["NUM_ARROW_TYPES"])
+                                                      binary_encoded_arrows, string_arrows, onehot_encoded_arrows,
+                                                      config["NUM_ARROW_TYPES"])
         # Sleep for 2 seconds per core to prevent high RAM usage since this function is much faster than the main loop.
         # TODO: Figure out how to block this function call when collected features for each core
         if cores > 1:
             time.sleep(cores * 2)
         # type casting features to float16 to save disk space.
         return [file_name, feature.astype("float16"), label_dict, sample_weights_dict, arrows_dict,
-                label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict]
+                label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict, onehot_encoded_arrows_dict]
     except Exception as ex:
         print("Error collecting features for %s: %r" % (file_name, ex))
         return None
@@ -70,15 +71,15 @@ def collect_data(wavs_path, timings_path, output_path, name_prefix, config, trai
             for i, result in enumerate(pool.imap(func, file_names)):
                 if result is None:
                     continue
-                file_name, features, labels, weights, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows = result
+                file_name, features, labels, weights, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows = result
                 print("[%d/%d] Dumping to dataset: %s" % (i + 1, len(file_names), file_name))
                 dataset.dump(features=features, labels=labels, sample_weights=weights, arrows=arrows,
                              label_encoded_arrows=label_encoded_arrows, binary_encoded_arrows=binary_encoded_arrows,
-                             string_arrows=string_arrows, file_names=file_name)
+                             string_arrows=string_arrows, onehot_encoded_arrows=onehot_encoded_arrows,
+                             file_names=file_name)
                 all_metadata = update_all_metadata(all_metadata, {"file_name": [file_name]})
-                # not using joblib parallel since we are already using multiprocessing
                 print("[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name))
-                scalers = get_channel_scalers(features, existing_scalers=scalers, n_jobs=1)
+                scalers = get_channel_scalers(features, existing_scalers=scalers)
                 if limit > 0:
                     song_count += 1
                     print("[%d/%d] Features collected: %s" % (dataset.num_samples, limit, file_name))
