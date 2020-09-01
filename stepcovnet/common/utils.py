@@ -227,3 +227,26 @@ def get_samples_ngram_with_mask(samples, lookback, squeeze=True, reshape=False, 
     ngram_mask = np.squeeze(ngram_mask)
 
     return ngram_samples, ngram_mask
+
+
+def normalize_tokenized_arrows(arrow_features, arrow_mask):
+    arrow_features_max_len = max([len(feature) for feature in arrow_features])
+    arrow_mask_max_len = max([len(mask) for mask in arrow_mask])
+    max_len = max(arrow_features_max_len, arrow_mask_max_len)
+    for i in range(len(arrow_features)):
+        feature_len_diff = max_len - len(arrow_features[i])
+        mask_len_diff = max_len - len(arrow_mask[i])
+        if feature_len_diff == 0 and mask_len_diff > 0:
+            arrow_mask[i] = np.concatenate((arrow_mask[i], np.ones((mask_len_diff,))), axis=0)
+        elif feature_len_diff > 0 and mask_len_diff == 0:
+            arrow_features[i] = np.concatenate((arrow_features[i], np.full((feature_len_diff,), fill_value=0)))
+            arrow_mask[i][len(arrow_mask[i]) - feature_len_diff:] = 0
+        elif feature_len_diff > 0 and mask_len_diff > 0:
+            arrow_features[i] = np.concatenate((arrow_features[i], np.full((feature_len_diff,), fill_value=0)))
+            arrow_mask[i] = np.concatenate((arrow_mask[i], np.zeros((mask_len_diff,))), axis=0)
+            if feature_len_diff < mask_len_diff:
+                arrow_mask[i][:-(mask_len_diff - feature_len_diff)] = 1
+            elif feature_len_diff > mask_len_diff:
+                arrow_mask[i][len(arrow_mask[i]) - feature_len_diff:] = 0
+
+    return arrow_features, arrow_mask

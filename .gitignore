@@ -3,7 +3,7 @@ input/
 output/
 
 saved_models/
-data/
+./data/
 logs/
 _tmp/
 

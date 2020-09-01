@@ -4,6 +4,8 @@ import numpy as np
 
 from stepcovnet.common.utils import apply_timeseries_scalers
 from stepcovnet.common.utils import get_samples_ngram_with_mask
+from stepcovnet.common.utils import normalize_tokenized_arrows
+from stepcovnet.data.Tokenizers import Tokenizers
 
 
 class TrainingFeatureGenerator(object):
@@ -18,7 +20,7 @@ class TrainingFeatureGenerator(object):
         self.batch_size = batch_size
         self.difficulty = difficulty
         self.shuffle = shuffle
-        self.tokenizer = tokenizer
+        self.tokenizer = Tokenizers[tokenizer].value
 
         # The Tensorflow calls the generator three times before starting a training job. We will "warmup" the data
         # yielding by returning the same data for the three calls. This way the indexing is aligned correctly.
@@ -71,8 +73,8 @@ class TrainingFeatureGenerator(object):
                     audio_data = dataset.features[lookback_index_padding_start:end_index]
                     audio_features = self.get_audio_features(audio_data, lookback_padding_added)
 
-                    arrows = dataset.binary_encoded_arrows[start_index: end_index]
-                    sample_weights = dataset.sample_weights[start_index: end_index]
+                    arrows = dataset.onehot_encoded_arrows[start_index:end_index]
+                    sample_weights = dataset.sample_weights[start_index:end_index]
 
                     features = self.append_existing_data(features=features, arrow_features=arrow_features,
                                                          arrow_mask=arrow_mask, audio_features=audio_features,
@@ -139,26 +141,7 @@ class TrainingFeatureGenerator(object):
                           for line in decoded_arrows]
         arrow_features = arrow_features[:-1]
         arrow_mask = list(arrow_mask[:-1, 1:])
-        arrow_features_max_len = max([len(feature) for feature in arrow_features])
-        arrow_mask_max_len = max([len(mask) for mask in arrow_mask])
-        max_len = max(arrow_features_max_len, arrow_mask_max_len)
-        for i in range(len(arrow_features)):
-            feature_len_diff = max_len - len(arrow_features[i])
-            mask_len_diff = max_len - len(arrow_mask[i])
-            if feature_len_diff == 0 and mask_len_diff > 0:
-                arrow_mask[i] = np.concatenate((arrow_mask[i], np.ones((mask_len_diff,))), axis=0)
-            elif feature_len_diff > 0 and mask_len_diff == 0:
-                arrow_features[i] = np.concatenate((arrow_features[i], np.full((feature_len_diff,), fill_value=0)))
-                arrow_mask[i][len(arrow_mask[i]) - feature_len_diff:] = 0
-            elif feature_len_diff > 0 and mask_len_diff > 0:
-                arrow_features[i] = np.concatenate((arrow_features[i], np.full((feature_len_diff,), fill_value=0)))
-                arrow_mask[i] = np.concatenate((arrow_mask[i], np.zeros((mask_len_diff,))), axis=0)
-                if feature_len_diff < mask_len_diff:
-                    arrow_mask[i][:-(mask_len_diff - feature_len_diff)] = 1
-                elif feature_len_diff > mask_len_diff:
-                    arrow_mask[i][len(arrow_mask[i]) - feature_len_diff:] = 0
-
-        return arrow_features, arrow_mask
+        return normalize_tokenized_arrows(arrow_features=arrow_features, arrow_mask=arrow_mask)
 
     def get_arrow_features(self, arrows, mask_padding_value, lookback_padding_added):
         arrow_features, arrow_mask = get_samples_ngram_with_mask(arrows, self.lookback,

@@ -5,7 +5,7 @@ import os
 import joblib
 
 from stepcovnet.config.TrainingConfig import TrainingConfig
-from stepcovnet.dataset.ModelDatasetTypes import ModelDatasetTypes
+from stepcovnet.data.ModelDatasetTypes import ModelDatasetTypes
 from stepcovnet.executor.TrainingExecutor import TrainingExecutor
 from stepcovnet.inputs.TrainingInput import TrainingInput
 from stepcovnet.model.ArrowModel import ArrowModel

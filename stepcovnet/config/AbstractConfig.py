@@ -1,7 +1,6 @@
 from abc import ABC
 
-from stepcovnet.common.constants import NUM_ARROWS
-from stepcovnet.common.constants import NUM_ARROW_TYPES
+from stepcovnet.common.constants import NUM_ARROW_COMBS
 
 
 class AbstractConfig(ABC, object):
@@ -24,4 +23,4 @@ class AbstractConfig(ABC, object):
 
     @property
     def label_shape(self):
-        return (NUM_ARROWS * NUM_ARROW_TYPES,)
+        return (NUM_ARROW_COMBS,)

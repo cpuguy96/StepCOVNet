@@ -52,17 +52,18 @@ class TrainingConfig(AbstractConfig):
         with self.enter_dataset as dataset:
             for index in indexes:
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
-                binary_encoded_arrows = dataset.binary_encoded_arrows[song_start_index:song_end_index]
+                encoded_arrows = dataset.onehot_encoded_arrows[song_start_index:song_end_index]
                 if labels is None:
-                    labels = binary_encoded_arrows
+                    labels = encoded_arrows
                 else:
-                    labels = np.concatenate((labels, binary_encoded_arrows), axis=0)
+                    labels = np.concatenate((labels, encoded_arrows), axis=0)
 
         class_counts = [labels[:, class_index].sum() for class_index in range(labels.shape[1])]
 
         class_weights = dict(zip(
             list(range(len(class_counts))),
-            list((len(labels) / class_count) / len(class_counts) for class_count in class_counts)
+            list(0 if class_count == 0 else (len(labels) / class_count) / len(class_counts)
+                 for class_count in class_counts)
         ))
 
         return dict(enumerate(class_weights))

@@ -14,9 +14,9 @@ from stepcovnet.common.parameters import VGGISH_CONFIG
 from stepcovnet.common.utils import get_channel_scalers
 from stepcovnet.common.utils import get_filename
 from stepcovnet.common.utils import get_filenames_from_folder
+from stepcovnet.data.ModelDatasetTypes import ModelDatasetTypes
 from stepcovnet.data_collection.sample_collection_helper import feature_onset_phrase_label_sample_weights
 from stepcovnet.data_collection.sample_collection_helper import get_features_and_labels
-from stepcovnet.dataset.ModelDatasetTypes import ModelDatasetTypes
 
 
 def build_all_metadata(**kwargs):
