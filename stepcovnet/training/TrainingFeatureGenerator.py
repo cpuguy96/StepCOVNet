@@ -18,8 +18,7 @@ class TrainingFeatureGenerator(object):
         self.batch_size = batch_size
         self.difficulty = difficulty
         self.shuffle = shuffle
-        # Removing use of tokenizer until we can supply varied input feature sizes
-        self.tokenizer = None  # tokenizer
+        self.tokenizer = tokenizer
 
         # The Tensorflow calls the generator three times before starting a training job. We will "warmup" the data
         # yielding by returning the same data for the three calls. This way the indexing is aligned correctly.
@@ -140,12 +139,24 @@ class TrainingFeatureGenerator(object):
                           for line in decoded_arrows]
         arrow_features = arrow_features[:-1]
         arrow_mask = list(arrow_mask[:-1, 1:])
-        for i in range(len(arrow_mask)):
-            len_diff = len(arrow_features[i]) - len(arrow_mask[i])
-            if len_diff > 0:
-                arrow_mask[i] = np.concatenate((arrow_mask[i], np.zeros((len_diff,))), axis=0)
-            elif len_diff < 0:
-                arrow_mask[i] = arrow_mask[i][:-len_diff]
+        arrow_features_max_len = max([len(feature) for feature in arrow_features])
+        arrow_mask_max_len = max([len(mask) for mask in arrow_mask])
+        max_len = max(arrow_features_max_len, arrow_mask_max_len)
+        for i in range(len(arrow_features)):
+            feature_len_diff = max_len - len(arrow_features[i])
+            mask_len_diff = max_len - len(arrow_mask[i])
+            if feature_len_diff == 0 and mask_len_diff > 0:
+                arrow_mask[i] = np.concatenate((arrow_mask[i], np.ones((mask_len_diff,))), axis=0)
+            elif feature_len_diff > 0 and mask_len_diff == 0:
+                arrow_features[i] = np.concatenate((arrow_features[i], np.full((feature_len_diff,), fill_value=0)))
+                arrow_mask[i][len(arrow_mask[i]) - feature_len_diff:] = 0
+            elif feature_len_diff > 0 and mask_len_diff > 0:
+                arrow_features[i] = np.concatenate((arrow_features[i], np.full((feature_len_diff,), fill_value=0)))
+                arrow_mask[i] = np.concatenate((arrow_mask[i], np.zeros((mask_len_diff,))), axis=0)
+                if feature_len_diff < mask_len_diff:
+                    arrow_mask[i][:-(mask_len_diff - feature_len_diff)] = 1
+                elif feature_len_diff > mask_len_diff:
+                    arrow_mask[i][len(arrow_mask[i]) - feature_len_diff:] = 0
 
         return arrow_features, arrow_mask
 
