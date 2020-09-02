@@ -16,7 +16,7 @@ class TrainingHyperparameters(object):
     DEFAULT_BATCH_SIZE = 32
 
     def __init__(self, optimizer=None, loss=None, metrics=None, batch_size=None, epochs=None, patience=None,
-                 log_path=None, retrain=None, tokenizer_name=None):
+                 log_path=None, retrain=None):
         self.optimizer = optimizer if optimizer is not None else self.DEFAULT_OPTIMIZER
         self.loss = loss if loss is not None else self.DEFAULT_LOSS
         self.metrics = metrics if metrics is not None else self.DEFAULT_METRICS
@@ -25,7 +25,6 @@ class TrainingHyperparameters(object):
         self.batch_size = batch_size if batch_size is not None else self.DEFAULT_BATCH_SIZE
         self.retrain = retrain if retrain is not None else True
         self.log_path = log_path
-        self.tokenizer_name = tokenizer_name
 
     def __str__(self):
         str_dict = {}

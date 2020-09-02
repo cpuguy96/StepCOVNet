@@ -7,13 +7,14 @@ from stepcovnet.config.AbstractConfig import AbstractConfig
 
 class TrainingConfig(AbstractConfig):
     def __init__(self, dataset_path, dataset_type, dataset_config, hyperparameters, all_scalers=None, limit=-1,
-                 lookback=1, difficulty="challenge"):
+                 lookback=1, difficulty="challenge", tokenizer_name=None):
         super(TrainingConfig, self).__init__(dataset_config=dataset_config, lookback=lookback, difficulty=difficulty)
         self.dataset_path = dataset_path
         self.dataset_type = dataset_type
         self.hyperparameters = hyperparameters
         self.all_scalers = all_scalers
         self.limit = limit
+        self.tokenizer_name = tokenizer_name
 
         # Combine some of these to reduce the number of loops and save I/O reads
         self.all_indexes, self.train_indexes, self.val_indexes = self.get_train_val_split()

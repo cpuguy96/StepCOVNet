@@ -29,10 +29,11 @@ def load_training_data(input_path):
 def run_training(input_path, output_path, model_name, limit, lookback, difficulty, log_path):
     dataset_path, dataset_type, scalers, dataset_config = load_training_data(input_path)
 
-    hyperparameters = TrainingHyperparameters(log_path=log_path, tokenizer_name=Tokenizers.GPT2.name)
+    hyperparameters = TrainingHyperparameters(log_path=log_path)
     training_config = TrainingConfig(dataset_path=dataset_path, dataset_type=dataset_type,
                                      dataset_config=dataset_config, hyperparameters=hyperparameters,
-                                     all_scalers=scalers, limit=limit, lookback=lookback, difficulty=difficulty)
+                                     all_scalers=scalers, limit=limit, lookback=lookback, difficulty=difficulty,
+                                     tokenizer_name=Tokenizers.GPT2.name)
     training_input = TrainingInput(training_config)
 
     arrow_model = ArrowModel(training_input.config)

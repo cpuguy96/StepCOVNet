@@ -4,6 +4,8 @@ from datetime import datetime
 
 import tensorflow as tf
 
+from stepcovnet.config.TrainingConfig import TrainingConfig
+
 
 class StepCOVNetModel(object):
     def __init__(self, model_root_path, model_name="StepCOVNet", model: tf.keras.Model = None, metadata=None):
@@ -12,7 +14,7 @@ class StepCOVNetModel(object):
         self.model = model
         self.metadata = metadata
 
-    def build_metadata_from_training_config(self, training_config):
+    def build_metadata_from_training_config(self, training_config: TrainingConfig):
         self.metadata = {
             "model_name": self.model_name,
             "creation_time": datetime.utcnow().strftime("%b %d %Y %H:%M:%S UTC"),
@@ -20,6 +22,7 @@ class StepCOVNetModel(object):
                 "limit": training_config.limit,
                 "lookback": training_config.lookback,
                 "difficulty": training_config.difficulty,
+                "tokenizer_name": training_config.tokenizer_name,
                 "hyperparameters": str(training_config.hyperparameters)
             },
             "dataset_config": training_config.dataset_config
