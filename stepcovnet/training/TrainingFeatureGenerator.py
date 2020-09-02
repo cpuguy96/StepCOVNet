@@ -115,8 +115,8 @@ class TrainingFeatureGenerator(object):
             features["sample_weights_batch"] = sample_weights
         else:
             if isinstance(features["arrow_features"], list) or isinstance(features["arrow_mask"], list):
-                features["arrow_features"].append(arrow_features)
-                features["arrow_mask"].append(arrow_mask)
+                features["arrow_features"].extend(arrow_features)
+                features["arrow_mask"].extend(arrow_mask)
             else:
                 features["arrow_features"] = np.concatenate((features["arrow_features"], arrow_features), axis=0)
                 features["arrow_mask"] = np.concatenate((features["arrow_mask"], arrow_mask), axis=0)
