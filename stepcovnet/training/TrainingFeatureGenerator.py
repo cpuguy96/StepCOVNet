@@ -117,6 +117,10 @@ class TrainingFeatureGenerator(object):
             if isinstance(features["arrow_features"], list) or isinstance(features["arrow_mask"], list):
                 features["arrow_features"].extend(arrow_features)
                 features["arrow_mask"].extend(arrow_mask)
+                # Normalize again after appending in the case where split batches have different max lengths
+                features["arrow_features"], features["arrow_mask"] = \
+                    normalize_tokenized_arrows(arrow_features=features["arrow_features"],
+                                               arrow_mask=features["arrow_mask"])
             else:
                 features["arrow_features"] = np.concatenate((features["arrow_features"], arrow_features), axis=0)
                 features["arrow_mask"] = np.concatenate((features["arrow_mask"], arrow_mask), axis=0)
