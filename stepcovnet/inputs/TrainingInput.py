@@ -31,7 +31,7 @@ class TrainingInput(AbstractInput):
                                                                 scalers=self.config.train_scalers,
                                                                 difficulty=self.config.difficulty,
                                                                 warmup=True,
-                                                                tokenizer=self.config.hyperparameters.tokenizer)
+                                                                tokenizer_name=self.config.hyperparameters.tokenizer_name)
         self.val_feature_generator = TrainingFeatureGenerator(dataset_path=self.config.dataset_path,
                                                               dataset_type=self.config.dataset_type,
                                                               lookback=self.config.lookback,
@@ -41,7 +41,7 @@ class TrainingInput(AbstractInput):
                                                               scalers=self.config.train_scalers,
                                                               difficulty=self.config.difficulty,
                                                               shuffle=False,
-                                                              tokenizer=self.config.hyperparameters.tokenizer)
+                                                              tokenizer_name=self.config.hyperparameters.tokenizer_name)
         self.all_feature_generator = TrainingFeatureGenerator(dataset_path=self.config.dataset_path,
                                                               dataset_type=self.config.dataset_type,
                                                               lookback=self.config.lookback,
@@ -51,7 +51,7 @@ class TrainingInput(AbstractInput):
                                                               scalers=self.config.all_scalers,
                                                               difficulty=self.config.difficulty,
                                                               warmup=True,
-                                                              tokenizer=self.config.hyperparameters.tokenizer)
+                                                              tokenizer_name=self.config.hyperparameters.tokenizer_name)
 
     def get_tf_dataset(self, generator):
         return tf.data.Dataset.from_generator(

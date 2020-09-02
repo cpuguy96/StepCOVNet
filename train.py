@@ -6,6 +6,7 @@ import joblib
 
 from stepcovnet.config.TrainingConfig import TrainingConfig
 from stepcovnet.data.ModelDatasetTypes import ModelDatasetTypes
+from stepcovnet.data.Tokenizers import Tokenizers
 from stepcovnet.executor.TrainingExecutor import TrainingExecutor
 from stepcovnet.inputs.TrainingInput import TrainingInput
 from stepcovnet.model.ArrowModel import ArrowModel
@@ -28,7 +29,7 @@ def load_training_data(input_path):
 def run_training(input_path, output_path, model_name, limit, lookback, difficulty, log_path):
     dataset_path, dataset_type, scalers, dataset_config = load_training_data(input_path)
 
-    hyperparameters = TrainingHyperparameters(log_path=log_path)
+    hyperparameters = TrainingHyperparameters(log_path=log_path, tokenizer_name=Tokenizers.GPT2.name)
     training_config = TrainingConfig(dataset_path=dataset_path, dataset_type=dataset_type,
                                      dataset_config=dataset_config, hyperparameters=hyperparameters,
                                      all_scalers=scalers, limit=limit, lookback=lookback, difficulty=difficulty)

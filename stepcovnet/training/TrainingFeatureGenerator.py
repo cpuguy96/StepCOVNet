@@ -10,7 +10,7 @@ from stepcovnet.data.Tokenizers import Tokenizers
 
 class TrainingFeatureGenerator(object):
     def __init__(self, dataset_path, dataset_type, batch_size, indexes, num_samples, lookback=1, scalers=None,
-                 difficulty="challenge", warmup=False, shuffle=True, tokenizer=None):
+                 difficulty="challenge", warmup=False, shuffle=True, tokenizer_name=None):
         self.dataset_path = dataset_path
         self.dataset_type = dataset_type
         self.train_indexes = indexes
@@ -20,7 +20,7 @@ class TrainingFeatureGenerator(object):
         self.batch_size = batch_size
         self.difficulty = difficulty
         self.shuffle = shuffle
-        self.tokenizer = Tokenizers[tokenizer].value
+        self.tokenizer = None if tokenizer_name is None else Tokenizers[tokenizer_name].value
 
         # The Tensorflow calls the generator three times before starting a training job. We will "warmup" the data
         # yielding by returning the same data for the three calls. This way the indexing is aligned correctly.
