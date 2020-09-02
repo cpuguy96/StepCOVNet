@@ -43,7 +43,7 @@ class TrainingConfig(AbstractConfig):
         train_indexes, val_indexes, _, _ = \
             train_test_split(all_indexes,
                              all_indexes,
-                             test_size=0.2,
+                             test_size=0.1,
                              shuffle=True,
                              random_state=42)
         return all_indexes, train_indexes, val_indexes
