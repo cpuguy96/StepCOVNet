@@ -6,11 +6,9 @@ import resampy
 import soundfile as sf
 
 from stepcovnet.common import mel_features
-from stepcovnet.common.audio_preprocessing import get_madmom_log_mels
 from stepcovnet.common.constants import ALL_ARROW_COMBS
-from stepcovnet.common.constants import NUM_ARROWS
 from stepcovnet.common.constants import NUM_ARROW_COMBS
-from stepcovnet.common.utils import feature_reshape_up
+from stepcovnet.common.constants import NUM_ARROWS
 from stepcovnet.encoder.BinaryArrowEncoder import BinaryArrowEncoder
 from stepcovnet.encoder.LabelArrowEncoder import LabelArrowEncoder
 from stepcovnet.encoder.OneHotArrowEncoder import OneHotArrowEncoder
@@ -231,16 +229,4 @@ def get_features_and_labels(wav_path, note_data_path, file_name, config):
     log_mel_frames = get_audio_features(wav_path, file_name, config)
     onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows = \
         get_labels(note_data_path, file_name, config)
-    return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows
-
-
-def get_features_and_labels_madmom(wav_path, note_data_path, file_name, multi, config):
-    mfcc = get_madmom_log_mels(join(wav_path, file_name + '.wav'), multi, config=config)
-    log_mel_frames = feature_reshape_up(feature=mfcc, num_freq_bands=config["NUM_FREQ_BANDS"],
-                                        num_time_bands=config["NUM_TIME_BANDS"],
-                                        num_channels=config["NUM_MULTI_CHANNELS"])
-    note_data = timings_parser(join(note_data_path, file_name + '.txt'))
-    onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows = \
-        convert_note_data(note_data=note_data, stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])
-
     return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows

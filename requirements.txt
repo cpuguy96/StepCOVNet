@@ -2,16 +2,11 @@ h5py
 tensorflow
 pytest
 numpy
-imblearn
 joblib
 librosa
 psutil
 nltk
 sklearn
-madmom
 soundfile
-scipy
-Cython
-mido
 resampy
 transformers
