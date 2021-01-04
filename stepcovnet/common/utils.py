@@ -1,18 +1,10 @@
-import multiprocessing
 import os
 import re
 
 import librosa
 import numpy as np
-import psutil
-from joblib import Parallel
-from joblib import delayed
 from nltk.util import ngrams
 from sklearn.preprocessing import StandardScaler
-
-from stepcovnet.common.constants import NUM_FREQ_BANDS
-from stepcovnet.common.constants import NUM_MULTI_CHANNELS
-from stepcovnet.common.constants import NUM_TIME_BANDS
 
 
 def get_filenames_from_folder(mypath):
@@ -78,79 +70,6 @@ def get_channel_scalers(features, existing_scalers=None):
     return channel_scalers
 
 
-def get_features_mean_std(features):
-    return [np.mean(np.mean(features, axis=1), axis=0, dtype="float32"),
-            np.mean(np.std(features, axis=1), axis=0, dtype="float32")]
-
-
-def sklearn_scaler_to_numpy(scalers, multi):
-    np_scaler = []
-    if multi:
-        for scaler in scalers:
-            np_scaler.append([[sca.mean_[0], np.sqrt(sca.var_[0])] for sca in scaler])
-    else:
-        np_scaler = [[scaler.mean_[0], np.sqrt(scaler.var_[0])] for scaler in scalers]
-
-    return np.array(np_scaler)
-
-
-def parital_fit_feature_slice(scaler, feat_slice):
-    return scaler.partial_fit(np.mean(feat_slice, axis=1).reshape(-1, 1))  # need to take mean slice has 15 time bands
-
-
-def get_sklearn_scalers(features, multi, config, existing_scalers=None, parallel=True):
-    # if set(features.shape[1:]).intersection(
-    #        {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
-    #    raise ValueError('Need to reshape features before getting scalers')
-
-    scalers = []
-    n_jobs = psutil.cpu_count(logical=False) if parallel else 1
-
-    if multi:
-        for channel in range(NUM_MULTI_CHANNELS):
-            if existing_scalers is not None:
-                channel_scalers = existing_scalers[channel]
-            else:
-                channel_scalers = [StandardScaler() for _ in range(config["NUM_FREQ_BANDS"])]
-            feat_slice_gen = (features[:, i, :, channel] for i in range(config["NUM_FREQ_BANDS"]))
-            channel_scalers = Parallel(backend="loky", n_jobs=n_jobs)(
-                delayed(parital_fit_feature_slice)(sca, feat_slice) for sca, feat_slice in
-                zip(channel_scalers, feat_slice_gen))
-            scalers.append(channel_scalers)
-        return scalers
-    else:
-        if existing_scalers is not None:
-            scalers = existing_scalers
-        else:
-            scalers = [StandardScaler() for _ in range(config["NUM_FREQ_BANDS"])]
-        feat_slice_gen = (features[:, :, i] for i in range(config["NUM_FREQ_BANDS"]))
-        scalers = Parallel(backend="loky", n_jobs=n_jobs)(
-            delayed(parital_fit_feature_slice)(sca, feat_slice) for sca, feat_slice in zip(scalers, feat_slice_gen))
-        return scalers
-
-
-def get_scalers(features, multi):
-    """
-    Gather scalers along the frequency axis
-    :param features: nparray - audio feature frames reshaped into time and frequency axises
-    :param multi: bool - True if using multiple channels
-    :return scalers: list - mean and std for each frequency band for each channel
-    """
-    # TODO: Add better check for non formatted features
-    if set(features.shape[1:]).intersection(
-            {NUM_FREQ_BANDS * NUM_TIME_BANDS * NUM_MULTI_CHANNELS, NUM_FREQ_BANDS * NUM_TIME_BANDS}):
-        raise ValueError('Need to reshape features before getting scalers')
-
-    scalers = []
-    if multi:
-        with multiprocessing.Pool(psutil.cpu_count(logical=False)) as pool:
-            for result in pool.imap(get_features_mean_std, (features[:, i] for i in range(NUM_FREQ_BANDS))):
-                scalers.append(result)
-        return np.array(scalers).T
-    else:
-        return np.array(get_features_mean_std(np.transpose(features, (0, 2, 1))))
-
-
 def apply_timeseries_scalers(features, scalers):
     if scalers is None:
         return features
@@ -186,25 +105,6 @@ def apply_scalers(features, scalers):
                                   num_freq_bands=original_features_shape[2], num_channels=original_features_shape[3],
                                   order='C')
     return features
-
-
-def pre_process(features, labels=None, multi=False, scalers=None):
-    features_copy = np.copy(features)
-    if multi:
-        if scalers is not None:
-            for i, scaler_channel in enumerate(scalers):
-                for j, scaler in enumerate(scaler_channel):
-                    features_copy[:, j, :, i] = scaler.transform(features_copy[:, j, :, i])
-    else:
-        if scalers is not None:
-            for j, scaler in enumerate(scalers):
-                features_copy[:, j] = scaler.transform(features_copy[:, j])
-        features_copy = np.expand_dims(np.squeeze(features_copy), axis=1)
-
-    if labels is not None:
-        return features_copy, labels
-    else:
-        return features_copy
 
 
 def get_ngram(data, lookback, padding_value=0):
