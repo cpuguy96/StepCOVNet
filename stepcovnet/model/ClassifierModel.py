@@ -3,12 +3,11 @@ from tensorflow.keras.initializers import Constant
 from tensorflow.keras.initializers import glorot_uniform
 from tensorflow.keras.layers import Activation
 from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import concatenate
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Dropout
-from tensorflow.keras.layers import concatenate
 
 from stepcovnet.common.constants import NUM_ARROW_COMBS
-from stepcovnet.common.tf_config import MIXED_PRECISION_POLICY
 from stepcovnet.model.AbstractModel import AbstractModel
 
 
@@ -21,7 +20,6 @@ class ClassifierModel(AbstractModel):
             model = Dense(256,
                           kernel_initializer=tf.keras.initializers.he_uniform(42),
                           bias_initializer=tf.keras.initializers.Constant(value=0.1),
-                          dtype=MIXED_PRECISION_POLICY
                           )(feature_concat)
             model = BatchNormalization()(model)
             model = Activation('relu')(model)
