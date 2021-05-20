@@ -87,7 +87,7 @@ class TrainingConfig(AbstractConfig):
         with self.enter_dataset as dataset:
             for index in self.train_indexes:
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
-                features = dataset.features[range(song_start_index, song_end_index)]
+                features = dataset.features[song_start_index: song_end_index]
                 training_scalers = get_channel_scalers(features, existing_scalers=training_scalers)
         return training_scalers
 
