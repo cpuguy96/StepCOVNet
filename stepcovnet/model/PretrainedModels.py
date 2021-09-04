@@ -1,3 +1,4 @@
+import transformers
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import GlobalAveragePooling2D
 from tensorflow.keras.layers import GlobalMaxPooling2D
@@ -18,8 +19,10 @@ class PretrainedModels(object):
             configuration = GPT2Config()
         gp2_model = TFGPT2Model.from_pretrained('gpt2', config=configuration)
         if freeze:
-            for layer in gp2_model.layers:
-                layer.trainable = False
+            for top_layer in gp2_model.layers[:]:
+                if isinstance(top_layer, transformers.models.gpt2.modeling_tf_gpt2.TFGPT2MainLayer):
+                    for block in top_layer.h[:]:
+                        block.trainable = False
         return gp2_model
 
     @staticmethod
