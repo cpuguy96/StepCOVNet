@@ -9,10 +9,10 @@ from stepcovnet.data.ModelDatasetTypes import ModelDatasetTypes
 from stepcovnet.data.Tokenizers import Tokenizers
 from stepcovnet.executor.TrainingExecutor import TrainingExecutor
 from stepcovnet.inputs.TrainingInput import TrainingInput
-from stepcovnet.model.ArrowModel import ArrowModel
-from stepcovnet.model.AudioModel import AudioModel
 from stepcovnet.model.ClassifierModel import ClassifierModel
+from stepcovnet.model.GPT2ArrowModel import GPT2ArrowModel
 from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
+from stepcovnet.model.VggishAudioModel import VggishAudioModel
 from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
 
@@ -36,8 +36,8 @@ def run_training(input_path, output_path, model_name, limit, lookback, difficult
                                      tokenizer_name=Tokenizers.GPT2.name)
     training_input = TrainingInput(training_config)
 
-    arrow_model = ArrowModel(training_input.config)
-    audio_model = AudioModel(training_input.config)
+    arrow_model = GPT2ArrowModel(training_input.config)
+    audio_model = VggishAudioModel(training_input.config)
     classifier_model = ClassifierModel(training_input.config, arrow_model, audio_model)
     stepcovnet_model = StepCOVNetModel(model_root_path=output_path, model_name=model_name, model=classifier_model.model)
 
