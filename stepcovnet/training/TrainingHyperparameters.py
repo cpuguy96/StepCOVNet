@@ -1,3 +1,6 @@
+"""Configurable training hyperparameters"""
+# TODO(https://github.com/cpuguy96/StepCOVNet/issues/2):
+#  Move all training hyperparameters into config file
 import tensorflow as tf
 
 
