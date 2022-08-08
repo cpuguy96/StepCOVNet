@@ -2,19 +2,21 @@ import json
 import os
 from datetime import datetime
 
-import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras.models import Model
 
 from stepcovnet.config.TrainingConfig import TrainingConfig
 
 
 class StepCOVNetModel(object):
-    def __init__(self, model_root_path, model_name="StepCOVNet", model: tf.keras.Model = None, metadata=None):
+    def __init__(self, model_root_path: str, model_name: str = "StepCOVNet", model: Model = None,
+                 metadata: dict = None):
         self.model_root_path = os.path.abspath(model_root_path)
         self.model_name = model_name
-        self.model = model
+        self.model: Model = model
         self.metadata = metadata
 
-    def build_metadata_from_training_config(self, training_config: TrainingConfig):
+    def build_metadata_from_training_config(self, training_config: TrainingConfig) -> dict:
         self.metadata = {
             "model_name": self.model_name,
             "creation_time": datetime.utcnow().strftime("%b %d %Y %H:%M:%S UTC"),
@@ -27,12 +29,13 @@ class StepCOVNetModel(object):
             },
             "dataset_config": training_config.dataset_config
         }
+        return self.metadata
 
-    @staticmethod
-    def load(input_path, retrained=False):
+    @classmethod
+    def load(cls, input_path: str, retrained: bool = False, compile_model: bool = False):
         metadata = json.load(open(os.path.join(input_path, "metadata.json"), 'r'))
         model_name = metadata["model_name"]
         model_path = os.path.join(input_path, model_name + '_retrained') if retrained \
             else os.path.join(input_path, model_name)
-        model = tf.saved_model.load(model_path)
-        return StepCOVNetModel(model_root_path=input_path, model_name=model_name, model=model, metadata=metadata)
+        model = load_model(model_path, compile=compile_model)
+        return cls(model_root_path=input_path, model_name=model_name, model=model, metadata=metadata)

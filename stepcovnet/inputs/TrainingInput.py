@@ -58,7 +58,7 @@ class TrainingInput(AbstractInput):
             generator,
             output_types=self.output_types,
             output_shapes=self.output_shape,
-        ).prefetch(tf.data.experimental.AUTOTUNE)
+        ).prefetch(tf.data.AUTOTUNE)
 
     @property
     def train_generator(self):

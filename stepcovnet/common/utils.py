@@ -1,5 +1,9 @@
 import os
 import re
+from typing import List
+from typing import Sequence
+from typing import Tuple
+from typing import Union
 
 import librosa
 import numpy as np
@@ -7,34 +11,34 @@ from nltk.util import ngrams
 from sklearn.preprocessing import StandardScaler
 
 
-def get_filenames_from_folder(mypath):
+def get_filenames_from_folder(mypath: str) -> Sequence[str]:
     return [file for file in os.listdir(mypath)
             if os.path.isfile(os.path.join(mypath, file)) and
             os.path.splitext(file)[0] not in {".DS_Store", "_DS_Store"}]
 
 
-def get_filename(file_path, with_ext=True):
+def get_filename(file_path: str, with_ext: bool = True) -> str:
     if with_ext:
         return os.path.basename(file_path)
     else:
         return os.path.splitext(os.path.basename(file_path))[0]
 
 
-def standardize_filename(filename):
+def standardize_filename(filename: str) -> str:
     return re.sub(' ', '_', re.sub('[^a-z0-9-_ ]', '', filename.lower()))
 
 
-def write_file(output_path, output_data, header=""):
+def write_file(output_path: str, output_data, header: str = ""):
     with open(output_path, "w") as file:
         file.write(header + output_data)
 
 
-def get_bpm(wav_file_path):
+def get_bpm(wav_file_path: str) -> float:
     y, sr = librosa.load(wav_file_path)
     return librosa.beat.beat_track(y=y, sr=sr)[0]
 
 
-def feature_reshape_down(features, order='C'):
+def feature_reshape_down(features: np.ndarray, order: str = 'C') -> np.ndarray:
     if len(features.shape) != 4:
         raise ValueError('Number of dims for features is %d (should be 4)')
 
@@ -42,7 +46,8 @@ def feature_reshape_down(features, order='C'):
                             order=order)
 
 
-def feature_reshape_up(feature, num_freq_bands, num_time_bands, num_channels, order='F'):
+def feature_reshape_up(feature: np.ndarray, num_freq_bands: int, num_time_bands: int, num_channels: int,
+                       order: str = 'F'):
     """
     reshape mfccBands feature into n_sample * n_row * n_col
     :param order:
@@ -55,7 +60,7 @@ def feature_reshape_up(feature, num_freq_bands, num_time_bands, num_channels, or
     return feature.reshape((len(feature), num_time_bands, num_freq_bands, num_channels), order=order)
 
 
-def get_channel_scalers(features, existing_scalers=None):
+def get_channel_scalers(features: np.ndarray, existing_scalers: Sequence[StandardScaler] = None):
     if len(features.shape) not in {3, 4}:
         raise ValueError('Number of dims for features is %d (should be 3 or 4)' % len(features.shape))
 
@@ -70,7 +75,7 @@ def get_channel_scalers(features, existing_scalers=None):
     return channel_scalers
 
 
-def apply_timeseries_scalers(features, scalers):
+def apply_timeseries_scalers(features: np.ndarray, scalers: Union[StandardScaler, List[StandardScaler]]):
     if scalers is None:
         return features
     if len(features.shape) not in {4, 5}:
@@ -84,7 +89,7 @@ def apply_timeseries_scalers(features, scalers):
     return features
 
 
-def apply_scalers(features, scalers):
+def apply_scalers(features: np.ndarray, scalers: Union[StandardScaler, List[StandardScaler]]) -> np.ndarray:
     if scalers is None:
         return features
     if len(features.shape) not in {3, 4}:
@@ -107,14 +112,14 @@ def apply_scalers(features, scalers):
     return features
 
 
-def get_ngram(data, lookback, padding_value=0):
+def get_ngram(data: np.ndarray, lookback: int, padding_value=0) -> np.ndarray:
     padding = np.full((lookback,) + data.shape[1:], fill_value=padding_value)
     data_w_padding = np.append(padding, data, axis=0)
     return np.asarray(list(ngrams(data_w_padding, lookback)))
 
 
-def get_samples_ngram_with_mask(samples, lookback, squeeze=True, reshape=False, sample_padding_value=0,
-                                mask_padding_value=1):
+def get_samples_ngram_with_mask(samples: np.ndarray, lookback: int, squeeze: bool = True, reshape: bool = False,
+                                sample_padding_value=0, mask_padding_value=1) -> Tuple[np.ndarray, np.ndarray]:
     if reshape:
         ngram_samples = get_ngram(samples.reshape(-1, 1), lookback, padding_value=sample_padding_value)
     else:

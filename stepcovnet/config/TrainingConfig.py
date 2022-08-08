@@ -1,13 +1,19 @@
+from typing import Type
+from typing import Union
+
 import numpy as np
 from sklearn.model_selection import train_test_split
 
 from stepcovnet.common.utils import get_channel_scalers
 from stepcovnet.config.AbstractConfig import AbstractConfig
+from stepcovnet.dataset.ModelDataset import ModelDataset
+from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
 
 class TrainingConfig(AbstractConfig):
-    def __init__(self, dataset_path, dataset_type, dataset_config, hyperparameters, all_scalers=None, limit=-1,
-                 lookback=1, difficulty="challenge", tokenizer_name=None):
+    def __init__(self, dataset_path: str, dataset_type: Type[ModelDataset], dataset_config,
+                 hyperparameters: TrainingHyperparameters, all_scalers=None, limit: int = -1,
+                 lookback: int = 1, difficulty: str = "challenge", tokenizer_name: str = None):
         super(TrainingConfig, self).__init__(dataset_config=dataset_config, lookback=lookback, difficulty=difficulty)
         self.dataset_path = dataset_path
         self.dataset_type = dataset_type
@@ -27,7 +33,7 @@ class TrainingConfig(AbstractConfig):
         self.init_bias_correction = self.get_init_bias_correction()
         self.train_scalers = self.get_train_scalers()
 
-    def get_train_val_split(self):
+    def get_train_val_split(self) -> Union[np.array, np.array, np.array]:
         all_indexes = []
         with self.enter_dataset as dataset:
             total_samples = 0
@@ -48,7 +54,7 @@ class TrainingConfig(AbstractConfig):
                              random_state=42)
         return all_indexes, train_indexes, val_indexes
 
-    def get_class_weights(self, indexes):
+    def get_class_weights(self, indexes) -> dict:
         labels = None
         with self.enter_dataset as dataset:
             for index in indexes:
@@ -69,7 +75,7 @@ class TrainingConfig(AbstractConfig):
 
         return dict(enumerate(class_weights))
 
-    def get_init_bias_correction(self):
+    def get_init_bias_correction(self) -> np.ndarray:
         # Best practices mentioned in
         # https://www.tensorflow.org/tutorials/structured_data/imbalanced_data#optional_set_the_correct_initial_bias
         # Not completely correct but works for now
@@ -91,7 +97,7 @@ class TrainingConfig(AbstractConfig):
                 training_scalers = get_channel_scalers(features, existing_scalers=training_scalers)
         return training_scalers
 
-    def get_num_samples(self, indexes):
+    def get_num_samples(self, indexes) -> int:
         num_all = 0
         with self.enter_dataset as dataset:
             for index in indexes:

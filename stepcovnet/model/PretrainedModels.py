@@ -26,7 +26,8 @@ class PretrainedModels(object):
         return gp2_model
 
     @staticmethod
-    def vggish_model(input_shape, load_weights=True, pooling='avg', freeze=True, input_tensor=None, lookback=1):
+    def vggish_model(input_shape, load_weights=True, pooling='avg', freeze=True, input_tensor=None,
+                     lookback=1) -> Model:
         """
         An implementation of the VGGish architecture.
         :param input_shape:

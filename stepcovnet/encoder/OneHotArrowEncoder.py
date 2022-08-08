@@ -14,5 +14,5 @@ class OneHotArrowEncoder(AbstractArrowEncoder):
         data = np.array([arrows]).reshape(1, -1)
         return self.encoder.transform(data)[0]
 
-    def decode(self, encoded_arrows):
+    def decode(self, encoded_arrows) -> str:
         return str(self.encoder.categories_[0][encoded_arrows])

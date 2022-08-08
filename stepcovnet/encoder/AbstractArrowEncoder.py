@@ -7,9 +7,9 @@ class AbstractArrowEncoder(ABC, object):
         self.encoder = encoder
 
     @abstractmethod
-    def encode(self, arrows: str):
-        pass
+    def encode(self, arrows):
+        ...
 
     @abstractmethod
     def decode(self, encoded_arrows) -> str:
-        pass
+        ...

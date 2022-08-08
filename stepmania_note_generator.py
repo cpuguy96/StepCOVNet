@@ -4,6 +4,7 @@ import time
 import warnings
 from os.path import join
 from shutil import copyfile
+from typing import Sequence
 
 import joblib
 
@@ -21,7 +22,7 @@ from wav_converter import wav_converter
 warnings.filterwarnings("ignore")
 
 
-def copy_to_tmp_dir(input_path, tmp_dir_name, batch):
+def copy_to_tmp_dir(input_path: str, tmp_dir_name: str, batch: bool):
     if batch:
         for input_audio_name in get_filenames_from_folder(input_path):
             new_file_name = standardize_filename(get_filename(input_audio_name, False))
@@ -31,12 +32,12 @@ def copy_to_tmp_dir(input_path, tmp_dir_name, batch):
         copyfile(join(input_path), join(tmp_dir_name, "input", new_file_name))
 
 
-def build_tmp_dir(tmp_dir_name):
+def build_tmp_dir(tmp_dir_name: str):
     os.makedirs(join(tmp_dir_name, "input"), exist_ok=True)
     os.makedirs(join(tmp_dir_name, "wav"), exist_ok=True)
 
 
-def get_timings_arrow_mapping(pred_arrows, hopsize):
+def get_timings_arrow_mapping(pred_arrows: Sequence[str], hopsize: float) -> dict:
     timings_arrow_mapping = {}
     for i, pred_arrow in enumerate(pred_arrows):
         if pred_arrow != "0000":
@@ -44,7 +45,7 @@ def get_timings_arrow_mapping(pred_arrows, hopsize):
     return timings_arrow_mapping
 
 
-def save_pred_arrows(timings_arrows_mapping, output_path, file_name, bpm):
+def save_pred_arrows(timings_arrows_mapping: dict, output_path: str, file_name: str, bpm: float):
     header = "TITLE " + str(file_name) + "\n" + \
              "BPM " + str(bpm) + "\n" + \
              "NOTES \n"
@@ -54,7 +55,7 @@ def save_pred_arrows(timings_arrows_mapping, output_path, file_name, bpm):
     write_file(join(output_path, "pred_" + file_name + ".txt"), output_data, header=header)
 
 
-def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
+def generate_notes(output_path: str, tmp_dir: str, stepcovnet_model: StepCOVNetModel, verbose_int: int):
     verbose = True if verbose_int == 1 else False
 
     dataset_config = stepcovnet_model.metadata["dataset_config"]
@@ -95,7 +96,7 @@ def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
             print("Elapsed time was %g seconds\n" % (end_time - start_time))
 
 
-def stepmania_note_generator(input_path, output_path, model_path, verbose_int=0):
+def stepmania_note_generator(input_path: str, output_path: str, model_path: str, verbose_int: int = 0):
     start_time = time.time()
     if verbose_int not in [0, 1]:
         raise ValueError('%s is not a valid verbose input. Choose 0 for none or 1 for full' % verbose_int)

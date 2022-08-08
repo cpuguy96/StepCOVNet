@@ -1,8 +1,11 @@
+from typing import Any
+from typing import Sequence
+
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 
-from stepcovnet.common.constants import NUM_ARROWS
 from stepcovnet.common.constants import NUM_ARROW_TYPES
+from stepcovnet.common.constants import NUM_ARROWS
 from stepcovnet.encoder.AbstractArrowEncoder import AbstractArrowEncoder
 
 
@@ -12,11 +15,11 @@ class BinaryArrowEncoder(AbstractArrowEncoder):
         encoder = OneHotEncoder(categories='auto', sparse=False).fit(np.arange(num_arrow_types).reshape(-1, 1))
         super(BinaryArrowEncoder, self).__init__(encoder=encoder)
 
-    def encode(self, arrows) -> np.array:
+    def encode(self, arrows: Sequence[Any]) -> np.ndarray:
         return np.append([], [self.encoder.transform(np.array([int(arrow)]).reshape(-1, 1))[0] for arrow in arrows]) \
             .astype(int)
 
-    def decode(self, encoded_arrows):
+    def decode(self, encoded_arrows) -> str:
         if len(encoded_arrows) / self.num_arrow_types != 4:
             raise ValueError('Number of arrow types does not match encoded arrow input '
                              '(%d arrow types, %d encoded arrow bits)' % (self.num_arrow_types, len(encoded_arrows)))

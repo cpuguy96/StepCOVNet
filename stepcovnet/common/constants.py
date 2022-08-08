@@ -23,7 +23,7 @@ ARROW_NAMES = ["left_arrow", "down_arrow", "up_arrow", "right_arrow"]
 NUM_ARROWS = len(ARROW_NAMES)
 
 
-def get_all_note_combs(num_note_types):
+def get_all_note_combs(num_note_types: int) -> np.ndarray:
     all_note_combs = []
 
     for first_digit in range(0, num_note_types):
