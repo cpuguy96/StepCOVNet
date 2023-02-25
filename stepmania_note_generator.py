@@ -65,6 +65,7 @@ def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
     audio_files_path = join(tmp_dir, "wav/")
     scalers = joblib.load(open(os.path.join(stepcovnet_model.model_root_path,
                                             stepcovnet_model.metadata["model_name"] + "_scaler.pkl"), 'rb'))
+    tokenizer_name = stepcovnet_model.metadata["training_config"]["tokenizer_name"]
 
     # Convert audio clip into a wav before preprocessing
     wav_converter(input_path=join(tmp_dir, "input/"),
@@ -82,7 +83,7 @@ def generate_notes(output_path, tmp_dir, stepcovnet_model, verbose_int):
             print("Generating notes for %s\n-----------------------------------------\n" % audio_file_name)
         inference_config = InferenceConfig(audio_path=audio_files_path, file_name=audio_file_name,
                                            dataset_config=dataset_config, lookback=lookback, difficulty=difficulty,
-                                           scalers=scalers)
+                                           scalers=scalers, tokenizer_name=tokenizer_name)
         inference_input = InferenceInput(inference_config=inference_config)
         bpm = get_bpm(wav_file_path=join(audio_files_path, audio_file_name + ".wav"))
         pred_arrows = inference_executor.execute(input_data=inference_input)
