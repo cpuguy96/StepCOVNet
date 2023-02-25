@@ -11,9 +11,9 @@ class TrainingHyperparameters(object):
     ]
     DEFAULT_LOSS = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05)
     DEFAULT_OPTIMIZER = tf.keras.optimizers.Nadam(beta_1=0.99)
-    DEFAULT_EPOCHS = 15
+    DEFAULT_EPOCHS = 1
     DEFAULT_PATIENCE = 3
-    DEFAULT_BATCH_SIZE = 32
+    DEFAULT_BATCH_SIZE = 4
 
     def __init__(self, optimizer=None, loss=None, metrics=None, batch_size=None, epochs=None, patience=None,
                  log_path=None, retrain=None):
