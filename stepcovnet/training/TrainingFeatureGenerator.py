@@ -26,7 +26,6 @@ class TrainingFeatureGenerator(object):
         # yielding by returning the same data for the three calls. This way the indexing is aligned correctly.
         self.warmup_countdown = 3 if warmup else 0
         self.rng = np.random.default_rng(42)
-        # add shuffling
 
     def __len__(self):
         return int(np.ceil(self.num_samples / self.batch_size))
@@ -55,9 +54,6 @@ class TrainingFeatureGenerator(object):
                     y_batch_len = len(features["y_batch"])
                     end_index = min(start_index + self.batch_size - y_batch_len, song_end_index)
 
-                    # Lookback data from ngram returns empty value in index 0. Also, arrow features should only
-                    # contain previously seen features. Therefore, removing last element and last lookback from
-                    # arrows features and first element from audio features.
                     mask_padding_value = 0 if new_song else 1
                     lookback_index_padding_start = max(start_index - self.lookback, song_start_index)
                     lookback_padding_added = start_index - lookback_index_padding_start
@@ -143,6 +139,9 @@ class TrainingFeatureGenerator(object):
                                          add_prefix_space=True)['input_ids']
                               .numpy()[0][1:].astype(np.int32)
                           for line in decoded_arrows]
+        # Lookback data from ngram returns empty value in index 0. Also, arrow features should only
+        # contain previously seen features. Therefore, removing last element and last lookback from
+        # arrows features.
         arrow_features = arrow_features[:-1]
         arrow_mask = list(arrow_mask[:-1, 1:])
         return normalize_tokenized_arrows(arrow_features=arrow_features, arrow_mask=arrow_mask)
@@ -153,6 +152,9 @@ class TrainingFeatureGenerator(object):
                                                                  mask_padding_value=mask_padding_value)
         arrow_features = arrow_features[lookback_padding_added:]
         arrow_mask = arrow_mask[lookback_padding_added:]
+        # Lookback data from ngram returns empty value in index 0. Also, arrow features should only
+        # contain previously seen features. Therefore, removing last element and last lookback from
+        # arrows features.
         arrow_features = arrow_features[:-1, 1:]
         arrow_mask = arrow_mask[:-1, 1:]
 
@@ -161,6 +163,8 @@ class TrainingFeatureGenerator(object):
     def get_audio_features(self, audio_data, lookback_padding_added):
         audio_features, _ = get_samples_ngram_with_mask(audio_data, self.lookback, squeeze=False)
         audio_features = audio_features[lookback_padding_added:]
+        # Lookback data from ngram returns empty value in index 0.
+        # Therefore, removing first element from audio features.
         audio_features = audio_features[1:]
 
         return audio_features.astype(np.float64)
