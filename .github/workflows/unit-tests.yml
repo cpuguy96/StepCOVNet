@@ -1,4 +1,4 @@
-name: StepCOVNet Application
+name: Unit Tests
 
 on: [ push ]
 
