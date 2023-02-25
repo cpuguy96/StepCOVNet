@@ -65,10 +65,6 @@ python train.py -i --input <string> -o --output <string> -d --difficulty <int> -
 * **OPTIONAL:** `--name` name to give the finished model; default names model based on dat aset used
 * **OPTIONAL:** `--log` output directory path to store tensorboard data
 
-## TODO
-
-* End-to-end unit tests for all modules
-
 ## Credits
 
 * Inspiration from the paper [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf)
