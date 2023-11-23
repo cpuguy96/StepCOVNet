@@ -6,7 +6,7 @@ joblib
 librosa
 psutil
 nltk
-sklearn
+scikit-learn
 soundfile
 resampy
 transformers
