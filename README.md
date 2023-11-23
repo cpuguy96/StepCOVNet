@@ -20,6 +20,7 @@ python stepmania_note_generator.py -i --input <string> -o --output <string> --mo
 * **OPTIONAL:** `-v` `--verbose` `1` shows full verbose, `0` shows no verbose; default is `0`
 
 ## Creating Training Dataset
+**Link to raw data**: <https://drive.google.com/drive/folders/1PBcPTO68zCFlnlVPuRZhIlXZODDJ3Bfn?usp=sharing>
 
 **Link to training data**: <https://drive.google.com/open?id=1eCRYSf2qnbsSOzC-KmxPWcSbMzi1fLHi>
 
