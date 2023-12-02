@@ -1,10 +1,11 @@
-from tensorflow.keras.layers import Input
-from tensorflow.keras.layers import Layer
+from tensorflow.keras.layers import Input, Layer
 
-from stepcovnet.config.TrainingConfig import TrainingConfig
+from stepcovnet import config
 from stepcovnet.model.AudioModel import AudioModel
 
 
 class SimpleAudioModel(AudioModel):
-    def _create_audio_model(self, training_config: TrainingConfig, model_input: Input) -> Layer:
+    def _create_audio_model(
+        self, training_config: config.TrainingConfig, model_input: Input
+    ) -> Layer:
         raise NotImplementedError

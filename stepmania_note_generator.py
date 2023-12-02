@@ -8,6 +8,7 @@ from typing import Sequence
 
 import joblib
 
+from stepcovnet import config
 from stepcovnet.common.utils import (
     get_bpm,
     get_filename,
@@ -15,7 +16,6 @@ from stepcovnet.common.utils import (
     standardize_filename,
     write_file,
 )
-from stepcovnet.config.InferenceConfig import InferenceConfig
 from stepcovnet.executor.InferenceExecutor import InferenceExecutor
 from stepcovnet.inputs.InferenceInput import InferenceInput
 from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
@@ -106,7 +106,7 @@ def generate_notes(
                 "Generating notes for %s\n-----------------------------------------\n"
                 % audio_file_name
             )
-        inference_config = InferenceConfig(
+        inference_config = config.InferenceConfig(
             audio_path=audio_files_path,
             file_name=audio_file_name,
             dataset_config=dataset_config,

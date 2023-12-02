@@ -4,7 +4,7 @@ import os
 
 import joblib
 
-from stepcovnet.config.TrainingConfig import TrainingConfig
+from stepcovnet import config
 from stepcovnet.data.ModelDatasetTypes import ModelDatasetTypes
 from stepcovnet.data.Tokenizers import Tokenizers
 from stepcovnet.executor.TrainingExecutor import TrainingExecutor
@@ -40,7 +40,7 @@ def run_training(
     dataset_path, dataset_type, scalers, dataset_config = load_training_data(input_path)
 
     hyperparameters = TrainingHyperparameters(log_path=log_path)
-    training_config = TrainingConfig(
+    training_config = config.TrainingConfig(
         dataset_path=dataset_path,
         dataset_type=dataset_type,
         dataset_config=dataset_config,
