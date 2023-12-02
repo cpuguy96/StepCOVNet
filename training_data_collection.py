@@ -9,13 +9,13 @@ from os.path import join
 import joblib
 import psutil
 
+from stepcovnet import data
 from stepcovnet.common.parameters import CONFIG, VGGISH_CONFIG
 from stepcovnet.common.utils import (
     get_channel_scalers,
     get_filename,
     get_filenames_from_folder,
 )
-from stepcovnet.data.ModelDatasetTypes import ModelDatasetTypes
 from stepcovnet.data_collection.sample_collection_helper import (
     feature_onset_phrase_label_sample_weights,
     get_features_and_labels,
@@ -214,9 +214,9 @@ def training_data_collection(
     output_path = os.path.join(output_path, name_prefix + name_postfix)
     os.makedirs(output_path, exist_ok=True)
     dataset_type = (
-        ModelDatasetTypes.DISTRIBUTED_DATASET
+        data.ModelDatasetTypes.DISTRIBUTED_DATASET
         if distributed
-        else ModelDatasetTypes.SINGULAR_DATASET
+        else data.ModelDatasetTypes.SINGULAR_DATASET
     )
     training_dataset = dataset_type.value(
         os.path.join(output_path, name_prefix + name_postfix), overwrite=True

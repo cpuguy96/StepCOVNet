@@ -4,9 +4,7 @@ import os
 
 import joblib
 
-from stepcovnet import config
-from stepcovnet.data.ModelDatasetTypes import ModelDatasetTypes
-from stepcovnet.data.Tokenizers import Tokenizers
+from stepcovnet import config, data
 from stepcovnet.executor.TrainingExecutor import TrainingExecutor
 from stepcovnet.inputs.TrainingInput import TrainingInput
 from stepcovnet.model.ClassifierModel import ClassifierModel
@@ -19,7 +17,7 @@ from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 def load_training_data(input_path: str):
     metadata = json.load(open(os.path.join(input_path, "metadata.json"), "r"))
     dataset_name = metadata["dataset_name"]
-    dataset_type = ModelDatasetTypes[metadata["dataset_type"]].value
+    dataset_type = data.ModelDatasetTypes[metadata["dataset_type"]].value
     dataset_path = os.path.join(input_path, dataset_name + "_dataset")
     scalers = joblib.load(
         open(os.path.join(input_path, dataset_name + "_scaler.pkl"), "rb")
@@ -49,7 +47,7 @@ def run_training(
         limit=limit,
         lookback=lookback,
         difficulty=difficulty,
-        tokenizer_name=Tokenizers.GPT2.name,
+        tokenizer_name=data.Tokenizers.GPT2.name,
     )
     training_input = TrainingInput(training_config)
 
