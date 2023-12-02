@@ -1,5 +1,5 @@
 h5py
-tensorflow>=2.5.1
+tensorflow==2.15.0
 pytest
 numpy
 joblib
