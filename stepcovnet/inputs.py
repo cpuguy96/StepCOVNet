@@ -3,9 +3,8 @@ from abc import ABC
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config, training
+from stepcovnet import config, training, sample_collection_helper
 from stepcovnet.common.utils import get_samples_ngram_with_mask
-from stepcovnet.data_collection.sample_collection_helper import get_audio_features
 
 
 class AbstractInput(ABC, object):
@@ -16,7 +15,7 @@ class AbstractInput(ABC, object):
 class InferenceInput(AbstractInput):
     def __init__(self, inference_config: config.InferenceConfig):
         super(InferenceInput, self).__init__(input_config=inference_config)
-        self.audio_features = get_audio_features(
+        self.audio_features = sample_collection_helper.get_audio_features(
             wav_path=self.config.audio_path,
             file_name=self.config.file_name,
             config=self.config.dataset_config,

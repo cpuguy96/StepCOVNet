@@ -9,16 +9,12 @@ from os.path import join
 import joblib
 import psutil
 
-from stepcovnet import data
+from stepcovnet import data, sample_collection_helper
 from stepcovnet.common.parameters import CONFIG, VGGISH_CONFIG
 from stepcovnet.common.utils import (
     get_channel_scalers,
     get_filename,
     get_filenames_from_folder,
-)
-from stepcovnet.data_collection.sample_collection_helper import (
-    feature_onset_phrase_label_sample_weights,
-    get_features_and_labels,
 )
 
 
@@ -50,7 +46,9 @@ def collect_features(wav_path, timing_path, config, cores, file_name):
             binary_encoded_arrows,
             string_arrows,
             onehot_encoded_arrows,
-        ) = get_features_and_labels(wav_path, timing_path, file_name, config)
+        ) = sample_collection_helper.get_features_and_labels(
+            wav_path, timing_path, file_name, config
+        )
         (
             feature,
             label_dict,
@@ -60,7 +58,7 @@ def collect_features(wav_path, timing_path, config, cores, file_name):
             binary_encoded_arrows_dict,
             string_arrows_dict,
             onehot_encoded_arrows_dict,
-        ) = feature_onset_phrase_label_sample_weights(
+        ) = sample_collection_helper.feature_onset_phrase_label_sample_weights(
             onsets,
             log_mel,
             arrows,
