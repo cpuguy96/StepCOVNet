@@ -1,3 +1,4 @@
+import keras
 from keras import layers
 
 from stepcovnet.model.ArrowModel import ArrowModel
@@ -6,7 +7,7 @@ from stepcovnet.model.PretrainedModels import PretrainedModels
 
 class GPT2ArrowModel(ArrowModel):
     def _create_arrow_model(
-        self, arrow_input: layers.Input, arrow_mask: layers.Input
+        self, arrow_input: keras.KerasTensor, arrow_mask: keras.KerasTensor
     ) -> layers.Layer:
         gp2_model = PretrainedModels.gpt2_model()
         model_output = gp2_model(arrow_input, attention_mask=arrow_mask)[0]
