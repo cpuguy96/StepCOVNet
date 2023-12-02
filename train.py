@@ -132,8 +132,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Train a note timings model")
 
-    parser.add_argument("-i", "--input", type=str, help="Input training data path")
-    parser.add_argument("-o", "--output", type=str, help="Output stored model path")
+    parser.add_argument(
+        "-i", "--input", type=str, help="Input training data path", required=True
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, help="Output stored model path", required=True
+    )
     parser.add_argument(
         "-d",
         "--difficulty",
@@ -156,7 +160,7 @@ if __name__ == "__main__":
         help="Maximum number of frames to use when training: -1 unlimited, > 0 frame limit",
     )
     parser.add_argument(
-        "--name", type=str, default=None, help="Name to give finished model"
+        "--name", type=str, help="Name to give finished model", required=True
     )
     parser.add_argument(
         "--log", type=str, default=None, help="Output log data path for tensorboard"
