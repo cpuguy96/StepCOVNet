@@ -9,8 +9,7 @@ from os.path import join
 import joblib
 import psutil
 
-from stepcovnet import utils, data, sample_collection_helper
-from stepcovnet.parameters import CONFIG, VGGISH_CONFIG
+from stepcovnet import utils, data, sample_collection_helper, parameters
 
 
 def build_all_metadata(**kwargs):
@@ -194,7 +193,7 @@ def training_data_collection(
         )
 
     multi = True if multi_int == 1 else False
-    config = VGGISH_CONFIG if type_int == 1 else CONFIG
+    config = parameters.VGGISH_CONFIG if type_int == 1 else parameters.CONFIG
     limit = max(-1, limit)  # defaulting negative inputs to -1
     cores = psutil.cpu_count(logical=False) if cores < 0 else cores
     distributed = True if distributed_int == 1 else False
