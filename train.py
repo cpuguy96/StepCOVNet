@@ -4,8 +4,7 @@ import os
 
 import joblib
 
-from stepcovnet import config, data
-from stepcovnet.executor.TrainingExecutor import TrainingExecutor
+from stepcovnet import config, data, executor
 from stepcovnet.inputs.TrainingInput import TrainingInput
 from stepcovnet.model.ClassifierModel import ClassifierModel
 from stepcovnet.model.GPT2ArrowModel import GPT2ArrowModel
@@ -60,7 +59,7 @@ def run_training(
         model=classifier_model.model,
     )
 
-    TrainingExecutor(stepcovnet_model=stepcovnet_model).execute(
+    executor.TrainingExecutor(stepcovnet_model=stepcovnet_model).execute(
         input_data=training_input
     )
 
