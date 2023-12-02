@@ -2,8 +2,7 @@ from enum import Enum
 
 from transformers import GPT2Tokenizer
 
-from stepcovnet.dataset.DistributedModelDataset import DistributedModelDataset
-from stepcovnet.dataset.ModelDataset import ModelDataset
+from stepcovnet import dataset
 
 
 class Tokenizers(Enum):
@@ -11,5 +10,5 @@ class Tokenizers(Enum):
 
 
 class ModelDatasetTypes(Enum):
-    SINGULAR_DATASET = ModelDataset
-    DISTRIBUTED_DATASET = DistributedModelDataset
+    SINGULAR_DATASET = dataset.ModelDataset
+    DISTRIBUTED_DATASET = dataset.DistributedModelDataset

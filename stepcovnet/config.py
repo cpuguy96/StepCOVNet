@@ -4,9 +4,9 @@ from typing import Type, Union
 import numpy as np
 from sklearn.model_selection import train_test_split
 
+from stepcovnet import dataset
 from stepcovnet.common.constants import NUM_ARROW_COMBS
 from stepcovnet.common.utils import get_channel_scalers
-from stepcovnet.dataset.ModelDataset import ModelDataset
 from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
 
@@ -54,7 +54,7 @@ class TrainingConfig(AbstractConfig):
     def __init__(
         self,
         dataset_path: str,
-        dataset_type: Type[ModelDataset],
+        dataset_type: Type[dataset.ModelDataset],
         dataset_config,
         hyperparameters: TrainingHyperparameters,
         all_scalers=None,
