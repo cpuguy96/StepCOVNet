@@ -4,11 +4,7 @@ import os
 
 import joblib
 
-from stepcovnet import config, data, executor, inputs, training
-from stepcovnet.model.ClassifierModel import ClassifierModel
-from stepcovnet.model.GPT2ArrowModel import GPT2ArrowModel
-from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
-from stepcovnet.model.VggishAudioModel import VggishAudioModel
+from stepcovnet import config, data, executor, inputs, training, model
 
 
 def load_training_data(input_path: str):
@@ -48,10 +44,12 @@ def run_training(
     )
     training_input = inputs.TrainingInput(training_config)
 
-    arrow_model = GPT2ArrowModel(training_input.config)
-    audio_model = VggishAudioModel(training_input.config)
-    classifier_model = ClassifierModel(training_input.config, arrow_model, audio_model)
-    stepcovnet_model = StepCOVNetModel(
+    arrow_model = model.GPT2ArrowModel(training_input.config)
+    audio_model = model.VggishAudioModel(training_input.config)
+    classifier_model = model.ClassifierModel(
+        training_input.config, arrow_model, audio_model
+    )
+    stepcovnet_model = model.StepCOVNetModel(
         model_root_path=str(output_path),
         model_name=model_name,
         model=classifier_model.model,

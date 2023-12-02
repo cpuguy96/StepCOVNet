@@ -8,15 +8,14 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 
-from stepcovnet import config, encoder, inputs, training
+from stepcovnet import config, encoder, inputs, training, model
 from stepcovnet.common.constants import NUM_ARROWS, NUM_ARROW_TYPES
 from stepcovnet.common.tf_config import tf_init
 from stepcovnet.common.utils import apply_scalers, get_samples_ngram_with_mask
-from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 
 
 class AbstractExecutor(ABC, object):
-    def __init__(self, stepcovnet_model: StepCOVNetModel, *args, **kwargs):
+    def __init__(self, stepcovnet_model: model.StepCOVNetModel, *args, **kwargs):
         self.stepcovnet_model = stepcovnet_model
         tf_init()
 

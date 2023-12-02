@@ -8,7 +8,7 @@ from typing import Sequence
 
 import joblib
 
-from stepcovnet import config, executor, inputs
+from stepcovnet import config, executor, inputs, model
 from stepcovnet.common.utils import (
     get_bpm,
     get_filename,
@@ -16,7 +16,6 @@ from stepcovnet.common.utils import (
     standardize_filename,
     write_file,
 )
-from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 from wav_converter import wav_converter
 
 warnings.filterwarnings("ignore")
@@ -61,7 +60,10 @@ def save_pred_arrows(
 
 
 def generate_notes(
-    output_path: str, tmp_dir: str, stepcovnet_model: StepCOVNetModel, verbose_int: int
+    output_path: str,
+    tmp_dir: str,
+    stepcovnet_model: model.StepCOVNetModel,
+    verbose_int: int,
 ):
     verbose = True if verbose_int == 1 else False
 
@@ -156,7 +158,7 @@ def stepmania_note_generator(
             if verbose:
                 print("Loading StepCOVNet retrained model")
             try:
-                stepcovnet_model = StepCOVNetModel.load(
+                stepcovnet_model = model.StepCOVNetModel.load(
                     input_path=model_path, retrained=True
                 )
             except OSError:
@@ -164,7 +166,7 @@ def stepmania_note_generator(
                     print(
                         "Failed to retrieve retrained StepCOVNet model. Loading non-retrained model"
                     )
-                stepcovnet_model = StepCOVNetModel.load(
+                stepcovnet_model = model.StepCOVNetModel.load(
                     input_path=model_path, retrained=False
                 )
             if verbose:
