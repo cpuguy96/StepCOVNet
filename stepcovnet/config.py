@@ -4,9 +4,7 @@ from typing import Type, Union
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-from stepcovnet import dataset, training
-from stepcovnet.common.constants import NUM_ARROW_COMBS
-from stepcovnet.common.utils import get_channel_scalers
+from stepcovnet import dataset, training, constants, utils
 
 
 class AbstractConfig(ABC, object):
@@ -34,7 +32,7 @@ class AbstractConfig(ABC, object):
 
     @property
     def label_shape(self):
-        return (NUM_ARROW_COMBS,)
+        return (constants.NUM_ARROW_COMBS,)
 
 
 class InferenceConfig(AbstractConfig):
@@ -155,7 +153,7 @@ class TrainingConfig(AbstractConfig):
             for index in self.train_indexes:
                 song_start_index, song_end_index = dataset.song_index_ranges[index]
                 features = dataset.features[song_start_index:song_end_index]
-                training_scalers = get_channel_scalers(
+                training_scalers = utils.get_channel_scalers(
                     features, existing_scalers=training_scalers
                 )
         return training_scalers

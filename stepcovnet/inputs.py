@@ -3,8 +3,7 @@ from abc import ABC
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config, training, sample_collection_helper
-from stepcovnet.common.utils import get_samples_ngram_with_mask
+from stepcovnet import config, training, sample_collection_helper, utils
 
 
 class AbstractInput(ABC, object):
@@ -20,7 +19,7 @@ class InferenceInput(AbstractInput):
             file_name=self.config.file_name,
             config=self.config.dataset_config,
         )
-        self.arrow_input_init, self.arrow_mask_init = get_samples_ngram_with_mask(
+        self.arrow_input_init, self.arrow_mask_init = utils.get_samples_ngram_with_mask(
             samples=np.array([0]),
             lookback=self.config.lookback,
             reshape=True,

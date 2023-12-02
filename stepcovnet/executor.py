@@ -8,16 +8,22 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 
-from stepcovnet import config, encoder, inputs, training, model
-from stepcovnet.common.constants import NUM_ARROWS, NUM_ARROW_TYPES
-from stepcovnet.common.tf_config import tf_init
-from stepcovnet.common.utils import apply_scalers, get_samples_ngram_with_mask
+from stepcovnet import (
+    config,
+    encoder,
+    inputs,
+    training,
+    model,
+    constants,
+    tf_config,
+    utils,
+)
 
 
 class AbstractExecutor(ABC, object):
     def __init__(self, stepcovnet_model: model.StepCOVNetModel, *args, **kwargs):
         self.stepcovnet_model = stepcovnet_model
-        tf_init()
+        tf_config.tf_init()
 
     @abstractmethod
     def execute(self, input_data):
@@ -37,7 +43,7 @@ class InferenceExecutor(AbstractExecutor):
         pred_arrows = []
         inferer = self.stepcovnet_model.model.signatures["serving_default"]
         for audio_features_index in range(len(input_data.audio_features)):
-            audio_features = get_samples_ngram_with_mask(
+            audio_features = utils.get_samples_ngram_with_mask(
                 samples=input_data.audio_features[
                     max(
                         audio_features_index + 1 - input_data.config.lookback, 0
@@ -47,7 +53,7 @@ class InferenceExecutor(AbstractExecutor):
                 lookback=input_data.config.lookback,
                 squeeze=False,
             )[0][-1]
-            audio_input = apply_scalers(
+            audio_input = utils.apply_scalers(
                 features=audio_features, scalers=input_data.config.scalers
             )
             binary_arrows_probs = inferer(
@@ -59,12 +65,12 @@ class InferenceExecutor(AbstractExecutor):
                 next(iter(binary_arrows_probs.values())).numpy().ravel()
             )
             binary_encoded_arrows = []
-            for i in range(NUM_ARROWS):
+            for i in range(constants.NUM_ARROWS):
                 binary_arrow_prob = binary_arrows_probs[
-                    NUM_ARROW_TYPES * i : NUM_ARROW_TYPES * (i + 1)
+                    constants.NUM_ARROW_TYPES * i : constants.NUM_ARROW_TYPES * (i + 1)
                 ]
                 encoded_arrow = np.random.choice(
-                    NUM_ARROW_TYPES, 1, p=binary_arrow_prob
+                    constants.NUM_ARROW_TYPES, 1, p=binary_arrow_prob
                 )[0]
                 binary_encoded_arrows.append(str(encoded_arrow))
             arrows = "".join(binary_encoded_arrows)

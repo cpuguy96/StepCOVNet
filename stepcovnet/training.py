@@ -1,21 +1,15 @@
 from collections import defaultdict
 
 import numpy as np
-
-from stepcovnet import data
-from stepcovnet.common.utils import (
-    apply_timeseries_scalers,
-    get_samples_ngram_with_mask,
-    normalize_tokenized_arrows,
-)
-
-"""Configurable training hyperparameters"""
-# TODO(https://github.com/cpuguy96/StepCOVNet/issues/2):
-#  Move all training hyperparameters into config file
 import tensorflow as tf
+
+from stepcovnet import data, utils
 
 
 class TrainingHyperparameters(object):
+    """Configurable training hyperparameters"""
+
+    # TODO(https://github.com/cpuguy96/StepCOVNet/issues/2): Move all training hyperparameters into config file
     DEFAULT_METRICS = [
         tf.keras.metrics.CategoricalAccuracy(name="acc"),
         tf.keras.metrics.Precision(name="pre"),
@@ -193,7 +187,7 @@ class TrainingFeatureGenerator(object):
                     self.song_index += 1
 
                 if len(features["y_batch"]) > 0:
-                    scaled_audio_features = apply_timeseries_scalers(
+                    scaled_audio_features = utils.apply_timeseries_scalers(
                         features=features["audio_features"], scalers=self.scalers
                     )
                     x_batch = {
@@ -224,7 +218,7 @@ class TrainingFeatureGenerator(object):
                 (
                     features["arrow_features"],
                     features["arrow_mask"],
-                ) = normalize_tokenized_arrows(
+                ) = utils.normalize_tokenized_arrows(
                     arrow_features=features["arrow_features"],
                     arrow_mask=features["arrow_mask"],
                 )
@@ -248,7 +242,7 @@ class TrainingFeatureGenerator(object):
     def get_tokenized_arrow_features(
         self, arrows, mask_padding_value, lookback_padding_added
     ):
-        arrow_features, arrow_mask = get_samples_ngram_with_mask(
+        arrow_features, arrow_mask = utils.get_samples_ngram_with_mask(
             arrows,
             self.lookback,
             reshape=True,
@@ -268,12 +262,12 @@ class TrainingFeatureGenerator(object):
         ]
         arrow_features = arrow_features[:-1]
         arrow_mask = list(arrow_mask[:-1, 1:])
-        return normalize_tokenized_arrows(
+        return utils.normalize_tokenized_arrows(
             arrow_features=arrow_features, arrow_mask=arrow_mask
         )
 
     def get_arrow_features(self, arrows, mask_padding_value, lookback_padding_added):
-        arrow_features, arrow_mask = get_samples_ngram_with_mask(
+        arrow_features, arrow_mask = utils.get_samples_ngram_with_mask(
             arrows, self.lookback, reshape=True, mask_padding_value=mask_padding_value
         )
         arrow_features = arrow_features[lookback_padding_added:]
@@ -284,7 +278,7 @@ class TrainingFeatureGenerator(object):
         return arrow_features.astype(np.int32), arrow_mask.astype(np.int32)
 
     def get_audio_features(self, audio_data, lookback_padding_added):
-        audio_features, _ = get_samples_ngram_with_mask(
+        audio_features, _ = utils.get_samples_ngram_with_mask(
             audio_data, self.lookback, squeeze=False
         )
         audio_features = audio_features[lookback_padding_added:]

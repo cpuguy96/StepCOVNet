@@ -27,8 +27,7 @@ from tensorflow.keras.layers import (
 from tensorflow.keras.models import load_model, Model
 from transformers import GPT2Config, TFGPT2Model
 
-from stepcovnet import config
-from stepcovnet.common.constants import NUM_ARROW_COMBS
+from stepcovnet import config, constants
 
 VGGISH_WEIGHTS_PATH = "stepcovnet/pretrained_models/vggish_audioset_weights.h5"
 
@@ -115,7 +114,7 @@ class ClassifierModel(AbstractModel):
         model = Dropout(0.5)(model)
 
         model_output = Dense(
-            NUM_ARROW_COMBS,
+            constants.NUM_ARROW_COMBS,
             activation="softmax",
             bias_initializer=Constant(value=training_config.init_bias_correction),
             kernel_initializer=glorot_uniform(42),

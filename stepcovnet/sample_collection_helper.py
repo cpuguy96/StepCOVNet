@@ -5,9 +5,7 @@ import numpy as np
 import resampy
 import soundfile as sf
 
-from stepcovnet import encoder
-from stepcovnet.common import mel_features
-from stepcovnet.common.constants import ALL_ARROW_COMBS, NUM_ARROW_COMBS, NUM_ARROWS
+from stepcovnet import encoder, mel_features, constants
 
 
 def remove_out_of_range(frames, frame_start, frame_end):
@@ -52,11 +50,11 @@ def feature_onset_phrase_label_sample_weights(
         label_encoded_arrows_array = np.zeros((len_line,))
         binary_encoded_arrows_array = np.zeros((len_line, 4 * num_arrow_types))
         # Set first index of each binary encoded arrow to 1 to default to empty arrow
-        for i in range(NUM_ARROWS):
+        for i in range(constants.NUM_ARROWS):
             binary_encoded_arrows_array[:, i * num_arrow_types] = 1
         string_arrows_array = np.chararray((len_line,), itemsize=4)
         string_arrows_array[:] = "0000"
-        onehot_encoded_arrows_array = np.zeros((len_line, NUM_ARROW_COMBS))
+        onehot_encoded_arrows_array = np.zeros((len_line, constants.NUM_ARROW_COMBS))
         # Set first index to 1 to default to empty arrow
         onehot_encoded_arrows_array[:, 0] = 1
 
@@ -126,7 +124,9 @@ def timings_parser(timing_file_path):
         curr_difficulty = None
         label_encoder = encoder.LabelArrowEncoder()
         binary_encoder = encoder.BinaryArrowEncoder()
-        onehot_encoder = encoder.OneHotArrowEncoder(all_arrow_combs=ALL_ARROW_COMBS)
+        onehot_encoder = encoder.OneHotArrowEncoder(
+            all_arrow_combs=constants.ALL_ARROW_COMBS
+        )
         for line in file.readlines():
             line = line.replace("\n", "")
             if line.startswith("NOTES"):

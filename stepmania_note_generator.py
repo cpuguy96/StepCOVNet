@@ -8,14 +8,7 @@ from typing import Sequence
 
 import joblib
 
-from stepcovnet import config, executor, inputs, model
-from stepcovnet.common.utils import (
-    get_bpm,
-    get_filename,
-    get_filenames_from_folder,
-    standardize_filename,
-    write_file,
-)
+from stepcovnet import utils, config, executor, inputs, model
 from wav_converter import wav_converter
 
 warnings.filterwarnings("ignore")
@@ -23,14 +16,18 @@ warnings.filterwarnings("ignore")
 
 def copy_to_tmp_dir(input_path: str, tmp_dir_name: str, batch: bool):
     if batch:
-        for input_audio_name in get_filenames_from_folder(input_path):
-            new_file_name = standardize_filename(get_filename(input_audio_name, False))
+        for input_audio_name in utils.get_filenames_from_folder(input_path):
+            new_file_name = utils.standardize_filename(
+                utils.get_filename(input_audio_name, False)
+            )
             copyfile(
                 join(input_path, input_audio_name),
                 join(tmp_dir_name, "input", new_file_name),
             )
     else:
-        new_file_name = standardize_filename(get_filename(input_path, False))
+        new_file_name = utils.standardize_filename(
+            utils.get_filename(input_path, False)
+        )
         copyfile(join(input_path), join(tmp_dir_name, "input", new_file_name))
 
 
@@ -54,7 +51,7 @@ def save_pred_arrows(
     output_data = ""
     for timing, arrow in timings_arrows_mapping.items():
         output_data += str(arrow) + " " + str(timing) + "\n"
-    write_file(
+    utils.write_file(
         join(output_path, "pred_" + file_name + ".txt"), output_data, header=header
     )
 
@@ -92,8 +89,8 @@ def generate_notes(
     )
 
     audio_file_names = [
-        get_filename(file_name, with_ext=False)
-        for file_name in get_filenames_from_folder(audio_files_path)
+        utils.get_filename(file_name, with_ext=False)
+        for file_name in utils.get_filenames_from_folder(audio_files_path)
     ]
     inference_executor = executor.InferenceExecutor(
         stepcovnet_model=stepcovnet_model, verbose=verbose
@@ -115,7 +112,9 @@ def generate_notes(
             scalers=scalers,
         )
         inference_input = inputs.InferenceInput(inference_config=inference_config)
-        bpm = get_bpm(wav_file_path=join(audio_files_path, audio_file_name + ".wav"))
+        bpm = utils.get_bpm(
+            wav_file_path=join(audio_files_path, audio_file_name + ".wav")
+        )
         pred_arrows = inference_executor.execute(input_data=inference_input)
 
         timings_arrows_mapping = get_timings_arrow_mapping(pred_arrows, hopsize=hopsize)

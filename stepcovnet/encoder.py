@@ -4,7 +4,7 @@ from typing import Any, Sequence
 import numpy as np
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
-from stepcovnet.common.constants import NUM_ARROW_TYPES, NUM_ARROWS, ALL_ARROW_COMBS
+from stepcovnet import constants
 
 
 class AbstractArrowEncoder(ABC, object):
@@ -21,7 +21,7 @@ class AbstractArrowEncoder(ABC, object):
 
 
 class BinaryArrowEncoder(AbstractArrowEncoder):
-    def __init__(self, num_arrow_types=NUM_ARROW_TYPES):
+    def __init__(self, num_arrow_types=constants.NUM_ARROW_TYPES):
         self.num_arrow_types = num_arrow_types
         encoder = OneHotEncoder(categories="auto", sparse=False).fit(
             np.arange(num_arrow_types).reshape(-1, 1)
@@ -45,7 +45,7 @@ class BinaryArrowEncoder(AbstractArrowEncoder):
                 % (self.num_arrow_types, len(encoded_arrows))
             )
         arrows = []
-        for i in range(NUM_ARROWS):
+        for i in range(constants.NUM_ARROWS):
             encoded_arrow = encoded_arrows[
                 self.num_arrow_types * i : self.num_arrow_types * (i + 1)
             ].astype(int)
@@ -55,7 +55,7 @@ class BinaryArrowEncoder(AbstractArrowEncoder):
 
 
 class LabelArrowEncoder(AbstractArrowEncoder):
-    def __init__(self, all_arrow_combs: np.array = ALL_ARROW_COMBS):
+    def __init__(self, all_arrow_combs: np.array = constants.ALL_ARROW_COMBS):
         encoder = LabelEncoder().fit(all_arrow_combs.ravel())
         super(LabelArrowEncoder, self).__init__(encoder=encoder)
 
@@ -67,7 +67,7 @@ class LabelArrowEncoder(AbstractArrowEncoder):
 
 
 class OneHotArrowEncoder(AbstractArrowEncoder):
-    def __init__(self, all_arrow_combs: np.array = ALL_ARROW_COMBS):
+    def __init__(self, all_arrow_combs: np.array = constants.ALL_ARROW_COMBS):
         encoder = OneHotEncoder(categories="auto", sparse=False).fit(
             all_arrow_combs.reshape(-1, 1)
         )

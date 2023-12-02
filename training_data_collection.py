@@ -9,13 +9,8 @@ from os.path import join
 import joblib
 import psutil
 
-from stepcovnet import data, sample_collection_helper
-from stepcovnet.common.parameters import CONFIG, VGGISH_CONFIG
-from stepcovnet.common.utils import (
-    get_channel_scalers,
-    get_filename,
-    get_filenames_from_folder,
-)
+from stepcovnet import utils, data, sample_collection_helper
+from stepcovnet.parameters import CONFIG, VGGISH_CONFIG
 
 
 def build_all_metadata(**kwargs):
@@ -108,8 +103,8 @@ def collect_data(
     )
     func = partial(collect_features, wavs_path, timings_path, config, cores)
     file_names = [
-        get_filename(file_name, with_ext=False)
-        for file_name in get_filenames_from_folder(timings_path)
+        utils.get_filename(file_name, with_ext=False)
+        for file_name in utils.get_filenames_from_folder(timings_path)
     ]
 
     with training_dataset as dataset:
@@ -150,7 +145,7 @@ def collect_data(
                 print(
                     "[%d/%d] Creating scalers: %s" % (i + 1, len(file_names), file_name)
                 )
-                scalers = get_channel_scalers(features, existing_scalers=scalers)
+                scalers = utils.get_channel_scalers(features, existing_scalers=scalers)
                 if limit > 0:
                     song_count += 1
                     print(
