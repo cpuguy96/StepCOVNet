@@ -1,10 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.common.constants import NUM_ARROWS
-from stepcovnet.common.constants import NUM_ARROW_TYPES
-from stepcovnet.common.utils import apply_scalers
-from stepcovnet.common.utils import get_samples_ngram_with_mask
+from stepcovnet.common.constants import NUM_ARROWS, NUM_ARROW_TYPES
+from stepcovnet.common.utils import apply_scalers, get_samples_ngram_with_mask
 from stepcovnet.encoder.BinaryArrowEncoder import BinaryArrowEncoder
 from stepcovnet.encoder.LabelArrowEncoder import LabelArrowEncoder
 from stepcovnet.executor.AbstractExecutor import AbstractExecutor
@@ -26,18 +24,33 @@ class InferenceExecutor(AbstractExecutor):
         for audio_features_index in range(len(input_data.audio_features)):
             audio_features = get_samples_ngram_with_mask(
                 samples=input_data.audio_features[
-                        max(audio_features_index + 1 - input_data.config.lookback, 0): audio_features_index + 1],
+                    max(
+                        audio_features_index + 1 - input_data.config.lookback, 0
+                    ) : audio_features_index
+                    + 1
+                ],
                 lookback=input_data.config.lookback,
-                squeeze=False)[0][-1]
-            audio_input = apply_scalers(features=audio_features, scalers=input_data.config.scalers)
-            binary_arrows_probs = inferer(arrow_input=tf.convert_to_tensor(arrow_input),
-                                          arrow_mask=tf.convert_to_tensor(arrow_mask),
-                                          audio_input=tf.convert_to_tensor(audio_input))
-            binary_arrows_probs = next(iter(binary_arrows_probs.values())).numpy().ravel()
+                squeeze=False,
+            )[0][-1]
+            audio_input = apply_scalers(
+                features=audio_features, scalers=input_data.config.scalers
+            )
+            binary_arrows_probs = inferer(
+                arrow_input=tf.convert_to_tensor(arrow_input),
+                arrow_mask=tf.convert_to_tensor(arrow_mask),
+                audio_input=tf.convert_to_tensor(audio_input),
+            )
+            binary_arrows_probs = (
+                next(iter(binary_arrows_probs.values())).numpy().ravel()
+            )
             binary_encoded_arrows = []
             for i in range(NUM_ARROWS):
-                binary_arrow_prob = binary_arrows_probs[NUM_ARROW_TYPES * i: NUM_ARROW_TYPES * (i + 1)]
-                encoded_arrow = np.random.choice(NUM_ARROW_TYPES, 1, p=binary_arrow_prob)[0]
+                binary_arrow_prob = binary_arrows_probs[
+                    NUM_ARROW_TYPES * i : NUM_ARROW_TYPES * (i + 1)
+                ]
+                encoded_arrow = np.random.choice(
+                    NUM_ARROW_TYPES, 1, p=binary_arrow_prob
+                )[0]
                 binary_encoded_arrows.append(str(encoded_arrow))
             arrows = "".join(binary_encoded_arrows)
             pred_arrows.append(arrows)
@@ -47,5 +60,8 @@ class InferenceExecutor(AbstractExecutor):
             arrow_input[0][-1] = self.label_arrow_encoder.encode(arrows)
             arrow_mask[0][-1] = 1
             if self.verbose and audio_features_index % 100 == 0:
-                print("[%d/%d] Samples generated" % (audio_features_index, len(input_data.audio_features)))
+                print(
+                    "[%d/%d] Samples generated"
+                    % (audio_features_index, len(input_data.audio_features))
+                )
         return pred_arrows
