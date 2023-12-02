@@ -1,5 +1,6 @@
 from abc import abstractmethod
 
+import keras
 import tensorflow as tf
 from keras import layers
 
@@ -29,6 +30,6 @@ class ArrowModel(AbstractModel):
 
     @abstractmethod
     def _create_arrow_model(
-        self, arrow_input: layers.Input, arrow_mask: layers.Input
+        self, arrow_input: keras.KerasTensor, arrow_mask: keras.KerasTensor
     ) -> layers.Layer:
         ...
