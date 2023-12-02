@@ -1,12 +1,13 @@
 from abc import ABC
 
+import keras
 from keras import layers, models
 
 
 class AbstractModel(ABC, object):
     def __init__(
         self,
-        model_input: layers.Input | list[layers.Input],
+        model_input: keras.KerasTensor | list[keras.KerasTensor],
         model_output: layers.Layer,
         name: str,
     ):

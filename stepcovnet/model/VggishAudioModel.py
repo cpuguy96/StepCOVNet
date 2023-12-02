@@ -1,3 +1,4 @@
+import keras
 from keras import layers, initializers
 
 from stepcovnet.config.TrainingConfig import TrainingConfig
@@ -7,7 +8,7 @@ from stepcovnet.model.PretrainedModels import PretrainedModels
 
 class VggishAudioModel(AudioModel):
     def _create_audio_model(
-        self, training_config: TrainingConfig, model_input: layers.Input
+        self, training_config: TrainingConfig, model_input: keras.KerasTensor
     ) -> layers.Layer:
         # Channel reduction
         if training_config.dataset_config["NUM_CHANNELS"] > 1:

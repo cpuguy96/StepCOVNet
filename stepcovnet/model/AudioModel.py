@@ -1,5 +1,6 @@
 from abc import abstractmethod
 
+import keras
 import tensorflow as tf
 from keras import layers
 
@@ -25,6 +26,6 @@ class AudioModel(AbstractModel):
 
     @abstractmethod
     def _create_audio_model(
-        self, training_config: TrainingConfig, model_input: layers.Input
+        self, training_config: TrainingConfig, model_input: keras.KerasTensor
     ) -> layers.Layer:
         ...
