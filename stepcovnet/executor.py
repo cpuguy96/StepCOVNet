@@ -8,12 +8,11 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 
-from stepcovnet import config, encoder, inputs
+from stepcovnet import config, encoder, inputs, training
 from stepcovnet.common.constants import NUM_ARROWS, NUM_ARROW_TYPES
 from stepcovnet.common.tf_config import tf_init
 from stepcovnet.common.utils import apply_scalers, get_samples_ngram_with_mask
 from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
-from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
 
 class AbstractExecutor(ABC, object):
@@ -121,7 +120,7 @@ class TrainingExecutor(AbstractExecutor):
             )
         return self.stepcovnet_model
 
-    def get_training_callbacks(self, hyperparameters: TrainingHyperparameters):
+    def get_training_callbacks(self, hyperparameters: training.TrainingHyperparameters):
         model_out_path = self.stepcovnet_model.model_root_path
         model_name = self.stepcovnet_model.model_name
         log_path = hyperparameters.log_path
@@ -151,7 +150,7 @@ class TrainingExecutor(AbstractExecutor):
         return callbacks
 
     @staticmethod
-    def get_retraining_callbacks(hyperparameters: TrainingHyperparameters):
+    def get_retraining_callbacks(hyperparameters: training.TrainingHyperparameters):
         log_path = hyperparameters.log_path
         callbacks = []
 

@@ -3,10 +3,9 @@ from abc import ABC
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config
+from stepcovnet import config, training
 from stepcovnet.common.utils import get_samples_ngram_with_mask
 from stepcovnet.data_collection.sample_collection_helper import get_audio_features
-from stepcovnet.training.TrainingFeatureGenerator import TrainingFeatureGenerator
 
 
 class AbstractInput(ABC, object):
@@ -53,7 +52,7 @@ class TrainingInput(AbstractInput):
             tf.TensorShape((None,) + self.config.label_shape),  # labels
             tf.TensorShape((None,)),  # sample weights
         )
-        self.train_feature_generator = TrainingFeatureGenerator(
+        self.train_feature_generator = training.TrainingFeatureGenerator(
             dataset_path=self.config.dataset_path,
             dataset_type=self.config.dataset_type,
             lookback=self.config.lookback,
@@ -65,7 +64,7 @@ class TrainingInput(AbstractInput):
             warmup=True,
             tokenizer_name=self.config.tokenizer_name,
         )
-        self.val_feature_generator = TrainingFeatureGenerator(
+        self.val_feature_generator = training.TrainingFeatureGenerator(
             dataset_path=self.config.dataset_path,
             dataset_type=self.config.dataset_type,
             lookback=self.config.lookback,
@@ -77,7 +76,7 @@ class TrainingInput(AbstractInput):
             shuffle=False,
             tokenizer_name=self.config.tokenizer_name,
         )
-        self.all_feature_generator = TrainingFeatureGenerator(
+        self.all_feature_generator = training.TrainingFeatureGenerator(
             dataset_path=self.config.dataset_path,
             dataset_type=self.config.dataset_type,
             lookback=self.config.lookback,

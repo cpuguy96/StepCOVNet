@@ -4,12 +4,11 @@ import os
 
 import joblib
 
-from stepcovnet import config, data, executor, inputs
+from stepcovnet import config, data, executor, inputs, training
 from stepcovnet.model.ClassifierModel import ClassifierModel
 from stepcovnet.model.GPT2ArrowModel import GPT2ArrowModel
 from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 from stepcovnet.model.VggishAudioModel import VggishAudioModel
-from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
 
 def load_training_data(input_path: str):
@@ -35,7 +34,7 @@ def run_training(
 ):
     dataset_path, dataset_type, scalers, dataset_config = load_training_data(input_path)
 
-    hyperparameters = TrainingHyperparameters(log_path=log_path)
+    hyperparameters = training.TrainingHyperparameters(log_path=log_path)
     training_config = config.TrainingConfig(
         dataset_path=dataset_path,
         dataset_type=dataset_type,
