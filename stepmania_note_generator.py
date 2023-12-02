@@ -8,7 +8,7 @@ from typing import Sequence
 
 import joblib
 
-from stepcovnet import config, executor
+from stepcovnet import config, executor, inputs
 from stepcovnet.common.utils import (
     get_bpm,
     get_filename,
@@ -16,7 +16,6 @@ from stepcovnet.common.utils import (
     standardize_filename,
     write_file,
 )
-from stepcovnet.inputs.InferenceInput import InferenceInput
 from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 from wav_converter import wav_converter
 
@@ -113,7 +112,7 @@ def generate_notes(
             difficulty=difficulty,
             scalers=scalers,
         )
-        inference_input = InferenceInput(inference_config=inference_config)
+        inference_input = inputs.InferenceInput(inference_config=inference_config)
         bpm = get_bpm(wav_file_path=join(audio_files_path, audio_file_name + ".wav"))
         pred_arrows = inference_executor.execute(input_data=inference_input)
 

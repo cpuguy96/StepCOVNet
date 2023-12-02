@@ -4,8 +4,7 @@ import os
 
 import joblib
 
-from stepcovnet import config, data, executor
-from stepcovnet.inputs.TrainingInput import TrainingInput
+from stepcovnet import config, data, executor, inputs
 from stepcovnet.model.ClassifierModel import ClassifierModel
 from stepcovnet.model.GPT2ArrowModel import GPT2ArrowModel
 from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
@@ -48,7 +47,7 @@ def run_training(
         difficulty=difficulty,
         tokenizer_name=data.Tokenizers.GPT2.name,
     )
-    training_input = TrainingInput(training_config)
+    training_input = inputs.TrainingInput(training_config)
 
     arrow_model = GPT2ArrowModel(training_input.config)
     audio_model = VggishAudioModel(training_input.config)

@@ -8,12 +8,10 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
 from tensorflow.python.keras.callbacks import ModelCheckpoint
 
-from stepcovnet import config, encoder
+from stepcovnet import config, encoder, inputs
 from stepcovnet.common.constants import NUM_ARROWS, NUM_ARROW_TYPES
 from stepcovnet.common.tf_config import tf_init
 from stepcovnet.common.utils import apply_scalers, get_samples_ngram_with_mask
-from stepcovnet.inputs.InferenceInput import InferenceInput
-from stepcovnet.inputs.TrainingInput import TrainingInput
 from stepcovnet.model.StepCOVNetModel import StepCOVNetModel
 from stepcovnet.training.TrainingHyperparameters import TrainingHyperparameters
 
@@ -35,7 +33,7 @@ class InferenceExecutor(AbstractExecutor):
         self.binary_arrow_encoder = encoder.BinaryArrowEncoder()
         self.label_arrow_encoder = encoder.LabelArrowEncoder()
 
-    def execute(self, input_data: InferenceInput):
+    def execute(self, input_data: inputs.InferenceInput):
         arrow_input = input_data.arrow_input_init
         arrow_mask = input_data.arrow_mask_init
         pred_arrows = []
@@ -90,7 +88,7 @@ class TrainingExecutor(AbstractExecutor):
     def __init__(self, stepcovnet_model):
         super(TrainingExecutor, self).__init__(stepcovnet_model=stepcovnet_model)
 
-    def execute(self, input_data: TrainingInput):
+    def execute(self, input_data: inputs.TrainingInput):
         hyperparameters = input_data.config.hyperparameters
 
         weights = (

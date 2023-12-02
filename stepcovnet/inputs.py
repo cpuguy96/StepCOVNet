@@ -1,13 +1,40 @@
+from abc import ABC
+
+import numpy as np
 import tensorflow as tf
 
 from stepcovnet import config
-from stepcovnet.inputs.AbstractInput import AbstractInput
+from stepcovnet.common.utils import get_samples_ngram_with_mask
+from stepcovnet.data_collection.sample_collection_helper import get_audio_features
 from stepcovnet.training.TrainingFeatureGenerator import TrainingFeatureGenerator
+
+
+class AbstractInput(ABC, object):
+    def __init__(self, input_config, *args, **kwargs):
+        self.config = input_config
+
+
+class InferenceInput(AbstractInput):
+    def __init__(self, inference_config: config.InferenceConfig):
+        super(InferenceInput, self).__init__(input_config=inference_config)
+        self.audio_features = get_audio_features(
+            wav_path=self.config.audio_path,
+            file_name=self.config.file_name,
+            config=self.config.dataset_config,
+        )
+        self.arrow_input_init, self.arrow_mask_init = get_samples_ngram_with_mask(
+            samples=np.array([0]),
+            lookback=self.config.lookback,
+            reshape=True,
+            mask_padding_value=0,
+        )
+        self.arrow_input_init = self.arrow_input_init[:-1, 1:]
+        self.arrow_mask_init = self.arrow_mask_init[:-1, 1:]
 
 
 class TrainingInput(AbstractInput):
     def __init__(self, training_config: config.TrainingConfig):
-        super(TrainingInput, self).__init__(config=training_config)
+        super(TrainingInput, self).__init__(input_config=training_config)
         self.output_types = (
             {
                 "arrow_input": tf.dtypes.int32,
