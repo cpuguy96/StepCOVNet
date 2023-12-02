@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from collections import defaultdict
 
@@ -5,8 +7,14 @@ import h5py
 import numpy as np
 
 
-class ModelDataset(object):
-    def __init__(self, dataset_name, overwrite=False, mode="a", difficulty="challenge"):
+class ModelDataset:
+    def __init__(
+        self,
+        dataset_name: str,
+        overwrite: bool = False,
+        mode: str = "a",
+        difficulty: str = "challenge",
+    ):
         self.dataset_name = dataset_name
         self.dataset_path = self.append_file_type(self.dataset_name)
         self.overwrite = overwrite
@@ -46,9 +54,9 @@ class ModelDataset(object):
         }
         self.difficulties = {"challenge", "hard", "medium", "easy", "beginner"}
         self.difficulty = difficulty
-        self.h5py_file = None
+        self.h5py_file: h5py.File | None = None
 
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> list:
         data = [
             self.features[item],
             self.labels[item],
@@ -61,18 +69,18 @@ class ModelDataset(object):
         ]
         return data
 
-    def __len__(self):
+    def __len__(self) -> int:
         try:
             return self.num_samples
         except KeyError:
             return 0
 
-    def __enter__(self):
+    def __enter__(self) -> ModelDataset:
         self.reset_h5py_file()
         self.set_difficulty(difficulty=self.difficulty)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *args):
         self.close()
 
     def close(self):
@@ -85,9 +93,11 @@ class ModelDataset(object):
                 self.h5py_file.close()
             except IOError:
                 pass
-        self.h5py_file = h5py.File(self.dataset_path, self.mode, libver="latest")
+        self.h5py_file: h5py.File = h5py.File(
+            self.dataset_path, self.mode, libver="latest"
+        )
 
-    def create_dataset(self, data, dataset_name):
+    def create_dataset(self, data: np.ndarray, dataset_name: str):
         if dataset_name in self.scaler_dataset_names:
             self.h5py_file.create_dataset(
                 dataset_name, data=data, compression="lzf", dtype="S1024"
@@ -105,7 +115,7 @@ class ModelDataset(object):
                 maxshape=data_shape,
             )
 
-    def extend_dataset(self, data, dataset_name):
+    def extend_dataset(self, data: np.ndarray, dataset_name: str):
         if dataset_name in self.scaler_dataset_names:
             saved_dataset = self.h5py_file[dataset_name][:]
             del self.h5py_file[dataset_name]
@@ -118,7 +128,9 @@ class ModelDataset(object):
             )
             self.h5py_file[dataset_name][-data.shape[0] :] = data
 
-    def dump_difficulty_dataset(self, dataset_name, difficulty, value):
+    def dump_difficulty_dataset(
+        self, dataset_name: str, difficulty: str, value: np.ndarray
+    ):
         difficulty_dataset_name = self.append_difficulty(
             dataset_name=dataset_name, difficulty=difficulty
         )
@@ -134,15 +146,15 @@ class ModelDataset(object):
 
     def dump(
         self,
-        features,
-        labels,
-        sample_weights,
-        arrows,
-        label_encoded_arrows,
-        binary_encoded_arrows,
-        file_names,
-        string_arrows,
-        onehot_encoded_arrows,
+        features: np.ndarray,
+        labels: np.ndarray,
+        sample_weights: np.ndarray,
+        arrows: np.ndarray,
+        label_encoded_arrows: np.ndarray,
+        binary_encoded_arrows: np.ndarray,
+        file_names: np.ndarray,
+        string_arrows: np.ndarray,
+        onehot_encoded_arrows: np.ndarray,
     ):
         try:
             all_data = self.get_dataset_name_to_data_map(
@@ -197,7 +209,7 @@ class ModelDataset(object):
             self.close()
             raise ex
 
-    def set_difficulty(self, difficulty):
+    def set_difficulty(self, difficulty: str):
         if difficulty not in self.difficulties:
             raise ValueError(
                 "%s is not a valid difficulty! Choose a valid difficulty: %s"
@@ -205,7 +217,7 @@ class ModelDataset(object):
             )
         self.difficulty = difficulty
 
-    def get_dataset_name_to_data_map(self, **data_dict):
+    def get_dataset_name_to_data_map(self, **data_dict) -> dict:
         dataset_name_to_data_map = {}
         for dataset_name in self.dataset_names:
             if dataset_name in data_dict:
@@ -219,7 +231,12 @@ class ModelDataset(object):
                 dataset_name_to_data_map[dataset_name] = None
         return dataset_name_to_data_map
 
-    def set_dataset_attrs(self, h5py_file, dataset_name, saved_attributes=None):
+    def set_dataset_attrs(
+        self,
+        h5py_file: h5py.File,
+        dataset_name: str,
+        saved_attributes: dict | None = None,
+    ):
         if "labels" in dataset_name:
             for dataset_attr in self.dataset_attr["labels"]:
                 if saved_attributes is not None and dataset_attr in saved_attributes:
@@ -238,7 +255,9 @@ class ModelDataset(object):
                     h5py_file[dataset_name].attrs[dataset_attr] = 0
 
     @staticmethod
-    def update_dataset_attrs(h5py_file, dataset_name, attr_value):
+    def update_dataset_attrs(
+        h5py_file: h5py.File, dataset_name: str, attr_value: np.ndarray
+    ):
         if "labels" in dataset_name:
             if not any(attr_value < 0):
                 h5py_file[dataset_name].attrs["num_valid_samples"] += len(attr_value)
@@ -250,7 +269,7 @@ class ModelDataset(object):
             h5py_file[dataset_name].attrs["num_samples"] += len(attr_value)
 
     @staticmethod
-    def save_attributes(h5py_file, dataset_name):
+    def save_attributes(h5py_file: h5py.File, dataset_name: str) -> dict:
         saved_attributes = {}
         if dataset_name in h5py_file:
             for attr_name in h5py_file[dataset_name].attrs:
@@ -258,79 +277,79 @@ class ModelDataset(object):
         return saved_attributes
 
     @staticmethod
-    def append_file_type(path):
+    def append_file_type(path: str) -> str:
         return path + ".hdf5"
 
     @staticmethod
-    def append_difficulty(dataset_name, difficulty):
+    def append_difficulty(dataset_name: str, difficulty: str) -> str:
         return "%s_%s" % (dataset_name, difficulty)
 
     @property
-    def num_samples(self):
+    def num_samples(self) -> int:
         return self.h5py_file["features"].attrs["num_samples"]
 
     @property
-    def num_valid_samples(self):
+    def num_valid_samples(self) -> int:
         return self.h5py_file[self.append_difficulty("labels", self.difficulty)].attrs[
             "num_valid_samples"
         ]
 
     @property
-    def pos_samples(self):
+    def pos_samples(self) -> int:
         return self.h5py_file[self.append_difficulty("labels", self.difficulty)].attrs[
             "pos_samples"
         ]
 
     @property
-    def neg_samples(self):
+    def neg_samples(self) -> int:
         return self.h5py_file[self.append_difficulty("labels", self.difficulty)].attrs[
             "neg_samples"
         ]
 
     @property
-    def labels(self):
+    def labels(self) -> np.ndarray:
         return self.h5py_file[self.append_difficulty("labels", self.difficulty)]
 
     @property
-    def sample_weights(self):
+    def sample_weights(self) -> np.ndarray:
         return self.h5py_file[self.append_difficulty("sample_weights", self.difficulty)]
 
     @property
-    def arrows(self):
+    def arrows(self) -> np.ndarray:
         return self.h5py_file[self.append_difficulty("arrows", self.difficulty)]
 
     @property
-    def label_encoded_arrows(self):
+    def label_encoded_arrows(self) -> np.ndarray:
         return self.h5py_file[
             self.append_difficulty("label_encoded_arrows", self.difficulty)
         ]
 
     @property
-    def binary_encoded_arrows(self):
+    def binary_encoded_arrows(self) -> np.ndarray:
         return self.h5py_file[
             self.append_difficulty("binary_encoded_arrows", self.difficulty)
         ]
 
     @property
-    def string_arrows(self):
+    def string_arrows(self) -> np.ndarray:
         return self.h5py_file[self.append_difficulty("string_arrows", self.difficulty)]
 
     @property
-    def onehot_encoded_arrows(self):
+    def onehot_encoded_arrows(self) -> np.ndarray:
         return self.h5py_file[
             self.append_difficulty("onehot_encoded_arrows", self.difficulty)
         ]
 
     @property
-    def file_names(self):
+    def file_names(self) -> list[str]:
         return [file_name.decode("ascii") for file_name in self.h5py_file["file_names"]]
 
     @property
-    def song_index_ranges(self):
+    def song_index_ranges(self) -> tuple[int, int]:
         return self.h5py_file["song_index_ranges"]
 
     @property
-    def features(self):
+    def features(self) -> np.ndarray:
         return self.h5py_file["features"]
 
 
@@ -352,10 +371,10 @@ class DistributedModelDataset(ModelDataset):
         self.build_dataset(sub_dataset_names, self.h5py_file)
         self.reset_h5py_file()
 
-    def format_sub_dataset_name(self, file_name):
+    def format_sub_dataset_name(self, file_name: str) -> str:
         return "%s_%s" % (self.dataset_name, file_name)
 
-    def build_dataset(self, sub_dataset_names, h5py_file):
+    def build_dataset(self, sub_dataset_names: list[str], h5py_file: h5py.File):
         if not sub_dataset_names:
             raise ValueError("Cannot build dataset until data is dumped")
         virtual_dataset = h5py.File(self.dataset_path, self.mode, libver="latest")
@@ -380,7 +399,11 @@ class DistributedModelDataset(ModelDataset):
                 )
 
     def build_virtual_dataset(
-        self, data, dataset_name, sub_dataset_names, virtual_dataset
+        self,
+        data: np.ndarray,
+        dataset_name: str,
+        sub_dataset_names: list[str],
+        virtual_dataset: h5py.File,
     ):
         (
             virtual_sources,
@@ -397,9 +420,11 @@ class DistributedModelDataset(ModelDataset):
         self.set_dataset_attrs(virtual_dataset, dataset_name, saved_attributes)
         self.update_dataset_attrs(virtual_dataset, dataset_name, data)
 
-    def build_virtual_sources(self, dataset_name, sub_dataset_names):
+    def build_virtual_sources(
+        self, dataset_name: str, sub_dataset_names: list[str]
+    ) -> tuple[list[h5py.VirtualSource], tuple[int, ...], np.dtype | None]:
         sources = []
-        dtype = None
+        dtype: np.dtype | None = None
         source_shape = None
         for sub_dataset_name in sub_dataset_names:
             with h5py.File(self.append_file_type(sub_dataset_name), "r") as sub_dataset:
@@ -416,7 +441,11 @@ class DistributedModelDataset(ModelDataset):
         return sources, source_shape, dtype
 
     @staticmethod
-    def build_virtual_layout(sources, source_shapes, dtype):
+    def build_virtual_layout(
+        sources: list[h5py.VirtualSource],
+        source_shapes: tuple[int, ...],
+        dtype: np.dtype,
+    ) -> h5py.VirtualLayout:
         virtual_layout = h5py.VirtualLayout(shape=source_shapes, dtype=dtype)
         offset = 0
         for source in sources:
@@ -427,7 +456,7 @@ class DistributedModelDataset(ModelDataset):
         return virtual_layout
 
     @property
-    def file_names(self):
+    def file_names(self) -> list[str]:
         return [
             self.format_sub_dataset_name(file_name.decode("ascii"))
             for file_name in self.h5py_file["file_names"]

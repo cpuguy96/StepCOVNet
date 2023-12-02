@@ -3,11 +3,14 @@ import json
 import os
 
 import joblib
+from sklearn import preprocessing
 
-from stepcovnet import config, data, executor, inputs, training, model
+from stepcovnet import config, data, executor, inputs, training, model, dataset
 
 
-def load_training_data(input_path: str):
+def load_training_data(
+    input_path: str,
+) -> tuple[str, type[dataset.ModelDataset], list[preprocessing.StandardScaler], dict]:
     metadata = json.load(open(os.path.join(input_path, "metadata.json"), "r"))
     dataset_name = metadata["dataset_name"]
     dataset_type = data.ModelDatasetTypes[metadata["dataset_type"]].value

@@ -2,12 +2,18 @@ from abc import ABC
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.types import data
 
 from stepcovnet import config, training, sample_collection_helper, utils
 
 
-class AbstractInput(ABC, object):
-    def __init__(self, input_config, *args, **kwargs):
+class AbstractInput(ABC):
+    def __init__(
+        self,
+        input_config: config.TrainingConfig | config.InferenceConfig,
+        *args,
+        **kwargs
+    ):
         self.config = input_config
 
 
@@ -87,7 +93,9 @@ class TrainingInput(AbstractInput):
             tokenizer_name=self.config.tokenizer_name,
         )
 
-    def get_tf_dataset(self, generator):
+    def get_tf_dataset(
+        self, generator: training.TrainingFeatureGenerator
+    ) -> data.DatasetV2:
         return tf.data.Dataset.from_generator(
             generator,
             output_types=self.output_types,
@@ -95,13 +103,13 @@ class TrainingInput(AbstractInput):
         ).prefetch(tf.data.AUTOTUNE)
 
     @property
-    def train_generator(self):
+    def train_generator(self) -> data.DatasetV2:
         return self.get_tf_dataset(self.train_feature_generator)
 
     @property
-    def val_generator(self):
+    def val_generator(self) -> data.DatasetV2:
         return self.get_tf_dataset(self.val_feature_generator)
 
     @property
-    def all_generator(self):
+    def all_generator(self) -> data.DatasetV2:
         return self.get_tf_dataset(self.all_feature_generator)
