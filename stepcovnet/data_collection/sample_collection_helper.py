@@ -5,21 +5,25 @@ import numpy as np
 import resampy
 import soundfile as sf
 
+from stepcovnet import encoder
 from stepcovnet.common import mel_features
-from stepcovnet.common.constants import ALL_ARROW_COMBS
-from stepcovnet.common.constants import NUM_ARROW_COMBS
-from stepcovnet.common.constants import NUM_ARROWS
-from stepcovnet.encoder.BinaryArrowEncoder import BinaryArrowEncoder
-from stepcovnet.encoder.LabelArrowEncoder import LabelArrowEncoder
-from stepcovnet.encoder.OneHotArrowEncoder import OneHotArrowEncoder
+from stepcovnet.common.constants import ALL_ARROW_COMBS, NUM_ARROW_COMBS, NUM_ARROWS
 
 
 def remove_out_of_range(frames, frame_start, frame_end):
     return frames[np.all([frames <= frame_end, frames >= frame_start], axis=0)]
 
 
-def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_encoded_arrows, binary_encoded_arrows,
-                                              string_arrows, onehot_encoded_arrows, num_arrow_types=4):
+def feature_onset_phrase_label_sample_weights(
+    frames_onset,
+    mfcc,
+    arrows,
+    label_encoded_arrows,
+    binary_encoded_arrows,
+    string_arrows,
+    onehot_encoded_arrows,
+    num_arrow_types=4,
+):
     # Depending on modeling results, it may be beneficial to clip all data from the first onset detected
     # to the last onset. This may affect how models interpret long periods of empty notes.
     frame_start = 0
@@ -51,7 +55,7 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_
         for i in range(NUM_ARROWS):
             binary_encoded_arrows_array[:, i * num_arrow_types] = 1
         string_arrows_array = np.chararray((len_line,), itemsize=4)
-        string_arrows_array[:] = '0000'
+        string_arrows_array[:] = "0000"
         onehot_encoded_arrows_array = np.zeros((len_line, NUM_ARROW_COMBS))
         # Set first index to 1 to default to empty arrow
         onehot_encoded_arrows_array[:, 0] = 1
@@ -62,9 +66,21 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_
         string_arrows_list = string_arrows[difficulty]
         onehot_encoded_arrows_list = onehot_encoded_arrows[difficulty]
         i = 0
-        for onset, arrow, label_encoded_arrow, binary_encoded_arrow, string_arrow, onehot_encoded_arrow \
-                in zip(onsets, arrows_list, label_encoded_arrows_list, binary_encoded_arrows_list,
-                       string_arrows_list, onehot_encoded_arrows_list):
+        for (
+            onset,
+            arrow,
+            label_encoded_arrow,
+            binary_encoded_arrow,
+            string_arrow,
+            onehot_encoded_arrow,
+        ) in zip(
+            onsets,
+            arrows_list,
+            label_encoded_arrows_list,
+            binary_encoded_arrows_list,
+            string_arrows_list,
+            onehot_encoded_arrows_list,
+        ):
             arrows_array[onset - frame_start] = arrow
             label_encoded_arrows_array[onset - frame_start] = label_encoded_arrow
             binary_encoded_arrows_array[onset - frame_start] = binary_encoded_arrow
@@ -72,14 +88,29 @@ def feature_onset_phrase_label_sample_weights(frames_onset, mfcc, arrows, label_
             onehot_encoded_arrows_array[onset - frame_start] = onehot_encoded_arrow
             i += 1
         arrows_dict[difficulty] = arrows_array.astype("int8")
-        label_encoded_arrows_dict[difficulty] = label_encoded_arrows_array.astype("int16")
-        binary_encoded_arrows_dict[difficulty] = binary_encoded_arrows_array.astype("int8")
-        string_arrows_dict[difficulty] = string_arrows_array.astype('S4')
-        onehot_encoded_arrows_dict[difficulty] = onehot_encoded_arrows_array.astype("int8")
+        label_encoded_arrows_dict[difficulty] = label_encoded_arrows_array.astype(
+            "int16"
+        )
+        binary_encoded_arrows_dict[difficulty] = binary_encoded_arrows_array.astype(
+            "int8"
+        )
+        string_arrows_dict[difficulty] = string_arrows_array.astype("S4")
+        onehot_encoded_arrows_dict[difficulty] = onehot_encoded_arrows_array.astype(
+            "int8"
+        )
 
-    mfcc_line = mfcc[frame_start:frame_end + 1, :]
+    mfcc_line = mfcc[frame_start : frame_end + 1, :]
 
-    return mfcc_line, labels_dict, sample_weights_dict, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict, onehot_encoded_arrows_dict
+    return (
+        mfcc_line,
+        labels_dict,
+        sample_weights_dict,
+        arrows_dict,
+        label_encoded_arrows_dict,
+        binary_encoded_arrows_dict,
+        string_arrows_dict,
+        onehot_encoded_arrows_dict,
+    )
 
 
 def timings_parser(timing_file_path):
@@ -89,13 +120,13 @@ def timings_parser(timing_file_path):
     :return: defaultdict - key: difficulty; value: list containing note arrows and timings
     """
 
-    with open(timing_file_path, 'r') as file:
+    with open(timing_file_path, "r") as file:
         data = defaultdict(dict)
         read_timings = False
         curr_difficulty = None
-        label_encoder = LabelArrowEncoder()
-        binary_encoder = BinaryArrowEncoder()
-        onehot_encoder = OneHotArrowEncoder(all_arrow_combs=ALL_ARROW_COMBS)
+        label_encoder = encoder.LabelArrowEncoder()
+        binary_encoder = encoder.BinaryArrowEncoder()
+        onehot_encoder = encoder.OneHotArrowEncoder(all_arrow_combs=ALL_ARROW_COMBS)
         for line in file.readlines():
             line = line.replace("\n", "")
             if line.startswith("NOTES"):
@@ -111,25 +142,35 @@ def timings_parser(timing_file_path):
                     label_encoded_arrows = label_encoder.encode(arrows)
                     binary_encoded_arrows = binary_encoder.encode(arrows)
                     onehot_encoded_arrows = onehot_encoder.encode(arrows)
-                    data[curr_difficulty][float(timing)] = [np.array(list(arrows), dtype=int),
-                                                            label_encoded_arrows, binary_encoded_arrows, arrows,
-                                                            onehot_encoded_arrows]
+                    data[curr_difficulty][float(timing)] = [
+                        np.array(list(arrows), dtype=int),
+                        label_encoded_arrows,
+                        binary_encoded_arrows,
+                        arrows,
+                        onehot_encoded_arrows,
+                    ]
         return data
 
 
-def get_fft_lengths(audio_sample_rate, window_length_secs=0.025, multi=False, num_multi_channels=3):
+def get_fft_lengths(
+    audio_sample_rate, window_length_secs=0.025, multi=False, num_multi_channels=3
+):
     fft_lengths = []
     window_length_samples = int(round(audio_sample_rate * window_length_secs))
     base_fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
     if multi:  # if multi is used, normalization on the channel axis should be done
         if base_fft_length < 512:
-            print("[WARN] Base fft length is less than 512. There may be data quality issues with smaller fft sizes.")
+            print(
+                "[WARN] Base fft length is less than 512. There may be data quality issues with smaller fft sizes."
+            )
         num_fft_base_2 = int(np.log2(base_fft_length))
-        for i in range(max(num_fft_base_2 - (num_multi_channels // 2), 0), num_fft_base_2):
-            fft_lengths.append(2 ** i)
+        for i in range(
+            max(num_fft_base_2 - (num_multi_channels // 2), 0), num_fft_base_2
+        ):
+            fft_lengths.append(2**i)
             num_multi_channels -= 1
         for i in range(num_fft_base_2, num_fft_base_2 + num_multi_channels):
-            fft_lengths.append(2 ** i)
+            fft_lengths.append(2**i)
     else:
         fft_lengths = [base_fft_length]
 
@@ -144,11 +185,16 @@ def get_log_mels(audio_data, audio_data_sample_rate, config):
         audio_data = np.squeeze(audio_data)
     # Resample to the rate specified in config.
     if audio_data_sample_rate != config["SAMPLE_RATE"]:
-        audio_data = resampy.resample(audio_data, audio_data_sample_rate, config["SAMPLE_RATE"])
+        audio_data = resampy.resample(
+            audio_data, audio_data_sample_rate, config["SAMPLE_RATE"]
+        )
     multi = True if config["NUM_CHANNELS"] > 1 else False
-    fft_lengths, window_length_samples = get_fft_lengths(audio_sample_rate=config["SAMPLE_RATE"],
-                                                         window_length_secs=config["STFT_WINDOW_LENGTH_SECONDS"],
-                                                         multi=multi, num_multi_channels=config["NUM_MULTI_CHANNELS"])
+    fft_lengths, window_length_samples = get_fft_lengths(
+        audio_sample_rate=config["SAMPLE_RATE"],
+        window_length_secs=config["STFT_WINDOW_LENGTH_SECONDS"],
+        multi=multi,
+        num_multi_channels=config["NUM_MULTI_CHANNELS"],
+    )
 
     log_mels = []
     for fft_length in fft_lengths:
@@ -162,13 +208,13 @@ def get_log_mels(audio_data, audio_data_sample_rate, config):
             lower_edge_hertz=config["MIN_FREQ"],
             upper_edge_hertz=config["MAX_FREQ"],
             fft_length=fft_length,
-            window_length_samples=window_length_samples)
+            window_length_samples=window_length_samples,
+        )
 
         # Create frame features.
         log_mel_frames = mel_features.frame(
-            log_mel,
-            window_length=config["NUM_TIME_BANDS"],
-            hop_length=1)
+            log_mel, window_length=config["NUM_TIME_BANDS"], hop_length=1
+        )
         log_mels.append(log_mel_frames)
 
     if multi:
@@ -198,35 +244,91 @@ def convert_note_data(note_data, stft_hop_length_secs=0.01):
 
     for difficulty, data in note_data.items():
         timings, arrows = list(data.keys()), list(data.values())
-        frames_onset[difficulty] = np.array(np.around(np.array(timings) / stft_hop_length_secs), dtype=int)
-        arrows_dict[difficulty] = np.array([arrow[0] for arrow in arrows], dtype=np.int8)
-        label_encoded_arrows_dict[difficulty] = np.array([arrow[1] for arrow in arrows], dtype=np.int16)
-        binary_encoded_arrows_dict[difficulty] = np.array([arrow[2] for arrow in arrows], dtype=np.int8)
-        string_arrows_dict[difficulty] = np.array([arrow[3] for arrow in arrows], dtype='S4')
-        onehot_encoded_arrows_dict[difficulty] = np.array([arrow[4] for arrow in arrows], dtype=np.int8)
+        frames_onset[difficulty] = np.array(
+            np.around(np.array(timings) / stft_hop_length_secs), dtype=int
+        )
+        arrows_dict[difficulty] = np.array(
+            [arrow[0] for arrow in arrows], dtype=np.int8
+        )
+        label_encoded_arrows_dict[difficulty] = np.array(
+            [arrow[1] for arrow in arrows], dtype=np.int16
+        )
+        binary_encoded_arrows_dict[difficulty] = np.array(
+            [arrow[2] for arrow in arrows], dtype=np.int8
+        )
+        string_arrows_dict[difficulty] = np.array(
+            [arrow[3] for arrow in arrows], dtype="S4"
+        )
+        onehot_encoded_arrows_dict[difficulty] = np.array(
+            [arrow[4] for arrow in arrows], dtype=np.int8
+        )
 
-    return frames_onset, arrows_dict, label_encoded_arrows_dict, binary_encoded_arrows_dict, string_arrows_dict, onehot_encoded_arrows_dict
+    return (
+        frames_onset,
+        arrows_dict,
+        label_encoded_arrows_dict,
+        binary_encoded_arrows_dict,
+        string_arrows_dict,
+        onehot_encoded_arrows_dict,
+    )
 
 
 def get_audio_features(wav_path, file_name, config):
     # Read audio data (needs to be a wav)
-    audio_data, audio_data_sample_rate = get_audio_data(audio_file_path=join(wav_path, file_name + '.wav'))
+    audio_data, audio_data_sample_rate = get_audio_data(
+        audio_file_path=join(wav_path, file_name + ".wav")
+    )
     # Create log mel features
-    log_mel_frames = get_log_mels(audio_data=audio_data, audio_data_sample_rate=audio_data_sample_rate, config=config)
+    log_mel_frames = get_log_mels(
+        audio_data=audio_data,
+        audio_data_sample_rate=audio_data_sample_rate,
+        config=config,
+    )
     return log_mel_frames
 
 
 def get_labels(note_data_path, file_name, config):
     # Read data from timings file
-    note_data = timings_parser(timing_file_path=join(note_data_path, file_name + '.txt'))
+    note_data = timings_parser(
+        timing_file_path=join(note_data_path, file_name + ".txt")
+    )
     # Parse notes data to get onsets and arrows
-    onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows = \
-        convert_note_data(note_data=note_data, stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"])
-    return onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows
+    (
+        onsets,
+        arrows,
+        label_encoded_arrows,
+        binary_encoded_arrows,
+        string_arrows,
+        onehot_encoded_arrows,
+    ) = convert_note_data(
+        note_data=note_data, stft_hop_length_secs=config["STFT_HOP_LENGTH_SECONDS"]
+    )
+    return (
+        onsets,
+        arrows,
+        label_encoded_arrows,
+        binary_encoded_arrows,
+        string_arrows,
+        onehot_encoded_arrows,
+    )
 
 
 def get_features_and_labels(wav_path, note_data_path, file_name, config):
     log_mel_frames = get_audio_features(wav_path, file_name, config)
-    onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows = \
-        get_labels(note_data_path, file_name, config)
-    return log_mel_frames, onsets, arrows, label_encoded_arrows, binary_encoded_arrows, string_arrows, onehot_encoded_arrows
+    (
+        onsets,
+        arrows,
+        label_encoded_arrows,
+        binary_encoded_arrows,
+        string_arrows,
+        onehot_encoded_arrows,
+    ) = get_labels(note_data_path, file_name, config)
+    return (
+        log_mel_frames,
+        onsets,
+        arrows,
+        label_encoded_arrows,
+        binary_encoded_arrows,
+        string_arrows,
+        onehot_encoded_arrows,
+    )
