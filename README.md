@@ -30,7 +30,7 @@ To create a training dataset, you need to parse the `.sm` files and convert soun
   audio files into `.wav` files. The default sample rate is `16000hz`.
 
 Once the parsed `.txt` files and `.wav` files are generated, place the `.wav` files into separate directories and
-run [`training_data_collection.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/data_collection/training_data_collection.py).
+run [`training_data_collection.py`](https://github.com/cpuguy96/StepCOVNet/blob/master/stepcovnet/training_data_collection.py).
 
 ```.bash
 python training_data_collection.py -w --wav <string> -t --timing <string> -o --output <string> --multi <int> --limit <int> --cores <int> --name <string> --distributed <int>
