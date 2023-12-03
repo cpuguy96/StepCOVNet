@@ -117,7 +117,7 @@ class TrainingExecutor(AbstractExecutor):
                 input_data,
                 saved_original_weights=weights,
                 epochs=epochs_final,
-                callbacks=self.get_retraining_callbacks(hyperparameters),
+                callback_list=self.get_retraining_callbacks(hyperparameters),
             )
             self.save(
                 input_data.config, training_history=retraining_history, retrained=True
