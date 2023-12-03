@@ -108,7 +108,7 @@ def collect_data(
         for file_name in utils.get_filenames_from_folder(timings_path)
     ]
 
-    with training_dataset as dataset:
+    with training_dataset as model_dataset:
         with multiprocessing.Pool(cores) as pool:
             song_count = 0
             for i, result in enumerate(pool.imap(func, file_names)):
@@ -129,7 +129,7 @@ def collect_data(
                     "[%d/%d] Dumping to dataset: %s"
                     % (i + 1, len(file_names), file_name)
                 )
-                dataset.dump(
+                model_dataset.dump(
                     features=features,
                     labels=labels,
                     sample_weights=weights,
@@ -151,9 +151,9 @@ def collect_data(
                     song_count += 1
                     print(
                         "[%d/%d] Features collected: %s"
-                        % (dataset.num_samples, limit, file_name)
+                        % (model_dataset.num_samples, limit, file_name)
                     )
-                    if dataset.num_samples >= limit:
+                    if model_dataset.num_samples >= limit:
                         print("Limit reached after %d songs. Breaking..." % song_count)
                         break
     print("Saving scalers")

@@ -27,7 +27,7 @@ class TrainingHyperparameters:
         self,
         optimizer=None,
         loss=None,
-        metrics=None,
+        hparam_metrics=None,
         batch_size=None,
         epochs=None,
         patience=None,
@@ -36,7 +36,9 @@ class TrainingHyperparameters:
     ):
         self.optimizer = optimizer if optimizer is not None else self.DEFAULT_OPTIMIZER
         self.loss = loss if loss is not None else self.DEFAULT_LOSS
-        self.metrics = metrics if metrics is not None else self.DEFAULT_METRICS
+        self.metrics = (
+            hparam_metrics if hparam_metrics is not None else self.DEFAULT_METRICS
+        )
         self.patience = patience if patience is not None else self.DEFAULT_PATIENCE
         self.epochs = epochs if epochs is not None else self.DEFAULT_EPOCHS
         self.batch_size = (
