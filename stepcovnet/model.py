@@ -6,8 +6,8 @@ from typing import List, Union
 
 import tensorflow as tf
 import transformers
-from tensorflow.python.keras.initializers import he_uniform, Constant, glorot_uniform
-from tensorflow.python.keras.layers import (
+from keras import initializers
+from keras.layers import (
     Bidirectional,
     LSTM,
     Conv2D,
@@ -24,7 +24,7 @@ from tensorflow.python.keras.layers import (
     Input,
     Layer,
 )
-from tensorflow.python.keras.models import load_model, Model
+from keras.models import load_model, Model
 from transformers import GPT2Config, TFGPT2Model
 
 from stepcovnet import config, constants
@@ -106,8 +106,8 @@ class ClassifierModel(AbstractModel):
         feature_concat = concatenate([arrow_model.output, audio_model.output])
         model = Dense(
             256,
-            kernel_initializer=tf.keras.initializers.he_uniform(42),
-            bias_initializer=tf.keras.initializers.Zeros(),
+            kernel_initializer=initializers.HeUniform(42),
+            bias_initializer=initializers.Zeros(),
         )(feature_concat)
         model = BatchNormalization()(model)
         model = Activation("relu")(model)
@@ -116,8 +116,10 @@ class ClassifierModel(AbstractModel):
         model_output = Dense(
             constants.NUM_ARROW_COMBS,
             activation="softmax",
-            bias_initializer=Constant(value=training_config.init_bias_correction),
-            kernel_initializer=glorot_uniform(42),
+            bias_initializer=initializers.Constant(
+                value=training_config.init_bias_correction
+            ),
+            kernel_initializer=initializers.GlorotUniform(42),
             dtype=tf.float32,
             name="onehot_encoded_arrows",
         )(model)
@@ -411,7 +413,7 @@ class StepCOVNetModel(object):
 class VggishAudioModel(AudioModel):
     def _create_audio_model(
         self, training_config: config.TrainingConfig, model_input: Input
-    ) -> tf.keras.layers.Layer:
+    ) -> Layer:
         # Channel reduction
         if training_config.dataset_config["NUM_CHANNELS"] > 1:
             vggish_input = TimeDistributed(
@@ -421,8 +423,8 @@ class VggishAudioModel(AudioModel):
                     strides=(1, 1),
                     activation="linear",
                     padding="same",
-                    kernel_initializer=he_uniform(42),
-                    bias_initializer=tf.keras.initializers.Zeros(),
+                    kernel_initializer=initializers.HeUniform(42),
+                    bias_initializer=initializers.Zeros(),
                     image_shape=model_input.shape[1:],
                     data_format="channels_last",
                     name="channel_reduction",
@@ -440,5 +442,9 @@ class VggishAudioModel(AudioModel):
         # VGGish model returns feature maps for avg/max pooling. Using LSTM for additional feature extraction.
         # Might be able to replace this with another method in the future
         return Bidirectional(
-            LSTM(128, return_sequences=False, kernel_initializer=glorot_uniform(42))
+            LSTM(
+                128,
+                return_sequences=False,
+                kernel_initializer=initializers.GlorotUniform(42),
+            )
         )(model_output)

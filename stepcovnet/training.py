@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 import numpy as np
-import tensorflow as tf
+from keras import metrics, losses, optimizers
 
 from stepcovnet import data, utils
 
@@ -11,14 +11,14 @@ class TrainingHyperparameters:
 
     # TODO(https://github.com/cpuguy96/StepCOVNet/issues/2): Move all training hyperparameters into config file
     DEFAULT_METRICS = [
-        tf.keras.metrics.CategoricalAccuracy(name="acc"),
-        tf.keras.metrics.Precision(name="pre"),
-        tf.keras.metrics.Recall(name="rec"),
-        tf.keras.metrics.AUC(curve="PR", name="pr_auc"),
-        tf.keras.metrics.AUC(name="auc"),
+        metrics.CategoricalAccuracy(name="acc"),
+        metrics.Precision(name="pre"),
+        metrics.Recall(name="rec"),
+        metrics.AUC(curve="PR", name="pr_auc"),
+        metrics.AUC(name="auc"),
     ]
-    DEFAULT_LOSS = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05)
-    DEFAULT_OPTIMIZER = tf.keras.optimizers.Nadam(beta_1=0.99)
+    DEFAULT_LOSS = losses.CategoricalCrossentropy(label_smoothing=0.05)
+    DEFAULT_OPTIMIZER = optimizers.Nadam(beta_1=0.99)
     DEFAULT_EPOCHS = 15
     DEFAULT_PATIENCE = 3
     DEFAULT_BATCH_SIZE = 32
