@@ -9,15 +9,15 @@ from os.path import join
 import joblib
 import psutil
 
-from stepcovnet import utils, data, sample_collection_helper, parameters
+from stepcovnet import utils, data, sample_collection_helper, parameters, dataset
 
 
-def build_all_metadata(**kwargs):
+def build_all_metadata(**kwargs) -> dict:
     kwargs["creation_time"] = datetime.utcnow().strftime("%b %d %Y %H:%M:%S UTC")
     return kwargs
 
 
-def update_all_metadata(all_metadata, metadata):
+def update_all_metadata(all_metadata: dict, metadata: dict) -> dict:
     for key, value in metadata.items():
         if key not in all_metadata or not isinstance(value, list):
             all_metadata[key] = value
@@ -29,7 +29,9 @@ def update_all_metadata(all_metadata, metadata):
     return all_metadata
 
 
-def collect_features(wav_path, timing_path, config, cores, file_name):
+def collect_features(
+    wav_path: str, timing_path: str, config: dict, cores: int, file_name: str
+) -> list | None:
     try:
         print("Feature collecting: %s" % file_name)
         (
@@ -84,16 +86,16 @@ def collect_features(wav_path, timing_path, config, cores, file_name):
 
 
 def collect_data(
-    wavs_path,
-    timings_path,
-    output_path,
-    name_prefix,
-    config,
-    training_dataset,
-    dataset_type,
-    multi=False,
-    limit=-1,
-    cores=1,
+    wavs_path: str,
+    timings_path: str,
+    output_path: str,
+    name_prefix: str,
+    config: dict,
+    training_dataset: dataset.ModelDataset,
+    dataset_type: data.ModelDatasetTypes,
+    multi: bool = False,
+    limit: int = -1,
+    cores: int = 1,
 ):
     scalers = None
     config["NUM_CHANNELS"] = config["NUM_MULTI_CHANNELS"] if multi else 1
@@ -162,15 +164,15 @@ def collect_data(
 
 
 def training_data_collection(
-    wavs_path,
-    timings_path,
-    output_path,
-    multi_int=0,
-    type_int=0,
-    limit=-1,
-    cores=1,
-    name=None,
-    distributed_int=0,
+    wavs_path: str,
+    timings_path: str,
+    output_path: str,
+    multi_int: int = 0,
+    type_int: int = 0,
+    limit: int = -1,
+    cores: int = 1,
+    name: str | None = None,
+    distributed_int: int = 0,
 ):
     if not os.path.isdir(wavs_path):
         raise NotADirectoryError("Audio path %s not found" % os.path.abspath(wavs_path))

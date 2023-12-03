@@ -6,8 +6,8 @@ from typing import List, Union
 
 import tensorflow as tf
 import transformers
-from tensorflow.keras.initializers import he_uniform, Constant, glorot_uniform
-from tensorflow.keras.layers import (
+from tensorflow.python.keras.initializers import he_uniform, Constant, glorot_uniform
+from tensorflow.python.keras.layers import (
     Bidirectional,
     LSTM,
     Conv2D,
@@ -24,7 +24,7 @@ from tensorflow.keras.layers import (
     Input,
     Layer,
 )
-from tensorflow.keras.models import load_model, Model
+from tensorflow.python.keras.models import load_model, Model
 from transformers import GPT2Config, TFGPT2Model
 
 from stepcovnet import config, constants
@@ -32,7 +32,7 @@ from stepcovnet import config, constants
 VGGISH_WEIGHTS_PATH = "stepcovnet/pretrained_models/vggish_audioset_weights.h5"
 
 
-class AbstractModel(ABC, object):
+class AbstractModel(ABC):
     def __init__(
         self, model_input: Union[Input, List[Input]], model_output: Layer, name: str
     ):

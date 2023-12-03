@@ -6,7 +6,7 @@ import tensorflow as tf
 from stepcovnet import data, utils
 
 
-class TrainingHyperparameters(object):
+class TrainingHyperparameters:
     """Configurable training hyperparameters"""
 
     # TODO(https://github.com/cpuguy96/StepCOVNet/issues/2): Move all training hyperparameters into config file

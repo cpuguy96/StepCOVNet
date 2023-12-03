@@ -5,8 +5,7 @@ from abc import ABC, abstractmethod
 import joblib
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.callbacks import EarlyStopping, TensorBoard
-from tensorflow.python.keras.callbacks import ModelCheckpoint
+from tensorflow.python.keras import callbacks
 
 from stepcovnet import (
     config,
@@ -20,24 +19,24 @@ from stepcovnet import (
 )
 
 
-class AbstractExecutor(ABC, object):
+class AbstractExecutor(ABC):
     def __init__(self, stepcovnet_model: model.StepCOVNetModel, *args, **kwargs):
         self.stepcovnet_model = stepcovnet_model
         tf_config.tf_init()
 
     @abstractmethod
-    def execute(self, input_data):
+    def execute(self, input_data: inputs.AbstractInput):
         pass
 
 
 class InferenceExecutor(AbstractExecutor):
-    def __init__(self, stepcovnet_model, verbose=False):
+    def __init__(self, stepcovnet_model: model.StepCOVNetModel, verbose: bool = False):
         super(InferenceExecutor, self).__init__(stepcovnet_model=stepcovnet_model)
         self.verbose = verbose
         self.binary_arrow_encoder = encoder.BinaryArrowEncoder()
         self.label_arrow_encoder = encoder.LabelArrowEncoder()
 
-    def execute(self, input_data: inputs.InferenceInput):
+    def execute(self, input_data: inputs.InferenceInput) -> list[str]:
         arrow_input = input_data.arrow_input_init
         arrow_mask = input_data.arrow_mask_init
         pred_arrows = []
@@ -89,10 +88,10 @@ class InferenceExecutor(AbstractExecutor):
 
 
 class TrainingExecutor(AbstractExecutor):
-    def __init__(self, stepcovnet_model):
+    def __init__(self, stepcovnet_model: model.StepCOVNetModel):
         super(TrainingExecutor, self).__init__(stepcovnet_model=stepcovnet_model)
 
-    def execute(self, input_data: inputs.TrainingInput):
+    def execute(self, input_data: inputs.TrainingInput) -> model.StepCOVNetModel:
         hyperparameters = input_data.config.hyperparameters
 
         weights = (
@@ -125,13 +124,15 @@ class TrainingExecutor(AbstractExecutor):
             )
         return self.stepcovnet_model
 
-    def get_training_callbacks(self, hyperparameters: training.TrainingHyperparameters):
+    def get_training_callbacks(
+        self, hyperparameters: training.TrainingHyperparameters
+    ) -> list[callbacks.Callback]:
         model_out_path = self.stepcovnet_model.model_root_path
         model_name = self.stepcovnet_model.model_name
         log_path = hyperparameters.log_path
         patience = hyperparameters.patience
-        callbacks = [
-            ModelCheckpoint(
+        callback_list = [
+            callbacks.ModelCheckpoint(
                 filepath=os.path.join(model_out_path, model_name + "_callback"),
                 monitor="val_loss",
                 verbose=0,
@@ -139,38 +140,44 @@ class TrainingExecutor(AbstractExecutor):
             )
         ]
         if patience > 0:
-            callbacks.append(
-                EarlyStopping(monitor="val_loss", patience=patience, verbose=0)
+            callback_list.append(
+                callbacks.EarlyStopping(
+                    monitor="val_loss", patience=patience, verbose=0
+                )
             )
 
         if log_path is not None:
             os.makedirs(os.path.join(log_path, "split_dataset"), exist_ok=True)
-            callbacks.append(
-                TensorBoard(
+            callback_list.append(
+                callbacks.TensorBoard(
                     log_dir=os.path.join(log_path, "split_dataset"),
                     histogram_freq=1,
                     profile_batch=100000000,
                 )
             )
-        return callbacks
+        return callback_list
 
     @staticmethod
-    def get_retraining_callbacks(hyperparameters: training.TrainingHyperparameters):
+    def get_retraining_callbacks(
+        hyperparameters: training.TrainingHyperparameters,
+    ) -> list[callbacks.Callback]:
         log_path = hyperparameters.log_path
-        callbacks = []
+        callback_list = []
 
         if log_path is not None:
             os.makedirs(os.path.join(log_path, "whole_dataset"), exist_ok=True)
-            callbacks.append(
-                TensorBoard(
+            callback_list.append(
+                callbacks.TensorBoard(
                     log_dir=os.path.join(log_path, "whole_dataset"),
                     histogram_freq=1,
                     profile_batch=100000000,
                 )
             )
-        return callbacks
+        return callback_list
 
-    def train(self, input_data, callbacks):
+    def train(
+        self, input_data: inputs.TrainingInput, callback_list: list[callbacks.Callback]
+    ) -> callbacks.History:
         print(
             "Training on %d samples (%d songs) and validating on %d samples (%d songs)"
             % (
@@ -186,7 +193,7 @@ class TrainingExecutor(AbstractExecutor):
             epochs=input_data.config.hyperparameters.epochs,
             steps_per_epoch=len(input_data.train_feature_generator),
             validation_steps=len(input_data.val_feature_generator),
-            callbacks=callbacks,
+            callbacks=callback_list,
             class_weight=input_data.config.train_class_weights,
             validation_data=input_data.val_generator,
             verbose=1,
@@ -196,7 +203,13 @@ class TrainingExecutor(AbstractExecutor):
         print("*****************************\n")
         return history
 
-    def retrain(self, input_data, saved_original_weights, epochs, callbacks):
+    def retrain(
+        self,
+        input_data: inputs.TrainingInput,
+        saved_original_weights: np.ndarray,
+        epochs: int,
+        callback_list: list[callbacks.Callback],
+    ) -> callbacks.History:
         print(
             "Training on %d samples (%d songs)"
             % (
@@ -206,11 +219,11 @@ class TrainingExecutor(AbstractExecutor):
         )
         print("\nStarting retraining...")
         self.stepcovnet_model.model.set_weights(saved_original_weights)
-        history = self.stepcovnet_model.model.fit(
+        history: callbacks.History = self.stepcovnet_model.model.fit(
             x=input_data.all_generator,
             epochs=epochs,
             steps_per_epoch=len(input_data.all_feature_generator),
-            callbacks=callbacks,
+            callbacks=callback_list,
             class_weight=input_data.config.all_class_weights,
             verbose=1,
         )
@@ -222,9 +235,9 @@ class TrainingExecutor(AbstractExecutor):
     def save(
         self,
         training_config: config.TrainingConfig,
-        retrained,
-        training_history=None,
-        pretrained=False,
+        retrained: bool,
+        training_history: callbacks.History | None = None,
+        pretrained: bool = False,
     ):
         model_out_path = self.stepcovnet_model.model_root_path
         model_name = self.stepcovnet_model.model_name

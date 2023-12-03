@@ -1,34 +1,35 @@
 from abc import ABC, abstractmethod
-from typing import Any, Sequence
 
 import numpy as np
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn import preprocessing
 
 from stepcovnet import constants
 
 
-class AbstractArrowEncoder(ABC, object):
-    def __init__(self, encoder):
+class AbstractArrowEncoder(ABC):
+    def __init__(
+        self, encoder: preprocessing.OneHotEncoder | preprocessing.LabelEncoder
+    ):
         self.encoder = encoder
 
     @abstractmethod
-    def encode(self, arrows):
+    def encode(self, arrows: str) -> np.ndarray | int:
         ...
 
     @abstractmethod
-    def decode(self, encoded_arrows) -> str:
+    def decode(self, encoded_arrows: np.ndarray | int) -> str:
         ...
 
 
 class BinaryArrowEncoder(AbstractArrowEncoder):
     def __init__(self, num_arrow_types=constants.NUM_ARROW_TYPES):
         self.num_arrow_types = num_arrow_types
-        encoder = OneHotEncoder(categories="auto", sparse=False).fit(
+        encoder = preprocessing.OneHotEncoder(categories="auto", sparse=False).fit(
             np.arange(num_arrow_types).reshape(-1, 1)
         )
         super(BinaryArrowEncoder, self).__init__(encoder=encoder)
 
-    def encode(self, arrows: Sequence[Any]) -> np.ndarray:
+    def encode(self, arrows: np.ndarray) -> np.ndarray:
         return np.append(
             [],
             [
@@ -37,7 +38,7 @@ class BinaryArrowEncoder(AbstractArrowEncoder):
             ],
         ).astype(int)
 
-    def decode(self, encoded_arrows) -> str:
+    def decode(self, encoded_arrows: np.ndarray) -> str:
         if len(encoded_arrows) / self.num_arrow_types != 4:
             raise ValueError(
                 "Number of arrow types does not match encoded arrow input "
@@ -55,27 +56,27 @@ class BinaryArrowEncoder(AbstractArrowEncoder):
 
 
 class LabelArrowEncoder(AbstractArrowEncoder):
-    def __init__(self, all_arrow_combs: np.array = constants.ALL_ARROW_COMBS):
-        encoder = LabelEncoder().fit(all_arrow_combs.ravel())
+    def __init__(self, all_arrow_combs: np.ndarray = constants.ALL_ARROW_COMBS):
+        encoder = preprocessing.LabelEncoder().fit(all_arrow_combs.ravel())
         super(LabelArrowEncoder, self).__init__(encoder=encoder)
 
     def encode(self, arrows: str) -> np.ndarray:
         return self.encoder.transform([arrows])[0]
 
-    def decode(self, encoded_arrows) -> str:
+    def decode(self, encoded_arrows: np.ndarray) -> str:
         return str(self.encoder.inverse_transform([encoded_arrows])[0])
 
 
 class OneHotArrowEncoder(AbstractArrowEncoder):
     def __init__(self, all_arrow_combs: np.array = constants.ALL_ARROW_COMBS):
-        encoder = OneHotEncoder(categories="auto", sparse=False).fit(
+        encoder = preprocessing.OneHotEncoder(categories="auto", sparse=False).fit(
             all_arrow_combs.reshape(-1, 1)
         )
         super(OneHotArrowEncoder, self).__init__(encoder=encoder)
 
-    def encode(self, arrows) -> int:
+    def encode(self, arrows: str) -> int:
         data = np.array([arrows]).reshape(1, -1)
         return self.encoder.transform(data)[0]
 
-    def decode(self, encoded_arrows) -> str:
+    def decode(self, encoded_arrows: int) -> str:
         return str(self.encoder.categories_[0][encoded_arrows])

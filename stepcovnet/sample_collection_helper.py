@@ -8,19 +8,19 @@ import soundfile as sf
 from stepcovnet import encoder, mel_features, constants
 
 
-def remove_out_of_range(frames, frame_start, frame_end):
+def remove_out_of_range(frames: np.ndarray, frame_start: int, frame_end: int):
     return frames[np.all([frames <= frame_end, frames >= frame_start], axis=0)]
 
 
 def feature_onset_phrase_label_sample_weights(
-    frames_onset,
-    mfcc,
-    arrows,
-    label_encoded_arrows,
-    binary_encoded_arrows,
-    string_arrows,
-    onehot_encoded_arrows,
-    num_arrow_types=4,
+    frames_onset: dict[str, np.ndarray],
+    mfcc: np.ndarray,
+    arrows: dict[str, np.ndarray],
+    label_encoded_arrows: dict[str, np.ndarray],
+    binary_encoded_arrows: dict[str, np.ndarray],
+    string_arrows: dict[str, np.ndarray],
+    onehot_encoded_arrows: dict[str, np.ndarray],
+    num_arrow_types: int = 4,
 ):
     # Depending on modeling results, it may be beneficial to clip all data from the first onset detected
     # to the last onset. This may affect how models interpret long periods of empty notes.
@@ -111,11 +111,11 @@ def feature_onset_phrase_label_sample_weights(
     )
 
 
-def timings_parser(timing_file_path):
+def timings_parser(timing_file_path: str) -> dict:
     """
     Read each line of timings file and parse arrows and timings
     :param timing_file_path: str - file name containing note timings
-    :return: defaultdict - key: difficulty; value: list containing note arrows and timings
+    :return: dict - key: difficulty; value: list containing note arrows and timings
     """
 
     with open(timing_file_path, "r") as file:
@@ -153,8 +153,11 @@ def timings_parser(timing_file_path):
 
 
 def get_fft_lengths(
-    audio_sample_rate, window_length_secs=0.025, multi=False, num_multi_channels=3
-):
+    audio_sample_rate: int,
+    window_length_secs: float = 0.025,
+    multi: bool = False,
+    num_multi_channels: int = 3,
+) -> tuple[list[int], int]:
     fft_lengths = []
     window_length_samples = int(round(audio_sample_rate * window_length_secs))
     base_fft_length = 2 ** int(np.ceil(np.log(window_length_samples) / np.log(2.0)))
@@ -177,7 +180,7 @@ def get_fft_lengths(
     return fft_lengths, window_length_samples
 
 
-def get_log_mels(audio_data, audio_data_sample_rate, config):
+def get_log_mels(audio_data: np.ndarray, audio_data_sample_rate: int, config: dict):
     # Convert to mono.
     if audio_data.shape[1] > 1:
         audio_data = np.mean(audio_data, axis=1)
@@ -223,7 +226,7 @@ def get_log_mels(audio_data, audio_data_sample_rate, config):
         return np.expand_dims(log_mels[0], axis=-1)
 
 
-def get_audio_data(audio_file_path):
+def get_audio_data(audio_file_path: str) -> np.ndarray:
     """
     Return audio data and sample rate from an audio file
     :param audio_file_path:
@@ -233,7 +236,16 @@ def get_audio_data(audio_file_path):
     return sf.read(audio_file_path, always_2d=True)
 
 
-def convert_note_data(note_data, stft_hop_length_secs=0.01):
+def convert_note_data(
+    note_data: dict[str, dict[float, str]], stft_hop_length_secs: float = 0.01
+) -> tuple[
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+]:
     # convert note timings into frame timings
     frames_onset = defaultdict(np.array)
     string_arrows_dict = defaultdict(np.array)
@@ -273,7 +285,7 @@ def convert_note_data(note_data, stft_hop_length_secs=0.01):
     )
 
 
-def get_audio_features(wav_path, file_name, config):
+def get_audio_features(wav_path: str, file_name: str, config: dict) -> np.ndarray:
     # Read audio data (needs to be a wav)
     audio_data, audio_data_sample_rate = get_audio_data(
         audio_file_path=join(wav_path, file_name + ".wav")
@@ -287,7 +299,16 @@ def get_audio_features(wav_path, file_name, config):
     return log_mel_frames
 
 
-def get_labels(note_data_path, file_name, config):
+def get_labels(
+    note_data_path: str, file_name: str, config: dict
+) -> tuple[
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+]:
     # Read data from timings file
     note_data = timings_parser(
         timing_file_path=join(note_data_path, file_name + ".txt")
@@ -313,7 +334,17 @@ def get_labels(note_data_path, file_name, config):
     )
 
 
-def get_features_and_labels(wav_path, note_data_path, file_name, config):
+def get_features_and_labels(
+    wav_path: str, note_data_path: str, file_name: str, config: dict
+) -> tuple[
+    np.ndarray,
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+]:
     log_mel_frames = get_audio_features(wav_path, file_name, config)
     (
         onsets,

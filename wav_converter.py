@@ -12,7 +12,13 @@ import soundfile as sf
 from stepcovnet import utils
 
 
-def convert_file(input_path, output_path, sample_frequency, verbose, file_name):
+def convert_file(
+    input_path: str,
+    output_path: str,
+    sample_frequency: int,
+    verbose: bool,
+    file_name: str,
+):
     try:
         new_file_name = utils.standardize_filename(utils.get_filename(file_name, False))
         if verbose:
@@ -36,7 +42,9 @@ def convert_file(input_path, output_path, sample_frequency, verbose, file_name):
             print("Failed to convert %s: %r" % (file_name, ex))
 
 
-def run_process(input_path, output_path, sample_frequency, cores, verbose):
+def run_process(
+    input_path: str, output_path: str, sample_frequency: int, cores: int, verbose: bool
+):
     if os.path.isfile(input_path):
         convert_file(
             os.path.dirname(input_path),
@@ -53,7 +61,11 @@ def run_process(input_path, output_path, sample_frequency, cores, verbose):
 
 
 def wav_converter(
-    input_path, output_path, sample_frequency=16000, cores=1, verbose_int=0
+    input_path: str,
+    output_path: str,
+    sample_frequency: int = 16000,
+    cores: int = 1,
+    verbose_int: int = 0,
 ):
     start_time = time.time()
     if verbose_int not in [0, 1]:

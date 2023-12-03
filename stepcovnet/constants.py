@@ -14,7 +14,7 @@ NUM_FREQ_BANDS = 80
 
 NUM_TIME_BANDS = 15
 
-THRESHOLDS = {'expert': 0.5}
+THRESHOLDS = {"expert": 0.5}
 
 NUM_ARROW_TYPES = 4  # TODO: Move this to dataset config
 
@@ -23,7 +23,7 @@ ARROW_NAMES = ["left_arrow", "down_arrow", "up_arrow", "right_arrow"]
 NUM_ARROWS = len(ARROW_NAMES)
 
 
-def get_all_note_combs(num_note_types: int) -> np.ndarray:
+def get_all_note_combs(num_note_types: int) -> list[str]:
     all_note_combs = []
 
     for first_digit in range(0, num_note_types):
@@ -31,7 +31,11 @@ def get_all_note_combs(num_note_types: int) -> np.ndarray:
             for third_digit in range(0, num_note_types):
                 for fourth_digit in range(0, num_note_types):
                     all_note_combs.append(
-                        str(first_digit) + str(second_digit) + str(third_digit) + str(fourth_digit))
+                        str(first_digit)
+                        + str(second_digit)
+                        + str(third_digit)
+                        + str(fourth_digit)
+                    )
     # Adding '0000' to possible note combinations.
     # This will allow the arrow prediction model to predict an empty note.
     return all_note_combs
