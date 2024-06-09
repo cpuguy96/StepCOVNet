@@ -1,33 +1,36 @@
 import json
 import os
-from abc import abstractmethod, ABC
+from abc import ABC
+from abc import abstractmethod
 from datetime import datetime
-from typing import List, Union
+from typing import List
+from typing import Union
 
 import tensorflow as tf
 import transformers
 from keras import initializers
-from keras.layers import (
-    Bidirectional,
-    LSTM,
-    Conv2D,
-    GlobalAveragePooling2D,
-    GlobalMaxPooling2D,
-    MaxPooling2D,
-    TimeDistributed,
-    GlobalMaxPool1D,
-    Activation,
-    BatchNormalization,
-    concatenate,
-    Dense,
-    Dropout,
-    Input,
-    Layer,
-)
-from keras.models import load_model, Model
-from transformers import GPT2Config, TFGPT2Model
+from keras.layers import Activation
+from keras.layers import BatchNormalization
+from keras.layers import Bidirectional
+from keras.layers import concatenate
+from keras.layers import Conv2D
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.layers import GlobalAveragePooling2D
+from keras.layers import GlobalMaxPool1D
+from keras.layers import GlobalMaxPooling2D
+from keras.layers import Input
+from keras.layers import Layer
+from keras.layers import LSTM
+from keras.layers import MaxPooling2D
+from keras.layers import TimeDistributed
+from keras.models import load_model
+from keras.models import Model
+from transformers import GPT2Config
+from transformers import TFGPT2Model
 
-from stepcovnet import config, constants
+from stepcovnet import config
+from stepcovnet import constants
 
 VGGISH_WEIGHTS_PATH = "stepcovnet/pretrained_models/vggish_audioset_weights.h5"
 
@@ -173,7 +176,7 @@ class PretrainedModels(object):
         :return: A Tensorflow Functional API model instance.
         """
 
-        if input_tensor is None:
+        if input_tensor is not None:
             aud_input = Input(
                 shape=input_shape, name="vggish_input", tensor=input_tensor
             )
