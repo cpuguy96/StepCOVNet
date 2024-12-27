@@ -1,3 +1,5 @@
+"""A Python script to convert audio files to WAV format."""
+import argparse
 import multiprocessing
 import os
 import time
@@ -11,6 +13,34 @@ import soundfile as sf
 
 from stepcovnet import utils
 
+PARSER = argparse.ArgumentParser(description="Convert audio files to .wav format")
+PARSER.add_argument(
+    "-i", "--input", type=str, required=True, help="Input audio file/directory path"
+)
+PARSER.add_argument("-o", "--output", type=str, required=True, help="Output wavs path")
+PARSER.add_argument(
+    "-sf",
+    "--sample_frequency",
+    type=int,
+    default=16000,
+    help="Sampling frequency to create wavs",
+)
+PARSER.add_argument(
+    "--cores",
+    type=int,
+    default=1,
+    help="Number of processor cores to use for parallel processing: -1 max number of physical cores",
+)
+PARSER.add_argument(
+    "-v",
+    "--verbose",
+    type=int,
+    default=0,
+    choices=[0, 1],
+    help="Verbosity: 0 - none, 1 - full",
+)
+ARGS = PARSER.parse_args()
+
 
 def convert_file(
     input_path: str,
@@ -19,6 +49,15 @@ def convert_file(
     verbose: bool,
     file_name: str,
 ):
+    """Converts a single audio file to WAV format.
+
+    Args:
+        input_path (str): Path to the input audio file.
+        output_path (str): Path to save the converted WAV file.
+        sample_frequency (int): Desired sample frequency for the output WAV file.
+        verbose (bool): Whether to print verbose output during conversion.
+        file_name (str): Name of the input audio file.
+    """
     try:
         new_file_name = utils.standardize_filename(utils.get_filename(file_name, False))
         if verbose:
@@ -45,6 +84,15 @@ def convert_file(
 def run_process(
     input_path: str, output_path: str, sample_frequency: int, cores: int, verbose: bool
 ):
+    """Converts multiple audio files to WAV format using multiprocessing.
+
+    Args:
+        input_path (str): Path to the input audio files (single file or directory).
+        output_path (str): Path to save the converted WAV files.
+        sample_frequency (int): Desired sample frequency for the output WAV files.
+        cores (int): Number of processor cores to use for parallel processing.
+        verbose (bool): Whether to print verbose output during conversion.
+    """
     if os.path.isfile(input_path):
         convert_file(
             os.path.dirname(input_path),
@@ -67,6 +115,15 @@ def wav_converter(
     cores: int = 1,
     verbose_int: int = 0,
 ):
+    """Converts audio files to WAV format.
+
+    Args:
+        input_path (str): Path to the input audio file(s).
+        output_path (str): Path to save the converted WAV files.
+        sample_frequency (int): Desired sample frequency for the output WAV files.
+        cores (int): Number of processor cores to use for parallel processing.
+        verbose_int (int): Verbosity level (0 for none, 1 for full).
+    """
     start_time = time.time()
     if verbose_int not in [0, 1]:
         raise ValueError(
@@ -100,39 +157,15 @@ def wav_converter(
         print("Elapsed time was %g seconds\n" % (end_time - start_time))
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Convert audio files to .wav format")
-    parser.add_argument(
-        "-i", "--input", type=str, required=True, help="Input audio file/directory path"
-    )
-    parser.add_argument(
-        "-o", "--output", type=str, required=True, help="Output wavs path"
-    )
-    parser.add_argument(
-        "-sf",
-        "--sample_frequency",
-        type=int,
-        default=16000,
-        help="Sampling frequency to create wavs",
-    )
-    parser.add_argument(
-        "--cores",
-        type=int,
-        default=1,
-        help="Number of processor cores to use for parallel processing: -1 max number of physical cores",
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        type=int,
-        default=0,
-        choices=[0, 1],
-        help="Verbosity: 0 - none, 1 - full",
-    )
-    args = parser.parse_args()
-
+def main():
     wav_converter(
-        args.input, args.output, args.sample_frequency, args.cores, args.verbose
+        input_path=ARGS.input,
+        output_path=ARGS.output,
+        sample_frequency=ARGS.sample_frequency,
+        cores=ARGS.cores,
+        verbose_int=ARGS.verbose,
     )
+
+
+if __name__ == "__main__":
+    main()
