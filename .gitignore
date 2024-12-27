@@ -1,6 +1,8 @@
 input/
 !input/zombie_maker.ogg
 output/
+trained_models/
+training_data/
 
 saved_models/
 ./data/
@@ -8,6 +10,8 @@ logs/
 _tmp/
 
 *.ini
+*.deb
+*ubuntu*
 
 # Pycharm
 .idea
