@@ -5,13 +5,13 @@ import os
 import joblib
 from sklearn import preprocessing
 
-from legecy_v1.stepcovnet import config
-from legecy_v1.stepcovnet import data
-from legecy_v1.stepcovnet import dataset
-from legecy_v1.stepcovnet import executor
-from legecy_v1.stepcovnet import inputs
-from legecy_v1.stepcovnet import model
-from legecy_v1.stepcovnet import training
+from legacy_v1.stepcovnet import config
+from legacy_v1.stepcovnet import data
+from legacy_v1.stepcovnet import dataset
+from legacy_v1.stepcovnet import executor
+from legacy_v1.stepcovnet import inputs
+from legacy_v1.stepcovnet import model
+from legacy_v1.stepcovnet import training
 
 
 def load_training_data(

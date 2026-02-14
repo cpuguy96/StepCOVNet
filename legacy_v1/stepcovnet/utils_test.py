@@ -2,10 +2,10 @@ import os
 
 import numpy as np
 
-from legecy_v1.stepcovnet import constants
-from legecy_v1.stepcovnet import utils
+from legacy_v1.stepcovnet import constants
+from legacy_v1.stepcovnet import utils
 
-TEST_DATA_PATH = r"legecy_v1/stepcovnet/testdata"
+TEST_DATA_PATH = r"legacy_v1/stepcovnet/testdata"
 TEST_FILE = "scaler.pkl"
 TEST_FILE_WITHOUT_EXT = "scaler"
 TEST_FILE_WITHOUT_EXT_WITH_RANDOM_CHARS = "/|`:s~;?]@[C(>a!+<#L,)$=e%R^^*"
