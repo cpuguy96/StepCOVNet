@@ -1,9 +1,12 @@
 from collections import defaultdict
 
 import numpy as np
-from keras import metrics, losses, optimizers
+from keras import losses
+from keras import metrics
+from keras import optimizers
 
-from stepcovnet import data, utils
+from legecy_v1.stepcovnet import data
+from legecy_v1.stepcovnet import utils
 
 
 class TrainingHyperparameters:

@@ -5,7 +5,13 @@ import os
 import joblib
 from sklearn import preprocessing
 
-from stepcovnet import config, data, executor, inputs, training, model, dataset
+from legecy_v1.stepcovnet import config
+from legecy_v1.stepcovnet import data
+from legecy_v1.stepcovnet import dataset
+from legecy_v1.stepcovnet import executor
+from legecy_v1.stepcovnet import inputs
+from legecy_v1.stepcovnet import model
+from legecy_v1.stepcovnet import training
 
 
 def load_training_data(

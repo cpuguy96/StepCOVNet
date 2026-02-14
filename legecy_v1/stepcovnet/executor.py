@@ -1,22 +1,21 @@
 import json
 import os
-from abc import ABC, abstractmethod
+from abc import ABC
+from abc import abstractmethod
 
 import joblib
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.keras import callbacks
 
-from stepcovnet import (
-    config,
-    encoder,
-    inputs,
-    training,
-    model,
-    constants,
-    tf_config,
-    utils,
-)
+from legecy_v1.stepcovnet import config
+from legecy_v1.stepcovnet import constants
+from legecy_v1.stepcovnet import encoder
+from legecy_v1.stepcovnet import inputs
+from legecy_v1.stepcovnet import model
+from legecy_v1.stepcovnet import tf_config
+from legecy_v1.stepcovnet import training
+from legecy_v1.stepcovnet import utils
 
 
 class AbstractExecutor(ABC):
@@ -66,7 +65,7 @@ class InferenceExecutor(AbstractExecutor):
             binary_encoded_arrows = []
             for i in range(constants.NUM_ARROWS):
                 binary_arrow_prob = binary_arrows_probs[
-                    constants.NUM_ARROW_TYPES * i : constants.NUM_ARROW_TYPES * (i + 1)
+                    constants.NUM_ARROW_TYPES * i: constants.NUM_ARROW_TYPES * (i + 1)
                 ]
                 encoded_arrow = np.random.choice(
                     constants.NUM_ARROW_TYPES, 1, p=binary_arrow_prob

@@ -4,7 +4,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.types import data
 
-from stepcovnet import config, training, sample_collection_helper, utils
+from legecy_v1.stepcovnet import config
+from legecy_v1.stepcovnet import sample_collection_helper
+from legecy_v1.stepcovnet import training
+from legecy_v1.stepcovnet import utils
 
 
 class AbstractInput(ABC):

@@ -1,9 +1,10 @@
-from abc import ABC, abstractmethod
+from abc import ABC
+from abc import abstractmethod
 
 import numpy as np
 from sklearn import preprocessing
 
-from stepcovnet import constants
+from legecy_v1.stepcovnet import constants
 
 
 class AbstractArrowEncoder(ABC):

@@ -5,7 +5,9 @@ import numpy as np
 import resampy
 import soundfile as sf
 
-from stepcovnet import encoder, mel_features, constants
+from legecy_v1.stepcovnet import constants
+from legecy_v1.stepcovnet import encoder
+from legecy_v1.stepcovnet import mel_features
 
 
 def remove_out_of_range(frames: np.ndarray, frame_start: int, frame_end: int):
