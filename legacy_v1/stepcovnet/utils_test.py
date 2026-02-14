@@ -5,7 +5,7 @@ import numpy as np
 from legacy_v1.stepcovnet import constants
 from legacy_v1.stepcovnet import utils
 
-TEST_DATA_PATH = r"legacy_v1/stepcovnet/testdata"
+TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "testdata")
 TEST_FILE = "scaler.pkl"
 TEST_FILE_WITHOUT_EXT = "scaler"
 TEST_FILE_WITHOUT_EXT_WITH_RANDOM_CHARS = "/|`:s~;?]@[C(>a!+<#L,)$=e%R^^*"
