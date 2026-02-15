@@ -13,8 +13,10 @@ import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
+from stepcovnet import constants
+
 _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge": 4}
-_N_MELS = 128
+_N_MELS = constants.N_MELS
 _N_TARGET = 1
 _F_MIN = 27.5
 _F_MAX = 16000

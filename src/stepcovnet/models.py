@@ -3,6 +3,8 @@
 import keras
 import tensorflow as tf
 
+from stepcovnet import constants
+
 
 def _wavenet_residual_block(inputs, residual_channels, skip_channels, dilation_rate, kernel_size, block_id) -> tuple:
     """
@@ -43,8 +45,7 @@ def _wavenet_residual_block(inputs, residual_channels, skip_channels, dilation_r
     return residual, skip_output
 
 
-def build_unet_wavenet_model(input_shape=(None, 128),
-                             initial_filters=32,
+def build_unet_wavenet_model(initial_filters=32,
                              depth=4,
                              dilation_rates=[1, 2, 4, 8],
                              kernel_size=3,
@@ -59,7 +60,6 @@ def build_unet_wavenet_model(input_shape=(None, 128),
     high-level context with low-level timing information.
 
     Args:
-        input_shape: The shape of the input data (time_steps, n_features).
         initial_filters: The number of filters in the first layer. This will double at each encoder level.
         depth: The number of downsampling/upsampling levels in the U-Net.
         dilation_rates: A list of dilation factors for the convolutions within each level.
@@ -70,7 +70,7 @@ def build_unet_wavenet_model(input_shape=(None, 128),
     Returns:
         A Keras Model instance.
     """
-    inputs = keras.Input(shape=input_shape, name="input_features")
+    inputs = keras.Input(shape=(None, constants.N_MELS), name="input_features")
     x = inputs
 
     encoder_outputs = []
