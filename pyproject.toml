@@ -60,6 +60,7 @@ stepcovnet = ["py.typed"]
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-v --tb=short --cov=stepcovnet"
+pythonpath = ["src"]
 testpaths = ["src"]
 python_files = ["*_test.py"]
 filterwarnings = [
