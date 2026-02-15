@@ -15,7 +15,7 @@ class TestDataCollection(unittest.TestCase):
     def test_create_dataset(self):
         ds = data_collection.create_dataset(TEST_DATA_DIR)
 
-        features, targets = next(iter(ds.take(1)))
+        features, targets = next(iter(ds.take(1))) # type: ignore
 
         self.assertEqual(features.shape[0], 1)  # Batch size
         self.assertEqual(features.shape[2], 128)  # Mel bins
