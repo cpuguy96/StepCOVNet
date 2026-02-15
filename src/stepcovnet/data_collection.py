@@ -1,14 +1,11 @@
-"""
-Data collection and preprocessing for StepCovNet.
+"""Data collection and preprocessing for StepCovNet.
 
 This module provides functionality to load audio and StepMania chart files,
 process them into spectrograms and target vectors, and create a TensorFlow
 dataset for training.
 """
 import os
-from pathlib import Path
-from typing import List
-from typing import Tuple
+import pathlib
 
 import librosa
 import numpy as np
@@ -23,7 +20,7 @@ HOP_COEFF = 0.01
 _WIN_COEFF = 0.025
 
 
-def _load_and_pair_files(data_dir: str) -> List[Tuple[str, str]]:
+def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
     """Find paired audio files and StepMania chart files."""
     pairs = []
     for root, _, files in os.walk(data_dir):
@@ -32,7 +29,7 @@ def _load_and_pair_files(data_dir: str) -> List[Tuple[str, str]]:
 
         # Pair files with same stem (e.g., 'song.mp3' and 'song.sm')
         for audio_file in audio_files:
-            stem = Path(audio_file).stem
+            stem = pathlib.Path(audio_file).stem
             matching_charts = [f for f in chart_files if f.startswith(stem)]
             if matching_charts:
                 pairs.append((
@@ -42,7 +39,7 @@ def _load_and_pair_files(data_dir: str) -> List[Tuple[str, str]]:
     return pairs
 
 
-def _parse_step_chart(chart_path: str) -> Tuple[np.ndarray, np.ndarray, float, int]:
+def _parse_step_chart(chart_path: str) -> tuple[np.ndarray, np.ndarray, float, int]:
     """Parse StepMania .sm file to extract step timings, BPM, and difficulty."""
     with open(chart_path, 'r') as f:
         f.readline()  # TITLE
@@ -98,7 +95,7 @@ def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray
     return val
 
 
-def _temporal_augment(spec: np.ndarray, labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def _temporal_augment(spec: np.ndarray, labels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Random time warping augmentation."""
     original_length = spec.shape[1]
     warp_factor = np.random.uniform(0.85, 1.15)  # Keep reasonable warp range
@@ -145,7 +142,7 @@ def _create_target(times: np.ndarray, cols: np.ndarray, spec_length: int) -> np.
     return target
 
 
-def _process_pair(audio_path: str, chart_path: str) -> Tuple[Tuple[tf.Tensor, tf.Tensor], tf.Tensor]:
+def _process_pair(audio_path: str, chart_path: str) -> tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor]:
     """Process audio-chart pair into input features, target labels, and difficulty."""
     # Parse step chart
     times, cols, bpm, difficulty = tf.py_function(
