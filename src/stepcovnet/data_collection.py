@@ -10,13 +10,14 @@ import pathlib
 import librosa
 import numpy as np
 import tensorflow as tf
+from scipy import interpolate
 
 _DIFFICULTY_MAP = {'beginner': 0, 'easy': 1, 'medium': 2, 'hard': 3, 'challenge': 4}
 _N_MELS = 128
 _N_TARGET = 1
 _F_MIN = 27.5
 _F_MAX = 16000
-HOP_COEFF = 0.01
+_HOP_COEFF = 0.01
 _WIN_COEFF = 0.025
 
 
@@ -76,7 +77,7 @@ def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray
     # Normalize audio data
     y = y / np.max(np.abs(y))
 
-    hop_length = int(round(target_sr * HOP_COEFF))
+    hop_length = int(round(target_sr * _HOP_COEFF))
     win_length = int(round(target_sr * _WIN_COEFF))
     n_fft = 2 ** int(np.ceil(np.log(win_length) / np.log(2.0)))
 
@@ -94,42 +95,70 @@ def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray
     val = librosa.power_to_db(S, ref=np.max)
     return val
 
+def _temporal_augment_scipy(spec: np.ndarray, labels_and_features: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Random time warping augmentation for spec, labels, and extra features."""
+    spec = spec.numpy() if isinstance(spec, tf.Tensor) else spec
+    labels_and_features = labels_and_features.numpy() if isinstance(labels_and_features, tf.Tensor) else labels_and_features
 
-def _temporal_augment(spec: np.ndarray, labels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Random time warping augmentation."""
     original_length = spec.shape[1]
-    warp_factor = np.random.uniform(0.85, 1.15)  # Keep reasonable warp range
+    num_extra_channels = labels_and_features.shape[1]
 
-    # Calculate new length while maintaining original size
+    warp_factor = np.random.uniform(0.85, 1.15)
     new_length = int(original_length * warp_factor)
 
-    print("new length after temporal augment:", new_length)
+    spec_resized = np.zeros((_N_MELS, new_length), dtype=spec.dtype)
+    original_time = np.arange(original_length)
+    warped_time = np.linspace(0, original_length - 1, new_length)
 
-    # Resize spectrogram
-    spec_resized = tf.image.resize(
-        spec[np.newaxis],
-        [_N_MELS, new_length],
-        method='bilinear'
-    ).numpy()[0]
+    for bin_idx in range(_N_MELS):
+        interp_func = interpolate.interp1d(original_time, spec[bin_idx, :], kind='linear', fill_value="extrapolate")
+        spec_resized[bin_idx, :] = interp_func(warped_time)
 
-    # Resize labels with nearest neighbor to preserve binary values
-    labels_resized = tf.image.resize(
-        labels[np.newaxis, ..., np.newaxis],
-        [new_length, _N_TARGET],
-        method='nearest'
-    ).numpy()[0, ..., 0]
+    extras_resized = np.zeros((new_length, num_extra_channels), dtype=labels_and_features.dtype)
+    for target_bin in range(num_extra_channels):
+        interp_func_labels = interpolate.interp1d(original_time, labels_and_features[:, target_bin], kind='nearest', fill_value="extrapolate")
+        extras_resized[:, target_bin] = interp_func_labels(warped_time)
 
-    # Maintain original length with padding/cropping
     if new_length > original_length:
         spec = spec_resized[:, :original_length]
-        labels = labels_resized[:original_length, :]
+        labels_and_features = extras_resized[:original_length, :]
     else:
         pad_width = original_length - new_length
         spec = np.pad(spec_resized, ((0, 0), (0, pad_width)), mode='edge')
-        labels = np.pad(labels_resized, ((0, pad_width), (0, 0)), mode='constant')
+        labels_and_features = np.pad(extras_resized, ((0, pad_width), (0, 0)), mode='constant')
 
-    return spec, labels
+    return spec, labels_and_features
 
+def _apply_spec_augment(spec: np.ndarray, F: int = 27, T: int = 50, num_freq_masks: int = 1, num_time_masks: int = 1) -> np.ndarray:
+    """
+    Applies SpecAugment to a spectrogram.
+
+    Args:
+        spec: The input spectrogram of shape (n_mels, time_steps).
+        F: The maximum width of the frequency mask.
+        T: The maximum width of the time mask.
+        num_freq_masks: The number of frequency masks to apply.
+        num_time_masks: The number of time masks to apply.
+
+    Returns:
+        The augmented spectrogram.
+    """
+    spec_augmented = spec.copy()
+    n_freq_bins, time_steps = spec.shape
+
+    # Apply frequency masking
+    for _ in range(num_freq_masks):
+        f = np.random.randint(0, F)
+        f0 = np.random.randint(0, n_freq_bins - f)
+        spec_augmented[f0:f0 + f, :] = 0
+
+    # Apply time masking
+    for _ in range(num_time_masks):
+        t = np.random.randint(0, T)
+        t0 = np.random.randint(0, time_steps - t)
+        spec_augmented[:, t0:t0 + t] = 0
+
+    return spec_augmented
 
 def _create_target(times: np.ndarray, cols: np.ndarray, spec_length: int) -> np.ndarray:
     """Create target vector from step times and columns."""
@@ -142,86 +171,132 @@ def _create_target(times: np.ndarray, cols: np.ndarray, spec_length: int) -> np.
     return target
 
 
-def _process_pair(audio_path: str, chart_path: str) -> tuple[tuple[tf.Tensor, tf.Tensor], tf.Tensor]:
-    """Process audio-chart pair into input features, target labels, and difficulty."""
-    # Parse step chart
-    times, cols, bpm, difficulty = tf.py_function(
-        lambda p: _parse_step_chart(p.numpy().decode()),
-        [chart_path],
-        (tf.float32, tf.int32, tf.float32, tf.int32)
-    )
-
-    # Process audio
-    spec = tf.py_function(
-        lambda p: _audio_to_spectrogram(p.numpy().decode()),
-        [audio_path],
-        tf.float32
-    )
-
-    # Reshape spec to have n_mels in the last dimension
-    spec = tf.transpose(spec, perm=[1, 0])  # Transpose spec here
-
-    # Create time-aligned target vector
-    spec_length = tf.shape(spec)[0]
-    target = tf.py_function(
-        lambda t, c, sl: _create_target(t.numpy(), c.numpy(), sl.numpy()),
-        [times, cols, spec_length],
-        tf.float32
-    )
-
-    # Apply temporal augmentation
-    # Disabled by default since it causes OOM issues
-    # spec, target = tf.py_function(
-    #     temporal_augment,
-    #     [spec, atarget],
-    #     (tf.float32, tf.float32)
-    # )
-
-    # Enforce fixed shape after augmentation
-    spec = tf.ensure_shape(spec, (None, _N_MELS))  # Preserve mel bands dimension
-    target = tf.ensure_shape(target, (None, _N_TARGET))
-    difficulty_tensor = tf.convert_to_tensor(difficulty, dtype=tf.int32)
-    # difficulty_tensor = tf.expand_dims(difficulty_tensor, axis=0)  # Ensure difficulty is a scalar tensor
-
-    return (spec, difficulty_tensor), target
-
-
-def create_dataset(data_dir: str, batch_size: int = 16) -> tf.data.Dataset:
+def _create_target_gaussian(times: np.ndarray, cols: np.ndarray, spec_length: int, sigma: float = 1.5) -> np.ndarray:
     """
-    Create a TensorFlow dataset pipeline for training StepCovNet.
-
-    Args:
-        data_dir: Path to the directory containing audio and .sm files.
-        batch_size: Number of samples per training batch.
-
-    Returns:
-        A tf.data.Dataset yielding ((spectrogram, difficulty), target) tuples.
+    Create target vector with Gaussian distributions around onset times.
+    This encourages the model to predict onsets near the ground truth, not just exactly on it.
     """
-    # Get list of audio-chart pairs
+    time_resolution = _HOP_COEFF
+    target = np.zeros((spec_length, _N_TARGET), dtype=np.float32)
+
+    if times.size == 0:
+        return target
+
+    frame_indices = (times / time_resolution).astype(int)
+
+    kernel_width = int(3 * sigma)
+    x = np.arange(-kernel_width, kernel_width + 1)
+    gaussian_kernel = np.exp(-(x ** 2) / (2 * sigma ** 2))
+
+    for frame_idx, col in zip(frame_indices, cols):
+        if col >= _N_TARGET:
+            continue
+
+        start = max(0, frame_idx - kernel_width)
+        end = min(spec_length, frame_idx + kernel_width + 1)
+
+        kernel_start = start - (frame_idx - kernel_width)
+        kernel_end = end - (frame_idx - kernel_width)
+
+        target[start:end, col] = np.maximum(
+            target[start:end, col],
+            gaussian_kernel[kernel_start:kernel_end]
+        )
+    return target
+
+def create_dataset(data_dir: str, batch_size: int = 1, apply_temporal_augment: bool = False,
+                   should_apply_spec_augment: bool = False, normalize: bool = False,
+                   use_gaussian_target: bool = False, gaussian_sigma: float = 1.0) -> tf.data.Dataset:
+    """
+    Creates a TensorFlow dataset pipeline with a proper caching strategy.
+    Deterministic preprocessing is cached, while random augmentations are applied
+    on the fly in each epoch.
+    """
     pairs = _load_and_pair_files(data_dir)
-
     if not pairs:
-        raise ValueError("No audio-chart pairs found in the specified directory.")
+        raise ValueError("No audio-chart pairs found.")
 
-    # Create dataset from pairs
-    ds = tf.data.Dataset.from_generator(
-        lambda: pairs,
-        output_types=(tf.string, tf.string)
-    )
+    num_features = _N_MELS
 
-    # Process pairs in parallel
-    ds = ds.map(
-        lambda audio, chart: _process_pair(audio, chart),
-        num_parallel_calls=tf.data.AUTOTUNE
-    )
+    # --- Step 1: Define the deterministic preprocessing function ---
+    def _load_and_preprocess(audio_path_t, chart_path_t):
 
-    # Batch and optimize
-    ds = ds.padded_batch(batch_size,
-                         padded_shapes=(
-                             ((None, _N_MELS), ()),  # Spectrogram (mel bands x time), Difficulty (scalar)
-                             (None, 1),  # Target (time x columns)
-                         ),
-                         padding_values=((0.0, -1), 0.0,))
-    ds = ds.prefetch(tf.data.AUTOTUNE)
+        def _py_func(audio_path_py_t, chart_path_py_t):
+            audio_path = audio_path_py_t.numpy().decode()
+            chart_path = chart_path_py_t.numpy().decode()
 
+            spec = _audio_to_spectrogram(audio_path)
+            spec_length = spec.shape[1]
+            times, cols, _, _ = _parse_step_chart(chart_path)
+
+            target = _create_target_gaussian(times, cols, spec_length, gaussian_sigma) if use_gaussian_target else _create_target(times, cols, spec_length)
+
+            spec = np.transpose(spec)
+
+            features = spec
+            return features.astype(np.float32), target.astype(np.float32)
+
+        features, target = tf.py_function(
+            _py_func, [audio_path_t, chart_path_t], (tf.float32, tf.float32)
+        )
+        features.set_shape([None, num_features])
+        target.set_shape([None, _N_TARGET])
+        return features, target
+
+    # --- Step 2: Define the random augmentation and normalization function ---
+    def _apply_augmentations(features, target, temp_aug, spec_aug, norm):
+        def _py_aug_func(features_py, target_py, temp_aug_py, spec_aug_py, norm_py):
+            features_py = features_py.numpy()
+            target_py = target_py.numpy()
+
+            spec_py = np.transpose(features_py[:, :_N_MELS])
+            combined_labels = target_py
+
+
+            if temp_aug_py:
+                spec_py, combined_labels = _temporal_augment_scipy(spec_py, combined_labels)
+
+            if norm_py:
+                mean, std = np.mean(spec_py, axis=1, keepdims=True), np.std(spec_py, axis=1, keepdims=True)
+                spec_py = (spec_py - mean) / (std + 1e-6)
+
+            if spec_aug_py:
+                spec_py = _apply_spec_augment(spec_py, F=int(0.2 * _N_MELS))
+
+            final_target = combined_labels[:, :_N_TARGET]
+            final_features = np.transpose(spec_py)
+
+            return final_features.astype(np.float32), final_target.astype(np.float32)
+
+        aug_features, aug_target = tf.py_function(
+            _py_aug_func, [features, target, temp_aug, spec_aug, norm], (tf.float32, tf.float32)
+        )
+        aug_features.set_shape([None, num_features])
+        aug_target.set_shape([None, _N_TARGET])
+        return aug_features, aug_target
+
+    # --- Step 3: Build the tf.data pipeline ---
+    ds = tf.data.Dataset.from_tensor_slices(pairs)
+
+    ds = ds.map(lambda p: _load_and_preprocess(audio_path_t=p[0], chart_path_t=p[1]),
+                num_parallel_calls=tf.data.AUTOTUNE)
+
+    ds = ds.cache()
+
+    # Apply random augmentations after caching
+    ds = ds.map(lambda features, target: _apply_augmentations(
+                    features, target, apply_temporal_augment,
+                    should_apply_spec_augment, normalize),
+                num_parallel_calls=tf.data.AUTOTUNE)
+
+    if batch_size > 1:
+      ds = ds.padded_batch(batch_size,
+                          padded_shapes=(
+                              ((None, num_features)),  # Spectrogram (mel bands x time)
+                              (None, 1),  # Target (time x columns)
+                          ),
+                          padding_values=((0.0), 0.0,))
+    else:
+      ds = ds.batch(batch_size,
+                    num_parallel_calls=tf.data.AUTOTUNE)
     return ds
