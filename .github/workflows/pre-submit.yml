@@ -2,9 +2,9 @@ name: Pre-Submit Checks
 
 on:
   push:
-    branches: [ master ]
+    branches: [ legacy_v1 ]
   pull_request:
-    branches: [ master ]
+    branches: [ legacy_v1 ]
 
 jobs:
   legacy-validation:
