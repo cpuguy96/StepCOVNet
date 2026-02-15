@@ -56,10 +56,21 @@ namespaces = false
 [tool.setuptools.package-data]
 stepcovnet = ["py.typed"]
 
+# Pytest Configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-v --tb=short --cov=stepcovnet"
+testpaths = ["src"]
+python_files = ["*_test.py"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
 # Coverage Configuration
 [tool.coverage.run]
 source = ["stepcovnet"]
-omit = ["*/tests/*", "*/__pycache__/*", "*/external/*"]
+omit = ["*/__pycache__/*"]
 
 [tool.coverage.report]
 exclude_lines = [
