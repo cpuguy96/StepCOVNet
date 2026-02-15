@@ -65,10 +65,8 @@ filterwarnings = [
 # Coverage Configuration
 [tool.coverage.run]
 source = ["stepcovnet"]
-omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-]
+omit = ["*/__pycache__/*"]
+
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",
