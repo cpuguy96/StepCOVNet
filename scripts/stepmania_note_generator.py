@@ -8,12 +8,12 @@ from typing import Sequence
 
 import joblib
 
+import wav_converter
 from src.stepcovnet import config
 from src.stepcovnet import executor
 from src.stepcovnet import inputs
 from src.stepcovnet import model
 from src.stepcovnet import utils
-from wav_converter import wav_converter
 
 warnings.filterwarnings("ignore")
 
@@ -85,7 +85,7 @@ def generate_notes(
     )
 
     # Convert audio clip into a wav before preprocessing
-    wav_converter(
+    wav_converter.wav_converter(
         input_path=join(tmp_dir, "input/"),
         output_path=audio_files_path,
         sample_frequency=sample_frequency,
