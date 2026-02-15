@@ -105,10 +105,10 @@ def _temporal_augment_scipy(
     """Random time warping augmentation for spec, labels, and extra features."""
     spec = spec.numpy() if isinstance(spec, tf.Tensor) else spec  # type: ignore
     labels_and_features = (
-        labels_and_features.numpy()
+        labels_and_features.numpy()  # type: ignore
         if isinstance(labels_and_features, tf.Tensor)
         else labels_and_features
-    )  # type: ignore
+    )
 
     original_length = spec.shape[1]
     num_extra_channels = labels_and_features.shape[1]
