@@ -5,10 +5,10 @@ import numpy as np
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 
-from legacy_v1.stepcovnet import constants
-from legacy_v1.stepcovnet import dataset
-from legacy_v1.stepcovnet import training
-from legacy_v1.stepcovnet import utils
+from src.stepcovnet import constants
+from src.stepcovnet import dataset
+from src.stepcovnet import training
+from src.stepcovnet import utils
 
 
 class AbstractConfig(ABC):

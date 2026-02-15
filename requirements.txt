@@ -9,5 +9,5 @@ soundfile~=0.12.1
 resampy~=0.4.2
 transformers>=4.38.0
 
-tensorflow==2.15.0
+tensorflow~=2.16.0
 keras~=2.15.0

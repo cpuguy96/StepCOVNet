@@ -2,7 +2,7 @@ from enum import Enum
 
 from transformers import GPT2Tokenizer
 
-from legacy_v1.stepcovnet import dataset
+from src.stepcovnet import dataset
 
 
 class Tokenizers(Enum):

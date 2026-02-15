@@ -4,7 +4,7 @@ from abc import abstractmethod
 import numpy as np
 from sklearn import preprocessing
 
-from legacy_v1.stepcovnet import constants
+from src.stepcovnet import constants
 
 
 class AbstractArrowEncoder(ABC):

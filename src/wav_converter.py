@@ -11,7 +11,7 @@ import psutil
 import resampy
 import soundfile as sf
 
-from legacy_v1.stepcovnet import utils
+from src.stepcovnet import utils
 
 PARSER = argparse.ArgumentParser(description="Convert audio files to .wav format")
 PARSER.add_argument(

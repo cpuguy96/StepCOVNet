@@ -9,11 +9,11 @@ from os.path import join
 import joblib
 import psutil
 
-from legacy_v1.stepcovnet import data
-from legacy_v1.stepcovnet import dataset
-from legacy_v1.stepcovnet import parameters
-from legacy_v1.stepcovnet import sample_collection_helper
-from legacy_v1.stepcovnet import utils
+from src.stepcovnet import data
+from src.stepcovnet import dataset
+from src.stepcovnet import parameters
+from src.stepcovnet import sample_collection_helper
+from src.stepcovnet import utils
 
 
 def build_all_metadata(**kwargs) -> dict:

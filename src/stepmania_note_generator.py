@@ -8,11 +8,11 @@ from typing import Sequence
 
 import joblib
 
-from legacy_v1.stepcovnet import config
-from legacy_v1.stepcovnet import executor
-from legacy_v1.stepcovnet import inputs
-from legacy_v1.stepcovnet import model
-from legacy_v1.stepcovnet import utils
+from src.stepcovnet import config
+from src.stepcovnet import executor
+from src.stepcovnet import inputs
+from src.stepcovnet import model
+from src.stepcovnet import utils
 from wav_converter import wav_converter
 
 warnings.filterwarnings("ignore")

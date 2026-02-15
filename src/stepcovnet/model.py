@@ -29,8 +29,8 @@ from keras.models import Model
 from transformers import GPT2Config
 from transformers import TFGPT2Model
 
-from legacy_v1.stepcovnet import config
-from legacy_v1.stepcovnet import constants
+from src.stepcovnet import config
+from src.stepcovnet import constants
 
 VGGISH_WEIGHTS_PATH = "stepcovnet/pretrained_models/vggish_audioset_weights.h5"
 

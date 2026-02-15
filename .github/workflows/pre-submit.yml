@@ -7,25 +7,6 @@ on:
     branches: [ master ]
 
 jobs:
-  validation:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
-
-      - name: Run Tests
-        run: |
-          pytest src --verbose
-
   legacy-validation:
     runs-on: ubuntu-latest
     steps:
@@ -48,14 +29,14 @@ jobs:
           sudo apt-get install libsndfile1
 
       - name: Install Legacy Dependencies
-        working-directory: ./legacy_v1
+        working-directory: ./src
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install flake8 pytest
 
       - name: Lint with flake8
-        working-directory: ./legacy_v1
+        working-directory: ./src
         run: |
           # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -63,6 +44,6 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Run Legacy Tests
-        working-directory: ./legacy_v1
+        working-directory: ./src
         run: |
-          python -m pytest .
+          pytest .

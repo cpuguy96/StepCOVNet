@@ -8,14 +8,14 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.keras import callbacks
 
-from legacy_v1.stepcovnet import config
-from legacy_v1.stepcovnet import constants
-from legacy_v1.stepcovnet import encoder
-from legacy_v1.stepcovnet import inputs
-from legacy_v1.stepcovnet import model
-from legacy_v1.stepcovnet import tf_config
-from legacy_v1.stepcovnet import training
-from legacy_v1.stepcovnet import utils
+from src.stepcovnet import config
+from src.stepcovnet import constants
+from src.stepcovnet import encoder
+from src.stepcovnet import inputs
+from src.stepcovnet import model
+from src.stepcovnet import tf_config
+from src.stepcovnet import training
+from src.stepcovnet import utils
 
 
 class AbstractExecutor(ABC):

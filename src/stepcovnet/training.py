@@ -5,8 +5,8 @@ from keras import losses
 from keras import metrics
 from keras import optimizers
 
-from legacy_v1.stepcovnet import data
-from legacy_v1.stepcovnet import utils
+from src.stepcovnet import data
+from src.stepcovnet import utils
 
 
 class TrainingHyperparameters:
