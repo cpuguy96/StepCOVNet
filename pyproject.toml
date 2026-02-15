@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stepcovnet"
+version = "2.0.0"
+description = "Audio to StepMania note generator using convolutional neural networks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache License 2.0" }
+authors = [
+    { name = "cpuguy96" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["stepmania", "rhythm-game", "music", "neural-network", "deep-learning"]
+
+# Runtime dependencies
+# Merged list with safety pins for major breaking changes (NumPy 2.0, Keras 3)
+dependencies = [
+    "tensorflow>=2.19.0", # Pin <2.17 to stay on Keras 2 ecosystem for now
+    "keras>=3.13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+]
+
+[project.urls]
+Homepage = "https://github.com/cpuguy96/StepCOVNet"
+Repository = "https://github.com/cpuguy96/StepCOVNet.git"
+Issues = "https://github.com/cpuguy96/StepCOVNet/issues"
+
+# ------------------------------------------------------------------
+# Tool Configurations
+# ------------------------------------------------------------------
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["stepcovnet*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+stepcovnet = ["py.typed"]
+
+# Coverage Configuration
+[tool.coverage.run]
+source = ["stepcovnet"]
+omit = ["*/tests/*", "*/__pycache__/*", "*/external/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
