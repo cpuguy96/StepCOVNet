@@ -137,7 +137,7 @@ def run_train(
         take_count: Number of batches to use from the training dataset (None uses all).
         epoch: Number of epochs to train for.
         callback_root_dir: Root directory for storing training callbacks (checkpoints, logs).
-        model_output_file: Path where the trained model will be saved.
+        model_output_dir: Directory where the trained model will be saved.
 
     Returns:
         A tuple containing:
@@ -212,6 +212,8 @@ def run_train(
 
     filepath = os.path.join(model_output_dir, f"{model.name}.keras")
     logging.info(f"Saving trained model to {filepath}")
+    if not os.path.exists(model_output_dir):
+        os.makedirs(model_output_dir)
     model.save(filepath=filepath)
 
     return model, train_history
@@ -291,6 +293,8 @@ def run_arrow_train(
 
     filepath = os.path.join(model_output_dir, f"{model.name}.keras")
     logging.info(f"Saving trained model to {filepath}")
+    if not os.path.exists(model_output_dir):
+        os.makedirs(model_output_dir)
     model.save(filepath=filepath)
 
     return model, train_history
