@@ -1,0 +1,129 @@
+import dataclasses
+
+import numpy as np
+import scipy
+from keras import models
+
+from stepcovnet import datasets
+
+
+@dataclasses.dataclass(frozen=True)
+class OutputData:
+    title: str
+    bpm: int
+    notes: dict[str, list[tuple[str, str]]]
+
+    def generate_txt_output(self) -> str:
+        title = 'TITLE %s\n' % self.title
+        bpm = 'BPM %s\n' % str(self.bpm)
+        notes = 'NOTES\n'
+        for difficulty in self.notes:
+            notes += 'DIFFICULTY %s\n' % difficulty
+            for timing, arrow in self.notes[difficulty]:
+                notes += f'{arrow} {timing}' + '\n'
+
+        return ''.join((title, bpm, notes))
+
+
+def _int_to_base4_string(n: int, min_digits: int = 1) -> str:
+    """
+    Converts a non-negative integer (base 10) to its base 4 string representation.
+
+    Args:
+      n: The non-negative integer to convert.
+      min_digits: The minimum number of digits the output string should have.
+                  Leading zeros will be added if necessary. Defaults to 1.
+
+    Returns:
+      The string representation of the number in base 4.
+
+    Raises:
+      ValueError: If the input integer `n` is negative.
+      TypeError: If the input `n` is not an integer.
+    """
+    if not isinstance(n, int):
+        raise TypeError("Input must be an integer.")
+    if n < 0:
+        raise ValueError("Input integer must be non-negative.")
+    if n == 0:
+        # Handle the zero case separately for padding
+        return '0'.zfill(min_digits)
+
+    base4_digits = []
+    temp_n = n
+    while temp_n > 0:
+        remainder = temp_n % 4
+        base4_digits.append(str(remainder))  # Convert remainder to string
+        temp_n //= 4  # Integer division
+
+    # The digits are generated in reverse order, so reverse the list
+    base4_string = "".join(reversed(base4_digits))
+
+    # Apply zero-padding if needed
+    return base4_string.zfill(min_digits)
+
+
+def _post_process_predictions(
+        probabilities: np.ndarray,
+        threshold: float = 0.5,
+        min_distance_ms: float = 50.0
+) -> np.ndarray:
+    """Cleans up model predictions using peak picking to find precise onset times.
+
+    Args:
+        probabilities: The raw sigmoid output from the model for a single song.
+                       Shape should be (time_steps, 1).
+        threshold: The minimum probability value to consider for a peak (height).
+        min_distance_ms: The minimum time in milliseconds between two onsets.
+
+    Returns:
+        A numpy array of timestamps (in seconds) for the detected onsets.
+    """
+    if probabilities.ndim > 1:
+        probabilities = probabilities.flatten()
+
+    # 1. Calculate the minimum distance in frames
+    min_distance_frames = int(round((min_distance_ms / 1000.0) / 0.01))
+
+    # 2. Use SciPy to find the peaks
+    # The 'height' parameter acts as our probability threshold.
+    # The 'distance' parameter enforces the temporal separation.
+    peak_indices, _ = scipy.signal.find_peaks(
+        probabilities,
+        height=threshold,
+        distance=min_distance_frames
+    )
+
+    # 3. Convert peak frame indices back to timestamps in seconds
+    onset_times = peak_indices * 0.01
+
+    return onset_times
+
+
+def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
+    note_data = []
+    assert len(onsets) == len(arrows)
+    for onset, arrow in zip(onsets, arrows):
+        binary_arrow = _int_to_base4_string(int(arrow), min_digits=4)
+        note_data.append((str(onset), str(binary_arrow)))
+    return note_data
+
+
+def generate_output_data(audio_path: str, song_title: str, bpm: int,
+                         onset_model: models.Model, arrow_model: models.Model) -> OutputData:
+    spec = datasets.audio_to_spectrogram(audio_path)
+    onset_pred = onset_model.predict(np.expand_dims(spec, axis=0))
+    onsets = _post_process_predictions(onset_pred[0])
+
+    normalized_onsets = np.expand_dims(onsets / np.max(onsets), axis=0)
+    arrows_pred = arrow_model.predict(normalized_onsets)
+    arrows = np.argmax(arrows_pred[0], axis=1)
+
+    return OutputData(
+        title=song_title,
+        bpm=bpm,
+        notes={
+            # TODO(cpuguy96) - Support more difficulties
+            'Challenge': _create_txt_mapping(onsets=list(onsets), arrows=list(arrows)),
+        }
+    )
