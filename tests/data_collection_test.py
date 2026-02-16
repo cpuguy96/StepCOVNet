@@ -40,7 +40,7 @@ class TestDataCollection(unittest.TestCase):
 
         self.assertTrue(np.any(targets > 0))
 
-    def test_create_arrow_dataset_with_empty_directory_rasies_error(self):
+    def test_create_arrow_dataset_with_empty_directory_raises_error(self):
         with self.assertRaises(ValueError):
             data_collection.create_arrow_dataset("")
 
