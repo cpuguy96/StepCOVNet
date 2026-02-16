@@ -36,6 +36,14 @@ dev = [
     "pytest>=9.0.0",
     "pytest-cov>=7.0.0",
 ]
+gpu = [
+    "tensorflow[and-cuda]>=2.19.0",
+]
+gpu_dev = [
+    "pytest>=9.0.0",
+    "pytest-cov>=7.0.0",
+    "tensorflow[and-cuda]>=2.19.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/cpuguy96/StepCOVNet"
