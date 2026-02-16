@@ -15,48 +15,45 @@ _MODE = "max"
 
 def _get_tb_callback(root_dir: str, callback_name: str):
     logdir = os.path.join(root_dir, "logs", callback_name)
-    print(f"Tensorboard logdir: {logdir}")
     return keras.callbacks.TensorBoard(
         logdir, histogram_freq=0, write_images=False, embeddings_freq=0
     )
 
 
 def _get_ckpt_callback(
-        root_dir: str, callback_name: str
+        root_dir: str, callback_name: str,
+        monitor_metric: str = _MONITOR_METRIC, mode: str = _MODE
 ) -> keras.callbacks.ModelCheckpoint:
     ckpt_path = os.path.join(
         root_dir,
         "models",
         callback_name,
-        f"{_MONITOR_METRIC.upper()}" + "-{" + f"{_MONITOR_METRIC}" + ":.5f}.keras",
+        f"{monitor_metric.upper()}" + "-{" + f"{monitor_metric}" + ":.5f}.keras",
     )
-    print(f"CKPT path: {ckpt_path}")
     model_checkpoint_callback = keras.callbacks.ModelCheckpoint(
         filepath=ckpt_path,
-        monitor=_MONITOR_METRIC,
+        monitor=monitor_metric,
         save_best_only=True,
-        mode=_MODE,
+        mode=mode,
     )
     return model_checkpoint_callback
 
 
-def _get_callbacks(root_dir: str, experiment_name: str = ""):
+def _get_callbacks(root_dir: str,
+                   monitor_metric: str,
+                   monitor_mode: str,
+                   experiment_name: str = "") -> list[keras.callbacks.Callback]:
     now = datetime.datetime.now()
-
     callback_name = now.strftime("%Y%m%d-%H%M%S")
     if experiment_name:
         callback_name = callback_name + "-" + experiment_name
-
-    print(f"Root dir: {root_dir}")
-    print(f"Callback name: {callback_name}")
-
     return [
         _get_tb_callback(root_dir, callback_name),
-        _get_ckpt_callback(root_dir, callback_name),
+        _get_ckpt_callback(root_dir, callback_name, monitor_metric, monitor_mode),
     ]
 
 
-def _get_experiment_name(
+def _get_onset_experiment_name(
         take_count: int,
         apply_temporal_augment: bool,
         should_apply_spec_augment: bool,
@@ -91,6 +88,18 @@ def _get_experiment_name(
     parts.append(
         f"unet_dilations_{'_'.join(map(str, model_params.get('dilation_rates', 'N_A')))}"
     )
+
+    return "-".join(parts)
+
+
+def _get_arrow_experiment_name(take_count: int,
+                               model_params: dict):
+    parts = ["ARROW"]
+
+    if take_count > 0:
+        parts.append(f"take_{take_count}")
+
+    parts.append(f"att_layers_{model_params.get('num_layers', 'N_A')}")
 
     return "-".join(parts)
 
@@ -156,7 +165,7 @@ def run_train(
         use_gaussian_target=False,
     )
 
-    experiment_name = _get_experiment_name(
+    experiment_name = _get_onset_experiment_name(
         take_count=take_count,
         apply_temporal_augment=apply_temporal_augment,
         should_apply_spec_augment=should_apply_spec_augment,
@@ -190,7 +199,88 @@ def run_train(
     )
 
     training_callbacks = _get_callbacks(
-        root_dir=callback_root_dir, experiment_name=experiment_name
+        root_dir=callback_root_dir,
+        monitor_metric="val_pr_auc",
+        monitor_mode="max",
+        experiment_name=experiment_name
+    )
+
+    train_history = model.fit(
+        train_dataset.take(take_count),
+        epochs=epoch,
+        validation_data=val_dataset,
+        callbacks=training_callbacks,
+    )
+
+    model.save(filepath=model_output_file)
+
+    return model, train_history
+
+
+def run_arrow_train(
+        *,
+        data_dir: str,
+        val_data_dir: str,
+        batch_size: int,
+        normalize: bool,
+        model_params: dict,
+        take_count: int,
+        epoch: int,
+        callback_root_dir: str,
+        model_output_file: str
+) -> tuple[keras.Model, keras.callbacks.History]:
+    """Train an arrow classification model.
+
+    Trains a Keras model to classify arrow types (directions) based on audio features.
+    Uses SparseCategoricalCrossentropy loss and ignores the background class (0).
+
+    Args:
+        data_dir: Path to the directory containing training data.
+        val_data_dir: Path to the directory containing validation data.
+        batch_size: Number of samples per batch during training.
+        normalize: Whether to normalize the input data.
+        model_params: Dictionary of parameters to pass to the arrow model builder.
+        take_count: Number of batches to use from the training dataset (None uses all).
+        epoch: Number of epochs to train for.
+        callback_root_dir: Root directory for storing training callbacks.
+        model_output_file: Path where the trained model will be saved.
+
+    Returns:
+        A tuple containing the trained model and its training history.
+    """
+
+    train_dataset = datasets.create_arrow_dataset(
+        data_dir=data_dir,
+        batch_size=batch_size,
+        normalize=normalize,
+    )
+
+    val_dataset = datasets.create_arrow_dataset(
+        data_dir=val_data_dir,
+        batch_size=batch_size,
+        normalize=normalize,
+    )
+
+    experiment_name = _get_arrow_experiment_name(take_count=take_count, model_params=model_params)
+
+    model = models.build_arrow_model(
+        experiment_name=experiment_name,
+        **model_params
+    )
+
+    model.summary()
+
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+        loss=keras.losses.SparseCategoricalCrossentropy(ignore_class=0),
+        metrics=[keras.metrics.SparseCategoricalAccuracy(name='acc')]
+    )
+
+    training_callbacks = _get_callbacks(
+        root_dir=callback_root_dir,
+        monitor_metric="val_loss",
+        monitor_mode="min",
+        experiment_name=experiment_name
     )
 
     train_history = model.fit(
