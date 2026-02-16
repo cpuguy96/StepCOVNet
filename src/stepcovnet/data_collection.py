@@ -5,13 +5,17 @@ process them into spectrograms and target vectors, and create a TensorFlow
 dataset for training.
 """
 
+import os
+import pathlib
+
+import numpy as np
+
 import librosa
 import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
 from stepcovnet import constants
-from stepcovnet import data_utils
 
 _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge": 4}
 _N_MELS = constants.N_MELS
@@ -20,32 +24,109 @@ _F_MIN = 27.5
 _F_MAX = 16000
 _HOP_COEFF = 0.01
 _WIN_COEFF = 0.025
+_TARGET_SR = 44100
 
 
+def _base4_to_int(base4_string: str) -> int:
+    """
+    Converts a string representation of a base 4 number to its base 10 integer equivalent.
 
-def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray:
+    Args:
+      base4_string: The string representing the number in base 4.
+                    Should only contain characters '0', '1', '2', '3'.
+
+    Returns:
+      The integer (base 10) equivalent of the input base 4 string.
+    """
+    if not base4_string:
+        raise ValueError("Input string cannot be empty.")
+
+    # Check for invalid characters (optional but good practice)
+    valid_chars = set("0123")
+    if not set(base4_string).issubset(valid_chars):
+        raise ValueError(
+            f"Invalid character found in base 4 string: '{base4_string}'. Only '0', '1', '2', '3' are allowed."
+        )
+
+    return int(base4_string, 4)
+
+
+def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
+    """Find paired audio files and StepMania chart files."""
+    pairs = []
+    for root, _, files in os.walk(data_dir):
+        audio_files = [f for f in files if f.endswith((".mp3", ".ogg", ".wav"))]
+        chart_files = [f for f in files if f.endswith((".txt"))]
+
+        # Pair files with same stem (e.g., 'song.mp3' and 'song.sm')
+        for audio_file in audio_files:
+            stem = pathlib.Path(audio_file).stem
+            matching_charts = [f for f in chart_files if f.startswith(stem)]
+            if matching_charts:
+                pairs.append(
+                    (
+                        os.path.join(root, audio_file),
+                        os.path.join(root, matching_charts[0]),
+                    )
+                )
+    return pairs
+
+
+def _parse_step_chart(
+    chart_path: str, binary_timings: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
+    """Parse StepMania .sm file to extract step timings and note encodings.
+
+    Args:
+        chart_path: Path to the StepMania .sm file.
+        binary_timings: If True, returns 0 for all note encodings, effectively
+                        treating the output as binary (step vs. no step).
+
+    Returns:
+        A tuple containing an array of step timings and an array of note encodings.
+    """
+    with open(chart_path, "r") as f:
+        f.readline()  # TITLE
+        _ = float(f.readline().removeprefix("BPM").strip())  # BPM
+        f.readline()  # NOTES
+        difficulty_level = f.readline().strip().lower().split(" ")[1]
+        _ = _DIFFICULTY_MAP.get(difficulty_level, 2)
+        times = []
+        cols = []
+        for line in f:
+            if line.startswith("DIFFICULTY"):
+                # TODO: Read off of multiple difficulties
+                break
+            # TODO: Use the type of note played and not just the presence
+            arrows, timing = line.strip().split(" ")
+            times.append(float(timing))
+            if binary_timings:
+                cols.append(0)
+            else:
+                cols.append(_base4_to_int(arrows))
+
+    return np.array(times), np.array(cols, dtype=np.int32)
+
+
+def _audio_to_spectrogram(audio_path: str) -> np.ndarray:
     """Convert audio to mel-spectrogram using LibROSA."""
 
-    y, sr = librosa.load(audio_path, sr=target_sr)
+    y, sr = librosa.load(audio_path, sr=_TARGET_SR)
 
     # Sample rate conversion (if necessary)
-    if sr != target_sr:
-        y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
-
-    # Convert to mono if stereo
-    if len(y.shape) > 1:
-        y = np.mean(y, axis=1)
+    if sr != _TARGET_SR:
+        y = librosa.resample(y, orig_sr=sr, target_sr=_TARGET_SR)
 
     # Normalize audio data
     y = y / np.max(np.abs(y))
 
-    hop_length = int(round(target_sr * _HOP_COEFF))
-    win_length = int(round(target_sr * _WIN_COEFF))
+    hop_length = int(round(_TARGET_SR * _HOP_COEFF))
+    win_length = int(round(_TARGET_SR * _WIN_COEFF))
     n_fft = 2 ** int(np.ceil(np.log(win_length) / np.log(2.0)))
 
     mel_spectrogram = librosa.feature.melspectrogram(
         y=y,
-        sr=target_sr,
+        sr=_TARGET_SR,
         hop_length=hop_length,
         win_length=win_length,
         n_fft=n_fft,
@@ -80,8 +161,11 @@ def _temporal_augment_scipy(
 
     for bin_idx in range(_N_MELS):
         interp_func = interpolate.interp1d(
-            original_time, spec[bin_idx, :], kind="linear", fill_value="extrapolate"
-        )  # type: ignore
+            original_time,
+            spec[bin_idx, :],
+            kind="linear",
+            fill_value="extrapolate",  # type: ignore
+        )
         spec_resized[bin_idx, :] = interp_func(warped_time)
 
     extras_resized = np.zeros(
@@ -92,8 +176,8 @@ def _temporal_augment_scipy(
             original_time,
             labels_and_features[:, target_bin],
             kind="nearest",
-            fill_value="extrapolate",
-        )  # type: ignore
+            fill_value="extrapolate",  # type: ignore
+        )
         extras_resized[:, target_bin] = interp_func_labels(warped_time)
 
     if new_length > original_length:
@@ -207,7 +291,7 @@ def create_dataset(
     Deterministic preprocessing is cached, while random augmentations are applied
     on the fly in each epoch.
     """
-    pairs = data_utils.load_and_pair_files(data_dir)
+    pairs = _load_and_pair_files(data_dir)
     if not pairs:
         raise ValueError("No audio-chart pairs found.")
 
@@ -220,7 +304,7 @@ def create_dataset(
 
             spec = _audio_to_spectrogram(audio_path)
             spec_length = spec.shape[1]
-            times, cols = data_utils.parse_step_chart(chart_path, binary_timings=True)
+            times, cols = _parse_step_chart(chart_path, binary_timings=True)
 
             _target = (
                 _create_target_gaussian(times, cols, spec_length, gaussian_sigma)
@@ -317,7 +401,9 @@ def create_dataset(
     return ds
 
 
-def create_arrow_dataset(data_dir: str, batch_size: int = 1, normalize: bool = False) -> tf.data.Dataset:
+def create_arrow_dataset(
+    data_dir: str, batch_size: int = 1, normalize: bool = False
+) -> tf.data.Dataset:
     """Creates a TensorFlow dataset for arrow prediction.
 
     Args:
@@ -328,7 +414,7 @@ def create_arrow_dataset(data_dir: str, batch_size: int = 1, normalize: bool = F
     Returns:
         A tf.data.Dataset yielding (times, cols) pairs.
     """
-    pairs = data_utils.load_and_pair_files(data_dir)
+    pairs = _load_and_pair_files(data_dir)
     if not pairs:
         raise ValueError("No audio-chart pairs found in the specified directory.")
 
@@ -336,10 +422,10 @@ def create_arrow_dataset(data_dir: str, batch_size: int = 1, normalize: bool = F
 
     def _process_pair(chart_path: str) -> tuple[tf.SparseTensor, tf.SparseTensor]:
         times, cols = tf.py_function(
-            lambda p: data_utils.parse_step_chart(p.numpy().decode()),
+            lambda p: _parse_step_chart(p.numpy().decode()),
             [chart_path],
-            (tf.float32, tf.int32)
-        )
+            (tf.float32, tf.int32),
+        )  # type: ignore
 
         if normalize:
             times = times / tf.reduce_max(times)
@@ -350,15 +436,19 @@ def create_arrow_dataset(data_dir: str, batch_size: int = 1, normalize: bool = F
         return times, cols
 
     ds = ds.map(
-        lambda pair: _process_pair(pair[1]),
-        num_parallel_calls=tf.data.AUTOTUNE
+        lambda pair: _process_pair(pair[1]), num_parallel_calls=tf.data.AUTOTUNE
     )
     ds = ds.cache()
 
     if batch_size > 1:
-        ds = ds.padded_batch(batch_size,
-                             padded_shapes=((None,), (None,)),
-                             padding_values=((0.0), 0,))
+        ds = ds.padded_batch(
+            batch_size,
+            padded_shapes=((None,), (None,)),
+            padding_values=(
+                (0.0),
+                0,
+            ),
+        )
     else:
         ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)
 
