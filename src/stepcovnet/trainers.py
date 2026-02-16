@@ -1,6 +1,7 @@
 """Launches the main training loop to train a new StepCovNet model."""
 
 import datetime
+import logging
 import os
 
 import keras
@@ -8,9 +9,6 @@ import keras
 from stepcovnet import datasets
 from stepcovnet import metrics
 from stepcovnet import models
-
-_MONITOR_METRIC = "val_pr_auc"
-_MODE = "max"
 
 
 def _get_tb_callback(root_dir: str, callback_name: str):
@@ -21,8 +19,10 @@ def _get_tb_callback(root_dir: str, callback_name: str):
 
 
 def _get_ckpt_callback(
-        root_dir: str, callback_name: str,
-        monitor_metric: str = _MONITOR_METRIC, mode: str = _MODE
+    root_dir: str,
+    callback_name: str,
+    monitor_metric: str,
+    mode: str,
 ) -> keras.callbacks.ModelCheckpoint:
     ckpt_path = os.path.join(
         root_dir,
@@ -39,10 +39,9 @@ def _get_ckpt_callback(
     return model_checkpoint_callback
 
 
-def _get_callbacks(root_dir: str,
-                   monitor_metric: str,
-                   monitor_mode: str,
-                   experiment_name: str = "") -> list[keras.callbacks.Callback]:
+def _get_callbacks(
+    root_dir: str, monitor_metric: str, monitor_mode: str, experiment_name: str = ""
+) -> list[keras.callbacks.Callback]:
     now = datetime.datetime.now()
     callback_name = now.strftime("%Y%m%d-%H%M%S")
     if experiment_name:
@@ -54,12 +53,12 @@ def _get_callbacks(root_dir: str,
 
 
 def _get_onset_experiment_name(
-        take_count: int,
-        apply_temporal_augment: bool,
-        should_apply_spec_augment: bool,
-        use_gaussian_target: bool,
-        gaussian_sigma: float,
-        model_params: dict,
+    take_count: int,
+    apply_temporal_augment: bool,
+    should_apply_spec_augment: bool,
+    use_gaussian_target: bool,
+    gaussian_sigma: float,
+    model_params: dict,
 ) -> str:
     """
     Generates a descriptive experiment name from hyperparameters.
@@ -92,8 +91,7 @@ def _get_onset_experiment_name(
     return "-".join(parts)
 
 
-def _get_arrow_experiment_name(take_count: int,
-                               model_params: dict):
+def _get_arrow_experiment_name(take_count: int, model_params: dict):
     parts = ["ARROW"]
 
     if take_count > 0:
@@ -105,20 +103,20 @@ def _get_arrow_experiment_name(take_count: int,
 
 
 def run_train(
-        *,
-        data_dir: str,
-        val_data_dir: str,
-        batch_size: int,
-        normalize: bool,
-        apply_temporal_augment: bool,
-        should_apply_spec_augment: bool,
-        use_gaussian_target: bool,
-        gaussian_sigma: float,
-        model_params: dict,
-        take_count: int,
-        epoch: int,
-        callback_root_dir: str,
-        model_output_file: str,
+    *,
+    data_dir: str,
+    val_data_dir: str,
+    batch_size: int,
+    normalize: bool,
+    apply_temporal_augment: bool,
+    should_apply_spec_augment: bool,
+    use_gaussian_target: bool,
+    gaussian_sigma: float,
+    model_params: dict,
+    take_count: int,
+    epoch: int,
+    callback_root_dir: str,
+    model_output_dir: str,
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train a U-Net WaveNet model on step detection data.
 
@@ -202,7 +200,7 @@ def run_train(
         root_dir=callback_root_dir,
         monitor_metric="val_pr_auc",
         monitor_mode="max",
-        experiment_name=experiment_name
+        experiment_name=experiment_name,
     )
 
     train_history = model.fit(
@@ -212,22 +210,24 @@ def run_train(
         callbacks=training_callbacks,
     )
 
-    model.save(filepath=model_output_file)
+    filepath = os.path.join(model_output_dir, f"{model.name}.keras")
+    logging.info(f"Saving trained model to {filepath}")
+    model.save(filepath=filepath)
 
     return model, train_history
 
 
 def run_arrow_train(
-        *,
-        data_dir: str,
-        val_data_dir: str,
-        batch_size: int,
-        normalize: bool,
-        model_params: dict,
-        take_count: int,
-        epoch: int,
-        callback_root_dir: str,
-        model_output_file: str
+    *,
+    data_dir: str,
+    val_data_dir: str,
+    batch_size: int,
+    normalize: bool,
+    model_params: dict,
+    take_count: int,
+    epoch: int,
+    callback_root_dir: str,
+    model_output_dir: str,
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train an arrow classification model.
 
@@ -243,7 +243,7 @@ def run_arrow_train(
         take_count: Number of batches to use from the training dataset (None uses all).
         epoch: Number of epochs to train for.
         callback_root_dir: Root directory for storing training callbacks.
-        model_output_file: Path where the trained model will be saved.
+        model_output_dir: Directory where the trained model will be saved.
 
     Returns:
         A tuple containing the trained model and its training history.
@@ -261,26 +261,25 @@ def run_arrow_train(
         normalize=normalize,
     )
 
-    experiment_name = _get_arrow_experiment_name(take_count=take_count, model_params=model_params)
-
-    model = models.build_arrow_model(
-        experiment_name=experiment_name,
-        **model_params
+    experiment_name = _get_arrow_experiment_name(
+        take_count=take_count, model_params=model_params
     )
+
+    model = models.build_arrow_model(experiment_name=experiment_name, **model_params)
 
     model.summary()
 
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=1e-3),
         loss=keras.losses.SparseCategoricalCrossentropy(ignore_class=0),
-        metrics=[keras.metrics.SparseCategoricalAccuracy(name='acc')]
+        metrics=[keras.metrics.SparseCategoricalAccuracy(name="acc")],
     )
 
     training_callbacks = _get_callbacks(
         root_dir=callback_root_dir,
         monitor_metric="val_loss",
         monitor_mode="min",
-        experiment_name=experiment_name
+        experiment_name=experiment_name,
     )
 
     train_history = model.fit(
@@ -290,6 +289,8 @@ def run_arrow_train(
         callbacks=training_callbacks,
     )
 
-    model.save(filepath=model_output_file)
+    filepath = os.path.join(model_output_dir, f"{model.name}.keras")
+    logging.info(f"Saving trained model to {filepath}")
+    model.save(filepath=filepath)
 
     return model, train_history

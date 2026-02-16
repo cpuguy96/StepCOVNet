@@ -11,7 +11,7 @@ class TestTrainers(unittest.TestCase):
     def test_run_train(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_file = os.path.join(temp_dir, "model_output.keras")
+            model_output_dir = os.path.join(temp_dir, "models")
 
         history, model = trainers.run_train(
             data_dir=TEST_DATA_DIR,
@@ -26,7 +26,7 @@ class TestTrainers(unittest.TestCase):
             take_count=1,
             epoch=1,
             callback_root_dir=callback_root_dir,
-            model_output_file=model_output_file,
+            model_output_dir=model_output_dir,
         )
         self.assertIsNotNone(history)
         self.assertIsNotNone(model)
@@ -34,7 +34,7 @@ class TestTrainers(unittest.TestCase):
     def test_run_arrow_train(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_file = os.path.join(temp_dir, "model_output.keras")
+            model_output_dir = os.path.join(temp_dir, "models")
 
         history, model = trainers.run_arrow_train(
             data_dir=TEST_DATA_DIR,
@@ -45,7 +45,7 @@ class TestTrainers(unittest.TestCase):
             take_count=1,
             epoch=1,
             callback_root_dir=callback_root_dir,
-            model_output_file=model_output_file,
+            model_output_dir=model_output_dir,
         )
         self.assertIsNotNone(history)
         self.assertIsNotNone(model)
