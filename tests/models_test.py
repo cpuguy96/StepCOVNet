@@ -6,7 +6,7 @@ import numpy as np
 from stepcovnet import models
 
 
-class TestModel(unittest.TestCase):
+class ModelTest(unittest.TestCase):
     def test_build_unet_wavenet_model(self):
         model_instance = models.build_unet_wavenet_model()
 

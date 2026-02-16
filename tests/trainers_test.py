@@ -7,7 +7,7 @@ from stepcovnet import trainers
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
 
-class TestTrainers(unittest.TestCase):
+class TrainersTest(unittest.TestCase):
     def test_run_train(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             callback_root_dir = os.path.join(temp_dir, "callbacks")

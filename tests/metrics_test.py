@@ -5,7 +5,7 @@ import numpy as np
 from stepcovnet import metrics
 
 
-class TestOnsetF1Metric(unittest.TestCase):
+class OnsetF1MetricTest(unittest.TestCase):
     def setUp(self):
         self.metric = metrics.OnsetF1Metric(tolerance=1, threshold=0.5)
 

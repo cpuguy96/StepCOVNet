@@ -8,7 +8,7 @@ from stepcovnet import datasets
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'testdata')
 
 
-class TestDatasets(unittest.TestCase):
+class DatasetsTest(unittest.TestCase):
 
     def test_create_dataset(self):
         ds = datasets.create_dataset(TEST_DATA_DIR)
