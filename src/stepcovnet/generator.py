@@ -1,3 +1,5 @@
+"""Generates step chart data from audio using StepCovNet models."""
+
 import dataclasses
 
 import numpy as np
@@ -9,11 +11,24 @@ from stepcovnet import datasets
 
 @dataclasses.dataclass(frozen=True)
 class OutputData:
+    """A data class representing the generated step chart information for a song.
+
+    Attributes:
+        title: The title of the song.
+        bpm: The beats per minute of the song.
+        notes: A dictionary mapping difficulty levels to a list of note tuples,
+               where each tuple contains a timestamp (str) and an arrow pattern (str).
+    """
     title: str
     bpm: int
     notes: dict[str, list[tuple[str, str]]]
 
     def generate_txt_output(self) -> str:
+        """Generates a formatted string representation of the step chart.
+
+        Returns:
+            A string containing the song title, BPM, and note data for all difficulties.
+        """
         title = 'TITLE %s\n' % self.title
         bpm = 'BPM %s\n' % str(self.bpm)
         notes = 'NOTES\n'
@@ -101,6 +116,16 @@ def _post_process_predictions(
 
 
 def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
+    """
+    Maps onset timestamps to their corresponding arrow patterns in base-4 string format.
+
+    Args:
+        onsets: A list of timestamps (floats or strings) representing note timings.
+        arrows: A list of integer representations of arrow patterns.
+
+    Returns:
+        A list of tuples, each containing a timestamp string and a 4-digit base-4 arrow string.
+    """
     note_data = []
     assert len(onsets) == len(arrows)
     for onset, arrow in zip(onsets, arrows):
@@ -109,8 +134,28 @@ def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
     return note_data
 
 
-def generate_output_data(audio_path: str, song_title: str, bpm: int,
-                         onset_model: models.Model, arrow_model: models.Model) -> OutputData:
+def generate_output_data(
+        audio_path: str,
+        song_title: str,
+        bpm: int,
+        onset_model: models.Model,
+        arrow_model: models.Model
+) -> OutputData:
+    """Generates step chart data for a given audio file using trained models.
+
+    This function processes the audio into a spectrogram, predicts onset timings,
+    and then predicts the arrow patterns for those onsets.
+
+    Args:
+        audio_path: Path to the input audio file.
+        song_title: The title of the song.
+        bpm: The beats per minute of the song.
+        onset_model: A Keras model used to predict note onsets.
+        arrow_model: A Keras model used to predict arrow types for given onsets.
+
+    Returns:
+        An OutputData object containing the song metadata and generated notes.
+    """
     spec = datasets.audio_to_spectrogram(audio_path)
     onset_pred = onset_model.predict(np.expand_dims(spec, axis=0))
     onsets = _post_process_predictions(onset_pred[0])
