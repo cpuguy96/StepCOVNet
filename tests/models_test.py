@@ -20,6 +20,19 @@ class TestModel(unittest.TestCase):
         prediction = model_instance.predict(dummy_input)
         self.assertEqual(prediction.shape, (1, 100, 1))
 
+    def test_build_arrow_model_model(self):
+        model_instance = models.build_arrow_model()
+
+        self.assertIsInstance(model_instance, keras.Model)
+
+        self.assertEqual(model_instance.input_shape, (None, None, 1))
+        self.assertEqual(model_instance.output_shape, (None, None, 256))
+
+        # Call the model and check the output shape
+        dummy_input = np.random.random((1, 100, 1)).astype(np.float32)
+        prediction = model_instance.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 100, 256))
+
 
 if __name__ == '__main__':
     unittest.main()

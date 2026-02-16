@@ -5,6 +5,69 @@ import tensorflow as tf
 
 from stepcovnet import constants
 
+_MAX_NUM_ARROWS = 2048
+_N_ARROW_TYPES = 256
+
+
+@keras.saving.register_keras_serializable()
+class PositionalEncoding(keras.layers.Layer):
+    def __init__(self, position, d_model, **kwargs):
+        # Add **kwargs to accept base Layer arguments like 'name'
+        super(PositionalEncoding, self).__init__(**kwargs)
+        # Ensure d_model is compatible with potential float16 usage later
+        self.d_model = d_model
+        self.position = position
+        # Pre-calculate the positional encoding matrix.
+        # Calculate using float32 for precision, will cast later if needed.
+        self.pos_encoding = self.positional_encoding(position, d_model)
+
+    def get_angles(self, position, i, d_model):
+        # Ensure d_model is float for the calculation
+        d_model_float = tf.cast(d_model, tf.float32)
+        # Calculate the angles for the positional encoding formula
+        # Original formula: angle = pos / (10000^(2i / d_model))
+        # Use floating point literals and casting for compatibility
+        angles = 1.0 / tf.pow(10000.0, (2.0 * tf.cast(i // 2, tf.float32)) / d_model_float)
+        return tf.cast(position, tf.float32) * angles
+
+    def positional_encoding(self, position, d_model):
+        # Create angle radians matrix (using float32 for calculation precision)
+        angle_rads = self.get_angles(
+            tf.range(position, dtype=tf.float32)[:, tf.newaxis],  # Use float32 range
+            tf.range(d_model, dtype=tf.float32)[tf.newaxis, :],  # Use float32 range
+            d_model  # d_model is passed to get_angles which casts it
+        )  # Shape: (position, d_model)
+
+        # Apply sin to even indices in the array; 2i
+        sines = tf.math.sin(angle_rads[:, 0::2])  # Shape: (position, d_model/2)
+
+        # Apply cos to odd indices in the array; 2i+1
+        cosines = tf.math.cos(angle_rads[:, 1::2])  # Shape: (position, d_model/2)
+
+        # Interleave sines and cosines
+        pos_encoding = tf.stack([sines, cosines], axis=-1)  # Shape: (position, d_model/2, 2)
+        pos_encoding = tf.reshape(pos_encoding, [position, d_model])  # Shape: (position, d_model)
+
+        # Add batch dimension for broadcasting
+        pos_encoding = pos_encoding[tf.newaxis, ...]  # Shape: (1, position, d_model)
+        # Return as float32, will be cast in call() if necessary
+        return tf.cast(pos_encoding, tf.float32)
+
+    def call(self, inputs):
+        # inputs shape: (batch_size, seq_len, d_model)
+        seq_len = tf.shape(inputs)[1]
+        # Add the positional encoding to the input embeddings
+        # Slice the pre-computed encoding to match the input sequence length
+        # --- FIX: Cast pos_encoding to the dtype of inputs before adding ---
+        input_dtype = inputs.dtype
+        pos_encoding_sliced = self.pos_encoding[:, :seq_len, :]
+        pos_encoding_casted = tf.cast(pos_encoding_sliced, dtype=input_dtype)
+        return inputs + pos_encoding_casted
+
+    # Optional: Implement compute_output_shape for better static shape inference
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
 
 def _wavenet_residual_block(inputs, residual_channels, skip_channels, dilation_rate, kernel_size, block_id) -> tuple:
     """
@@ -45,12 +108,49 @@ def _wavenet_residual_block(inputs, residual_channels, skip_channels, dilation_r
     return residual, skip_output
 
 
-def build_unet_wavenet_model(initial_filters=32,
-                             depth=4,
-                             dilation_rates=[1, 2, 4, 8],
-                             kernel_size=3,
-                             dropout_rate=0.3,
-                             experiment_name="") -> keras.Model:
+def _transformer_encoder(inputs, d_model: int, num_heads: int, ff_dim: int, dropout_rate: float = 0.1):
+    """
+    Creates a single Transformer Encoder block.
+    Args:
+        inputs: Input tensor shape (batch_size, seq_len, d_model)
+        d_model: Dimensionality of the model.
+        num_heads: Number of attention heads.
+        ff_dim: Inner dimension of the Feed-Forward Network.
+        dropout_rate: Dropout rate.
+    Returns:
+        Output tensor shape (batch_size, seq_len, d_model)
+    """
+    # --- Multi-Head Self-Attention ---
+    # Ensure d_model is divisible by num_heads
+    assert d_model % num_heads == 0
+    kv_dim = d_model // num_heads  # Dimension of each attention head's key/query/value
+
+    attn_output = keras.layers.MultiHeadAttention(
+        num_heads=num_heads,
+        key_dim=kv_dim,
+        value_dim=kv_dim,
+        dtype="float32"  # Needed for numerical stability during inference
+    )(inputs, inputs)  # Self-attention
+    attn_output = keras.layers.Dropout(dropout_rate)(attn_output)
+    # Residual connection & Layer Normalization
+    out1 = keras.layers.LayerNormalization(epsilon=1e-6)(inputs + attn_output)
+
+    # --- Feed-Forward Network ---
+    ffn_output = keras.layers.Dense(ff_dim, activation="relu")(out1)
+    ffn_output = keras.layers.Dense(d_model)(ffn_output)
+    ffn_output = keras.layers.Dropout(dropout_rate)(ffn_output)
+    # Residual connection & Layer Normalization
+    out2 = keras.layers.LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
+
+    return out2
+
+
+def build_unet_wavenet_model(initial_filters: int = 32,
+                             depth: int = 4,
+                             dilation_rates: list[int] = [1, 2, 4, 8],
+                             kernel_size: int = 3,
+                             dropout_rate: float = 0.3,
+                             experiment_name: str = "") -> keras.Model:
     """
     Builds a U-Net style WaveNet for multi-scale rhythmic analysis.
 
@@ -118,16 +218,16 @@ def build_unet_wavenet_model(initial_filters=32,
         skip_connection = encoder_outputs[i]
 
         @keras.saving.register_keras_serializable()
-        def crop_to_match(inputs):
+        def _crop_to_match(_inputs):
             # The first input is the tensor to crop, the second is the reference.
-            tensor_to_crop, reference_tensor = inputs
+            tensor_to_crop, reference_tensor = _inputs
             # Get the dynamic sequence length of the reference tensor.
             target_length = tf.shape(reference_tensor)[1]
             # Crop the first tensor to match this length.
             return tensor_to_crop[:, :target_length, :]
 
         # The Lambda layer takes a list of tensors as input to ensure dynamic shapes are handled correctly.
-        x = keras.layers.Lambda(crop_to_match, name=f"{level_prefix}_crop_to_match")([x, skip_connection])
+        x = keras.layers.Lambda(_crop_to_match, name=f"{level_prefix}_crop_to_match")([x, skip_connection])
 
         # Concatenate with the skip connection from the corresponding encoder level
         x = keras.layers.Concatenate(name=f"{level_prefix}_concat_skip")([x, skip_connection])
@@ -154,8 +254,67 @@ def build_unet_wavenet_model(initial_filters=32,
     x = keras.layers.Conv1D(filters=16, kernel_size=1, activation='gelu', name="output_conv_1")(x)
     outputs = keras.layers.Conv1D(filters=1, kernel_size=1, activation='sigmoid', name="output_sigmoid")(x)
 
-    model_name = "UNet-WaveNet"
+    model_name = "stepcovnet_ONSET"
     if experiment_name:
         model_name += f"-{experiment_name}"
 
-    return keras.Model(inputs, outputs, name=model_name)
+    return keras.Model(inputs=inputs, outputs=outputs, name=model_name)
+
+
+def build_arrow_model(
+        num_layers: int = 6,  # Number of encoder layers (Increased depth)
+        d_model: int = 128,  # Model dimension (Increased width)
+        num_heads: int = 8,  # Number of attention heads (Increased heads)
+        ff_dim: int = 512,  # Feed-forward inner dimension (Increased width, often 4*d_model)
+        dropout_rate: float = 0.1,  # Added dropout for regularization
+        experiment_name: str = ""
+):
+    """Builds a model for StepMania arrow prediction.
+
+    Args:
+        num_layers: Number of stacked encoder layers.
+        d_model: The dimensionality of the model's embeddings and layers.
+        num_heads: Number of attention heads.
+        ff_dim: The inner dimension of the feed-forward networks.
+        dropout_rate: The dropout rate used in sublayers.
+        experiment_name: Name for the model.
+
+    Returns:
+        A Keras Model instance.
+    """
+    # Input layer: Sequence of timings (batch_size, seq_len, 1 feature)
+    inputs = keras.layers.Input(shape=(None, 1), name="inputs")  # None allows variable sequence length
+
+    # 1. Input Embedding/Projection
+    # Project the single timing feature into the model's dimension (d_model)
+    x = keras.layers.Dense(d_model, name="input_projection")(inputs)
+    # Scale embedding (optional but common)
+    x *= tf.math.sqrt(tf.cast(d_model, tf.float32))
+
+    # 2. Positional Encoding
+    # Use a pre-defined max length large enough for your sequences
+    x = PositionalEncoding(position=_MAX_NUM_ARROWS, d_model=d_model)(x)
+    # Dropout after embedding + positional encoding
+    x = keras.layers.Dropout(dropout_rate)(x)
+
+    # # 3. Stacked Transformer Encoder Layers
+    for i in range(num_layers):
+        x = _transformer_encoder(
+            inputs=x,
+            d_model=d_model,
+            num_heads=num_heads,
+            ff_dim=ff_dim,
+            dropout_rate=dropout_rate
+        )
+
+    # 4. Output Layer
+    # Project the final encoder output to the number of arrow types
+    # Apply softmax to get probabilities for each arrow type at each time step
+    # The output shape will be (batch_size, seq_len, num_arrow_types)
+    outputs = keras.layers.Dense(_N_ARROW_TYPES, activation="softmax", name="output_probabilities")(x)
+
+    model_name = "stepcovnet_ARROW"
+    if experiment_name:
+        model_name += f"-{experiment_name}"
+
+    return keras.Model(inputs=inputs, outputs=outputs, name=model_name)
