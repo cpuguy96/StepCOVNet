@@ -145,9 +145,9 @@ def _transformer_encoder(inputs, d_model: int, num_heads: int, ff_dim: int, drop
     return out2
 
 
-def build_unet_wavenet_model(initial_filters: int = 32,
-                             depth: int = 4,
-                             dilation_rates: list[int] = [1, 2, 4, 8],
+def build_unet_wavenet_model(initial_filters: int = 1,
+                             depth: int = 1,
+                             dilation_rates: list[int] = [1],
                              kernel_size: int = 3,
                              dropout_rate: float = 0.3,
                              experiment_name: str = "") -> keras.Model:
