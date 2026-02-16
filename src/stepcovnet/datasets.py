@@ -8,8 +8,6 @@ dataset for training.
 import os
 import pathlib
 
-import numpy as np
-
 import librosa
 import numpy as np
 import tensorflow as tf
