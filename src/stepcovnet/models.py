@@ -262,11 +262,11 @@ def build_unet_wavenet_model(initial_filters: int = 1,
 
 
 def build_arrow_model(
-        num_layers: int = 6,  # Number of encoder layers (Increased depth)
-        d_model: int = 128,  # Model dimension (Increased width)
-        num_heads: int = 8,  # Number of attention heads (Increased heads)
-        ff_dim: int = 512,  # Feed-forward inner dimension (Increased width, often 4*d_model)
-        dropout_rate: float = 0.1,  # Added dropout for regularization
+        num_layers: int = 1,
+        d_model: int = 128,
+        num_heads: int = 2,
+        ff_dim: int = 512,
+        dropout_rate: float = 0.1,
         experiment_name: str = ""
 ):
     """Builds a model for StepMania arrow prediction.
