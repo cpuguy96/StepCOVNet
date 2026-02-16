@@ -312,6 +312,55 @@ def create_dataset(
         )
     else:
         ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)
-    
+
+    ds = ds.prefetch(tf.data.AUTOTUNE)
+    return ds
+
+
+def create_arrow_dataset(data_dir: str, batch_size: int = 1, normalize: bool = False) -> tf.data.Dataset:
+    """Creates a TensorFlow dataset for arrow prediction.
+
+    Args:
+        data_dir: Directory containing audio and chart files.
+        batch_size: Number of samples per batch.
+        normalize: Whether to normalize step times.
+
+    Returns:
+        A tf.data.Dataset yielding (times, cols) pairs.
+    """
+    pairs = data_utils.load_and_pair_files(data_dir)
+    if not pairs:
+        raise ValueError("No audio-chart pairs found in the specified directory.")
+
+    ds = tf.data.Dataset.from_tensor_slices(pairs)
+
+    def _process_pair(chart_path: str) -> tuple[tf.SparseTensor, tf.SparseTensor]:
+        times, cols = tf.py_function(
+            lambda p: data_utils.parse_step_chart(p.numpy().decode()),
+            [chart_path],
+            (tf.float32, tf.int32)
+        )
+
+        if normalize:
+            times = times / tf.reduce_max(times)
+
+        times = tf.ensure_shape(times, [None])
+        cols = tf.ensure_shape(cols, [None])
+
+        return times, cols
+
+    ds = ds.map(
+        lambda pair: _process_pair(pair[1]),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+    ds = ds.cache()
+
+    if batch_size > 1:
+        ds = ds.padded_batch(batch_size,
+                             padded_shapes=((None,), (None,)),
+                             padding_values=((0.0), 0,))
+    else:
+        ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+
     ds = ds.prefetch(tf.data.AUTOTUNE)
     return ds
