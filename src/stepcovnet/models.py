@@ -246,7 +246,6 @@ def build_unet_wavenet_model(initial_filters: int = 1,
             x, _ = _wavenet_residual_block(x, current_filters, current_filters, rate, kernel_size,
                                            f"{level_prefix}_{rate}")
 
-    # --- Output Head ---
     # Applying dropout before the final refinement layers is a standard practice
     # that helps regularize the final classification/regression stage.
     x = keras.layers.Dropout(dropout_rate, name="pre_output_dropout")(x)
@@ -282,22 +281,19 @@ def build_arrow_model(
     Returns:
         A Keras Model instance.
     """
-    # Input layer: Sequence of timings (batch_size, seq_len, 1 feature)
-    inputs = keras.layers.Input(shape=(None, 1), name="inputs")  # None allows variable sequence length
+    # Input shape is (batch_size, sequence_length, 1)
+    inputs = keras.layers.Input(shape=(None, 1), name="inputs")
 
-    # 1. Input Embedding/Projection
-    # Project the single timing feature into the model's dimension (d_model)
+    # Project the 1D input to the model's embedding dimension
     x = keras.layers.Dense(d_model, name="input_projection")(inputs)
-    # Scale embedding (optional but common)
+    # Scale embeddings by sqrt(d_model) as per the original Transformer paper
     x *= tf.math.sqrt(tf.cast(d_model, tf.float32))
 
-    # 2. Positional Encoding
-    # Use a pre-defined max length large enough for your sequences
+    # Inject positional information since Transformers have no inherent sense of order
     x = PositionalEncoding(position=_MAX_NUM_ARROWS, d_model=d_model)(x)
-    # Dropout after embedding + positional encoding
     x = keras.layers.Dropout(dropout_rate)(x)
 
-    # # 3. Stacked Transformer Encoder Layers
+    # Stack multiple Transformer encoder layers
     for i in range(num_layers):
         x = _transformer_encoder(
             inputs=x,
@@ -307,10 +303,7 @@ def build_arrow_model(
             dropout_rate=dropout_rate
         )
 
-    # 4. Output Layer
-    # Project the final encoder output to the number of arrow types
-    # Apply softmax to get probabilities for each arrow type at each time step
-    # The output shape will be (batch_size, seq_len, num_arrow_types)
+    # Output layer predicts the probability distribution over arrow types for each step
     outputs = keras.layers.Dense(_N_ARROW_TYPES, activation="softmax", name="output_probabilities")(x)
 
     model_name = "stepcovnet_ARROW"
