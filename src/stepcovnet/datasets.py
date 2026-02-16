@@ -106,8 +106,16 @@ def _parse_step_chart(
     return np.array(times), np.array(cols, dtype=np.int32)
 
 
-def _audio_to_spectrogram(audio_path: str) -> np.ndarray:
-    """Convert audio to mel-spectrogram using LibROSA."""
+def audio_to_spectrogram(audio_path: str) -> np.ndarray:
+    """Convert an audio file to a mel-spectrogram using LibROSA.
+
+    Args:
+        audio_path: Path to the audio file (mp3, ogg, or wav).
+
+    Returns:
+        A 2D numpy array representing the mel-spectrogram in decibels,
+        with shape (n_mels, time_steps).
+    """
 
     y, sr = librosa.load(audio_path, sr=_TARGET_SR)
 
@@ -300,7 +308,7 @@ def create_dataset(
             audio_path = audio_path_py_t.numpy().decode()
             chart_path = chart_path_py_t.numpy().decode()
 
-            spec = _audio_to_spectrogram(audio_path)
+            spec = audio_to_spectrogram(audio_path)
             spec_length = spec.shape[1]
             times, cols = _parse_step_chart(chart_path, binary_timings=True)
 
