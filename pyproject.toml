@@ -26,23 +26,23 @@ keywords = ["stepmania", "rhythm-game", "music", "neural-network", "deep-learnin
 
 # Runtime dependencies
 dependencies = [
-    "tensorflow>=2.19.0",
-    "librosa>=0.11.0",
-    "scipy>=1.17.0",
+    "tensorflow",
+    "librosa",
+    "scipy",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.0.0",
-    "pytest-cov>=7.0.0",
+    "pytest",
+    "pytest-cov",
 ]
 gpu = [
-    "tensorflow[and-cuda]>=2.19.0",
+    "tensorflow[and-cuda]",
 ]
 gpu_dev = [
-    "pytest>=9.0.0",
-    "pytest-cov>=7.0.0",
-    "tensorflow[and-cuda]>=2.19.0",
+    "pytest",
+    "pytest-cov",
+    "tensorflow[and-cuda]",
 ]
 
 [project.urls]
