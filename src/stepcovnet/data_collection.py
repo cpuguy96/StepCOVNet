@@ -5,15 +5,13 @@ process them into spectrograms and target vectors, and create a TensorFlow
 dataset for training.
 """
 
-import os
-import pathlib
-
 import librosa
 import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
 from stepcovnet import constants
+from stepcovnet import data_utils
 
 _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge": 4}
 _N_MELS = constants.N_MELS
@@ -23,48 +21,6 @@ _F_MAX = 16000
 _HOP_COEFF = 0.01
 _WIN_COEFF = 0.025
 
-
-def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
-    """Find paired audio files and StepMania chart files."""
-    pairs = []
-    for root, _, files in os.walk(data_dir):
-        audio_files = [f for f in files if f.endswith((".mp3", ".ogg", ".wav"))]
-        chart_files = [f for f in files if f.endswith((".txt"))]
-
-        # Pair files with same stem (e.g., 'song.mp3' and 'song.sm')
-        for audio_file in audio_files:
-            stem = pathlib.Path(audio_file).stem
-            matching_charts = [f for f in chart_files if f.startswith(stem)]
-            if matching_charts:
-                pairs.append(
-                    (
-                        os.path.join(root, audio_file),
-                        os.path.join(root, matching_charts[0]),
-                    )
-                )
-    return pairs
-
-
-def _parse_step_chart(chart_path: str) -> tuple[np.ndarray, np.ndarray, float, int]:
-    """Parse StepMania .sm file to extract step timings, BPM, and difficulty."""
-    with open(chart_path, "r") as f:
-        f.readline()  # TITLE
-        bpm = float(f.readline().removeprefix("BPM").strip())
-        f.readline()  # NOTES
-        difficulty_level = f.readline().strip().lower().split(" ")[1]
-        difficulty_idx = _DIFFICULTY_MAP.get(difficulty_level, 2)
-        times = []
-        cols = []
-        for line in f:
-            if line.startswith("DIFFICULTY"):
-                # TODO: Read off of multiple difficulties
-                break
-            # TODO: Use the type of note played and not just the presence
-            _, timing = line.strip().split(" ")
-            times.append(float(timing))
-            cols.append(0)
-
-    return np.array(times), np.array(cols, dtype=np.int32), bpm, difficulty_idx
 
 
 def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray:
@@ -76,6 +32,7 @@ def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray
     if sr != target_sr:
         y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
 
+    # Convert to mono if stereo
     if len(y.shape) > 1:
         y = np.mean(y, axis=1)
 
@@ -86,7 +43,7 @@ def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray
     win_length = int(round(target_sr * _WIN_COEFF))
     n_fft = 2 ** int(np.ceil(np.log(win_length) / np.log(2.0)))
 
-    S = librosa.feature.melspectrogram(
+    mel_spectrogram = librosa.feature.melspectrogram(
         y=y,
         sr=target_sr,
         hop_length=hop_length,
@@ -97,8 +54,7 @@ def _audio_to_spectrogram(audio_path: str, target_sr: int = 44100) -> np.ndarray
         n_mels=_N_MELS,
     )
 
-    val = librosa.power_to_db(S, ref=np.max)
-    return val
+    return librosa.power_to_db(mel_spectrogram, ref=np.max)
 
 
 def _temporal_augment_scipy(
@@ -251,11 +207,9 @@ def create_dataset(
     Deterministic preprocessing is cached, while random augmentations are applied
     on the fly in each epoch.
     """
-    pairs = _load_and_pair_files(data_dir)
+    pairs = data_utils.load_and_pair_files(data_dir)
     if not pairs:
         raise ValueError("No audio-chart pairs found.")
-
-    num_features = _N_MELS
 
     # --- Step 1: Define the deterministic preprocessing function ---
     def _load_and_preprocess(audio_path_t, chart_path_t):
@@ -266,23 +220,22 @@ def create_dataset(
 
             spec = _audio_to_spectrogram(audio_path)
             spec_length = spec.shape[1]
-            times, cols, _, _ = _parse_step_chart(chart_path)
+            times, cols = data_utils.parse_step_chart(chart_path, binary_timings=True)
 
-            target = (
+            _target = (
                 _create_target_gaussian(times, cols, spec_length, gaussian_sigma)
                 if use_gaussian_target
                 else _create_target(times, cols, spec_length)
             )
 
-            spec = np.transpose(spec)
+            _features = np.transpose(spec)
 
-            features = spec
-            return features.astype(np.float32), target.astype(np.float32)
+            return _features.astype(np.float32), _target.astype(np.float32)
 
         features, target = tf.py_function(
             _py_func, [audio_path_t, chart_path_t], (tf.float32, tf.float32)
         )  # type: ignore
-        features.set_shape([None, num_features])
+        features.set_shape([None, _N_MELS])
         target.set_shape([None, _N_TARGET])
         return features, target
 
@@ -319,7 +272,7 @@ def create_dataset(
             [features, target, temp_aug, spec_aug, norm],
             (tf.float32, tf.float32),
         )  # type: ignore
-        aug_features.set_shape([None, num_features])
+        aug_features.set_shape([None, _N_MELS])
         aug_target.set_shape([None, _N_TARGET])
         return aug_features, aug_target
 
@@ -349,7 +302,7 @@ def create_dataset(
         ds = ds.padded_batch(
             batch_size,
             padded_shapes=(
-                ((None, num_features)),  # Spectrogram (mel bands x time)
+                ((None, _N_MELS)),  # Spectrogram (mel bands x time)
                 (None, 1),  # Target (time x columns)
             ),
             padding_values=(
@@ -359,4 +312,6 @@ def create_dataset(
         )
     else:
         ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+    
+    ds = ds.prefetch(tf.data.AUTOTUNE)
     return ds
