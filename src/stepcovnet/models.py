@@ -262,9 +262,9 @@ def build_unet_wavenet_model(initial_filters: int = 1,
 
 def build_arrow_model(
         num_layers: int = 1,
-        d_model: int = 128,
+        d_model: int = 32,
         num_heads: int = 2,
-        ff_dim: int = 512,
+        ff_dim: int = 128,
         dropout_rate: float = 0.1,
         experiment_name: str = ""
 ):
