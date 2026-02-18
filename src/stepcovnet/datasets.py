@@ -15,12 +15,13 @@ from scipy import interpolate
 
 from stepcovnet import constants
 
+HOP_COEFF = 0.01  # 100ms per frame
+
 _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge": 4}
 _N_MELS = constants.N_MELS
 _N_TARGET = 1
 _F_MIN = 27.5
 _F_MAX = 12000
-_HOP_COEFF = 0.01
 _WIN_COEFF = 0.025
 _TARGET_SR = 44100
 
@@ -126,7 +127,7 @@ def audio_to_spectrogram(audio_path: str) -> np.ndarray:
     # Normalize audio data
     y = y / np.max(np.abs(y))
 
-    hop_length = int(round(_TARGET_SR * _HOP_COEFF))
+    hop_length = int(round(_TARGET_SR * HOP_COEFF))
     win_length = int(round(_TARGET_SR * _WIN_COEFF))
     n_fft = 2 ** int(np.ceil(np.log(win_length) / np.log(2.0)))
 
@@ -239,10 +240,9 @@ def _apply_spec_augment(
 
 def _create_target(times: np.ndarray, cols: np.ndarray, spec_length: int) -> np.ndarray:
     """Create target vector from step times and columns."""
-    time_resolution = 0.01  # 100ms per frame
     target = np.zeros((spec_length, _N_TARGET), dtype=np.float32)
     for time, col in zip(times, cols):
-        frame_idx = int(time / time_resolution)
+        frame_idx = int(time / HOP_COEFF)
         if frame_idx < spec_length:
             target[frame_idx, col] = 1.0
     return target
@@ -255,13 +255,12 @@ def _create_target_gaussian(
     Create target vector with Gaussian distributions around onset times.
     This encourages the model to predict onsets near the ground truth, not just exactly on it.
     """
-    time_resolution = _HOP_COEFF
     target = np.zeros((spec_length, _N_TARGET), dtype=np.float32)
 
     if times.size == 0:
         return target
 
-    frame_indices = (times / time_resolution).astype(int)
+    frame_indices = (times / HOP_COEFF).astype(int)
 
     kernel_width = int(3 * sigma)
     x = np.arange(-kernel_width, kernel_width + 1)

@@ -98,7 +98,8 @@ def _post_process_predictions(
         probabilities = probabilities.flatten()
 
     # 1. Calculate the minimum distance in frames
-    min_distance_frames = int(round((min_distance_ms / 1000.0) / 0.01))
+    min_distance_frames = int(
+        round((min_distance_ms / 1000.0) / datasets.HOP_COEFF))
 
     # 2. Use SciPy to find the peaks
     # The 'height' parameter acts as our probability threshold.
@@ -110,7 +111,7 @@ def _post_process_predictions(
     )
 
     # 3. Convert peak frame indices back to timestamps in seconds
-    onset_times = peak_indices * 0.01
+    onset_times = peak_indices * datasets.HOP_COEFF
 
     return onset_times
 
@@ -173,7 +174,7 @@ def generate_output_data(
     if use_post_processing:
         onsets = _post_process_predictions(onset_pred[0])
     else:
-        onsets = np.where(onset_pred[0] > 0.5)[0] * 0.01
+        onsets = np.where(onset_pred[0] > 0.5)[0] * datasets.HOP_COEFF
 
     if not onsets.shape[0]:
         raise ValueError("Failed to predict any onsets for the audio file.")
