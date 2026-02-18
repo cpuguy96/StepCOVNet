@@ -17,13 +17,13 @@ class DatasetsTest(unittest.TestCase):
 
         self.assertEqual(features.shape[0], 1)  # Batch size
         self.assertEqual(features.shape[2], 128)  # Mel bins
-        self.assertEqual(features.shape[1], 12852)  # Time steps
+        self.assertEqual(features.shape[1], 11726)  # Time steps
 
         self.assertEqual(targets.shape[0], 1)  # Batch size
         self.assertEqual(targets.shape[2], 1)  # Channels
-        self.assertEqual(targets.shape[1], 12852)  # Time steps
+        self.assertEqual(targets.shape[1], 11726)  # Time steps
 
-        self.assertTrue(np.any(targets > 0))
+        self.assertEqual(np.sum(targets[0]), 384)
 
     def test_create_dataset_with_empty_directory_raises_error(self):
         with self.assertRaises(ValueError):
@@ -34,12 +34,12 @@ class DatasetsTest(unittest.TestCase):
         features, targets = next(iter(ds.take(1)))  # type: ignore
 
         self.assertEqual(features.shape[0], 1)  # Batch size
-        self.assertEqual(features.shape[1], 634)  # Timings
+        self.assertEqual(features.shape[1], 384)  # Timings
 
         self.assertEqual(targets.shape[0], 1)  # Batch size
-        self.assertEqual(targets.shape[1], 634)  # Arrows
+        self.assertEqual(targets.shape[1], 384)  # Arrows
 
-        self.assertTrue(np.any(targets > 0))
+        self.assertTrue(np.all(targets[0] > 0))
 
     def test_create_arrow_dataset_with_empty_directory_raises_error(self):
         with self.assertRaises(ValueError):
