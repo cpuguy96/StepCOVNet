@@ -165,8 +165,11 @@ def generate_output_data(
     Raises:
         ValueError: If failed to predict any onsets for the audio file.
     """
-    spec = datasets.audio_to_spectrogram(audio_path)
-    onset_pred = onset_model.predict(np.expand_dims(spec.T, axis=0))
+    spec = datasets.audio_to_spectrogram(audio_path).T
+    normalized_spec = (spec - np.mean(spec, axis=0)) / (
+            np.std(spec, axis=0) + 1e-6)
+    onset_pred = onset_model.predict(np.expand_dims(normalized_spec, axis=0))
+
     if use_post_processing:
         onsets = _post_process_predictions(onset_pred[0])
     else:
