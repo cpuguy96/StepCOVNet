@@ -19,7 +19,7 @@ _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge"
 _N_MELS = constants.N_MELS
 _N_TARGET = 1
 _F_MIN = 27.5
-_F_MAX = 16000
+_F_MAX = 12000
 _HOP_COEFF = 0.01
 _WIN_COEFF = 0.025
 _TARGET_SR = 44100
@@ -239,7 +239,7 @@ def _apply_spec_augment(
 
 def _create_target(times: np.ndarray, cols: np.ndarray, spec_length: int) -> np.ndarray:
     """Create target vector from step times and columns."""
-    time_resolution = 0.1  # 100ms per frame
+    time_resolution = 0.01  # 100ms per frame
     target = np.zeros((spec_length, _N_TARGET), dtype=np.float32)
     for time, col in zip(times, cols):
         frame_idx = int(time / time_resolution)
