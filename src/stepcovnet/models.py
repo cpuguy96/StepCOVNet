@@ -27,7 +27,9 @@ class PositionalEncoding(keras.layers.Layer):
         # Calculate the angles for the positional encoding formula
         # Original formula: angle = pos / (10000^(2i / d_model))
         # Use floating point literals and casting for compatibility
-        angles = 1.0 / tf.pow(10000.0, (2.0 * tf.cast(i // 2, tf.float32)) / d_model_float)
+        angles = 1.0 / tf.pow(
+            10000.0, (2.0 * tf.cast(i // 2, tf.float32)) / d_model_float
+        )
         return tf.cast(position, tf.float32) * angles
 
     def positional_encoding(self, position, d_model):
@@ -35,7 +37,9 @@ class PositionalEncoding(keras.layers.Layer):
         angle_rads = self.get_angles(
             tf.range(position, dtype=tf.float32)[:, tf.newaxis],  # Use float32 range
             tf.range(d_model, dtype=tf.float32)[tf.newaxis, :],  # Use float32 range
-            d_model  # d_model is passed to get_angles which casts it
+
+
+            d_model,  # d_model is passed to get_angles which casts it
         )  # Shape: (position, d_model)
 
         # Apply sin to even indices in the array; 2i
@@ -45,8 +49,12 @@ class PositionalEncoding(keras.layers.Layer):
         cosines = tf.math.cos(angle_rads[:, 1::2])  # Shape: (position, d_model/2)
 
         # Interleave sines and cosines
-        pos_encoding = tf.stack([sines, cosines], axis=-1)  # Shape: (position, d_model/2, 2)
-        pos_encoding = tf.reshape(pos_encoding, [position, d_model])  # Shape: (position, d_model)
+        pos_encoding = tf.stack(
+            [sines, cosines], axis=-1
+        )  # Shape: (position, d_model/2, 2)
+        pos_encoding = tf.reshape(
+            pos_encoding, [position, d_model]
+        )  # Shape: (position, d_model)
 
         # Add batch dimension for broadcasting
         pos_encoding = pos_encoding[tf.newaxis, ...]  # Shape: (1, position, d_model)
@@ -69,7 +77,10 @@ class PositionalEncoding(keras.layers.Layer):
         return input_shape
 
 
-def _wavenet_residual_block(inputs, residual_channels, skip_channels, dilation_rate, kernel_size, block_id) -> tuple:
+def _wavenet_residual_block(
+        inputs, residual_channels, skip_channels, dilation_rate, kernel_size,
+        block_id
+) -> tuple:
     """
     Creates a single residual block from the WaveNet architecture.
     This is the core building block for the U-Net.
@@ -89,17 +100,30 @@ def _wavenet_residual_block(inputs, residual_channels, skip_channels, dilation_r
 
     # Gated Activation Unit
     x = inputs
-    x_conv = keras.layers.Conv1D(filters=residual_channels * 2, kernel_size=kernel_size, padding='causal',
-                                 dilation_rate=dilation_rate, name=f"{prefix}_dilated_conv")(x)
+    x_conv = keras.layers.Conv1D(
+        filters=residual_channels * 2,
+        kernel_size=kernel_size,
+        padding="causal",
+        dilation_rate=dilation_rate,
+        name=f"{prefix}_dilated_conv",
+    )(x)
 
-    x_tanh = keras.layers.Activation('tanh', name=f"{prefix}_tanh")(x_conv[:, :, :residual_channels])
-    x_sigmoid = keras.layers.Activation('sigmoid', name=f"{prefix}_sigmoid")(x_conv[:, :, residual_channels:])
+    x_tanh = keras.layers.Activation("tanh", name=f"{prefix}_tanh")(
+        x_conv[:, :, :residual_channels]
+    )
+    x_sigmoid = keras.layers.Activation("sigmoid", name=f"{prefix}_sigmoid")(
+        x_conv[:, :, residual_channels:]
+    )
 
     gated_output = keras.layers.Multiply(name=f"{prefix}_multiply")([x_tanh, x_sigmoid])
 
-    res_output = keras.layers.Conv1D(filters=residual_channels, kernel_size=1, name=f"{prefix}_residual_conv")(
-        gated_output)
-    skip_output = keras.layers.Conv1D(filters=skip_channels, kernel_size=1, name=f"{prefix}_skip_conv")(gated_output)
+
+    res_output = keras.layers.Conv1D(
+        filters=residual_channels, kernel_size=1, name=f"{prefix}_residual_conv"
+    )(gated_output)
+    skip_output = keras.layers.Conv1D(
+        filters=skip_channels, kernel_size=1, name=f"{prefix}_skip_conv"
+    )(gated_output)
 
     residual = keras.layers.Add(name=f"{prefix}_add_residual")([inputs, res_output])
 
@@ -108,7 +132,10 @@ def _wavenet_residual_block(inputs, residual_channels, skip_channels, dilation_r
     return residual, skip_output
 
 
-def _transformer_encoder(inputs, d_model: int, num_heads: int, ff_dim: int, dropout_rate: float = 0.1):
+def _transformer_encoder(
+        inputs, d_model: int, num_heads: int, ff_dim: int,
+        dropout_rate: float = 0.1
+):
     """
     Creates a single Transformer Encoder block.
     Args:
@@ -129,8 +156,10 @@ def _transformer_encoder(inputs, d_model: int, num_heads: int, ff_dim: int, drop
         num_heads=num_heads,
         key_dim=kv_dim,
         value_dim=kv_dim,
-        dtype="float32"  # Needed for numerical stability during inference
-    )(inputs, inputs)  # Self-attention
+        dtype="float32",  # Needed for numerical stability during inference
+    )(
+        inputs, inputs
+    )  # Self-attention
     attn_output = keras.layers.Dropout(dropout_rate)(attn_output)
     # Residual connection & Layer Normalization
     out1 = keras.layers.LayerNormalization(epsilon=1e-6)(inputs + attn_output)
@@ -163,27 +192,32 @@ def _crop_to_match(inputs):
     return tensor_to_crop[:, :target_length, :]
 
 
-def build_unet_wavenet_model(initial_filters: int = 1,
-                             depth: int = 1,
-                             dilation_rates: list[int] = [1],
-                             kernel_size: int = 3,
-                             dropout_rate: float = 0.3,
-                             experiment_name: str = "") -> keras.Model:
-    """
-    Builds a U-Net style WaveNet for multi-scale rhythmic analysis.
+def build_unet_wavenet_model(
+        initial_filters: int = 16,
+        depth: int = 2,
+        dilation_rates: list[int] = [1, 2, 4, 8],
+        kernel_size: int = 3,
+        dropout_rate: float = 0.0,
+        model_name: str = "",
+) -> keras.Model:
+    """Builds a U-Net style WaveNet for multi-scale rhythmic analysis.
 
-    The U-Net architecture uses an encoder to learn features at progressively coarser
-    time scales and a decoder that uses this context to reconstruct a precise output.
+    The U-Net architecture uses an encoder to learn features at progressively
+    coarser
+    time scales and a decoder that uses this context to reconstruct a precise
+    output.
     Skip connections between the encoder and decoder are crucial for combining
     high-level context with low-level timing information.
 
     Args:
-        initial_filters: The number of filters in the first layer. This will double at each encoder level.
+        initial_filters: The number of filters in the first layer. This will
+        double at each encoder level.
         depth: The number of downsampling/upsampling levels in the U-Net.
-        dilation_rates: A list of dilation factors for the convolutions within each level.
+        dilation_rates: A list of dilation factors for the convolutions
+        within each level.
         kernel_size: The size of the convolutional kernel.
         dropout_rate: The dropout rate for regularization.
-        experiment_name: A string to append to the model name.
+        model_name: The name of the model.
 
     Returns:
         A Keras Model instance.
@@ -199,26 +233,50 @@ def build_unet_wavenet_model(initial_filters: int = 1,
         current_filters = initial_filters * (2 ** i)
 
         # Project input to the current filter size if necessary
-        x = keras.layers.Conv1D(filters=current_filters, kernel_size=1, name=f"{level_prefix}_projection")(x)
+        x = keras.layers.Conv1D(
+            filters=current_filters, kernel_size=1,
+            name=f"{level_prefix}_projection"
+        )(x)
 
         # Apply a few WaveNet blocks at this resolution
         for rate in dilation_rates:
-            x, _ = _wavenet_residual_block(x, current_filters, current_filters, rate, kernel_size,
-                                           f"{level_prefix}_{rate}")
+            x, _ = _wavenet_residual_block(
+                x,
+                current_filters,
+                current_filters,
+                rate,
+                kernel_size,
+                f"{level_prefix}_{rate}",
+            )
 
         encoder_outputs.append(x)
 
         # Downsample for the next level using a strided convolution
-        x = keras.layers.Conv1D(filters=initial_filters * (2 ** (i + 1)), kernel_size=3, strides=2,
-                                padding='same', name=f"{level_prefix}_downsample")(x)
+        x = keras.layers.Conv1D(
+            filters=initial_filters * (2 ** (i + 1)),
+            kernel_size=3,
+            strides=2,
+            padding="same",
+            name=f"{level_prefix}_downsample",
+        )(x)
 
     # --- Bottleneck ---
     bottleneck_prefix = "bottleneck"
     bottleneck_filters = initial_filters * (2 ** depth)
-    x = keras.layers.Conv1D(filters=bottleneck_filters, kernel_size=1, name=f"{bottleneck_prefix}_projection")(x)
+    x = keras.layers.Conv1D(
+        filters=bottleneck_filters,
+        kernel_size=1,
+        name=f"{bottleneck_prefix}_projection",
+    )(x)
     for rate in dilation_rates:
-        x, _ = _wavenet_residual_block(x, bottleneck_filters, bottleneck_filters, rate, kernel_size,
-                                       f"{bottleneck_prefix}_{rate}")
+        x, _ = _wavenet_residual_block(
+            x,
+            bottleneck_filters,
+            bottleneck_filters,
+            rate,
+            kernel_size,
+            f"{bottleneck_prefix}_{rate}",
+        )
 
     # The bottleneck contains the most abstract, high-level features. Applying dropout
     # here prevents the model from relying too heavily on any single abstract feature.
@@ -230,20 +288,39 @@ def build_unet_wavenet_model(initial_filters: int = 1,
         current_filters = initial_filters * (2 ** i)
 
         # Upsample using a transposed convolution
-        x = keras.layers.Conv1DTranspose(filters=current_filters, kernel_size=3, strides=2,
-                                         padding='same', name=f"{level_prefix}_upsample")(x)
+        x = keras.layers.Conv1DTranspose(
+            filters=current_filters,
+            kernel_size=3,
+            strides=2,
+            padding="same",
+            name=f"{level_prefix}_upsample",
+        )(x)
 
         skip_connection = encoder_outputs[i]
 
         # The Lambda layer takes a list of tensors as input to ensure dynamic shapes are handled correctly.
-        x = keras.layers.Lambda(_crop_to_match, name=f"{level_prefix}_crop_to_match")([x, skip_connection])
+
+
+        x = keras.layers.Lambda(_crop_to_match,
+                                name=f"{level_prefix}_crop_to_match")(
+            [x, skip_connection]
+        )
 
         # Concatenate with the skip connection from the corresponding encoder level
-        x = keras.layers.Concatenate(name=f"{level_prefix}_concat_skip")([x, skip_connection])
+
+
+        x = keras.layers.Concatenate(name=f"{level_prefix}_concat_skip")(
+            [x, skip_connection]
+        )
 
         # This 1x1 convolution projects it back to the expected number of filters
-        x = keras.layers.Conv1D(filters=current_filters, kernel_size=1, name=f"{level_prefix}_post_concat_projection")(
-            x)
+
+
+        x = keras.layers.Conv1D(
+            filters=current_filters,
+            kernel_size=1,
+            name=f"{level_prefix}_post_concat_projection",
+        )(x)
 
         # This is another critical location. Dropout here prevents the model from
         # simply learning to pass-through features from the skip connection without
@@ -252,21 +329,31 @@ def build_unet_wavenet_model(initial_filters: int = 1,
 
         # Apply WaveNet blocks at this resolution to refine features
         for rate in dilation_rates:
-            x, _ = _wavenet_residual_block(x, current_filters, current_filters, rate, kernel_size,
-                                           f"{level_prefix}_{rate}")
+            x, _ = _wavenet_residual_block(
+                x,
+                current_filters,
+                current_filters,
+                rate,
+                kernel_size,
+                f"{level_prefix}_{rate}",
+            )
 
     # Applying dropout before the final refinement layers is a standard practice
     # that helps regularize the final classification/regression stage.
     x = keras.layers.Dropout(dropout_rate, name="pre_output_dropout")(x)
 
-    x = keras.layers.Conv1D(filters=16, kernel_size=1, activation='gelu', name="output_conv_1")(x)
-    outputs = keras.layers.Conv1D(filters=1, kernel_size=1, activation='sigmoid', name="output_sigmoid")(x)
+    x = keras.layers.Conv1D(
+        filters=16, kernel_size=1, activation="gelu", name="output_conv_1"
+    )(x)
+    outputs = keras.layers.Conv1D(
+        filters=1, kernel_size=1, activation="sigmoid", name="output_sigmoid"
+    )(x)
 
-    model_name = "stepcovnet_ONSET"
-    if experiment_name:
-        model_name += f"-{experiment_name}"
+    _model_name = "stepcovnet_ONSET"
+    if model_name:
+        _model_name += f"-{model_name}"
 
-    return keras.Model(inputs=inputs, outputs=outputs, name=model_name)
+    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
 
 
 def build_arrow_model(
@@ -275,7 +362,7 @@ def build_arrow_model(
         num_heads: int = 2,
         ff_dim: int = 128,
         dropout_rate: float = 0.1,
-        experiment_name: str = ""
+        model_name: str = "",
 ):
     """Builds a model for StepMania arrow prediction.
 
@@ -285,7 +372,7 @@ def build_arrow_model(
         num_heads: Number of attention heads.
         ff_dim: The inner dimension of the feed-forward networks.
         dropout_rate: The dropout rate used in sublayers.
-        experiment_name: Name for the model.
+        model_name: Name for the model.
 
     Returns:
         A Keras Model instance.
@@ -309,14 +396,18 @@ def build_arrow_model(
             d_model=d_model,
             num_heads=num_heads,
             ff_dim=ff_dim,
-            dropout_rate=dropout_rate
+            dropout_rate=dropout_rate,
         )
 
     # Output layer predicts the probability distribution over arrow types for each step
-    outputs = keras.layers.Dense(_N_ARROW_TYPES, activation="softmax", name="output_probabilities")(x)
 
-    model_name = "stepcovnet_ARROW"
-    if experiment_name:
-        model_name += f"-{experiment_name}"
 
-    return keras.Model(inputs=inputs, outputs=outputs, name=model_name)
+    outputs = keras.layers.Dense(
+        _N_ARROW_TYPES, activation="softmax", name="output_probabilities"
+    )(x)
+
+    _model_name = "stepcovnet_ARROW"
+    if model_name:
+        _model_name += f"-{model_name}"
+
+    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)

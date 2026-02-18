@@ -6,6 +6,8 @@ Usage:
 
 import argparse
 
+import tensorflow as tf
+
 from stepcovnet import trainers
 
 PARSER = argparse.ArgumentParser(description="Train onset detection model.")
@@ -34,8 +36,8 @@ PARSER.add_argument(
     "--callback_root_dir",
     type=str,
     help="Root directory for storing training callbacks (checkpoints, logs).",
-    default=None,
-    required=True,
+    default="",
+    required=False,
 )
 PARSER.add_argument(
     "--model_output_dir",
@@ -51,15 +53,32 @@ PARSER.add_argument(
     default=1,
     required=False,
 )
-
+PARSER.add_argument(
+    "--model_name",
+    type=str,
+    default="",
+    required=False,
+)
 ARGS = PARSER.parse_args()
 
+if tf.config.list_physical_devices('GPU'):
+    import keras
+
+    print("Training with GPU.")
+
+    keras.mixed_precision.set_global_policy(
+        keras.mixed_precision.Policy('mixed_float16'))
+
+    # Enable XLA (Accelerated Linear Algebra) for TensorFlow, which can improve
+    # performance by compiling TensorFlow graphs into highly optimized
+    # machine code.
+    tf.config.optimizer.set_jit("autoclustering")
 
 def main():
-    apply_temporal_augment = True
-    should_apply_spec_augment = True
-    use_gaussian_target = True
-    gaussian_sigma = 0.1
+    apply_temporal_augment = False
+    should_apply_spec_augment = False
+    use_gaussian_target = False
+    gaussian_sigma = 0.0  # Default is 1.0
     batch_size = 1
     normalize = True
 
@@ -77,6 +96,7 @@ def main():
         epoch=ARGS.epochs,
         callback_root_dir=ARGS.callback_root_dir,
         model_output_dir=ARGS.model_output_dir,
+        model_name=ARGS.model_name,
     )
 
 
