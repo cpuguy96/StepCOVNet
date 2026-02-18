@@ -34,8 +34,8 @@ PARSER.add_argument(
     "--callback_root_dir",
     type=str,
     help="Root directory for storing training callbacks (checkpoints, logs).",
-    default=None,
-    required=True,
+    default="",
+    required=False,
 )
 PARSER.add_argument(
     "--model_output_dir",
@@ -51,7 +51,12 @@ PARSER.add_argument(
     default=1,
     required=False,
 )
-
+PARSER.add_argument(
+    "--model_name",
+    type=str,
+    default="",
+    required=False,
+)
 ARGS = PARSER.parse_args()
 
 
@@ -69,6 +74,7 @@ def main():
         epoch=ARGS.epochs,
         callback_root_dir=ARGS.callback_root_dir,
         model_output_dir=ARGS.model_output_dir,
+        model_name=ARGS.model_name,
     )
 
 
