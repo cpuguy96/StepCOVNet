@@ -92,11 +92,11 @@ Train your own models using the provided scripts.
 
 #### Data Preparation
 
-**Link to training data
-**: [Google Drive](https://drive.google.com/drive/folders/1RNKLXfwTEFdGMCct5bhgIApoNG-8Zg79?usp=drive_link)
+**Link to training data**:
+[Google Drive](https://drive.google.com/drive/folders/1Etkj3f-lHM2Y2eH-9el_emUwZXif2GKD?usp=sharing)
 
 1. **Parse `.sm` files**: Use [`SMDataTools`](https://github.com/jhaco/SMDataTools) to convert `.sm` files into `.txt`
-   files.
+   files (training data above already converted `.sm` to `.txt`).
 2. **Organize files**: Ensure audio files (`.mp3`, `.ogg`, `.wav`) and their corresponding `.txt` chart files (same
    filename stem) are in the same directory.
 
