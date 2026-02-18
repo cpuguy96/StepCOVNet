@@ -145,6 +145,24 @@ def _transformer_encoder(inputs, d_model: int, num_heads: int, ff_dim: int, drop
     return out2
 
 
+@keras.saving.register_keras_serializable()
+def _crop_to_match(inputs):
+    """Crops the first input tensor to match the temporal length of the second tensor.
+
+    Args:
+        inputs: A list or tuple containing [tensor_to_crop, reference_tensor].
+
+    Returns:
+        The first tensor cropped along the time dimension (axis 1).
+    """
+    # The first input is the tensor to crop, the second is the reference.
+    tensor_to_crop, reference_tensor = inputs
+    # Get the dynamic sequence length of the reference tensor.
+    target_length = tf.shape(reference_tensor)[1]
+    # Crop the first tensor to match this length.
+    return tensor_to_crop[:, :target_length, :]
+
+
 def build_unet_wavenet_model(initial_filters: int = 1,
                              depth: int = 1,
                              dilation_rates: list[int] = [1],
@@ -216,15 +234,6 @@ def build_unet_wavenet_model(initial_filters: int = 1,
                                          padding='same', name=f"{level_prefix}_upsample")(x)
 
         skip_connection = encoder_outputs[i]
-
-        @keras.saving.register_keras_serializable()
-        def _crop_to_match(_inputs):
-            # The first input is the tensor to crop, the second is the reference.
-            tensor_to_crop, reference_tensor = _inputs
-            # Get the dynamic sequence length of the reference tensor.
-            target_length = tf.shape(reference_tensor)[1]
-            # Crop the first tensor to match this length.
-            return tensor_to_crop[:, :target_length, :]
 
         # The Lambda layer takes a list of tensors as input to ensure dynamic shapes are handled correctly.
         x = keras.layers.Lambda(_crop_to_match, name=f"{level_prefix}_crop_to_match")([x, skip_connection])

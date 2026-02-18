@@ -129,17 +129,22 @@ def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
     note_data = []
     assert len(onsets) == len(arrows)
     for onset, arrow in zip(onsets, arrows):
-        binary_arrow = _int_to_base4_string(int(arrow), min_digits=4)
+        if not (int_arrow := int(arrow)):
+            # Remove all padding arrows from the output.
+            continue
+        binary_arrow = _int_to_base4_string(int_arrow, min_digits=4)
         note_data.append((str(onset), str(binary_arrow)))
     return note_data
 
 
 def generate_output_data(
+        *,
         audio_path: str,
         song_title: str,
         bpm: int,
         onset_model: models.Model,
-        arrow_model: models.Model
+        arrow_model: models.Model,
+        use_post_processing: bool = False,
 ) -> OutputData:
     """Generates step chart data for a given audio file using trained models.
 
@@ -152,15 +157,25 @@ def generate_output_data(
         bpm: The beats per minute of the song.
         onset_model: A Keras model used to predict note onsets.
         arrow_model: A Keras model used to predict arrow types for given onsets.
+        use_post_processing: Whether to use peak picking to refine onset timings.
 
     Returns:
         An OutputData object containing the song metadata and generated notes.
+
+    Raises:
+        ValueError: If failed to predict any onsets for the audio file.
     """
     spec = datasets.audio_to_spectrogram(audio_path)
-    onset_pred = onset_model.predict(np.expand_dims(spec, axis=0))
-    onsets = _post_process_predictions(onset_pred[0])
+    onset_pred = onset_model.predict(np.expand_dims(spec.T, axis=0))
+    if use_post_processing:
+        onsets = _post_process_predictions(onset_pred[0])
+    else:
+        onsets = np.where(onset_pred[0] > 0.5)[0] * 0.01
 
-    normalized_onsets = np.expand_dims(onsets / np.max(onsets), axis=0)
+    if not onsets.shape[0]:
+        raise ValueError("Failed to predict any onsets for the audio file.")
+
+    normalized_onsets = np.expand_dims(onsets / np.max(onsets), axis=(0, -1))
     arrows_pred = arrow_model.predict(normalized_onsets)
     arrows = np.argmax(arrows_pred[0], axis=1)
 
