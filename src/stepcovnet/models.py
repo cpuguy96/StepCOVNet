@@ -358,10 +358,10 @@ def build_unet_wavenet_model(
 
 def build_arrow_model(
         num_layers: int = 1,
-        d_model: int = 32,
-        num_heads: int = 2,
-        ff_dim: int = 128,
-        dropout_rate: float = 0.1,
+        d_model: int = 128,
+        num_heads: int = 4,
+        ff_dim: int = 512,
+        dropout_rate: float = 0.0,
         model_name: str = "",
 ):
     """Builds a model for StepMania arrow prediction.
