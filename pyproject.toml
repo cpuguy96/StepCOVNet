@@ -36,13 +36,12 @@ dev = [
     "pytest",
     "pytest-cov",
 ]
-gpu = [
-    "tensorflow[and-cuda]",
-]
-gpu_dev = [
-    "pytest",
-    "pytest-cov",
-    "tensorflow[and-cuda]",
+gpu = ["tensorflow[and-cuda]"]
+gpu_dev = ["stepcovnet[dev,gpu]"]
+juypter = [
+    "notebook",
+    "gdown",
+    "stepcovnet[gpu_dev]"
 ]
 
 [project.urls]
