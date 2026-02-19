@@ -37,6 +37,7 @@ dev = [
     "pytest-cov",
     "notebook",
     "gdown",
+    "nbmake",
 ]
 gpu = ["tensorflow[and-cuda]"]
 gpu-dev = ["stepcovnet[dev,gpu]"]
