@@ -61,18 +61,20 @@ PARSER.add_argument(
 )
 ARGS = PARSER.parse_args()
 
-if tf.config.list_physical_devices('GPU'):
+if tf.config.list_physical_devices("GPU"):
     import keras
 
     print("Training with GPU.")
 
     keras.mixed_precision.set_global_policy(
-        keras.mixed_precision.Policy('mixed_float16'))
+        keras.mixed_precision.Policy("mixed_float16")
+    )
 
     # Enable XLA (Accelerated Linear Algebra) for TensorFlow, which can improve
     # performance by compiling TensorFlow graphs into highly optimized
     # machine code.
     tf.config.optimizer.set_jit("autoclustering")
+
 
 def main():
     apply_temporal_augment = False

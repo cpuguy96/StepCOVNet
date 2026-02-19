@@ -35,8 +35,7 @@ class TrainersTest(unittest.TestCase):
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
         self.assertTrue("val_onset_f1_score" in history.history)
-        self.assertAlmostEqual(history.history["val_onset_f1_score"][-1], 1.0,
-                               places=2)
+        self.assertAlmostEqual(history.history["val_onset_f1_score"][-1], 1.0, places=2)
 
     def test_run_arrow_train(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -3,6 +3,7 @@ r"""Script for generating a StepMania chart from an audio file.
 Usage:
     python scripts/generate.py --audio_path=/path/to/song.mp3 --song_title="My Song" --bpm=120 --onset_model_path=/path/to/onset.keras --arrow_model_path=/path/to/arrow.keras --output_file=/path/to/output.txt
 """
+
 import argparse
 
 import keras
@@ -55,12 +56,12 @@ def main():
     onset_model = keras.models.load_model(
         filepath=ARGS.onset_model_path,
         compile=False,
-        custom_objects={"_crop_to_match": models._crop_to_match}
+        custom_objects={"_crop_to_match": models._crop_to_match},
     )
     arrow_model = keras.models.load_model(
         filepath=ARGS.arrow_model_path,
         compile=False,
-        custom_objects={"PositionalEncoding": models.PositionalEncoding}
+        custom_objects={"PositionalEncoding": models.PositionalEncoding},
     )
 
     output_data = generator.generate_output_data(
@@ -68,7 +69,7 @@ def main():
         song_title=ARGS.song_title,
         bpm=ARGS.bpm,
         onset_model=onset_model,
-        arrow_model=arrow_model
+        arrow_model=arrow_model,
     )
 
     with open(ARGS.output_file, "w") as f:

@@ -37,8 +37,6 @@ class PositionalEncoding(keras.layers.Layer):
         angle_rads = self.get_angles(
             tf.range(position, dtype=tf.float32)[:, tf.newaxis],  # Use float32 range
             tf.range(d_model, dtype=tf.float32)[tf.newaxis, :],  # Use float32 range
-
-
             d_model,  # d_model is passed to get_angles which casts it
         )  # Shape: (position, d_model)
 
@@ -78,8 +76,7 @@ class PositionalEncoding(keras.layers.Layer):
 
 
 def _wavenet_residual_block(
-        inputs, residual_channels, skip_channels, dilation_rate, kernel_size,
-        block_id
+    inputs, residual_channels, skip_channels, dilation_rate, kernel_size, block_id
 ) -> tuple:
     """
     Creates a single residual block from the WaveNet architecture.
@@ -117,7 +114,6 @@ def _wavenet_residual_block(
 
     gated_output = keras.layers.Multiply(name=f"{prefix}_multiply")([x_tanh, x_sigmoid])
 
-
     res_output = keras.layers.Conv1D(
         filters=residual_channels, kernel_size=1, name=f"{prefix}_residual_conv"
     )(gated_output)
@@ -133,8 +129,7 @@ def _wavenet_residual_block(
 
 
 def _transformer_encoder(
-        inputs, d_model: int, num_heads: int, ff_dim: int,
-        dropout_rate: float = 0.1
+    inputs, d_model: int, num_heads: int, ff_dim: int, dropout_rate: float = 0.1
 ):
     """
     Creates a single Transformer Encoder block.
@@ -193,12 +188,12 @@ def _crop_to_match(inputs):
 
 
 def build_unet_wavenet_model(
-        initial_filters: int = 16,
-        depth: int = 2,
-        dilation_rates: list[int] = [1, 2, 4, 8],
-        kernel_size: int = 3,
-        dropout_rate: float = 0.0,
-        model_name: str = "",
+    initial_filters: int = 16,
+    depth: int = 2,
+    dilation_rates: list[int] = [1, 2, 4, 8],
+    kernel_size: int = 3,
+    dropout_rate: float = 0.0,
+    model_name: str = "",
 ) -> keras.Model:
     """Builds a U-Net style WaveNet for multi-scale rhythmic analysis.
 
@@ -230,12 +225,11 @@ def build_unet_wavenet_model(
     # --- Encoder Path (Downsampling) ---
     for i in range(depth):
         level_prefix = f"encoder_level_{i}"
-        current_filters = initial_filters * (2 ** i)
+        current_filters = initial_filters * (2**i)
 
         # Project input to the current filter size if necessary
         x = keras.layers.Conv1D(
-            filters=current_filters, kernel_size=1,
-            name=f"{level_prefix}_projection"
+            filters=current_filters, kernel_size=1, name=f"{level_prefix}_projection"
         )(x)
 
         # Apply a few WaveNet blocks at this resolution
@@ -262,7 +256,7 @@ def build_unet_wavenet_model(
 
     # --- Bottleneck ---
     bottleneck_prefix = "bottleneck"
-    bottleneck_filters = initial_filters * (2 ** depth)
+    bottleneck_filters = initial_filters * (2**depth)
     x = keras.layers.Conv1D(
         filters=bottleneck_filters,
         kernel_size=1,
@@ -285,7 +279,7 @@ def build_unet_wavenet_model(
     # --- Decoder Path (Upsampling) ---
     for i in reversed(range(depth)):
         level_prefix = f"decoder_level_{i}"
-        current_filters = initial_filters * (2 ** i)
+        current_filters = initial_filters * (2**i)
 
         # Upsample using a transposed convolution
         x = keras.layers.Conv1DTranspose(
@@ -300,21 +294,17 @@ def build_unet_wavenet_model(
 
         # The Lambda layer takes a list of tensors as input to ensure dynamic shapes are handled correctly.
 
-
-        x = keras.layers.Lambda(_crop_to_match,
-                                name=f"{level_prefix}_crop_to_match")(
+        x = keras.layers.Lambda(_crop_to_match, name=f"{level_prefix}_crop_to_match")(
             [x, skip_connection]
         )
 
         # Concatenate with the skip connection from the corresponding encoder level
-
 
         x = keras.layers.Concatenate(name=f"{level_prefix}_concat_skip")(
             [x, skip_connection]
         )
 
         # This 1x1 convolution projects it back to the expected number of filters
-
 
         x = keras.layers.Conv1D(
             filters=current_filters,
@@ -357,12 +347,12 @@ def build_unet_wavenet_model(
 
 
 def build_arrow_model(
-        num_layers: int = 1,
-        d_model: int = 128,
-        num_heads: int = 4,
-        ff_dim: int = 512,
-        dropout_rate: float = 0.0,
-        model_name: str = "",
+    num_layers: int = 1,
+    d_model: int = 128,
+    num_heads: int = 4,
+    ff_dim: int = 512,
+    dropout_rate: float = 0.0,
+    model_name: str = "",
 ):
     """Builds a model for StepMania arrow prediction.
 
@@ -400,7 +390,6 @@ def build_arrow_model(
         )
 
     # Output layer predicts the probability distribution over arrow types for each step
-
 
     outputs = keras.layers.Dense(
         _N_ARROW_TYPES, activation="softmax", name="output_probabilities"

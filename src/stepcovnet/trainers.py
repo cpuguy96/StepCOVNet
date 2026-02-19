@@ -109,28 +109,28 @@ def _write_model(model: keras.Model, model_output_dir: str):
         model: The trained Keras model instance.
         model_output_dir: Directory path where the model file will be saved.
     """
-    filepath = os.path.join(model_output_dir, model.name + '.keras')
+    filepath = os.path.join(model_output_dir, model.name + ".keras")
     logging.info(f"Saving trained model to {filepath}")
     os.makedirs(model_output_dir, exist_ok=True)
     model.save(filepath=filepath)
 
 
 def run_train(
-        *,
-        data_dir: str,
-        val_data_dir: str,
-        batch_size: int,
-        normalize: bool,
-        apply_temporal_augment: bool,
-        should_apply_spec_augment: bool,
-        use_gaussian_target: bool,
-        gaussian_sigma: float,
-        model_params: dict,
-        take_count: int,
-        epoch: int,
-        model_output_dir: str,
-        callback_root_dir: str = "",
-        model_name: str = "",
+    *,
+    data_dir: str,
+    val_data_dir: str,
+    batch_size: int,
+    normalize: bool,
+    apply_temporal_augment: bool,
+    should_apply_spec_augment: bool,
+    use_gaussian_target: bool,
+    gaussian_sigma: float,
+    model_params: dict,
+    take_count: int,
+    epoch: int,
+    model_output_dir: str,
+    callback_root_dir: str = "",
+    model_name: str = "",
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train a U-Net WaveNet model on step detection data.
 
@@ -240,17 +240,17 @@ def run_train(
 
 
 def run_arrow_train(
-        *,
-        data_dir: str,
-        val_data_dir: str,
-        batch_size: int,
-        normalize: bool,
-        model_params: dict,
-        take_count: int,
-        epoch: int,
-        model_output_dir: str,
-        callback_root_dir: str = "",
-        model_name: str = "",
+    *,
+    data_dir: str,
+    val_data_dir: str,
+    batch_size: int,
+    normalize: bool,
+    model_params: dict,
+    take_count: int,
+    epoch: int,
+    model_output_dir: str,
+    callback_root_dir: str = "",
+    model_name: str = "",
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train an arrow classification model.
 
@@ -296,8 +296,9 @@ def run_arrow_train(
         take_count=take_count, model_params=model_params
     )
 
-    model = models.build_arrow_model(model_name=model_name or experiment_name,
-                                     **model_params)
+    model = models.build_arrow_model(
+        model_name=model_name or experiment_name, **model_params
+    )
 
     model.summary()
 

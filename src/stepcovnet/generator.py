@@ -19,6 +19,7 @@ class OutputData:
         notes: A dictionary mapping difficulty levels to a list of note tuples,
                where each tuple contains a timestamp (str) and an arrow pattern (str).
     """
+
     title: str
     bpm: int
     notes: dict[str, list[tuple[str, str]]]
@@ -29,15 +30,15 @@ class OutputData:
         Returns:
             A string containing the song title, BPM, and note data for all difficulties.
         """
-        title = 'TITLE %s\n' % self.title
-        bpm = 'BPM %s\n' % str(self.bpm)
-        notes = 'NOTES\n'
+        title = "TITLE %s\n" % self.title
+        bpm = "BPM %s\n" % str(self.bpm)
+        notes = "NOTES\n"
         for difficulty in self.notes:
-            notes += 'DIFFICULTY %s\n' % difficulty
+            notes += "DIFFICULTY %s\n" % difficulty
             for timing, arrow in self.notes[difficulty]:
-                notes += f'{arrow} {timing}' + '\n'
+                notes += f"{arrow} {timing}" + "\n"
 
-        return ''.join((title, bpm, notes))
+        return "".join((title, bpm, notes))
 
 
 def _int_to_base4_string(n: int, min_digits: int = 1) -> str:
@@ -62,7 +63,7 @@ def _int_to_base4_string(n: int, min_digits: int = 1) -> str:
         raise ValueError("Input integer must be non-negative.")
     if n == 0:
         # Handle the zero case separately for padding
-        return '0'.zfill(min_digits)
+        return "0".zfill(min_digits)
 
     base4_digits = []
     temp_n = n
@@ -79,9 +80,7 @@ def _int_to_base4_string(n: int, min_digits: int = 1) -> str:
 
 
 def _post_process_predictions(
-        probabilities: np.ndarray,
-        threshold: float = 0.5,
-        min_distance_ms: float = 50.0
+    probabilities: np.ndarray, threshold: float = 0.5, min_distance_ms: float = 50.0
 ) -> np.ndarray:
     """Cleans up model predictions using peak picking to find precise onset times.
 
@@ -98,16 +97,13 @@ def _post_process_predictions(
         probabilities = probabilities.flatten()
 
     # 1. Calculate the minimum distance in frames
-    min_distance_frames = int(
-        round((min_distance_ms / 1000.0) / datasets.HOP_COEFF))
+    min_distance_frames = int(round((min_distance_ms / 1000.0) / datasets.HOP_COEFF))
 
     # 2. Use SciPy to find the peaks
     # The 'height' parameter acts as our probability threshold.
     # The 'distance' parameter enforces the temporal separation.
     peak_indices, _ = scipy.signal.find_peaks(
-        probabilities,
-        height=threshold,
-        distance=min_distance_frames
+        probabilities, height=threshold, distance=min_distance_frames
     )
 
     # 3. Convert peak frame indices back to timestamps in seconds
@@ -139,13 +135,13 @@ def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
 
 
 def generate_output_data(
-        *,
-        audio_path: str,
-        song_title: str,
-        bpm: int,
-        onset_model: models.Model,
-        arrow_model: models.Model,
-        use_post_processing: bool = False,
+    *,
+    audio_path: str,
+    song_title: str,
+    bpm: int,
+    onset_model: models.Model,
+    arrow_model: models.Model,
+    use_post_processing: bool = False,
 ) -> OutputData:
     """Generates step chart data for a given audio file using trained models.
 
@@ -167,8 +163,7 @@ def generate_output_data(
         ValueError: If failed to predict any onsets for the audio file.
     """
     spec = datasets.audio_to_spectrogram(audio_path).T
-    normalized_spec = (spec - np.mean(spec, axis=0)) / (
-            np.std(spec, axis=0) + 1e-6)
+    normalized_spec = (spec - np.mean(spec, axis=0)) / (np.std(spec, axis=0) + 1e-6)
     onset_pred = onset_model.predict(np.expand_dims(normalized_spec, axis=0))
 
     if use_post_processing:
@@ -188,6 +183,6 @@ def generate_output_data(
         bpm=bpm,
         notes={
             # TODO(cpuguy96) - Support more difficulties
-            'Challenge': _create_txt_mapping(onsets=list(onsets), arrows=list(arrows)),
-        }
+            "Challenge": _create_txt_mapping(onsets=list(onsets), arrows=list(arrows)),
+        },
     )

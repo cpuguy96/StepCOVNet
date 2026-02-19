@@ -5,7 +5,7 @@ import numpy as np
 
 from stepcovnet import datasets
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'testdata')
+TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
 
 class DatasetsTest(unittest.TestCase):
@@ -13,7 +13,7 @@ class DatasetsTest(unittest.TestCase):
     def test_create_dataset(self):
         ds = datasets.create_dataset(TEST_DATA_DIR)
 
-        features, targets = next(iter(ds.take(1))) # type: ignore
+        features, targets = next(iter(ds.take(1)))  # type: ignore
 
         self.assertEqual(features.shape[0], 1)  # Batch size
         self.assertEqual(features.shape[2], 128)  # Mel bins
@@ -46,5 +46,5 @@ class DatasetsTest(unittest.TestCase):
             datasets.create_arrow_dataset("")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

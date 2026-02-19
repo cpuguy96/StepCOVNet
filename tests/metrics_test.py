@@ -78,10 +78,10 @@ class OnsetF1MetricTest(unittest.TestCase):
 
     def test_get_config(self):
         config = self.metric.get_config()
-        self.assertEqual(config['tolerance'], 1)
-        self.assertEqual(config['threshold'], 0.5)
-        self.assertEqual(config['name'], 'onset_f1_score')
+        self.assertEqual(config["tolerance"], 1)
+        self.assertEqual(config["threshold"], 0.5)
+        self.assertEqual(config["name"], "onset_f1_score")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

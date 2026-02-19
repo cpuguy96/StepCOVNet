@@ -8,7 +8,7 @@ import numpy as np
 from stepcovnet import generator
 from stepcovnet import models
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'testdata')
+TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
 
 class GeneratorTest(unittest.TestCase):
@@ -37,7 +37,7 @@ class GeneratorTest(unittest.TestCase):
                     bpm=120,
                     onset_model=mock_onset_model,
                     arrow_model=mock_arrow_model,
-                    use_post_processing=use_post_processing
+                    use_post_processing=use_post_processing,
                 )
                 self.assertEqual(output_data.title, "Test Song")
                 self.assertEqual(output_data.bpm, 120)
@@ -54,26 +54,28 @@ class GeneratorTest(unittest.TestCase):
         onset_model = keras.models.load_model(
             os.path.join(TEST_DATA_DIR, "stepcovnet_ONSET-mayu_overfit.keras"),
             custom_objects={"_crop_to_match": models._crop_to_match},
-            compile=False)
+            compile=False,
+        )
         arrow_model = keras.models.load_model(
             os.path.join(TEST_DATA_DIR, "stepcovnet_ARROW-mayu_overfit.keras"),
-                                              compile=False,
-                                              custom_objects={"PositionalEncoding": models.PositionalEncoding})
-
+            compile=False,
+            custom_objects={"PositionalEncoding": models.PositionalEncoding},
+        )
 
         for use_post_processing in [True, False]:
             with self.subTest(f"use_post_processing={use_post_processing}"):
                 output_data = generator.generate_output_data(
                     audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
-                    song_title="M.A.Y.U", bpm=128,
-                    onset_model=onset_model, arrow_model=arrow_model
+                    song_title="M.A.Y.U",
+                    bpm=128,
+                    onset_model=onset_model,
+                    arrow_model=arrow_model,
                 )
                 self.assertEqual(output_data.title, "M.A.Y.U")
                 self.assertEqual(output_data.bpm, 128)
                 self.assertTrue("Challenge" in output_data.notes)
                 self.assertEqual(len(output_data.notes["Challenge"]), 384)
-                self.assertEqual(("7.48", "2000"),
-                                 output_data.notes["Challenge"][0])
+                self.assertEqual(("7.48", "2000"), output_data.notes["Challenge"][0])
                 for onset, arrow in output_data.notes["Challenge"]:
                     self.assertNotIn("4", arrow)
                     # 0 is used as padding for training datasets. So there
@@ -84,18 +86,13 @@ class GeneratorTest(unittest.TestCase):
 
     def test_output_data_generate_txt_output(self):
         output_data = generator.OutputData(
-            title="Test Song",
-            bpm=120,
-            notes={
-                "Challenge": [
-                    ("3103", "1.04")
-                ]
-            }
+            title="Test Song", bpm=120, notes={"Challenge": [("3103", "1.04")]}
         )
-        expected_output = ('TITLE Test Song\nBPM 120\nNOTES\nDIFFICULTY '
-                           'Challenge\n1.04 3103\n')
+        expected_output = (
+            "TITLE Test Song\nBPM 120\nNOTES\nDIFFICULTY " "Challenge\n1.04 3103\n"
+        )
         self.assertEqual(output_data.generate_txt_output(), expected_output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -34,5 +34,5 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(prediction.shape, (1, 100, 256))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
