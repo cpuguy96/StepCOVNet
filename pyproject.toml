@@ -35,14 +35,11 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov",
-]
-gpu = ["tensorflow[and-cuda]"]
-gpu_dev = ["stepcovnet[dev,gpu]"]
-juypter = [
     "notebook",
     "gdown",
-    "stepcovnet[gpu_dev]"
 ]
+gpu = ["tensorflow[and-cuda]"]
+gpu-dev = ["stepcovnet[dev,gpu]"]
 
 [project.urls]
 Homepage = "https://github.com/cpuguy96/StepCOVNet"
