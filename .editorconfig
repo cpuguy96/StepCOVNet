@@ -1,0 +1,21 @@
+root = true
+
+[*]
+# Unix-style newlines
+end_of_line = lf
+# Ensure file ends with a newline
+insert_final_newline = true
+# Remove trailing whitespace
+trim_trailing_whitespace = true
+# Set default charset
+charset = utf-8
+# Default indentation for most files can be 2 spaces, for example
+indent_style = space
+indent_size = 2
+
+# 4 space indentation for Python files
+[*.py]
+indent_style = space
+indent_size = 4
+# Optional: set max line length, common Python standards use 80 or 100
+max_line_length = 80
