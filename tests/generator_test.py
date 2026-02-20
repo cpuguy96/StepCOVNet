@@ -68,8 +68,8 @@ class GeneratorTest(unittest.TestCase):
                     audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
                     song_title="M.A.Y.U",
                     bpm=128,
-                    onset_model=onset_model,
-                    arrow_model=arrow_model,
+                    onset_model=onset_model,  # type: ignore
+                    arrow_model=arrow_model,  # type: ignore
                 )
                 self.assertEqual(output_data.title, "M.A.Y.U")
                 self.assertEqual(output_data.bpm, 128)
