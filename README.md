@@ -52,10 +52,12 @@ allowing rhythm game enthusiasts to create charts for their favorite songs insta
 3. **Install dependencies**
    ```bash
    pip install .
-   # For development dependencies
-   pip install .[dev]
    # For GPU support
    pip install .[gpu]
+   # For development dependencies
+   pip install .[dev]
+   # For development and GPU support
+   pip install .[gpu-dev]
    ```
 
 ## 🚀 Usage
