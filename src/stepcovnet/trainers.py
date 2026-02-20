@@ -146,13 +146,25 @@ def _get_onset_experiment_name(
         depth = model_params.get("depth", "N_A")
         kernel_size = model_params.get("kernel_size", "N_A")
         dropout_rate = model_params.get("dropout_rate", "N_A")
-        dilation_rates = model_params.get("dilation_rates", "N_A")
+        dilation_rates = model_params.get("dilation_rates")
 
     parts.append(f"unet_filters_{initial_filters}")
     parts.append(f"unet_depth_{depth}")
     parts.append(f"unet_kernel_size_{kernel_size}")
     parts.append(f"unet_dropout_{str(dropout_rate).replace('.', '_')}")
-    parts.append(f"unet_dilations_{'_'.join(map(str, dilation_rates))}")
+
+    # Make dilation rates robust to missing or non-iterable values.
+    # When using a dict without 'dilation_rates', we want the literal
+    # 'N_A' instead of joining over characters of the default string.
+    if dilation_rates is None:
+        dilation_str = "N_A"
+    elif isinstance(dilation_rates, (list, tuple)):
+        dilation_str = "_".join(map(str, dilation_rates))
+    else:
+        # Fall back to simple string conversion for any other type.
+        dilation_str = str(dilation_rates)
+
+    parts.append(f"unet_dilations_{dilation_str}")
 
     return "-".join(parts)
 
