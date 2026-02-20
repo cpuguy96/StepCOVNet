@@ -246,9 +246,9 @@ def run_arrow_train(
     batch_size: int,
     normalize: bool,
     model_params: dict,
-    take_count: int,
     epoch: int,
     model_output_dir: str,
+    take_count: int = -1,
     callback_root_dir: str = "",
     model_name: str = "",
 ) -> tuple[keras.Model, keras.callbacks.History]:
@@ -266,7 +266,7 @@ def run_arrow_train(
         normalize: Whether to normalize the input data.
         model_params: Dictionary of parameters to pass to the arrow model
             builder.
-        take_count: Number of batches to use from the training dataset.
+        take_count: Number of batches to use from the training dataset. -1 (default) uses the entire dataset (tf.data accepts -1 for take-all).
         epoch: Number of epochs to train for.
         model_output_dir: Directory where the trained model will be saved.
         callback_root_dir: Root directory for storing training callbacks.
@@ -279,6 +279,12 @@ def run_arrow_train(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
+
+    if epoch < 1:
+        raise ValueError("epoch must be at least 1")
+
+    if take_count != -1 and take_count < 1:
+        raise ValueError("take_count must be -1 (entire dataset) or at least 1")
 
     train_dataset = datasets.create_arrow_dataset(
         data_dir=data_dir,
