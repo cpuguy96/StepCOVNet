@@ -1,0 +1,23 @@
+{
+  "dataset": {
+    "data_dir": "data/train",
+    "val_data_dir": "data/val",
+    "batch_size": 1,
+    "normalize": true
+  },
+  "model": {
+    "num_layers": 1,
+    "d_model": 128,
+    "num_heads": 4,
+    "ff_dim": 512,
+    "dropout_rate": 0.0
+  },
+  "run": {
+    "epoch": 10,
+    "take_count": -1,
+    "model_output_dir": "models",
+    "callback_root_dir": "callbacks",
+    "model_name": "onset_model_baseline",
+    "seed": 47
+  }
+}

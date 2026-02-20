@@ -1,0 +1,27 @@
+{
+  "dataset": {
+    "data_dir": "data/train",
+    "val_data_dir": "data/val",
+    "batch_size": 1,
+    "normalize": true,
+    "apply_temporal_augment": false,
+    "should_apply_spec_augment": false,
+    "use_gaussian_target": false,
+    "gaussian_sigma": 1.0
+  },
+  "model": {
+    "initial_filters": 16,
+    "depth": 2,
+    "dilation_rates": [1, 2, 4, 8],
+    "kernel_size": 3,
+    "dropout_rate": 0.0
+  },
+  "run": {
+    "epoch": 10,
+    "take_count": 1,
+    "model_output_dir": "models",
+    "callback_root_dir": "callbacks",
+    "model_name": "arrow_model_baseline",
+    "seed": 47
+  }
+}
