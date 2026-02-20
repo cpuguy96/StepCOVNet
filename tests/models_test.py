@@ -34,5 +34,19 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(prediction.shape, (1, 100, 256))
 
 
+class PositionalEncodingTest(unittest.TestCase):
+    def test_positional_encoding_raises_on_odd_d_model(self):
+        with self.assertRaises(ValueError) as ctx:
+            models.PositionalEncoding(position=100, d_model=127)
+        self.assertIn("even d_model", str(ctx.exception))
+        self.assertIn("sine and cosine", str(ctx.exception))
+
+    def test_positional_encoding_accepts_even_d_model(self):
+        layer = models.PositionalEncoding(position=100, d_model=128)
+        dummy = np.random.random((2, 50, 128)).astype(np.float32)
+        out = layer(dummy)
+        self.assertEqual(out.shape, dummy.shape)
+
+
 if __name__ == "__main__":
     unittest.main()

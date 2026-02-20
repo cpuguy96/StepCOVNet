@@ -15,6 +15,11 @@ class PositionalEncoding(keras.layers.Layer):
         # Add **kwargs to accept base Layer arguments like 'name'
         super(PositionalEncoding, self).__init__(**kwargs)
         # Ensure d_model is compatible with potential float16 usage later
+        if d_model % 2 != 0:
+            raise ValueError(
+                "PositionalEncoding requires an even d_model so that sine and cosine "
+                "components can be interleaved without shape mismatch."
+            )
         self.d_model = d_model
         self.position = position
         # Pre-calculate the positional encoding matrix.
@@ -28,7 +33,7 @@ class PositionalEncoding(keras.layers.Layer):
         # Original formula: angle = pos / (10000^(2i / d_model))
         # Use floating point literals and casting for compatibility
         angles = 1.0 / tf.pow(
-            10000.0, (2.0 * tf.cast(i // 2, tf.float32)) / d_model_float
+            10000.0, (2.0 * tf.cast(i // 2, tf.float32)) / d_model_float  # type: ignore
         )
         return tf.cast(position, tf.float32) * angles
 
