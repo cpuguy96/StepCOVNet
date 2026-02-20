@@ -68,11 +68,11 @@ class OnsetF1Metric(keras.metrics.Metric):
             [
                 (
                     tf.equal(rank_true, 2),
-                    lambda: tf.reshape(y_true, [shape_true[0], shape_true[1], 1]),
+                    lambda: tf.reshape(y_true, [shape_true[0], shape_true[1], 1]),  # type: ignore
                 ),
                 (
                     tf.equal(rank_true, 4),
-                    lambda: tf.reshape(y_true, [shape_true[0], shape_true[1], 1]),
+                    lambda: tf.reshape(y_true, [shape_true[0], shape_true[1], 1]),  # type: ignore
                 ),
                 # Squeeze rank 4 -> 3
             ],
@@ -91,11 +91,11 @@ class OnsetF1Metric(keras.metrics.Metric):
             [
                 (
                     tf.equal(rank_pred, 2),
-                    lambda: tf.reshape(y_pred, [shape_pred[0], shape_pred[1], 1]),
+                    lambda: tf.reshape(y_pred, [shape_pred[0], shape_pred[1], 1]),  # type: ignore
                 ),
                 (
                     tf.equal(rank_pred, 4),
-                    lambda: tf.reshape(y_pred, [shape_pred[0], shape_pred[1], 1]),
+                    lambda: tf.reshape(y_pred, [shape_pred[0], shape_pred[1], 1]),  # type: ignore
                 ),
                 # Squeeze rank 4 -> 3
             ],

@@ -61,12 +61,12 @@ class PositionalEncoding(keras.layers.Layer):
 
     def call(self, inputs):
         # inputs shape: (batch_size, seq_len, d_model)
-        seq_len = tf.shape(inputs)[1]
+        seq_len = tf.shape(inputs)[1]  # type: ignore
         # Add the positional encoding to the input embeddings
         # Slice the pre-computed encoding to match the input sequence length
         # --- FIX: Cast pos_encoding to the dtype of inputs before adding ---
         input_dtype = inputs.dtype
-        pos_encoding_sliced = self.pos_encoding[:, :seq_len, :]
+        pos_encoding_sliced = self.pos_encoding[:, :seq_len, :]  # type: ignore
         pos_encoding_casted = tf.cast(pos_encoding_sliced, dtype=input_dtype)
         return inputs + pos_encoding_casted
 
@@ -182,7 +182,7 @@ def _crop_to_match(inputs):
     # The first input is the tensor to crop, the second is the reference.
     tensor_to_crop, reference_tensor = inputs
     # Get the dynamic sequence length of the reference tensor.
-    target_length = tf.shape(reference_tensor)[1]
+    target_length = tf.shape(reference_tensor)[1]  # type: ignore
     # Crop the first tensor to match this length.
     return tensor_to_crop[:, :target_length, :]
 
