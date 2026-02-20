@@ -93,7 +93,7 @@ Train your own models using the provided scripts.
 #### Data Preparation
 
 **Link to training data**:
-[Google Drive](https://drive.google.com/drive/folders/1Etkj3f-lHM2Y2eH-9el_emUwZXif2GKD?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/1YszVRR82hH3nRpp5zAeLrApjiWSxtxvD/view?usp=drive_link)
 
 1. **Parse `.sm` files**: Use [`SMDataTools`](https://github.com/jhaco/SMDataTools) to convert `.sm` files into `.txt`
    files (training data above already converted `.sm` to `.txt`).
