@@ -6,6 +6,8 @@ Usage:
 
 import argparse
 
+import tensorflow as tf
+
 from stepcovnet import trainers
 
 PARSER = argparse.ArgumentParser(description="Train arrow detection model.")
@@ -58,6 +60,21 @@ PARSER.add_argument(
     required=False,
 )
 ARGS = PARSER.parse_args()
+
+
+if tf.config.list_physical_devices("GPU"):
+    import keras
+
+    print("Training with GPU.")
+
+    keras.mixed_precision.set_global_policy(
+        keras.mixed_precision.Policy("mixed_float16")
+    )
+
+    # Enable XLA (Accelerated Linear Algebra) for TensorFlow, which can improve
+    # performance by compiling TensorFlow graphs into highly optimized
+    # machine code.
+    tf.config.optimizer.set_jit("autoclustering")
 
 
 def main():
