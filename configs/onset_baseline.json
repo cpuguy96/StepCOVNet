@@ -3,7 +3,6 @@
     "data_dir": "data/train",
     "val_data_dir": "data/val",
     "batch_size": 1,
-    "normalize": true,
     "apply_temporal_augment": false,
     "should_apply_spec_augment": false,
     "use_gaussian_target": false,

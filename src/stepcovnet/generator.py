@@ -148,6 +148,9 @@ def generate_output_data(
     This function processes the audio into a spectrogram, predicts onset timings,
     and then predicts the arrow patterns for those onsets.
 
+    Note: Spectrogram normalization is always applied in both training and
+    inference for consistent results.
+
     Args:
         audio_path: Path to the input audio file.
         song_title: The title of the song.
@@ -163,7 +166,7 @@ def generate_output_data(
         ValueError: If failed to predict any onsets for the audio file.
     """
     spec = datasets.audio_to_spectrogram(audio_path).T
-    normalized_spec = (spec - np.mean(spec, axis=0)) / (np.std(spec, axis=0) + 1e-6)
+    normalized_spec = datasets.normalize_onset_spectrogram(spec)
     onset_pred = onset_model.predict(np.expand_dims(normalized_spec, axis=0))
 
     if use_post_processing:

@@ -17,7 +17,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 apply_temporal_augment=False,
                 should_apply_spec_augment=False,
                 use_gaussian_target=False,
@@ -45,7 +44,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 apply_temporal_augment=False,
                 should_apply_spec_augment=False,
                 use_gaussian_target=False,
@@ -74,7 +72,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 model_params={},
                 take_count=1,
                 epoch=1,
@@ -93,7 +90,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 apply_temporal_augment=False,
                 should_apply_spec_augment=False,
                 use_gaussian_target=False,
@@ -125,7 +121,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
             )
             model_config = config.ArrowModelConfig()
             run_config = config.RunConfig(
@@ -146,7 +141,6 @@ class TrainersTest(unittest.TestCase):
             data_dir="data/train",
             val_data_dir="data/val",
             batch_size=4,
-            normalize=True,
             apply_temporal_augment=True,
             should_apply_spec_augment=True,
             use_gaussian_target=True,
@@ -196,7 +190,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
             )
             model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
             run_config = config.RunConfig(
@@ -234,7 +227,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
             )
             model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
             run_config = config.RunConfig(
@@ -257,7 +249,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 use_gaussian_target=True,
                 gaussian_sigma=1.5,
             )
@@ -281,7 +272,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 apply_temporal_augment=True,
                 should_apply_spec_augment=True,
             )
@@ -305,7 +295,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
             )
             model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
             run_config = config.RunConfig(
@@ -328,7 +317,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
             )
             model_config = config.ArrowModelConfig()
             run_config = config.RunConfig(
@@ -351,7 +339,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
             )
             model_config = config.ArrowModelConfig(num_layers=2)
             run_config = config.RunConfig(
@@ -390,7 +377,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 apply_temporal_augment=False,
                 should_apply_spec_augment=False,
                 use_gaussian_target=False,
@@ -414,7 +400,6 @@ class TrainersTest(unittest.TestCase):
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                normalize=True,
                 model_params={"num_layers": 1},
                 take_count=1,
                 epoch=1,

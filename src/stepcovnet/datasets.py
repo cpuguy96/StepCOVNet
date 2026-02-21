@@ -26,6 +26,25 @@ _WIN_COEFF = 0.025
 _TARGET_SR = 44100
 
 
+def normalize_onset_spectrogram(spec: np.ndarray) -> np.ndarray:
+    """Normalize a mel spectrogram for onset model input.
+
+    Uses per-mel-bin normalization (mean and std across time). Training and
+    inference always use this normalization; it is critical for consistent
+    results.
+
+    Args:
+        spec: Spectrogram with shape (time_steps, n_mels), e.g. from
+            audio_to_spectrogram(audio_path).T.
+
+    Returns:
+        Normalized spectrogram with same shape, dtype float32.
+    """
+    mean = np.mean(spec, axis=0, keepdims=True)
+    std = np.std(spec, axis=0, keepdims=True)
+    return ((spec - mean) / (std + 1e-6)).astype(np.float32)
+
+
 def _base4_to_int(base4_string: str) -> int:
     """
     Converts a string representation of a base 4 number to its base 10 integer equivalent.
@@ -287,7 +306,6 @@ def create_dataset(
     batch_size: int = 1,
     apply_temporal_augment: bool = False,
     should_apply_spec_augment: bool = False,
-    normalize: bool = False,
     use_gaussian_target: bool = False,
     gaussian_sigma: float = 1.0,
 ) -> tf.data.Dataset:
@@ -329,8 +347,8 @@ def create_dataset(
         return features, target
 
     # --- Step 2: Define the random augmentation and normalization function ---
-    def _apply_augmentations(features, target, temp_aug, spec_aug, norm):
-        def _py_aug_func(features_py, target_py, temp_aug_py, spec_aug_py, norm_py):
+    def _apply_augmentations(features, target, temp_aug, spec_aug):
+        def _py_aug_func(features_py, target_py, temp_aug_py, spec_aug_py):
             features_py = features_py.numpy()
             target_py = target_py.numpy()
 
@@ -342,11 +360,8 @@ def create_dataset(
                     spec_py, combined_labels
                 )
 
-            if norm_py:
-                mean, std = np.mean(spec_py, axis=1, keepdims=True), np.std(
-                    spec_py, axis=1, keepdims=True
-                )
-                spec_py = (spec_py - mean) / (std + 1e-6)
+            # Always normalize (critical for training and inference consistency).
+            spec_py = normalize_onset_spectrogram(spec_py.T).T
 
             if spec_aug_py:
                 spec_py = _apply_spec_augment(spec_py, F=int(0.2 * _N_MELS))
@@ -358,7 +373,7 @@ def create_dataset(
 
         aug_features, aug_target = tf.py_function(
             _py_aug_func,
-            [features, target, temp_aug, spec_aug, norm],
+            [features, target, temp_aug, spec_aug],
             (tf.float32, tf.float32),
         )  # type: ignore
         aug_features.set_shape([None, _N_MELS])
@@ -382,7 +397,6 @@ def create_dataset(
             target,
             apply_temporal_augment,
             should_apply_spec_augment,
-            normalize,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
@@ -406,15 +420,13 @@ def create_dataset(
     return ds
 
 
-def create_arrow_dataset(
-    data_dir: str, batch_size: int = 1, normalize: bool = False
-) -> tf.data.Dataset:
+def create_arrow_dataset(data_dir: str, batch_size: int = 1) -> tf.data.Dataset:
     """Creates a TensorFlow dataset for arrow prediction.
 
+    Step times are always normalized (critical for training and inference).
     Args:
         data_dir: Directory containing audio and chart files.
         batch_size: Number of samples per batch.
-        normalize: Whether to normalize step times.
 
     Returns:
         A tf.data.Dataset yielding (times, cols) pairs.
@@ -432,8 +444,8 @@ def create_arrow_dataset(
             (tf.float32, tf.int32),
         )  # type: ignore
 
-        if normalize:
-            times = times / tf.reduce_max(times)
+        # Always normalize step times (critical for training and inference).
+        times = times / tf.reduce_max(times)
 
         times = tf.ensure_shape(times, [None])
         cols = tf.ensure_shape(cols, [None])

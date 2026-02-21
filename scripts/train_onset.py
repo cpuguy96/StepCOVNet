@@ -56,20 +56,6 @@ PARSER.add_argument(
     required=False,
 )
 PARSER.add_argument(
-    "--normalize",
-    action="store_true",
-    help="Normalize spectrograms.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--no_normalize",
-    action="store_false",
-    dest="normalize",
-    help="Don't normalize spectrograms.",
-    required=False,
-)
-PARSER.add_argument(
     "--apply_temporal_augment",
     action="store_true",
     help="Apply temporal augmentation.",
@@ -184,7 +170,6 @@ def main():
             data_dir=ARGS.train_data_dir,
             val_data_dir=ARGS.val_data_dir,
             batch_size=1,
-            normalize=True,
             apply_temporal_augment=False,
             should_apply_spec_augment=False,
             use_gaussian_target=False,
@@ -206,8 +191,6 @@ def main():
         dataset_config.val_data_dir = ARGS.val_data_dir
     if ARGS.batch_size is not None:
         dataset_config.batch_size = ARGS.batch_size
-    if ARGS.normalize is not None:
-        dataset_config.normalize = ARGS.normalize
     if ARGS.apply_temporal_augment is not None:
         dataset_config.apply_temporal_augment = ARGS.apply_temporal_augment
     if ARGS.apply_spec_augment is not None:

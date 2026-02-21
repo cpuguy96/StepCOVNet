@@ -56,20 +56,6 @@ PARSER.add_argument(
     required=False,
 )
 PARSER.add_argument(
-    "--normalize",
-    action="store_true",
-    help="Normalize step times.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--no_normalize",
-    action="store_false",
-    dest="normalize",
-    help="Don't normalize step times.",
-    required=False,
-)
-PARSER.add_argument(
     "--num_layers",
     type=int,
     help="Number of Transformer encoder layers.",
@@ -171,7 +157,6 @@ def main():
             data_dir=ARGS.train_data_dir,
             val_data_dir=ARGS.val_data_dir,
             batch_size=1,
-            normalize=True,
         )
         model_config = config.ArrowModelConfig()
         # Default to a single batch for quick, backward-compatible testing.
@@ -191,8 +176,6 @@ def main():
         dataset_config.val_data_dir = ARGS.val_data_dir
     if ARGS.batch_size is not None:
         dataset_config.batch_size = ARGS.batch_size
-    if ARGS.normalize is not None:
-        dataset_config.normalize = ARGS.normalize
 
     if ARGS.num_layers is not None:
         model_config.num_layers = ARGS.num_layers

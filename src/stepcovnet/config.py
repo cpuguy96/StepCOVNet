@@ -20,7 +20,6 @@ class OnsetDatasetConfig:
         data_dir: Path to training data directory.
         val_data_dir: Path to validation data directory.
         batch_size: Number of samples per batch.
-        normalize: Whether to normalize spectrograms.
         apply_temporal_augment: Whether to apply temporal augmentation during training.
         should_apply_spec_augment: Whether to apply spectrogram augmentation during training.
         use_gaussian_target: Whether to use Gaussian targets instead of binary targets.
@@ -30,7 +29,6 @@ class OnsetDatasetConfig:
     data_dir: str
     val_data_dir: str
     batch_size: int = 1
-    normalize: bool = False
     apply_temporal_augment: bool = False
     should_apply_spec_augment: bool = False
     use_gaussian_target: bool = False
@@ -66,13 +64,11 @@ class ArrowDatasetConfig:
         data_dir: Path to training data directory.
         val_data_dir: Path to validation data directory.
         batch_size: Number of samples per batch.
-        normalize: Whether to normalize step times.
     """
 
     data_dir: str
     val_data_dir: str
     batch_size: int = 1
-    normalize: bool = False
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.

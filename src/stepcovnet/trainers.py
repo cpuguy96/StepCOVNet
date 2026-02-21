@@ -266,7 +266,6 @@ def run_train_from_config(
     train_dataset = datasets.create_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
-        normalize=dataset_config.normalize,
         apply_temporal_augment=dataset_config.apply_temporal_augment,
         should_apply_spec_augment=dataset_config.should_apply_spec_augment,
         use_gaussian_target=dataset_config.use_gaussian_target,
@@ -276,7 +275,6 @@ def run_train_from_config(
     val_dataset = datasets.create_dataset(
         data_dir=dataset_config.val_data_dir,
         batch_size=dataset_config.batch_size,
-        normalize=dataset_config.normalize,
         apply_temporal_augment=False,
         should_apply_spec_augment=False,
         use_gaussian_target=False,
@@ -356,7 +354,6 @@ def run_train(
     data_dir: str,
     val_data_dir: str,
     batch_size: int,
-    normalize: bool,
     apply_temporal_augment: bool,
     should_apply_spec_augment: bool,
     use_gaussian_target: bool,
@@ -373,12 +370,12 @@ def run_train(
     Trains a Keras model for detecting steps in audio spectrograms. The function
     handles dataset creation, model compilation with configurable loss
     functions, and training with callbacks for monitoring and checkpointing.
+    Input spectrograms are always normalized.
 
     Args:
         data_dir: Path to the directory containing training data.
         val_data_dir: Path to the directory containing validation data.
         batch_size: Number of samples per batch during training.
-        normalize: Whether to normalize the input data.
         apply_temporal_augment: Whether to apply temporal augmentation to
             training data.
         should_apply_spec_augment: Whether to apply spectrogram augmentation
@@ -406,7 +403,6 @@ def run_train(
         data_dir=data_dir,
         val_data_dir=val_data_dir,
         batch_size=batch_size,
-        normalize=normalize,
         apply_temporal_augment=apply_temporal_augment,
         should_apply_spec_augment=should_apply_spec_augment,
         use_gaussian_target=use_gaussian_target,
@@ -453,13 +449,11 @@ def run_arrow_train_from_config(
     train_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
-        normalize=dataset_config.normalize,
     )
 
     val_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.val_data_dir,
         batch_size=dataset_config.batch_size,
-        normalize=dataset_config.normalize,
     )
 
     experiment_name = _get_arrow_experiment_name(
@@ -519,7 +513,6 @@ def run_arrow_train(
     data_dir: str,
     val_data_dir: str,
     batch_size: int,
-    normalize: bool,
     model_params: dict,
     epoch: int,
     model_output_dir: str,
@@ -530,7 +523,7 @@ def run_arrow_train(
     """Train an arrow classification model.
 
     Trains a Keras model to classify arrow types (directions) based on audio
-    features.
+    features. Step times are always normalized.
     Uses SparseCategoricalCrossentropy loss and ignores the background class
     (0).
 
@@ -538,7 +531,6 @@ def run_arrow_train(
         data_dir: Path to the directory containing training data.
         val_data_dir: Path to the directory containing validation data.
         batch_size: Number of samples per batch during training.
-        normalize: Whether to normalize the input data.
         model_params: Dictionary of parameters to pass to the arrow model
             builder.
         take_count: Number of batches to use from the training dataset. -1 (default) uses the entire dataset (tf.data accepts -1 for take-all).
@@ -559,7 +551,6 @@ def run_arrow_train(
         data_dir=data_dir,
         val_data_dir=val_data_dir,
         batch_size=batch_size,
-        normalize=normalize,
     )
     model_config = config.ArrowModelConfig(**model_params)
     run_config = config.RunConfig(

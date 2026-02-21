@@ -2,8 +2,7 @@
   "dataset": {
     "data_dir": "data/train",
     "val_data_dir": "data/val",
-    "batch_size": 1,
-    "normalize": true
+    "batch_size": 1
   },
   "model": {
     "num_layers": 1,

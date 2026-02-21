@@ -17,7 +17,6 @@ class OnsetDatasetConfigTest(unittest.TestCase):
         self.assertEqual(cfg.data_dir, "data/train")
         self.assertEqual(cfg.val_data_dir, "data/val")
         self.assertEqual(cfg.batch_size, 1)  # default
-        self.assertFalse(cfg.normalize)  # default
 
     def test_create_with_all_fields(self):
         """Test creating config with all fields."""
@@ -25,14 +24,12 @@ class OnsetDatasetConfigTest(unittest.TestCase):
             data_dir="data/train",
             val_data_dir="data/val",
             batch_size=4,
-            normalize=True,
             apply_temporal_augment=True,
             should_apply_spec_augment=True,
             use_gaussian_target=True,
             gaussian_sigma=1.5,
         )
         self.assertEqual(cfg.batch_size, 4)
-        self.assertTrue(cfg.normalize)
         self.assertTrue(cfg.apply_temporal_augment)
         self.assertTrue(cfg.should_apply_spec_augment)
         self.assertTrue(cfg.use_gaussian_target)
@@ -44,14 +41,12 @@ class OnsetDatasetConfigTest(unittest.TestCase):
             data_dir="data/train",
             val_data_dir="data/val",
             batch_size=2,
-            normalize=True,
         )
         d = cfg.as_dict()
         self.assertIsInstance(d, dict)
         self.assertEqual(d["data_dir"], "data/train")
         self.assertEqual(d["val_data_dir"], "data/val")
         self.assertEqual(d["batch_size"], 2)
-        self.assertTrue(d["normalize"])
 
     def test_from_dict(self):
         """Test creating config from dictionary."""
@@ -59,13 +54,11 @@ class OnsetDatasetConfigTest(unittest.TestCase):
             "data_dir": "data/train",
             "val_data_dir": "data/val",
             "batch_size": 8,
-            "normalize": True,
             "apply_temporal_augment": True,
         }
         cfg = config.OnsetDatasetConfig.from_dict(data)
         self.assertEqual(cfg.data_dir, "data/train")
         self.assertEqual(cfg.batch_size, 8)
-        self.assertTrue(cfg.normalize)
         self.assertTrue(cfg.apply_temporal_augment)
         self.assertFalse(cfg.should_apply_spec_augment)  # default
 
@@ -79,16 +72,14 @@ class ArrowDatasetConfigTest(unittest.TestCase):
         self.assertEqual(cfg.data_dir, "data/train")
         self.assertEqual(cfg.val_data_dir, "data/val")
         self.assertEqual(cfg.batch_size, 1)  # default
-        self.assertFalse(cfg.normalize)  # default
 
     def test_as_dict(self):
         """Test converting config to dictionary."""
         cfg = config.ArrowDatasetConfig(
-            data_dir="data/train", val_data_dir="data/val", batch_size=4, normalize=True
+            data_dir="data/train", val_data_dir="data/val", batch_size=4
         )
         d = cfg.as_dict()
         self.assertEqual(d["batch_size"], 4)
-        self.assertTrue(d["normalize"])
 
     def test_from_dict(self):
         """Test creating config from dictionary."""
@@ -284,7 +275,6 @@ class OnsetExperimentConfigTest(unittest.TestCase):
             data_dir="data/train",
             val_data_dir="data/val",
             batch_size=4,
-            normalize=True,
         )
         model_cfg = config.OnsetModelConfig(initial_filters=16, depth=2)
         run_cfg = config.RunConfig(
@@ -376,7 +366,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
     def test_to_json_and_from_json(self):
         """Test saving and loading config from JSON file."""
         dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="data/train", val_data_dir="data/val", normalize=True
+            data_dir="data/train", val_data_dir="data/val"
         )
         model_cfg = config.ArrowModelConfig(num_layers=3, d_model=256)
         run_cfg = config.RunConfig(
@@ -391,7 +381,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
             exp_cfg.to_json(config_path)
 
             loaded_cfg = config.ArrowExperimentConfig.from_json(config_path)
-            self.assertTrue(loaded_cfg.dataset.normalize)
+            self.assertEqual(loaded_cfg.dataset.data_dir, "data/train")
             self.assertEqual(loaded_cfg.model.num_layers, 3)
             self.assertEqual(loaded_cfg.run.seed, 99)
 
