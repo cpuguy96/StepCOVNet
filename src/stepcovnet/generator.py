@@ -55,10 +55,7 @@ def _int_to_base4_string(n: int, min_digits: int = 1) -> str:
 
     Raises:
       ValueError: If the input integer `n` is negative.
-      TypeError: If the input `n` is not an integer.
     """
-    if not isinstance(n, int):
-        raise TypeError("Input must be an integer.")
     if n < 0:
         raise ValueError("Input integer must be non-negative.")
     if n == 0:
