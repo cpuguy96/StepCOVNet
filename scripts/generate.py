@@ -9,7 +9,9 @@ import argparse
 import keras
 
 from stepcovnet import generator
-from stepcovnet import models
+from stepcovnet import (
+    models,  # Required to ensure registration of custom Keras layers/functions for model loading.
+)
 
 PARSER = argparse.ArgumentParser(description="Generate step chart from audio.")
 PARSER.add_argument(
@@ -60,16 +62,8 @@ ARGS = PARSER.parse_args()
 
 
 def main():
-    onset_model = keras.models.load_model(
-        filepath=ARGS.onset_model_path,
-        compile=False,
-        custom_objects={"_crop_to_match": models._crop_to_match},
-    )
-    arrow_model = keras.models.load_model(
-        filepath=ARGS.arrow_model_path,
-        compile=False,
-        custom_objects={"PositionalEncoding": models.PositionalEncoding},
-    )
+    onset_model = keras.models.load_model(filepath=ARGS.onset_model_path, compile=False)
+    arrow_model = keras.models.load_model(filepath=ARGS.arrow_model_path, compile=False)
 
     output_data = generator.generate_output_data(
         audio_path=ARGS.audio_path,

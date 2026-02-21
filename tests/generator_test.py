@@ -6,7 +6,9 @@ import keras
 import numpy as np
 
 from stepcovnet import generator
-from stepcovnet import models
+from stepcovnet import (
+    models,  # Required to ensure registration of custom Keras layers/functions for model loading.
+)
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
@@ -53,13 +55,11 @@ class GeneratorTest(unittest.TestCase):
     def test_generate_output_data(self):
         onset_model = keras.models.load_model(
             os.path.join(TEST_DATA_DIR, "stepcovnet_ONSET-mayu_overfit.keras"),
-            custom_objects={"_crop_to_match": models._crop_to_match},
             compile=False,
         )
         arrow_model = keras.models.load_model(
             os.path.join(TEST_DATA_DIR, "stepcovnet_ARROW-mayu_overfit.keras"),
             compile=False,
-            custom_objects={"PositionalEncoding": models.PositionalEncoding},
         )
 
         for use_post_processing in [True, False]:
