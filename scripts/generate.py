@@ -48,6 +48,13 @@ PARSER.add_argument(
     help="Path where the generated chart will be saved.",
     required=True,
 )
+PARSER.add_argument(
+    "--use_post_processing",
+    type=bool,
+    help="Use peak-picking post-processing to refine onset timings (recommended for cleaner charts).",
+    default=False,
+    required=False,
+)
 
 ARGS = PARSER.parse_args()
 
@@ -68,8 +75,9 @@ def main():
         audio_path=ARGS.audio_path,
         song_title=ARGS.song_title,
         bpm=ARGS.bpm,
-        onset_model=onset_model,
-        arrow_model=arrow_model,
+        onset_model=onset_model,  # type: ignore
+        arrow_model=arrow_model,  # type: ignore
+        use_post_processing=ARGS.use_post_processing,
     )
 
     with open(ARGS.output_file, "w") as f:

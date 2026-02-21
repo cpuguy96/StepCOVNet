@@ -79,14 +79,15 @@ python scripts/generate.py \
   --output_file "output/chart.txt"
 ```
 
-| Argument             | Description                                            |
-|:---------------------|:-------------------------------------------------------|
-| `--audio_path`       | Path to the input audio file (`.mp3`, `.wav`, etc.)    |
-| `--song_title`       | Title of the song                                      |
-| `--bpm`              | Beats Per Minute of the song                           |
-| `--onset_model_path` | Path to the trained onset detection model (`.keras`)   |
-| `--arrow_model_path` | Path to the trained arrow prediction model (`.keras`)  |
-| `--output_file`      | Path where the generated chart text file will be saved |
+| Argument                | Description                                                                 |
+|:------------------------|:----------------------------------------------------------------------------|
+| `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, etc.)                        |
+| `--song_title`          | Title of the song                                                          |
+| `--bpm`                 | Beats Per Minute of the song                                               |
+| `--onset_model_path`    | Path to the trained onset detection model (`.keras`)                       |
+| `--arrow_model_path`    | Path to the trained arrow prediction model (`.keras`)                      |
+| `--output_file`         | Path where the generated chart text file will be saved                     |
+| `--use_post_processing` | Refine onset timings with peak-picking (recommended for cleaner charts)    |
 
 ### Training Models
 
@@ -104,7 +105,8 @@ Train your own models using the provided scripts.
 
 #### Training Onset Model
 
-Train the model responsible for detecting when a note should occur.
+Train the model responsible for detecting when a note should occur. Spectrogram
+normalization is always applied so that training matches the inference pipeline.
 
 ```bash
 python scripts/train_onset.py \
