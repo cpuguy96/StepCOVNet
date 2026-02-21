@@ -33,6 +33,26 @@ class ModelTest(unittest.TestCase):
         prediction = model_instance.predict(dummy_input)
         self.assertEqual(prediction.shape, (1, 100, 256))
 
+    def test_build_unet_wavenet_model_default_name(self):
+        """Model has default name stepcovnet_ONSET when model_name is empty."""
+        model = models.build_unet_wavenet_model(model_name="")
+        self.assertEqual(model.name, "stepcovnet_ONSET")
+
+    def test_build_unet_wavenet_model_custom_name(self):
+        """Model name includes custom model_name suffix."""
+        model = models.build_unet_wavenet_model(model_name="my_experiment")
+        self.assertEqual(model.name, "stepcovnet_ONSET-my_experiment")
+
+    def test_build_arrow_model_default_name(self):
+        """Arrow model has default name stepcovnet_ARROW when model_name is empty."""
+        model = models.build_arrow_model(model_name="")
+        self.assertEqual(model.name, "stepcovnet_ARROW")
+
+    def test_build_arrow_model_custom_name(self):
+        """Arrow model name includes custom model_name suffix."""
+        model = models.build_arrow_model(model_name="my_arrow_run")
+        self.assertEqual(model.name, "stepcovnet_ARROW-my_arrow_run")
+
 
 class PositionalEncodingTest(unittest.TestCase):
     def test_positional_encoding_raises_on_odd_d_model(self):

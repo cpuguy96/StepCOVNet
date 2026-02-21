@@ -99,7 +99,7 @@ def _get_onset_experiment_name(
     should_apply_spec_augment: bool,
     use_gaussian_target: bool,
     gaussian_sigma: float,
-    model_params: dict | config.OnsetModelConfig,
+    model_params: config.OnsetModelConfig,
 ) -> str:
     """Generate a descriptive experiment name from hyperparameters.
 
@@ -112,7 +112,7 @@ def _get_onset_experiment_name(
         should_apply_spec_augment: Whether spectrogram augmentation was applied.
         use_gaussian_target: Whether Gaussian targets were used.
         gaussian_sigma: Standard deviation for Gaussian targets.
-        model_params: Model configuration dict or OnsetModelConfig object
+        model_params: Model configuration OnsetModelConfig object
             containing architecture parameters.
 
     Returns:
@@ -121,7 +121,9 @@ def _get_onset_experiment_name(
     """
     parts = ["ONSET"]
 
-    if take_count > 0:
+    if take_count == -1:
+        parts.append("take_all")
+    else:
         parts.append(f"take_{take_count}")
 
     if use_gaussian_target:
@@ -134,19 +136,11 @@ def _get_onset_experiment_name(
     if should_apply_spec_augment:
         parts.append("spec_augment")
 
-    # Handle both dict and config object
-    if isinstance(model_params, config.OnsetModelConfig):
-        initial_filters = model_params.initial_filters
-        depth = model_params.depth
-        kernel_size = model_params.kernel_size
-        dropout_rate = model_params.dropout_rate
-        dilation_rates = model_params.dilation_rates
-    else:
-        initial_filters = model_params.get("initial_filters", "N_A")
-        depth = model_params.get("depth", "N_A")
-        kernel_size = model_params.get("kernel_size", "N_A")
-        dropout_rate = model_params.get("dropout_rate", "N_A")
-        dilation_rates = model_params.get("dilation_rates")
+    initial_filters = model_params.initial_filters
+    depth = model_params.depth
+    kernel_size = model_params.kernel_size
+    dropout_rate = model_params.dropout_rate
+    dilation_rates = model_params.dilation_rates
 
     parts.append(f"unet_filters_{initial_filters}")
     parts.append(f"unet_depth_{depth}")
@@ -170,7 +164,7 @@ def _get_onset_experiment_name(
 
 
 def _get_arrow_experiment_name(
-    take_count: int, model_params: dict | config.ArrowModelConfig
+    take_count: int, model_params: config.ArrowModelConfig
 ) -> str:
     """Generate a descriptive experiment name from hyperparameters.
 
@@ -179,7 +173,7 @@ def _get_arrow_experiment_name(
 
     Args:
         take_count: Number of batches used from training dataset.
-        model_params: Model configuration dict or ArrowModelConfig object
+        model_params: Model configuration ArrowModelConfig object
             containing architecture parameters.
 
     Returns:
@@ -187,16 +181,22 @@ def _get_arrow_experiment_name(
     """
     parts = ["ARROW"]
 
-    if take_count > 0:
+    if take_count == -1:
+        parts.append("take_all")
+    else:
         parts.append(f"take_{take_count}")
 
-    # Handle both dict and config object
-    if isinstance(model_params, config.ArrowModelConfig):
-        num_layers = model_params.num_layers
-    else:
-        num_layers = model_params.get("num_layers", "N_A")
+    num_layers = model_params.num_layers
+    d_model = model_params.d_model
+    num_heads = model_params.num_heads
+    ff_dim = model_params.ff_dim
+    dropout_rate = model_params.dropout_rate
 
     parts.append(f"att_layers_{num_layers}")
+    parts.append(f"d_model_{d_model}")
+    parts.append(f"num_heads_{num_heads}")
+    parts.append(f"ff_dim_{ff_dim}")
+    parts.append(f"dropout_{str(dropout_rate).replace('.', '_')}")
 
     return "-".join(parts)
 

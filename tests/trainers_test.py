@@ -135,6 +135,122 @@ class TrainersTest(unittest.TestCase):
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
 
+    def test_run_train_from_config_saves_model_with_explicit_model_name(self):
+        """Saved model file and model.name use run_config.model_name when set."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.OnsetDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                model_name="my_onset_model",
+            )
+            model, _ = trainers.run_train_from_config(
+                dataset_config, model_config, run_config
+            )
+            expected_name = "stepcovnet_ONSET-my_onset_model"
+            self.assertEqual(model.name, expected_name)
+            saved_path = os.path.join(model_output_dir, expected_name + ".keras")
+            self.assertTrue(
+                os.path.isfile(saved_path),
+                f"Expected saved model at {saved_path}",
+            )
+
+    def test_run_train_from_config_saves_model_with_derived_name_when_model_name_empty(
+        self,
+    ):
+        """When model_name is empty, model name uses experiment-derived name."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.OnsetDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                model_name="",  # empty: use experiment name
+            )
+            model, _ = trainers.run_train_from_config(
+                dataset_config, model_config, run_config
+            )
+            self.assertTrue(
+                model.name.startswith("stepcovnet_ONSET-"),
+                f"Expected model.name to start with 'stepcovnet_ONSET-', got {model.name!r}",
+            )
+            saved_path = os.path.join(model_output_dir, model.name + ".keras")
+            self.assertTrue(
+                os.path.isfile(saved_path),
+                f"Expected saved model at {saved_path}",
+            )
+
+    def test_run_arrow_train_from_config_saves_model_with_explicit_model_name(self):
+        """Arrow saved model file and model.name use run_config.model_name when set."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                model_name="my_arrow_model",
+            )
+            model, _ = trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+            expected_name = "stepcovnet_ARROW-my_arrow_model"
+            self.assertEqual(model.name, expected_name)
+            saved_path = os.path.join(model_output_dir, expected_name + ".keras")
+            self.assertTrue(
+                os.path.isfile(saved_path),
+                f"Expected saved model at {saved_path}",
+            )
+
+    def test_run_arrow_train_from_config_saves_model_with_derived_name_when_model_name_empty(
+        self,
+    ):
+        """When model_name is empty, arrow model name uses experiment-derived name."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                model_name="",
+            )
+            model, _ = trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+            self.assertTrue(
+                model.name.startswith("stepcovnet_ARROW-"),
+                f"Expected model.name to start with 'stepcovnet_ARROW-', got {model.name!r}",
+            )
+            saved_path = os.path.join(model_output_dir, model.name + ".keras")
+            self.assertTrue(
+                os.path.isfile(saved_path),
+                f"Expected saved model at {saved_path}",
+            )
+
     def test_config_serialization(self):
         """Test that configs can be serialized to/from JSON."""
         dataset_config = config.OnsetDatasetConfig(
