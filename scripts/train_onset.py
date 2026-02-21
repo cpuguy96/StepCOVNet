@@ -126,6 +126,13 @@ PARSER.add_argument(
     required=False,
 )
 PARSER.add_argument(
+    "--val_take_count",
+    type=int,
+    help="Number of batches to use from the validation dataset (-1 for entire dataset).",
+    default=None,
+    required=False,
+)
+PARSER.add_argument(
     "--model_name",
     type=str,
     default=None,
@@ -211,6 +218,8 @@ def main():
         run_config.epoch = ARGS.epochs
     if ARGS.take_count is not None:
         run_config.take_count = ARGS.take_count
+    if ARGS.val_take_count is not None:
+        run_config.val_take_count = ARGS.val_take_count
     if ARGS.model_output_dir:
         run_config.model_output_dir = ARGS.model_output_dir
     if ARGS.callback_root_dir is not None:

@@ -446,6 +446,86 @@ class TrainersTest(unittest.TestCase):
             self.assertIsNotNone(model)
             self.assertIsNotNone(history)
 
+    def test_run_train_from_config_with_invalid_epoch_raises(self):
+        """epoch must be at least 1 for onset trainer."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.OnsetDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
+            run_config = config.RunConfig(
+                epoch=0,
+                take_count=1,
+                model_output_dir=model_output_dir,
+            )
+            with self.assertRaises(ValueError) as ctx:
+                trainers.run_train_from_config(dataset_config, model_config, run_config)
+            self.assertIn("epoch must be at least 1", str(ctx.exception))
+
+    def test_run_train_from_config_with_invalid_val_take_count_raises(self):
+        """val_take_count must be -1 or >= 1 for onset trainer."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.OnsetDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                val_take_count=0,
+                model_output_dir=model_output_dir,
+            )
+            with self.assertRaises(ValueError):
+                trainers.run_train_from_config(dataset_config, model_config, run_config)
+
+    def test_run_arrow_train_from_config_with_invalid_epoch_raises(self):
+        """epoch must be at least 1 for arrow trainer."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=0,
+                take_count=1,
+                model_output_dir=model_output_dir,
+            )
+            with self.assertRaises(ValueError) as ctx:
+                trainers.run_arrow_train_from_config(
+                    dataset_config, model_config, run_config
+                )
+            self.assertIn("epoch must be at least 1", str(ctx.exception))
+
+    def test_run_arrow_train_from_config_with_invalid_val_take_count_raises(self):
+        """val_take_count must be -1 or >= 1 for arrow trainer."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                val_take_count=0,
+                model_output_dir=model_output_dir,
+            )
+            with self.assertRaises(ValueError):
+                trainers.run_arrow_train_from_config(
+                    dataset_config, model_config, run_config
+                )
+
     def test_run_arrow_train_saves_config(self):
         """Test that arrow config is saved when callback_root_dir is set."""
         with tempfile.TemporaryDirectory() as temp_dir:

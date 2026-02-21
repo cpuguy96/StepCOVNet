@@ -263,6 +263,15 @@ def run_train_from_config(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
+    if run_config.epoch < 1:
+        raise ValueError("epoch must be at least 1")
+
+    if run_config.take_count != -1 and run_config.take_count < 1:
+        raise ValueError("take_count must be -1 (entire dataset) or at least 1")
+
+    if run_config.val_take_count != -1 and run_config.val_take_count < 1:
+        raise ValueError("val_take_count must be -1 (entire dataset) or at least 1")
+
     train_dataset = datasets.create_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
@@ -337,10 +346,11 @@ def run_train_from_config(
     if run_config.seed is not None:
         tf.random.set_seed(run_config.seed)
 
+    val_data = val_dataset.take(run_config.val_take_count)
     train_history = model.fit(
         train_dataset.take(run_config.take_count),
         epochs=run_config.epoch,
-        validation_data=val_dataset,
+        validation_data=val_data,
         callbacks=training_callbacks,
     )
 
@@ -364,6 +374,7 @@ def run_train(
     model_output_dir: str,
     callback_root_dir: str = "",
     model_name: str = "",
+    val_take_count: int = -1,
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train a U-Net WaveNet model on step detection data.
 
@@ -391,6 +402,8 @@ def run_train(
             checkpoints, logs).
         model_name: Name of the model that will be saved. If none provided,
             generated from the experiment name.
+        val_take_count: Number of batches to use from the validation dataset.
+            -1 (default) uses the entire validation dataset.
 
     Returns:
         A tuple containing:
@@ -415,6 +428,7 @@ def run_train(
         model_output_dir=model_output_dir,
         callback_root_dir=callback_root_dir,
         model_name=model_name,
+        val_take_count=val_take_count,
     )
     return run_train_from_config(dataset_config, model_config, run_config)
 
@@ -445,6 +459,9 @@ def run_arrow_train_from_config(
 
     if run_config.take_count != -1 and run_config.take_count < 1:
         raise ValueError("take_count must be -1 (entire dataset) or at least 1")
+
+    if run_config.val_take_count != -1 and run_config.val_take_count < 1:
+        raise ValueError("val_take_count must be -1 (entire dataset) or at least 1")
 
     train_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.data_dir,
@@ -496,10 +513,11 @@ def run_arrow_train_from_config(
     if run_config.seed is not None:
         tf.random.set_seed(run_config.seed)
 
+    val_data = val_dataset.take(run_config.val_take_count)
     train_history = model.fit(
         train_dataset.take(run_config.take_count),
         epochs=run_config.epoch,
-        validation_data=val_dataset,
+        validation_data=val_data,
         callbacks=training_callbacks,
     )
 
@@ -519,6 +537,7 @@ def run_arrow_train(
     take_count: int = -1,
     callback_root_dir: str = "",
     model_name: str = "",
+    val_take_count: int = -1,
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train an arrow classification model.
 
@@ -539,6 +558,8 @@ def run_arrow_train(
         callback_root_dir: Root directory for storing training callbacks.
         model_name: Name of the model that will be saved. If none provided,
             generated from the experiment name.
+        val_take_count: Number of batches to use from the validation dataset.
+            -1 (default) uses the entire validation dataset.
 
     Returns:
         A tuple containing:
@@ -559,5 +580,6 @@ def run_arrow_train(
         model_output_dir=model_output_dir,
         callback_root_dir=callback_root_dir,
         model_name=model_name,
+        val_take_count=val_take_count,
     )
     return run_arrow_train_from_config(dataset_config, model_config, run_config)

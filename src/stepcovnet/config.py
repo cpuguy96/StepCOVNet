@@ -179,6 +179,7 @@ class RunConfig:
     Attributes:
         epoch: Number of epochs to train for.
         take_count: Number of batches to use from training dataset (-1 for entire dataset).
+        val_take_count: Number of batches to use from validation dataset (-1 for entire dataset).
         model_output_dir: Directory where trained model will be saved.
         callback_root_dir: Root directory for storing training callbacks (checkpoints, logs).
         model_name: Name of the model. If empty, generated from experiment name.
@@ -191,6 +192,7 @@ class RunConfig:
     callback_root_dir: str = ""
     model_name: str = ""
     seed: int | None = None
+    val_take_count: int = -1
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
