@@ -605,6 +605,40 @@ class TrainersTest(unittest.TestCase):
             self.assertIsNotNone(model)
             self.assertIsNotNone(history)
 
+    def test_run_train_without_model_params_uses_defaults(self):
+        """run_train works without model_params (uses default OnsetModelConfig)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            model, history = trainers.run_train(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+                apply_temporal_augment=False,
+                should_apply_spec_augment=False,
+                use_gaussian_target=False,
+                gaussian_sigma=0.0,
+                take_count=1,
+                epoch=1,
+                model_output_dir=model_output_dir,
+            )
+            self.assertIsNotNone(model)
+            self.assertIsNotNone(history)
+
+    def test_run_arrow_train_without_model_params_uses_defaults(self):
+        """run_arrow_train works without model_params (uses default ArrowModelConfig)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            model, history = trainers.run_arrow_train(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+                take_count=1,
+                epoch=1,
+                model_output_dir=model_output_dir,
+            )
+            self.assertIsNotNone(model)
+            self.assertIsNotNone(history)
+
 
 if __name__ == "__main__":
     unittest.main()

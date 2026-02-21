@@ -368,13 +368,13 @@ def run_train(
     should_apply_spec_augment: bool,
     use_gaussian_target: bool,
     gaussian_sigma: float,
-    model_params: dict,
     take_count: int,
     epoch: int,
     model_output_dir: str,
     callback_root_dir: str = "",
     model_name: str = "",
     val_take_count: int = -1,
+    model_params: dict | None = None,
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train a U-Net WaveNet model on step detection data.
 
@@ -394,7 +394,6 @@ def run_train(
         use_gaussian_target: Whether to use Gaussian targets (True) or binary
             targets (False).
         gaussian_sigma: Standard deviation for Gaussian target distribution.
-        model_params: Dictionary of parameters to pass to the model builder.
         take_count: Number of batches to use from the training dataset.
         epoch: Number of epochs to train for.
         model_output_dir: Directory where the trained model will be saved.
@@ -404,6 +403,8 @@ def run_train(
             generated from the experiment name.
         val_take_count: Number of batches to use from the validation dataset.
             -1 (default) uses the entire validation dataset.
+        model_params: Optional dictionary of parameters to pass to the model
+            builder. If omitted or None, default OnsetModelConfig values are used.
 
     Returns:
         A tuple containing:
@@ -421,7 +422,7 @@ def run_train(
         use_gaussian_target=use_gaussian_target,
         gaussian_sigma=gaussian_sigma,
     )
-    model_config = config.OnsetModelConfig(**model_params)
+    model_config = config.OnsetModelConfig(**(model_params or {}))
     run_config = config.RunConfig(
         epoch=epoch,
         take_count=take_count,
@@ -531,13 +532,13 @@ def run_arrow_train(
     data_dir: str,
     val_data_dir: str,
     batch_size: int,
-    model_params: dict,
     epoch: int,
     model_output_dir: str,
     take_count: int = -1,
     callback_root_dir: str = "",
     model_name: str = "",
     val_take_count: int = -1,
+    model_params: dict | None = None,
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train an arrow classification model.
 
@@ -550,8 +551,6 @@ def run_arrow_train(
         data_dir: Path to the directory containing training data.
         val_data_dir: Path to the directory containing validation data.
         batch_size: Number of samples per batch during training.
-        model_params: Dictionary of parameters to pass to the arrow model
-            builder.
         take_count: Number of batches to use from the training dataset. -1 (default) uses the entire dataset (tf.data accepts -1 for take-all).
         epoch: Number of epochs to train for.
         model_output_dir: Directory where the trained model will be saved.
@@ -560,6 +559,9 @@ def run_arrow_train(
             generated from the experiment name.
         val_take_count: Number of batches to use from the validation dataset.
             -1 (default) uses the entire validation dataset.
+        model_params: Optional dictionary of parameters to pass to the arrow
+            model builder. If omitted or None, default ArrowModelConfig values
+            are used.
 
     Returns:
         A tuple containing:
@@ -573,7 +575,7 @@ def run_arrow_train(
         val_data_dir=val_data_dir,
         batch_size=batch_size,
     )
-    model_config = config.ArrowModelConfig(**model_params)
+    model_config = config.ArrowModelConfig(**(model_params or {}))
     run_config = config.RunConfig(
         epoch=epoch,
         take_count=take_count,
