@@ -136,3 +136,4 @@ dmypy.json
 /notebooks/
 !/notebooks/*.ipynb
 .vscode/
+.cursor/
