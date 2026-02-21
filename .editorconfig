@@ -17,5 +17,8 @@ indent_size = 2
 [*.py]
 indent_style = space
 indent_size = 4
-# Optional: set max line length, common Python standards use 80 or 100
 max_line_length = 80
+
+[*.ipynb]
+indent_style = space
+indent_size = 4
