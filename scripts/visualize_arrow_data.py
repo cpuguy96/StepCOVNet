@@ -146,7 +146,7 @@ def collect_aggregates(data_dir: str):
         steps_per_chart.append(n_steps)
 
         if n_steps >= 2:
-            duration = float(times[-1] - times[0])
+            duration = abs(float(times[-1] - times[0]))
             chart_durations.append(duration)
             all_inter_step_intervals.extend(np.diff(times).tolist())
             steps_per_second.append(n_steps / duration if duration > 0 else 0.0)
