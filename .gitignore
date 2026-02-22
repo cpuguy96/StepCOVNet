@@ -133,7 +133,5 @@ dmypy.json
 .pyre/
 
 **/*data/
-/notebooks/
-!/notebooks/*.ipynb
 .vscode/
 .cursor/
