@@ -272,6 +272,22 @@ class ArrowHoldValidityMetricTest(unittest.TestCase):
         self.assertEqual(config["ignore_class"], 0)
         self.assertEqual(config["name"], "custom")
 
+    def test_metric_result_always_in_zero_one(self):
+        # Ensure result is clamped to [0, 1] even in edge cases (e.g. no hold ends)
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[1, 1]]))
+        self.metric.update_state(y_true, y_pred)
+        result = float(self.metric.result())
+        self.assertGreaterEqual(result, 0.0)
+        self.assertLessEqual(result, 1.0)
+        # Violation case should also stay in range
+        self.metric.reset_state()
+        y_pred_bad = _one_hot_pred(1, 2, 256, np.array([[3, 3]]))
+        self.metric.update_state(y_true, y_pred_bad)
+        result = float(self.metric.result())
+        self.assertGreaterEqual(result, 0.0)
+        self.assertLessEqual(result, 1.0)
+
 
 class ComputeHoldValidityViolationsTest(unittest.TestCase):
     """Tests for compute_hold_validity_violations (numpy helper used by check script)."""
@@ -316,6 +332,17 @@ class ComputeHoldValidityViolationsTest(unittest.TestCase):
         self.assertEqual(violations, 0)
         self.assertEqual(hold_ends, 0)
         self.assertEqual(examples, [])
+
+    def test_both_rules_violated_single_hold_end_counted_once(self):
+        # 1 then 3 in same column: violates both (unmatched 3 and 3 after tap).
+        # Must count at most one violation per hold-end, like ArrowHoldValidityMetric.
+        codes = np.array([1, 3], dtype=np.int32)
+        violations, hold_ends, examples = metrics.compute_hold_validity_violations(
+            codes
+        )
+        self.assertEqual(hold_ends, 1)
+        self.assertEqual(violations, 1, "at most one violation per hold-end")
+        self.assertLessEqual(violations, hold_ends)
 
 
 if __name__ == "__main__":

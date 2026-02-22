@@ -474,15 +474,20 @@ def compute_hold_validity_violations(
             elif col[i] == 3:
                 hold_ends += 1
                 if run < 1:
-                    violations += 1
-                    if len(examples) < max_examples:
-                        examples.append((i, c, "unmatched_3"))
+                    run_unchanged = True  # no 2 to consume
                 else:
                     run -= 1
-                if i > 0 and col[i - 1] == 1:
+                    run_unchanged = False
+                after_tap = i > 0 and col[i - 1] == 1
+                # At most one violation per hold-end (same as ArrowHoldValidityMetric)
+                if after_tap:
                     violations += 1
                     if len(examples) < max_examples:
                         examples.append((i, c, "3_after_1"))
+                elif run_unchanged:
+                    violations += 1
+                    if len(examples) < max_examples:
+                        examples.append((i, c, "unmatched_3"))
     return int(violations), int(hold_ends), examples
 
 
@@ -503,8 +508,9 @@ class ArrowHoldValidityMetric(keras.metrics.Metric):
     Metric that measures hold/release validity of predicted arrow sequences.
     Rules: (1) Every 3 (hold end) must have a preceding 2 (hold start) in that column.
     (2) 3 cannot immediately follow 1 (tap) in the same column.
-    Returns 1 - (violations / max(1, total_hold_ends)); 1.0 when no hold ends.
-    Uses ignore_class=0 (padding positions are skipped when building per-column sequences).
+    Returns value in [0, 1]: 1 - (violations / max(1, total_hold_ends)), clamped.
+    1.0 when no hold ends; 0.0 when violations >= hold_ends (at most one violation per
+    hold-end, but clamped for safety). Uses ignore_class=0 (padding positions are skipped).
     """
 
     def __init__(
@@ -567,16 +573,17 @@ class ArrowHoldValidityMetric(keras.metrics.Metric):
         violation_after_tap = tf.cast(
             tf.equal(digits, 3) & tf.equal(digits_prev, 1), tf.float32
         )
-        violations_batch = tf.reduce_sum(
-            tf.add(violation_unmatched, violation_after_tap)
-        )
+        # At most one violation per hold-end (avoid double-count when both rules hit)
+        violation_any = tf.maximum(violation_unmatched, violation_after_tap)
+        violations_batch = tf.reduce_sum(violation_any)
         hold_ends_batch = tf.reduce_sum(tf.cast(tf.equal(digits, 3), tf.float32))
         self.total_violations.assign_add(violations_batch)
         self.total_hold_ends.assign_add(hold_ends_batch)
 
     def result(self):
-        denom = self.total_hold_ends + self.eps
-        return 1.0 - (self.total_violations / denom)
+        denom = tf.maximum(1.0, self.total_hold_ends)
+        ratio = self.total_violations / denom
+        return tf.clip_by_value(1.0 - ratio, 0.0, 1.0)
 
     def reset_state(self):
         self.total_violations.assign(0.0)
