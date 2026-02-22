@@ -39,6 +39,7 @@ dev = [
     "notebook",
     "gdown",
     "nbmake",
+    "matplotlib",
 ]
 gpu = ["tensorflow[and-cuda]"]
 gpu-dev = ["stepcovnet[dev,gpu]"]
