@@ -6,7 +6,6 @@ import tensorflow as tf
 from stepcovnet import constants
 
 _MAX_NUM_ARROWS = 2048
-_N_ARROW_TYPES = 256
 
 
 @keras.saving.register_keras_serializable()
@@ -397,7 +396,7 @@ def build_arrow_model(
     # Output layer predicts the probability distribution over arrow types for each step
 
     outputs = keras.layers.Dense(
-        _N_ARROW_TYPES, activation="softmax", name="output_probabilities"
+        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
     )(x)
 
     _model_name = "stepcovnet_ARROW"
