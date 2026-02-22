@@ -185,12 +185,16 @@ def write_summary(agg: dict, output_path: str | None) -> str:
     viol_pct = (
         f"{100 * agg['invalid_charts'] / n_parsed:.1f}%" if n_parsed > 0 else "N/A"
     )
+    if n_parsed > 0 and spc.size > 0:
+        steps_line = f"Steps per chart: min={int(spc.min())}, mean={float(spc.mean()):.1f}, max={int(spc.max())}"
+    else:
+        steps_line = "Steps per chart: N/A (no charts successfully parsed)"
     lines = [
         "Arrow training data summary",
         "=" * 40,
         f"Charts (parsed): {n_parsed}",
         f"Total steps: {total_steps}",
-        f"Steps per chart: min={int(spc.min())}, mean={float(spc.mean()):.1f}, max={int(spc.max())}",
+        steps_line,
         f"Charts with hold violations: {agg['invalid_charts']} ({viol_pct})",
     ]
     vc = agg["violation_counts"]
