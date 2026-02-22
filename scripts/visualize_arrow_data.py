@@ -130,6 +130,9 @@ def collect_aggregates(data_dir: str):
     invalid_charts = 0
     column_activity = np.zeros(4, dtype=np.int64)
     all_chord_sizes: list[int] = []
+    chart_durations: list[float] = []
+    all_inter_step_intervals: list[float] = []
+    steps_per_second: list[float] = []
 
     for _audio_path, chart_path in pairs:
         try:
@@ -141,6 +144,15 @@ def collect_aggregates(data_dir: str):
         cols_flat = np.asarray(cols, dtype=np.int32).ravel()
         n_steps = len(cols_flat)
         steps_per_chart.append(n_steps)
+
+        if n_steps >= 2:
+            duration = float(times[-1] - times[0])
+            chart_durations.append(duration)
+            all_inter_step_intervals.extend(np.diff(times).tolist())
+            steps_per_second.append(n_steps / duration if duration > 0 else 0.0)
+        else:
+            chart_durations.append(0.0)
+            steps_per_second.append(0.0)
 
         bpm = _parse_bpm(chart_path)
         if bpm is not None:
@@ -174,6 +186,9 @@ def collect_aggregates(data_dir: str):
         "invalid_charts": invalid_charts,
         "column_activity": column_activity,
         "all_chord_sizes": np.array(all_chord_sizes, dtype=np.int32),
+        "chart_durations": np.array(chart_durations, dtype=np.float64),
+        "inter_step_intervals": np.array(all_inter_step_intervals, dtype=np.float64),
+        "steps_per_second": np.array(steps_per_second, dtype=np.float64),
     }
 
 
@@ -203,6 +218,30 @@ def write_summary(agg: dict, output_path: str | None) -> str:
         lines.append(
             f"Mean violations per chart (among those with violations): {float(with_viol.mean()):.1f}"
         )
+
+    cd = agg["chart_durations"]
+    isi = agg["inter_step_intervals"]
+    sps = agg["steps_per_second"]
+    if cd.size > 0:
+        lines.append(
+            f"Chart duration (s): min={float(cd.min()):.1f}, mean={float(cd.mean()):.1f}, max={float(cd.max()):.1f}"
+        )
+    else:
+        lines.append("Chart duration (s): N/A")
+    if isi.size > 0:
+        lines.append(
+            f"Mean step interval (s): {float(isi.mean()):.3f}; "
+            f"inter-step min={float(isi.min()):.3f}, max={float(isi.max()):.3f}"
+        )
+    else:
+        lines.append("Mean step interval (s): N/A")
+    if sps.size > 0:
+        lines.append(
+            f"Steps per second: min={float(sps.min()):.2f}, mean={float(sps.mean()):.2f}, max={float(sps.max()):.2f}"
+        )
+    else:
+        lines.append("Steps per second: N/A")
+
     summary = "\n".join(lines)
     if output_path:
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -362,6 +401,78 @@ def plot_bpm(agg: dict, output_dir: str | None, show: bool) -> None:
     plt.close()
 
 
+def plot_chart_duration(agg: dict, output_dir: str | None, show: bool) -> None:
+    """Histogram of chart duration (seconds)."""
+    cd = agg["chart_durations"]
+    if cd.size == 0:
+        return
+    fig, ax = plt.subplots()
+    n = len(cd)
+    ax.hist(
+        cd,
+        bins=min(40, max(1, n)),
+        color="steelblue",
+        edgecolor="black",
+    )
+    ax.set_xlabel("Chart duration (s)")
+    ax.set_ylabel("Number of charts")
+    ax.set_title("Chart duration distribution")
+    fig.tight_layout()
+    if output_dir:
+        fig.savefig(os.path.join(output_dir, "chart_duration.png"), dpi=150)
+    if show:
+        plt.show()
+    plt.close()
+
+
+def plot_inter_step_interval(agg: dict, output_dir: str | None, show: bool) -> None:
+    """Histogram of inter-step intervals (seconds)."""
+    isi = agg["inter_step_intervals"]
+    if isi.size == 0:
+        return
+    fig, ax = plt.subplots()
+    n = len(isi)
+    ax.hist(
+        isi,
+        bins=min(50, max(1, n)),
+        color="steelblue",
+        edgecolor="black",
+    )
+    ax.set_xlabel("Inter-step interval (s)")
+    ax.set_ylabel("Count")
+    ax.set_title("Inter-step interval distribution")
+    fig.tight_layout()
+    if output_dir:
+        fig.savefig(os.path.join(output_dir, "inter_step_interval.png"), dpi=150)
+    if show:
+        plt.show()
+    plt.close()
+
+
+def plot_steps_per_second(agg: dict, output_dir: str | None, show: bool) -> None:
+    """Histogram of steps per second (per chart)."""
+    sps = agg["steps_per_second"]
+    if sps.size == 0:
+        return
+    fig, ax = plt.subplots()
+    n = len(sps)
+    ax.hist(
+        sps,
+        bins=min(40, max(1, n)),
+        color="steelblue",
+        edgecolor="black",
+    )
+    ax.set_xlabel("Steps per second")
+    ax.set_ylabel("Number of charts")
+    ax.set_title("Steps per second distribution")
+    fig.tight_layout()
+    if output_dir:
+        fig.savefig(os.path.join(output_dir, "steps_per_second.png"), dpi=150)
+    if show:
+        plt.show()
+    plt.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Visualize arrow training data: stats and plots for a training data directory."
@@ -414,6 +525,9 @@ def main() -> int:
     plot_steps_per_chart(agg, out, show)
     plot_chord_size(agg, out, show)
     plot_bpm(agg, out, show)
+    plot_chart_duration(agg, out, show)
+    plot_inter_step_interval(agg, out, show)
+    plot_steps_per_second(agg, out, show)
 
     return 0
 
