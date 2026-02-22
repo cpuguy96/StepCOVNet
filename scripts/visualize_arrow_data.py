@@ -179,16 +179,19 @@ def collect_aggregates(data_dir: str):
 
 def write_summary(agg: dict, output_path: str | None) -> str:
     """Build summary text and optionally write to file. Returns summary string."""
-    n = agg["n_charts"]
+    n_parsed = agg["valid_charts"] + agg["invalid_charts"]
     total_steps = int(np.sum(agg["steps_per_chart"]))
     spc = agg["steps_per_chart"]
+    viol_pct = (
+        f"{100 * agg['invalid_charts'] / n_parsed:.1f}%" if n_parsed > 0 else "N/A"
+    )
     lines = [
         "Arrow training data summary",
         "=" * 40,
-        f"Charts: {n}",
+        f"Charts (parsed): {n_parsed}",
         f"Total steps: {total_steps}",
         f"Steps per chart: min={int(spc.min())}, mean={float(spc.mean()):.1f}, max={int(spc.max())}",
-        f"Charts with hold violations: {agg['invalid_charts']} ({100 * agg['invalid_charts'] / n:.1f}%)",
+        f"Charts with hold violations: {agg['invalid_charts']} ({viol_pct})",
     ]
     vc = agg["violation_counts"]
     with_viol = vc[vc > 0]
@@ -298,9 +301,10 @@ def plot_hold_validity(agg: dict, output_dir: str | None, show: bool) -> None:
 def plot_steps_per_chart(agg: dict, output_dir: str | None, show: bool) -> None:
     """Histogram of steps per chart."""
     fig, ax = plt.subplots()
+    n_plotted = len(agg["steps_per_chart"])
     ax.hist(
         agg["steps_per_chart"],
-        bins=min(50, max(1, agg["n_charts"])),
+        bins=min(50, max(1, n_plotted)),
         color="steelblue",
         edgecolor="black",
     )
