@@ -217,6 +217,116 @@ class RunConfigTest(unittest.TestCase):
         self.assertEqual(cfg.epoch, 15)
         self.assertEqual(cfg.callback_root_dir, "cb")
 
+    def test_aux_weights_default_zero(self):
+        """Default aux weights are 0 and valid."""
+        cfg = config.RunConfig(epoch=1, take_count=1, model_output_dir="out")
+        self.assertEqual(cfg.chart_validity_aux_weight, 0.0)
+        self.assertEqual(cfg.diversity_aux_weight, 0.0)
+
+    def test_aux_weights_accept_non_negative(self):
+        """Non-negative aux weights are accepted."""
+        cfg = config.RunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.5,
+            diversity_aux_weight=0.2,
+        )
+        self.assertEqual(cfg.chart_validity_aux_weight, 0.5)
+        self.assertEqual(cfg.diversity_aux_weight, 0.2)
+        cfg_zero = config.RunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.0,
+            diversity_aux_weight=0.0,
+        )
+        self.assertEqual(cfg_zero.chart_validity_aux_weight, 0.0)
+        self.assertEqual(cfg_zero.diversity_aux_weight, 0.0)
+
+    def test_negative_chart_validity_aux_weight_raises(self):
+        """chart_validity_aux_weight < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                chart_validity_aux_weight=-0.1,
+            )
+        self.assertIn("chart_validity_aux_weight", str(ctx.exception))
+        self.assertIn("-0.1", str(ctx.exception))
+
+    def test_negative_diversity_aux_weight_raises(self):
+        """diversity_aux_weight < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                diversity_aux_weight=-1.0,
+            )
+        self.assertIn("diversity_aux_weight", str(ctx.exception))
+        self.assertIn("-1.0", str(ctx.exception))
+
+    def test_from_dict_negative_aux_weight_raises(self):
+        """from_dict with negative aux weight raises ValueError."""
+        data = {
+            "epoch": 1,
+            "take_count": 1,
+            "model_output_dir": "out",
+            "chart_validity_aux_weight": -0.5,
+        }
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig.from_dict(data)
+        self.assertIn("chart_validity_aux_weight", str(ctx.exception))
+
+    def test_epoch_zero_raises(self):
+        """epoch < 1 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=0,
+                take_count=1,
+                model_output_dir="out",
+            )
+        self.assertIn("epoch", str(ctx.exception))
+        self.assertIn("at least 1", str(ctx.exception))
+
+    def test_take_count_zero_raises(self):
+        """take_count 0 (and not -1) raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=1,
+                take_count=0,
+                model_output_dir="out",
+            )
+        self.assertIn("take_count", str(ctx.exception))
+
+    def test_take_count_minus_one_ok(self):
+        """take_count=-1 is valid (entire dataset)."""
+        cfg = config.RunConfig(epoch=1, take_count=-1, model_output_dir="out")
+        self.assertEqual(cfg.take_count, -1)
+
+    def test_val_take_count_zero_raises(self):
+        """val_take_count 0 (and not -1) raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                val_take_count=0,
+            )
+        self.assertIn("val_take_count", str(ctx.exception))
+
+    def test_val_take_count_minus_one_ok(self):
+        """val_take_count=-1 is valid (entire dataset)."""
+        cfg = config.RunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            val_take_count=-1,
+        )
+        self.assertEqual(cfg.val_take_count, -1)
+
 
 class OnsetExperimentConfigTest(unittest.TestCase):
     def test_create_experiment_config(self):

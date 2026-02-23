@@ -164,7 +164,8 @@ def _get_onset_experiment_name(
 
 
 def _get_arrow_experiment_name(
-    take_count: int, model_params: config.ArrowModelConfig
+    model_config: config.ArrowModelConfig,
+    run_config: config.RunConfig,
 ) -> str:
     """Generate a descriptive experiment name from hyperparameters.
 
@@ -172,25 +173,26 @@ def _get_arrow_experiment_name(
     configuration parameters for arrow classification experiments.
 
     Args:
-        take_count: Number of batches used from training dataset.
-        model_params: Model configuration ArrowModelConfig object
+        model_config: Model configuration ArrowModelConfig object
             containing architecture parameters.
+        run_config: Run configuration RunConfig object (used for
+            chart_validity_aux_weight and diversity_aux_weight).
 
     Returns:
         String experiment name with format: "ARROW-take_{N}-att_layers_{N}".
     """
     parts = ["ARROW"]
 
-    if take_count == -1:
+    if run_config.take_count == -1:
         parts.append("take_all")
     else:
-        parts.append(f"take_{take_count}")
+        parts.append(f"take_{run_config.take_count}")
 
-    num_layers = model_params.num_layers
-    d_model = model_params.d_model
-    num_heads = model_params.num_heads
-    ff_dim = model_params.ff_dim
-    dropout_rate = model_params.dropout_rate
+    num_layers = model_config.num_layers
+    d_model = model_config.d_model
+    num_heads = model_config.num_heads
+    ff_dim = model_config.ff_dim
+    dropout_rate = model_config.dropout_rate
 
     parts.append(f"att_layers_{num_layers}")
     parts.append(f"d_model_{d_model}")
@@ -198,8 +200,17 @@ def _get_arrow_experiment_name(
     parts.append(f"ff_dim_{ff_dim}")
     parts.append(f"dropout_{str(dropout_rate).replace('.', '_')}")
 
-    if model_params.snippet_half_frames > 0:
-        parts.append(f"snippets_half_{model_params.snippet_half_frames}")
+    if model_config.snippet_half_frames > 0:
+        parts.append(f"snippets_half_{model_config.snippet_half_frames}")
+
+    if run_config.chart_validity_aux_weight > 0:
+        parts.append(
+            f"chart_val_aux_{str(run_config.chart_validity_aux_weight).replace('.', '_')}"
+        )
+    if run_config.diversity_aux_weight > 0:
+        parts.append(
+            f"diversity_aux_{str(run_config.diversity_aux_weight).replace('.', '_')}"
+        )
 
     return "-".join(parts)
 
@@ -266,15 +277,6 @@ def run_train_from_config(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
-    if run_config.epoch < 1:
-        raise ValueError("epoch must be at least 1")
-
-    if run_config.take_count != -1 and run_config.take_count < 1:
-        raise ValueError("take_count must be -1 (entire dataset) or at least 1")
-
-    if run_config.val_take_count != -1 and run_config.val_take_count < 1:
-        raise ValueError("val_take_count must be -1 (entire dataset) or at least 1")
-
     train_dataset = datasets.create_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
@@ -458,15 +460,6 @@ def run_arrow_train_from_config(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
-    if run_config.epoch < 1:
-        raise ValueError("epoch must be at least 1")
-
-    if run_config.take_count != -1 and run_config.take_count < 1:
-        raise ValueError("take_count must be -1 (entire dataset) or at least 1")
-
-    if run_config.val_take_count != -1 and run_config.val_take_count < 1:
-        raise ValueError("val_take_count must be -1 (entire dataset) or at least 1")
-
     train_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
@@ -480,7 +473,8 @@ def run_arrow_train_from_config(
     )
 
     experiment_name = _get_arrow_experiment_name(
-        take_count=run_config.take_count, model_params=model_config
+        model_config=model_config,
+        run_config=run_config,
     )
 
     model = models.build_arrow_model(

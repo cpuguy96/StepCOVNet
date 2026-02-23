@@ -208,6 +208,29 @@ class RunConfig:
     chart_validity_aux_weight: float = 0.0
     diversity_aux_weight: float = 0.0
 
+    def __post_init__(self) -> None:
+        """Validate run parameters and aux weights."""
+        if self.epoch < 1:
+            raise ValueError(f"epoch must be at least 1, got {self.epoch}")
+        if self.take_count != -1 and self.take_count < 1:
+            raise ValueError(
+                "take_count must be -1 (entire dataset) or at least 1, "
+                f"got {self.take_count}"
+            )
+        if self.val_take_count != -1 and self.val_take_count < 1:
+            raise ValueError(
+                "val_take_count must be -1 (entire dataset) or at least 1, "
+                f"got {self.val_take_count}"
+            )
+        if self.chart_validity_aux_weight < 0:
+            raise ValueError(
+                f"chart_validity_aux_weight must be >= 0, got {self.chart_validity_aux_weight}"
+            )
+        if self.diversity_aux_weight < 0:
+            raise ValueError(
+                f"diversity_aux_weight must be >= 0, got {self.diversity_aux_weight}"
+            )
+
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
 
