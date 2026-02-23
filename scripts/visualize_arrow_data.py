@@ -115,7 +115,7 @@ def _chord_sizes(cols: np.ndarray) -> np.ndarray:
 
 
 def collect_aggregates(data_dir: str):
-    """Load all charts, aggregate arrow codes, note kinds, hold validity, etc."""
+    """Load all charts, aggregate arrow codes, note kinds, chart validity, etc."""
     pairs = datasets._load_and_pair_files(data_dir)  # noqa: SLF001
     if not pairs:
         return None
@@ -158,7 +158,7 @@ def collect_aggregates(data_dir: str):
         if bpm is not None:
             bpms.append(bpm)
 
-        violations, _hold_ends, _examples = metrics.compute_hold_validity_violations(
+        violations, _hold_ends, _examples = metrics.compute_chart_validity_violations(
             cols
         )
         violation_counts.append(violations)
@@ -322,7 +322,7 @@ def plot_per_column_activity(agg: dict, output_dir: str | None, show: bool) -> N
     plt.close()
 
 
-def plot_hold_validity(agg: dict, output_dir: str | None, show: bool) -> None:
+def plot_chart_validity(agg: dict, output_dir: str | None, show: bool) -> None:
     """Bar chart: valid vs invalid charts."""
     fig, ax = plt.subplots()
     ax.bar(
@@ -332,10 +332,10 @@ def plot_hold_validity(agg: dict, output_dir: str | None, show: bool) -> None:
         edgecolor="black",
     )
     ax.set_ylabel("Number of charts")
-    ax.set_title("Hold validity")
+    ax.set_title("Chart validity")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "hold_validity.png"), dpi=150)
+        fig.savefig(os.path.join(output_dir, "chart_validity.png"), dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -521,7 +521,7 @@ def main() -> int:
     plot_note_kind(agg, out, show)
     plot_top_arrow_types(agg, args.top_arrows, out, show)
     plot_per_column_activity(agg, out, show)
-    plot_hold_validity(agg, out, show)
+    plot_chart_validity(agg, out, show)
     plot_steps_per_chart(agg, out, show)
     plot_chord_size(agg, out, show)
     plot_bpm(agg, out, show)

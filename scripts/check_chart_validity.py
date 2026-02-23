@@ -1,12 +1,12 @@
-r"""Check training chart files for hold validity (same rules as ChartValidityMetric).
+r"""Check training chart files for chart validity (same rules as ChartValidityMetric).
 
-Reports any chart that has hold violations: a 3 (hold end) with no preceding 2 (hold start)
-in that column, or a 3 immediately after a 1 (tap) in the same column.
+Reports charts with validity violations (same rules as ChartValidityMetric): orphaned hold end (3),
+tap during hold (1), nested hold (2), or unterminated hold at end of chart.
 Use --show_examples to print example locations (step, time, arrow, line number) for lookup in the .txt file.
 
 Usage:
-    python scripts/check_hold_validity.py --data_dir=/path/to/training/data
-    python scripts/check_hold_validity.py --data_dir=/path/to/training/data --show_examples
+    python scripts/check_chart_validity.py --data_dir=/path/to/training/data
+    python scripts/check_chart_validity.py --data_dir=/path/to/training/data --show_examples
 """
 
 import argparse
@@ -20,8 +20,15 @@ from stepcovnet import metrics
 # Chart .txt has 4 header lines (TITLE, BPM, NOTES, difficulty), then one line per step (1-based).
 _CHART_HEADER_LINES = 4
 
+_VIOLATION_KIND_DESCRIPTIONS = {
+    "unmatched_3": "hold end (3) with no preceding hold start (2)",
+    "tap_during_hold": "tap (1) during hold in column",
+    "nested_hold": "hold start (2) while already in hold",
+    "unterminated_hold": "hold started but not ended by end of chart",
+}
+
 PARSER = argparse.ArgumentParser(
-    description="Check training data charts for hold validity violations."
+    description="Check training data charts for chart validity violations."
 )
 PARSER.add_argument(
     "--data_dir",
@@ -59,7 +66,9 @@ def main() -> int:
                 (pathlib.Path(chart_path).stem, -1, -1, chart_path, None, None, None)
             )
             continue
-        violations, hold_ends, examples = metrics.compute_hold_validity_violations(cols)
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
+            cols
+        )
         if violations > 0:
             song_name = pathlib.Path(chart_path).stem
             songs_in_violation.append(
@@ -75,7 +84,7 @@ def main() -> int:
             )
     if songs_in_violation:
         print(f"Found {len(songs_in_violation)} songs in violation.")
-        print("Hold validity violations found in the following chart(s):")
+        print("Chart validity violations found in the following chart(s):")
         for entry in songs_in_violation:
             name, violations, hold_ends, chart_path, times, cols, examples = entry
             if violations == -1:
@@ -97,18 +106,14 @@ def main() -> int:
                         arrow_str = generator._int_to_base4_string(  # noqa: SLF001
                             int(cols[step_idx]), min_digits=4
                         )
-                        kind_desc = (
-                            "hold end (3) with no preceding hold start (2)"
-                            if kind == "unmatched_3"
-                            else "hold end (3) immediately after tap (1)"
-                        )
+                        kind_desc = _VIOLATION_KIND_DESCRIPTIONS.get(kind, kind)
                         print(
                             f"    Example: step {step_idx}, time {time_s:.4f}s, "
                             f"arrow {arrow_str!r}, column {column} — {kind_desc} "
                             f"(line {line_num} in file)"
                         )
         return 1
-    print("All charts passed hold validity check.")
+    print("All charts passed chart validity check.")
     return 0
 
 

@@ -213,13 +213,13 @@ class ArrowNoteKindDistributionMetricTest(unittest.TestCase):
         self.assertEqual(config["name"], "custom")
 
 
-class ComputeHoldValidityViolationsTest(unittest.TestCase):
-    """Tests for compute_hold_validity_violations (numpy helper used by check script)."""
+class ComputeChartValidityViolationsTest(unittest.TestCase):
+    """Tests for compute_chart_validity_violations (numpy helper used by check script)."""
 
     def test_valid_hold_sequence_zero_violations(self):
         # 2 then 3 in column 0 -> valid
         codes = np.array([2, 3], dtype=np.int32)
-        violations, hold_ends, examples = metrics.compute_hold_validity_violations(
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
             codes
         )
         self.assertEqual(violations, 0)
@@ -229,7 +229,7 @@ class ComputeHoldValidityViolationsTest(unittest.TestCase):
     def test_unmatched_hold_end_violation(self):
         # 3 with no preceding 2
         codes = np.array([3, 1], dtype=np.int32)
-        violations, hold_ends, examples = metrics.compute_hold_validity_violations(
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
             codes
         )
         self.assertGreater(violations, 0)
@@ -238,19 +238,19 @@ class ComputeHoldValidityViolationsTest(unittest.TestCase):
         self.assertIn((0, 3, "unmatched_3"), examples)
 
     def test_hold_end_after_tap_violation(self):
-        # 1 then 3 in same column
+        # 1 then 3 in same column: 3 has no preceding 2 (orphan / unmatched_3)
         codes = np.array([1, 3], dtype=np.int32)
-        violations, hold_ends, examples = metrics.compute_hold_validity_violations(
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
             codes
         )
         self.assertGreater(violations, 0)
         self.assertEqual(hold_ends, 1)
-        # Code 1 = "0001", code 3 = "0003" -> column 3 has 1 then 3
-        self.assertIn((1, 3, "3_after_1"), examples)
+        # Code 1 = "0001", code 3 = "0003" -> column 3 has 1 then 3 -> unmatched_3
+        self.assertIn((1, 3, "unmatched_3"), examples)
 
     def test_no_hold_ends_zero_hold_ends(self):
         codes = np.array([1, 1, 0], dtype=np.int32)
-        violations, hold_ends, examples = metrics.compute_hold_validity_violations(
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
             codes
         )
         self.assertEqual(violations, 0)
@@ -258,15 +258,44 @@ class ComputeHoldValidityViolationsTest(unittest.TestCase):
         self.assertEqual(examples, [])
 
     def test_both_rules_violated_single_hold_end_counted_once(self):
-        # 1 then 3 in same column: violates both (unmatched 3 and 3 after tap).
-        # Must count at most one violation per hold-end (same as ChartValidityMetric).
+        # 1 then 3 in same column: one violation (unmatched_3; 3 has no preceding 2).
         codes = np.array([1, 3], dtype=np.int32)
-        violations, hold_ends, examples = metrics.compute_hold_validity_violations(
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
             codes
         )
         self.assertEqual(hold_ends, 1)
-        self.assertEqual(violations, 1, "at most one violation per hold-end")
+        self.assertEqual(violations, 1)
         self.assertLessEqual(violations, hold_ends)
+
+    def test_tap_during_hold_violation(self):
+        # 2, 1, 3 in column 0: tap (1) while in HOLDING. Codes 128, 64, 192 = col0 digits 2,1,3.
+        codes = np.array([128, 64, 192], dtype=np.int32)
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
+            codes
+        )
+        self.assertGreater(violations, 0)
+        self.assertEqual(hold_ends, 1)
+        self.assertIn((1, 0, "tap_during_hold"), examples)
+
+    def test_nested_hold_violation(self):
+        # 2, 2, 3 in column 0: second 2 is nested. Codes 128, 128, 192.
+        codes = np.array([128, 128, 192], dtype=np.int32)
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
+            codes
+        )
+        self.assertGreater(violations, 0)
+        self.assertEqual(hold_ends, 1)
+        self.assertIn((1, 0, "nested_hold"), examples)
+
+    def test_unterminated_hold_violation(self):
+        # Single 2 (hold start) with no 3 in column 0. Code 128.
+        codes = np.array([128], dtype=np.int32)
+        violations, hold_ends, examples = metrics.compute_chart_validity_violations(
+            codes
+        )
+        self.assertEqual(violations, 1)
+        self.assertEqual(hold_ends, 0)
+        self.assertIn((0, 0, "unterminated_hold"), examples)
 
 
 class ChartValidityMetricTest(unittest.TestCase):

@@ -432,16 +432,18 @@ class ArrowNoteKindDistributionMetric(keras.metrics.Metric):
         return config
 
 
-def compute_hold_validity_violations(
+def compute_chart_validity_violations(
     arrow_codes: np.ndarray,
     *,
     max_examples: int = 5,
 ) -> tuple[int, int, list[tuple[int, int, str]]]:
-    """Check hold validity on a 1D sequence of arrow codes (0..255).
+    """Check chart validity on a 1D sequence of arrow codes (0..255).
 
-    Uses the same hold rules as ChartValidityMetric: (1) every 3 (hold end) must
-    have a preceding 2 (hold start) in that column; (2) 3 cannot immediately
-    follow 1 (tap) in the same column.
+    Uses the same rules as ChartValidityMetric (per-column FREE/HOLDING state):
+    (1) Orphaned tail: 3 (hold end) with no preceding 2 (hold start) in that column.
+    (2) Tap during hold: 1 (tap) while column is in HOLDING state.
+    (3) Nested hold: 2 (hold start) while column is already HOLDING.
+    (4) Unterminated hold: sequence ends with run > 0 (hold started but no end).
 
     Args:
         arrow_codes: 1D array of integer arrow codes, shape (seq_len,).
@@ -450,7 +452,8 @@ def compute_hold_validity_violations(
     Returns:
         (num_violations, num_hold_ends, examples). num_hold_ends is the total
         count of 3s. examples is a list of (step_index, column, kind_str) with
-        kind_str "unmatched_3" or "3_after_1", usable for lookup in the chart file.
+        kind_str one of "unmatched_3", "tap_during_hold", "nested_hold",
+        "unterminated_hold".
     """
     arrow_codes = np.asarray(arrow_codes, dtype=np.int32).ravel()
     seq_len = len(arrow_codes)
@@ -469,25 +472,31 @@ def compute_hold_validity_violations(
         col = digits[:, c]
         run = 0
         for i in range(seq_len):
-            if col[i] == 2:
-                run += 1
-            elif col[i] == 3:
-                hold_ends += 1
-                if run < 1:
-                    run_unchanged = True  # no 2 to consume
-                else:
-                    run -= 1
-                    run_unchanged = False
-                after_tap = i > 0 and col[i - 1] == 1
-                # At most one violation per hold-end (same as ChartValidityMetric)
-                if after_tap:
+            run_prev = run
+            d = col[i]
+            if d == 2:
+                if run_prev >= 1:
                     violations += 1
                     if len(examples) < max_examples:
-                        examples.append((i, c, "3_after_1"))
-                elif run_unchanged:
+                        examples.append((i, c, "nested_hold"))
+                run += 1
+            elif d == 3:
+                hold_ends += 1
+                if run_prev < 1:
                     violations += 1
                     if len(examples) < max_examples:
                         examples.append((i, c, "unmatched_3"))
+                else:
+                    run -= 1
+            elif d == 1:
+                if run_prev >= 1:
+                    violations += 1
+                    if len(examples) < max_examples:
+                        examples.append((i, c, "tap_during_hold"))
+        if run > 0:
+            violations += 1
+            if len(examples) < max_examples:
+                examples.append((seq_len - 1, c, "unterminated_hold"))
     return int(violations), int(hold_ends), examples
 
 
@@ -527,10 +536,10 @@ def chart_validity_auxiliary_loss(
 ) -> tf.Tensor:
     """Differentiable auxiliary loss encouraging chart-valid predictions.
 
-    Soft penalties aligned with ChartValidityMetric: (1) Orphaned tail (3 in FREE).
-    (2) Hold-end (3) immediately after tap (1) in same column. (3) Tap during hold
-    (1 in HOLDING). (4) Nested hold (2 in HOLDING). (5) Unterminated hold (run > 0
-    at last valid step). Padding positions (y_true == ignore_class) are masked out.
+    Soft penalties aligned with ChartValidityMetric (per-column FREE/HOLDING state):
+    (1) Orphaned tail (3 in FREE). (2) Tap during hold (1 in HOLDING). (3) Nested
+    hold (2 in HOLDING). (4) Unterminated hold (run > 0 at last valid step).
+    Padding positions (y_true == ignore_class) are masked out.
 
     Args:
         y_true: (batch, seq) int arrow codes.
@@ -559,30 +568,19 @@ def chart_validity_auxiliary_loss(
 
     # (1) Orphan 3: P(3) when state is FREE (run_prev < 1)
     penalty_orphan_3 = p3 * tf.maximum(0.0, 1.0 - run_prev)
-    # (2) 3 immediately after tap in same column
-    penalty_after_tap = p1[:, :-1, :] * p3[:, 1:, :]
-    penalty_after_tap = tf.concat(
-        [tf.zeros_like(penalty_after_tap[:, :1, :]), penalty_after_tap],
-        axis=1,
-    )
     # Soft "state is HOLDING": smooth step at run_prev >= 1
     state_holding_soft = tf.sigmoid((run_prev - 0.5) * 10.0)
-    # (3) Tap during hold
+    # (2) Tap during hold
     penalty_tap_during_hold = p1 * state_holding_soft
-    # (4) Nested hold
+    # (3) Nested hold
     penalty_nested_hold = p2 * state_holding_soft
-    # (5) Unterminated: run > 0 at last valid step (soft last position per batch)
+    # (4) Unterminated: run > 0 at last valid step (soft last position per batch)
     next_valid = tf.concat([mask[:, 1:], tf.zeros_like(mask[:, :1])], axis=1)
     last_valid_soft = mask * (1.0 - next_valid)
     last_valid_exp = tf.expand_dims(last_valid_soft, axis=-1)
     penalty_unterminated = last_valid_exp * tf.maximum(0.0, run_soft)
 
-    step_penalties = (
-        penalty_orphan_3
-        + penalty_after_tap
-        + penalty_tap_during_hold
-        + penalty_nested_hold
-    )
+    step_penalties = penalty_orphan_3 + penalty_tap_during_hold + penalty_nested_hold
     step_masked = tf.reduce_sum(step_penalties * mask_exp) + tf.reduce_sum(
         penalty_unterminated * mask_exp
     )
