@@ -165,7 +165,7 @@ def _get_onset_experiment_name(
 
 def _get_arrow_experiment_name(
     model_config: config.ArrowModelConfig,
-    run_config: config.RunConfig,
+    run_config: config.ArrowRunConfig,
 ) -> str:
     """Generate a descriptive experiment name from hyperparameters.
 
@@ -444,7 +444,7 @@ def run_train(
 def run_arrow_train_from_config(
     dataset_config: config.ArrowDatasetConfig,
     model_config: config.ArrowModelConfig,
-    run_config: config.RunConfig,
+    run_config: config.ArrowRunConfig,
 ) -> tuple[keras.Model, keras.callbacks.History]:
     """Train an arrow classification model using configuration objects.
 
@@ -608,7 +608,7 @@ def run_arrow_train(
         batch_size=batch_size,
     )
     model_config = config.ArrowModelConfig(**(model_params or {}))
-    run_config = config.RunConfig(
+    run_config = config.ArrowRunConfig(
         epoch=epoch,
         take_count=take_count,
         model_output_dir=model_output_dir,
