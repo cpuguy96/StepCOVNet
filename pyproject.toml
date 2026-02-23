@@ -40,6 +40,7 @@ dev = [
     "gdown",
     "nbmake",
     "matplotlib",
+    "psutil",
 ]
 gpu = ["tensorflow[and-cuda]"]
 gpu-dev = ["stepcovnet[dev,gpu]"]
@@ -67,6 +68,10 @@ python_files = ["*_test.py"]
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::UserWarning",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "memory: marks tests that measure memory (deselect with '-m \"not memory\"')",
 ]
 
 # Coverage Configuration

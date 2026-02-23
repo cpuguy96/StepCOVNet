@@ -1,18 +1,35 @@
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
-import keras
+import pytest
 
 from stepcovnet import config
+from stepcovnet import trainers
 
 # Load the script as a module so we can test its functions without running main()
 _SCRIPT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "scripts", "hyperparameter_search_arrow.py"
 )
+_SCRIPT_PATH = os.path.normpath(os.path.abspath(_SCRIPT_PATH))
+_PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.dirname(_SCRIPT_PATH)))
+
+
+def _run_sweep_script(*args):
+    """Run the sweep script as a subprocess. Returns the completed process."""
+    return subprocess.run(
+        [sys.executable, _SCRIPT_PATH] + list(args),
+        cwd=_PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
 _spec = importlib.util.spec_from_file_location(
     "hyperparameter_search_arrow",
     _SCRIPT_PATH,
@@ -372,16 +389,8 @@ class EndToEndMinimalTest(unittest.TestCase):
             with open(sweep_path, "w") as f:
                 json.dump(sweep_data, f)
 
-            with mock.patch(
-                "sys.argv",
-                [
-                    "hyperparameter_search_arrow",
-                    "--sweep_config",
-                    sweep_path,
-                ],
-            ):
-                exit_code = sweep_module.main()
-            self.assertEqual(exit_code, 0)
+            result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
             sweep_out = os.path.join(temp_dir, "sweep_out")
             results_path = os.path.join(sweep_out, "results.json")
@@ -435,22 +444,17 @@ class RandomSearchTest(unittest.TestCase):
             with open(sweep_path, "w") as f:
                 json.dump(sweep_data, f)
 
-            with mock.patch(
-                "sys.argv",
-                [
-                    "hyperparameter_search_arrow",
-                    "--sweep_config",
-                    sweep_path,
-                    "--search",
-                    "random",
-                    "--max_runs",
-                    "2",
-                    "--seed",
-                    "42",
-                ],
-            ):
-                exit_code = sweep_module.main()
-            self.assertEqual(exit_code, 0)
+            result = _run_sweep_script(
+                "--sweep_config",
+                os.path.abspath(sweep_path),
+                "--search",
+                "random",
+                "--max_runs",
+                "2",
+                "--seed",
+                "42",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
             results_path = os.path.join(temp_dir, "sweep_out", "results.json")
             self.assertTrue(os.path.isfile(results_path))
             with open(results_path) as f:
@@ -510,16 +514,8 @@ class RandomSearchTest(unittest.TestCase):
                 json.dump(sweep_data, f)
 
             # Do not pass --search; config "search": "random" must be used
-            with mock.patch(
-                "sys.argv",
-                [
-                    "hyperparameter_search_arrow",
-                    "--sweep_config",
-                    sweep_path,
-                ],
-            ):
-                exit_code = sweep_module.main()
-            self.assertEqual(exit_code, 0)
+            result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
             sweep_config_path = os.path.join(temp_dir, "sweep_out", "sweep_config.json")
             with open(sweep_config_path) as f:
                 saved = json.load(f)
@@ -574,8 +570,10 @@ class WorkersOptionTest(unittest.TestCase):
         submitted_futures = []
 
         class FakeExecutor:
-            def __init__(self, max_workers=None):
+
+            def __init__(self, max_workers=None, max_tasks_per_child=None, **kwargs):
                 self.max_workers = max_workers
+                self.max_tasks_per_child = max_tasks_per_child
 
             def __enter__(self):
                 return self
@@ -622,7 +620,7 @@ class WorkersOptionTest(unittest.TestCase):
                 json.dump(sweep_data, f)
 
             with mock.patch.object(
-                sweep_module, "ProcessPoolExecutor", return_value=FakeExecutor()
+                sweep_module.futures, "ProcessPoolExecutor", return_value=FakeExecutor()
             ):
                 with mock.patch(
                     "sys.argv",
@@ -648,19 +646,70 @@ class WorkersOptionTest(unittest.TestCase):
             self.assertEqual(results[1]["run_index"], 1)
 
 
+@pytest.mark.slow
+@pytest.mark.memory
+class MemoryBoundedSweepTest(unittest.TestCase):
+    """In-process sweep runs: assert process RSS growth is bounded (no unbounded leak)."""
+
+    def test_in_process_sweep_rss_bounded(self):
+        """Run 4 in-process training runs; RSS growth (max - min) stays under threshold."""
+        try:
+            import psutil
+        except ImportError:
+            self.skipTest("psutil required for memory test")
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        base_config = config.ArrowExperimentConfig.from_json(base_config_path)
+        base_config.dataset.data_dir = TEST_DATA_DIR
+        base_config.dataset.val_data_dir = TEST_DATA_DIR
+        base_config.run.take_count = 2
+        base_config.run.epoch = 1
+        search_space = {"model.dropout_rate": [0.0, 0.1, 0.2, 0.25]}
+        combinations = sweep_module.expand_grid(search_space)
+        self.assertGreaterEqual(len(combinations), 4)
+        combinations = combinations[:4]
+        process = psutil.Process(os.getpid())
+        rss_after_run = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for i, overrides in enumerate(combinations):
+                run_config = sweep_module.apply_overrides(base_config, overrides)
+                run_config.run.model_output_dir = os.path.join(
+                    temp_dir, "models", f"run_{i}"
+                )
+                run_config.run.callback_root_dir = os.path.join(
+                    temp_dir, "callbacks", f"run_{i}"
+                )
+                os.makedirs(run_config.run.model_output_dir, exist_ok=True)
+                os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
+                model, history = trainers.run_arrow_train_from_config(
+                    run_config.dataset,
+                    run_config.model,
+                    run_config.run,
+                )
+                sweep_module.extract_metrics(history)
+                del model, history
+                sweep_module._clear_tf_memory()
+                rss_after_run.append(process.memory_info().rss)
+        self.assertEqual(len(rss_after_run), 4)
+        rss_min, rss_max = min(rss_after_run), max(rss_after_run)
+        growth_bytes = rss_max - rss_min
+        # Threshold: TF often does not return memory to OS so some growth is normal; catch severe leaks (e.g. full model/dataset per run). Calibrate per environment if needed.
+        threshold_bytes = 800 * 1024 * 1024
+        self.assertLess(
+            growth_bytes,
+            threshold_bytes,
+            f"RSS growth {growth_bytes / (1024 * 1024):.1f} MB exceeds {threshold_bytes // (1024 * 1024)} MB (unbounded memory?)",
+        )
+
+
 class SweepVerbosityTest(unittest.TestCase):
     """Sweep sets show_model_summary=False and fit_verbose=0 for each run."""
 
     def test_sweep_passes_quiet_verbosity_to_trainer(self):
-        """run_arrow_train_from_config is called with show_model_summary=False, fit_verbose=0."""
-        captured_run_configs = []
-
-        def capture_run_config(dataset_config, model_config, run_config):
-            captured_run_configs.append(run_config)
-            history = mock.Mock()
-            history.history = {"val_loss": [1.0], "val_acc": [0.5]}
-            return mock.Mock(), history
-
+        """Sweep saves config with show_model_summary=False and fit_verbose=0."""
         base_config_path = os.path.join(
             os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
         )
@@ -690,24 +739,30 @@ class SweepVerbosityTest(unittest.TestCase):
             with open(sweep_path, "w") as f:
                 json.dump(sweep_data, f)
 
-            with mock.patch(
-                "stepcovnet.trainers.run_arrow_train_from_config",
-                side_effect=capture_run_config,
-            ):
-                with mock.patch(
-                    "sys.argv",
-                    ["hyperparameter_search_arrow", "--sweep_config", sweep_path],
-                ):
-                    sweep_module.main()
+            result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
-        self.assertGreater(len(captured_run_configs), 0)
-        for run_config in captured_run_configs:
+            # Config is saved under callbacks/run_0/logs/<callback_name>/config.json
+            callbacks_run0 = os.path.join(temp_dir, "sweep_out", "callbacks", "run_0")
+            logs_dir = os.path.join(callbacks_run0, "logs")
+            self.assertTrue(os.path.isdir(logs_dir), f"Missing {logs_dir}")
+            log_subdirs = [
+                d
+                for d in os.listdir(logs_dir)
+                if os.path.isdir(os.path.join(logs_dir, d))
+            ]
+            self.assertGreater(len(log_subdirs), 0, "No log subdir found")
+            config_path = os.path.join(logs_dir, log_subdirs[0], "config.json")
+            self.assertTrue(os.path.isfile(config_path), f"Missing {config_path}")
+            with open(config_path) as f:
+                saved = json.load(f)
+            run_saved = saved["run"]
             self.assertFalse(
-                run_config.show_model_summary,
+                run_saved.get("show_model_summary", True),
                 "sweep should set show_model_summary=False",
             )
             self.assertEqual(
-                run_config.fit_verbose,
+                run_saved.get("fit_verbose", 1),
                 0,
                 "sweep should set fit_verbose=0",
             )

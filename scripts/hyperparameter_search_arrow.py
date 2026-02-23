@@ -22,13 +22,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gc
 import itertools
 import json
 import os
+import tensorflow as tf
 import random
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime
+from concurrent import futures
+import datetime
 from typing import Any
 
 # Add project root for imports when run as script
@@ -72,7 +74,7 @@ PARSER.add_argument(
     "--workers",
     type=int,
     default=1,
-    help="Number of training jobs to run in parallel (default: 1 = sequential).",
+    help="Number of training jobs to run in parallel (default: 1).",
 )
 
 
@@ -171,6 +173,23 @@ def apply_overrides(
     return config.ArrowExperimentConfig.from_dict(d)
 
 
+def _clear_tf_memory() -> None:
+    """Clear TensorFlow/Keras session and run GC to free memory between runs.
+
+    TF keeps graph and allocator state across model builds; without this, each
+    training run in the same process adds memory (in-process sweep or
+    reused multiprocessing workers).
+    """
+    try:
+        backend = getattr(getattr(tf, "keras", None), "backend", None)
+        if backend is not None:
+            backend.clear_session(free_memory=True)
+    except Exception:  # noqa: BLE001
+        pass
+    gc.collect()
+    gc.collect()
+
+
 def extract_metrics(history: Any) -> dict[str, Any]:
     """Extract best and final metrics from training history."""
     h = history.history
@@ -203,8 +222,6 @@ def _run_single_training(
     """
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
-    from stepcovnet import config
-    from stepcovnet import trainers
 
     base = config.ArrowExperimentConfig.from_dict(base_config_dict)
     run_config = apply_overrides(base, overrides)
@@ -222,6 +239,9 @@ def _run_single_training(
         run_config.run,
     )
     metrics = extract_metrics(history)
+    # Clear TF session so this worker doesn't keep memory when reused for next run
+    del _model, history
+    _clear_tf_memory()
     return (run_index, metrics, overrides)
 
 
@@ -386,7 +406,7 @@ def main() -> int:
         sweep_output_dir = os.path.join(
             _PROJECT_ROOT,
             "callbacks",
-            f"arrow_sweep_{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
         )
     else:
         if not os.path.isabs(sweep_output_dir):
@@ -425,43 +445,32 @@ def main() -> int:
 
     base_config_dict = base_config.as_dict()
 
-    if args.workers <= 1:
-        results = []
-        for i, overrides in enumerate(combinations):
-            run_config = apply_overrides(base_config, overrides)
-            run_config.run.model_output_dir = os.path.join(model_output_dir, f"run_{i}")
-            run_config.run.callback_root_dir = os.path.join(
-                callback_root_dir, f"run_{i}"
-            )
-            os.makedirs(run_config.run.model_output_dir, exist_ok=True)
-            os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
-
-            _print_run_header(i, len(combinations), overrides)
-            model, history = trainers.run_arrow_train_from_config(
-                run_config.dataset,
-                run_config.model,
-                run_config.run,
-            )
-            metrics = extract_metrics(history)
-            row = {"run_index": i, "overrides": overrides, **metrics}
-            results.append(row)
-            _print_run_result(i, metrics, optimize_metric)
-    else:
-        results_by_index: dict[int, dict[str, Any]] = {}
-        worker_args = [
-            (i, overrides, base_config_dict, sweep_output_dir, _PROJECT_ROOT)
+    results_by_index: dict[int, dict[str, Any]] = {}
+    with futures.ProcessPoolExecutor(
+        max_workers=args.workers,
+        max_tasks_per_child=1,
+    ) as executor:
+        future_to_index = {
+            executor.submit(
+                _run_single_training,
+                i,
+                overrides,
+                base_config_dict,
+                sweep_output_dir,
+                _PROJECT_ROOT,
+            ): i
             for i, overrides in enumerate(combinations)
-        ]
-        with ProcessPoolExecutor(max_workers=args.workers) as executor:
-            futures = {
-                executor.submit(_run_single_training, *a): a[0] for a in worker_args
+        }
+        for future in futures.as_completed(future_to_index):
+            run_index = future_to_index[future]
+            run_index_result, metrics, overrides_result = future.result()
+            results_by_index[run_index] = {
+                "run_index": run_index_result,
+                "overrides": overrides_result,
+                **metrics,
             }
-            for future in as_completed(futures):
-                run_index, metrics, overrides = future.result()
-                row = {"run_index": run_index, "overrides": overrides, **metrics}
-                results_by_index[run_index] = row
-                _print_run_result(run_index, metrics, optimize_metric)
-        results = [results_by_index[i] for i in range(len(combinations))]
+            _print_run_result(run_index, metrics, optimize_metric)
+    results = [results_by_index[i] for i in range(len(combinations))]
 
     # Write results
     results_path = os.path.join(sweep_output_dir, "results.json")
