@@ -68,13 +68,58 @@ class GeneratorTest(unittest.TestCase):
             audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
             song_title="M.A.Y.U",
             bpm=128,
-            onset_model=onset_model,
-            arrow_model=arrow_model,
+            onset_model=onset_model,  # type: ignore[arg-type]
+            arrow_model=arrow_model,  # type: ignore[arg-type]
         )
         self.assertEqual(output_data.title, "M.A.Y.U")
         self.assertEqual(output_data.bpm, 128)
         self.assertIn("Challenge", output_data.notes)
         self.assertGreater(len(output_data.notes["Challenge"]), 0)
+
+    def test_two_input_arrow_model_uses_n_frames_not_n_mels_for_snippets(self):
+        """Snippet n_frames is taken from input shape [2], not [3] (n_mels).
+
+        Snippet input is always (batch, steps, n_frames, n_mels); see models.build_arrow_model.
+        """
+        n_frames_window = 11  # 2 * 5 + 1 for half_frames=5
+        n_mels = 128
+        snippet_shape = (None, None, n_frames_window, n_mels)
+
+        def _onset_pred_mock(x):
+            return np.random.random((1, x.shape[1], 1)).astype(np.float32)
+
+        mock_onset = mock.MagicMock()
+        mock_onset.predict.side_effect = _onset_pred_mock
+
+        call_args = []
+
+        def _arrow_pred_mock(x):
+            call_args.append(x)
+            num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
+            return np.random.random((1, num_steps, 256)).astype(np.float32)
+
+        mock_arrow = mock.MagicMock()
+        mock_arrow.predict.side_effect = _arrow_pred_mock
+        mock_arrow.inputs = [None, None]
+        mock_arrow.input_shape = [(None, None, 1), snippet_shape]
+
+        generator.generate_output_data(
+            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            song_title="Snippet shape test",
+            bpm=120,
+            onset_model=mock_onset,
+            arrow_model=mock_arrow,
+        )
+        self.assertEqual(len(call_args), 1)
+        args = call_args[0]
+        self.assertIsInstance(args, list)
+        snippets_batch = args[1]
+        self.assertEqual(
+            snippets_batch.shape[2],
+            n_frames_window,
+            "Snippet n_frames must come from input_shape[1][2], not [3] (n_mels)",
+        )
+        self.assertEqual(snippets_batch.shape[3], n_mels)
 
     def test_generate_output_data(self):
         onset_model = keras.models.load_model(

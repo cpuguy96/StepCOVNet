@@ -177,6 +177,7 @@ def generate_output_data(
     normalized_onsets = np.expand_dims(onsets / np.max(onsets), axis=(0, -1))
 
     if len(arrow_model.inputs) == 2:
+        # Snippet input shape is (batch, steps, n_frames, n_mels)
         snippet_shape = arrow_model.input_shape[1]
         snippet_n_frames = snippet_shape[2]
         half_frames = (snippet_n_frames - 1) // 2
