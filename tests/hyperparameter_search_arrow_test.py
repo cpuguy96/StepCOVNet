@@ -230,7 +230,7 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
                 d_model=128,
                 dropout_rate=0.5,
             ),
-            run=config.RunConfig(
+            run=config.ArrowRunConfig(
                 epoch=10,
                 take_count=100,
                 model_output_dir="/tmp/models",

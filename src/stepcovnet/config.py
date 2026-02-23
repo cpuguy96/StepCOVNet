@@ -180,7 +180,7 @@ class ArrowModelConfig:
 
 @dataclasses.dataclass
 class RunConfig:
-    """Configuration for training run parameters.
+    """Configuration for training run parameters (shared by onset and arrow).
 
     Attributes:
         epoch: Number of epochs to train for.
@@ -190,12 +190,6 @@ class RunConfig:
         callback_root_dir: Root directory for storing training callbacks (checkpoints, logs).
         model_name: Name of the model. If empty, generated from experiment name.
         seed: Random seed for reproducibility (optional).
-        chart_validity_aux_weight: Weight for chart-validity auxiliary loss (arrow training only).
-            Higher values punish invalid charts more; use with diversity_aux_weight to avoid
-            collapse to boring (e.g. all-tap) charts. Default 0.0.
-        diversity_aux_weight: Weight for note-kind balance auxiliary loss (arrow training only).
-            Encourages predicted hold/tap mix to match labels; use to balance chart_validity.
-            Default 0.0.
         show_model_summary: If True, print model summary before training. Default True.
         fit_verbose: Keras model.fit verbosity: 0 (silent), 1 (progress bar), or 2 (one line per epoch).
             Default 1.
@@ -208,13 +202,11 @@ class RunConfig:
     model_name: str = ""
     seed: int | None = None
     val_take_count: int = -1
-    chart_validity_aux_weight: float = 0.0
-    diversity_aux_weight: float = 0.0
     show_model_summary: bool = True
     fit_verbose: int = 1
 
     def __post_init__(self) -> None:
-        """Validate run parameters and aux weights."""
+        """Validate run parameters."""
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
         if self.take_count != -1 and self.take_count < 1:
@@ -226,14 +218,6 @@ class RunConfig:
             raise ValueError(
                 "val_take_count must be -1 (entire dataset) or at least 1, "
                 f"got {self.val_take_count}"
-            )
-        if self.chart_validity_aux_weight < 0:
-            raise ValueError(
-                f"chart_validity_aux_weight must be >= 0, got {self.chart_validity_aux_weight}"
-            )
-        if self.diversity_aux_weight < 0:
-            raise ValueError(
-                f"diversity_aux_weight must be >= 0, got {self.diversity_aux_weight}"
             )
         if self.fit_verbose not in (0, 1, 2):
             raise ValueError(f"fit_verbose must be 0, 1, or 2, got {self.fit_verbose}")
@@ -248,15 +232,42 @@ class RunConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> RunConfig:
-        """Create config from dictionary.
+        """Create config from dictionary. Only valid RunConfig field names are accepted."""
+        return cls(**data)
 
-        Args:
-            data: Dictionary containing config fields. Must include 'epoch',
-                'take_count', and 'model_output_dir'. Other fields are optional.
 
-        Returns:
-            RunConfig instance created from the dictionary.
-        """
+@dataclasses.dataclass
+class ArrowRunConfig(RunConfig):
+    """Arrow-specific run configuration: RunConfig plus aux loss weights.
+
+    Used only by ArrowExperimentConfig. Onset experiments use RunConfig instead.
+
+    Attributes:
+        chart_validity_aux_weight: Weight for chart-validity auxiliary loss.
+            Higher values punish invalid charts more; use with diversity_aux_weight to avoid
+            collapse to boring (e.g. all-tap) charts. Default 0.0.
+        diversity_aux_weight: Weight for note-kind balance auxiliary loss.
+            Encourages predicted hold/tap mix to match labels; use to balance chart_validity.
+            Default 0.0.
+    """
+
+    chart_validity_aux_weight: float = 0.0
+    diversity_aux_weight: float = 0.0
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.chart_validity_aux_weight < 0:
+            raise ValueError(
+                f"chart_validity_aux_weight must be >= 0, got {self.chart_validity_aux_weight}"
+            )
+        if self.diversity_aux_weight < 0:
+            raise ValueError(
+                f"diversity_aux_weight must be >= 0, got {self.diversity_aux_weight}"
+            )
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ArrowRunConfig:
+        """Create config from dictionary. Only valid ArrowRunConfig field names are accepted."""
         return cls(**data)
 
 
@@ -351,12 +362,12 @@ class ArrowExperimentConfig:
     Attributes:
         dataset: ArrowDatasetConfig object containing dataset configuration.
         model: ArrowModelConfig object containing model architecture configuration.
-        run: RunConfig object containing training run parameters.
+        run: ArrowRunConfig object containing training run parameters (includes aux loss weights).
     """
 
     dataset: ArrowDatasetConfig
     model: ArrowModelConfig
-    run: RunConfig
+    run: ArrowRunConfig
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
@@ -388,7 +399,7 @@ class ArrowExperimentConfig:
         return cls(
             dataset=ArrowDatasetConfig.from_dict(data["dataset"]),
             model=ArrowModelConfig.from_dict(data["model"]),
-            run=RunConfig.from_dict(data["run"]),
+            run=ArrowRunConfig.from_dict(data["run"]),
         )
 
     def to_json(self, path: str):

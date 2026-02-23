@@ -215,66 +215,16 @@ class RunConfigTest(unittest.TestCase):
         self.assertEqual(cfg.epoch, 15)
         self.assertEqual(cfg.callback_root_dir, "cb")
 
-    def test_aux_weights_default_zero(self):
-        """Default aux weights are 0 and valid."""
-        cfg = config.RunConfig(epoch=1, take_count=1, model_output_dir="out")
-        self.assertEqual(cfg.chart_validity_aux_weight, 0.0)
-        self.assertEqual(cfg.diversity_aux_weight, 0.0)
-
-    def test_aux_weights_accept_non_negative(self):
-        """Non-negative aux weights are accepted."""
-        cfg = config.RunConfig(
-            epoch=1,
-            take_count=1,
-            model_output_dir="out",
-            chart_validity_aux_weight=0.5,
-            diversity_aux_weight=0.2,
-        )
-        self.assertEqual(cfg.chart_validity_aux_weight, 0.5)
-        self.assertEqual(cfg.diversity_aux_weight, 0.2)
-        cfg_zero = config.RunConfig(
-            epoch=1,
-            take_count=1,
-            model_output_dir="out",
-            chart_validity_aux_weight=0.0,
-            diversity_aux_weight=0.0,
-        )
-        self.assertEqual(cfg_zero.chart_validity_aux_weight, 0.0)
-        self.assertEqual(cfg_zero.diversity_aux_weight, 0.0)
-
-    def test_negative_chart_validity_aux_weight_raises(self):
-        """chart_validity_aux_weight < 0 raises ValueError."""
-        with self.assertRaises(ValueError) as ctx:
-            config.RunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir="out",
-                chart_validity_aux_weight=-0.1,
-            )
-        self.assertIn("chart_validity_aux_weight", str(ctx.exception))
-        self.assertIn("-0.1", str(ctx.exception))
-
-    def test_negative_diversity_aux_weight_raises(self):
-        """diversity_aux_weight < 0 raises ValueError."""
-        with self.assertRaises(ValueError) as ctx:
-            config.RunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir="out",
-                diversity_aux_weight=-1.0,
-            )
-        self.assertIn("diversity_aux_weight", str(ctx.exception))
-        self.assertIn("-1.0", str(ctx.exception))
-
-    def test_from_dict_negative_aux_weight_raises(self):
-        """from_dict with negative aux weight raises ValueError."""
+    def test_from_dict_rejects_unknown_keys(self):
+        """from_dict raises TypeError when given unknown keys (e.g. arrow-only aux weights)."""
         data = {
             "epoch": 1,
             "take_count": 1,
             "model_output_dir": "out",
-            "chart_validity_aux_weight": -0.5,
+            "chart_validity_aux_weight": 0.5,
+            "diversity_aux_weight": 0.2,
         }
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(TypeError) as ctx:
             config.RunConfig.from_dict(data)
         self.assertIn("chart_validity_aux_weight", str(ctx.exception))
 
@@ -382,6 +332,101 @@ class RunConfigTest(unittest.TestCase):
         cfg = config.RunConfig.from_dict(data)
         self.assertFalse(cfg.show_model_summary)
         self.assertEqual(cfg.fit_verbose, 0)
+
+
+class ArrowRunConfigTest(unittest.TestCase):
+    """ArrowRunConfig: RunConfig fields plus chart_validity_aux_weight and diversity_aux_weight."""
+
+    def test_aux_weights_default_zero(self):
+        """Default aux weights are 0 and valid."""
+        cfg = config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir="out")
+        self.assertEqual(cfg.chart_validity_aux_weight, 0.0)
+        self.assertEqual(cfg.diversity_aux_weight, 0.0)
+
+    def test_aux_weights_accept_non_negative(self):
+        """Non-negative aux weights are accepted."""
+        cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.5,
+            diversity_aux_weight=0.2,
+        )
+        self.assertEqual(cfg.chart_validity_aux_weight, 0.5)
+        self.assertEqual(cfg.diversity_aux_weight, 0.2)
+
+    def test_negative_chart_validity_aux_weight_raises(self):
+        """chart_validity_aux_weight < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                chart_validity_aux_weight=-0.1,
+            )
+        self.assertIn("chart_validity_aux_weight", str(ctx.exception))
+
+    def test_negative_diversity_aux_weight_raises(self):
+        """diversity_aux_weight < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                diversity_aux_weight=-1.0,
+            )
+        self.assertIn("diversity_aux_weight", str(ctx.exception))
+
+    def test_from_dict_negative_aux_weight_raises(self):
+        """from_dict with negative aux weight raises ValueError."""
+        data = {
+            "epoch": 1,
+            "take_count": 1,
+            "model_output_dir": "out",
+            "chart_validity_aux_weight": -0.5,
+        }
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig.from_dict(data)
+        self.assertIn("chart_validity_aux_weight", str(ctx.exception))
+
+    def test_from_dict_accepts_aux_weights(self):
+        """from_dict accepts chart_validity_aux_weight and diversity_aux_weight."""
+        data = {
+            "epoch": 2,
+            "take_count": 1,
+            "model_output_dir": "out",
+            "chart_validity_aux_weight": 0.3,
+            "diversity_aux_weight": 0.1,
+        }
+        cfg = config.ArrowRunConfig.from_dict(data)
+        self.assertEqual(cfg.chart_validity_aux_weight, 0.3)
+        self.assertEqual(cfg.diversity_aux_weight, 0.1)
+
+    def test_as_dict_includes_aux_weights(self):
+        """as_dict includes run keys and aux weights for JSON round-trip."""
+        cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.4,
+            diversity_aux_weight=0.0,
+        )
+        d = cfg.as_dict()
+        self.assertEqual(d["chart_validity_aux_weight"], 0.4)
+        self.assertEqual(d["diversity_aux_weight"], 0.0)
+
+    def test_from_dict_rejects_unknown_keys(self):
+        """from_dict raises TypeError when given unknown keys."""
+        data = {
+            "epoch": 1,
+            "take_count": 1,
+            "model_output_dir": "out",
+            "chart_validity_aux_weight": 0.1,
+            "unknown_param": 99,
+        }
+        with self.assertRaises(TypeError) as ctx:
+            config.ArrowRunConfig.from_dict(data)
+        self.assertIn("unknown_param", str(ctx.exception))
 
 
 class OnsetExperimentConfigTest(unittest.TestCase):
@@ -502,18 +547,19 @@ class OnsetExperimentConfigTest(unittest.TestCase):
 
 class ArrowExperimentConfigTest(unittest.TestCase):
     def test_create_experiment_config(self):
-        """Test creating complete experiment config."""
+        """Test creating complete experiment config; run is ArrowRunConfig."""
         dataset_cfg = config.ArrowDatasetConfig(
             data_dir="data/train", val_data_dir="data/val"
         )
         model_cfg = config.ArrowModelConfig()
-        run_cfg = config.RunConfig(epoch=10, take_count=-1, model_output_dir="out")
+        run_cfg = config.ArrowRunConfig(epoch=10, take_count=-1, model_output_dir="out")
         exp_cfg = config.ArrowExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )
         self.assertEqual(exp_cfg.dataset, dataset_cfg)
         self.assertEqual(exp_cfg.model, model_cfg)
         self.assertEqual(exp_cfg.run, run_cfg)
+        self.assertIsInstance(exp_cfg.run, config.ArrowRunConfig)
 
     def test_as_dict(self):
         """Test converting experiment config to dictionary."""
@@ -521,7 +567,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
             data_dir="data/train", val_data_dir="data/val", batch_size=2
         )
         model_cfg = config.ArrowModelConfig(num_layers=2)
-        run_cfg = config.RunConfig(epoch=10, take_count=-1, model_output_dir="out")
+        run_cfg = config.ArrowRunConfig(epoch=10, take_count=-1, model_output_dir="out")
         exp_cfg = config.ArrowExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )
@@ -535,7 +581,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
             data_dir="data/train", val_data_dir="data/val"
         )
         model_cfg = config.ArrowModelConfig(num_layers=3, d_model=256)
-        run_cfg = config.RunConfig(
+        run_cfg = config.ArrowRunConfig(
             epoch=15, take_count=-1, model_output_dir="out", seed=99
         )
         exp_cfg = config.ArrowExperimentConfig(
@@ -550,6 +596,30 @@ class ArrowExperimentConfigTest(unittest.TestCase):
             self.assertEqual(loaded_cfg.dataset.data_dir, "data/train")
             self.assertEqual(loaded_cfg.model.num_layers, 3)
             self.assertEqual(loaded_cfg.run.seed, 99)
+
+    def test_run_is_arrow_run_config_round_trip_includes_aux_weights(self):
+        """ArrowExperimentConfig.run is ArrowRunConfig; as_dict/from_dict round-trip includes aux weights."""
+        run_cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.3,
+            diversity_aux_weight=0.1,
+        )
+        exp_cfg = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig(),
+            run=run_cfg,
+        )
+        d = exp_cfg.as_dict()
+        self.assertIn("chart_validity_aux_weight", d["run"])
+        self.assertIn("diversity_aux_weight", d["run"])
+        self.assertEqual(d["run"]["chart_validity_aux_weight"], 0.3)
+        self.assertEqual(d["run"]["diversity_aux_weight"], 0.1)
+        loaded = config.ArrowExperimentConfig.from_dict(d)
+        self.assertIsInstance(loaded.run, config.ArrowRunConfig)
+        self.assertEqual(loaded.run.chart_validity_aux_weight, 0.3)
+        self.assertEqual(loaded.run.diversity_aux_weight, 0.1)
 
 
 if __name__ == "__main__":
