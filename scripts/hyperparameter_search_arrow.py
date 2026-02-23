@@ -363,6 +363,8 @@ def main() -> int:
     if effective_search not in ("grid", "random"):
         PARSER.error(f"--search must be 'grid' or 'random', got {effective_search!r}")
     max_runs = args.max_runs if args.max_runs is not None else sweep.get("max_runs")
+    if max_runs is not None and max_runs <= 0:
+        PARSER.error("max_runs must be > 0 when set (got %s)" % max_runs)
 
     search_space = sweep["search_space"]
     full_combinations = expand_grid(search_space)
