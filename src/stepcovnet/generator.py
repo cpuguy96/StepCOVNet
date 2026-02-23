@@ -175,7 +175,18 @@ def generate_output_data(
         raise ValueError("Failed to predict any onsets for the audio file.")
 
     normalized_onsets = np.expand_dims(onsets / np.max(onsets), axis=(0, -1))
-    arrows_pred = arrow_model.predict(normalized_onsets)
+
+    if len(arrow_model.inputs) == 2:
+        snippet_shape = arrow_model.input_shape[1]
+        snippet_n_frames = snippet_shape[2]
+        half_frames = (snippet_n_frames - 1) // 2
+        snippets = datasets.extract_snippets_from_spec(
+            normalized_spec, onsets, half_frames
+        )
+        snippets_batch = np.expand_dims(snippets, axis=0)
+        arrows_pred = arrow_model.predict([normalized_onsets, snippets_batch])
+    else:
+        arrows_pred = arrow_model.predict(normalized_onsets)
     arrows = np.argmax(arrows_pred[0], axis=1)
 
     return OutputData(

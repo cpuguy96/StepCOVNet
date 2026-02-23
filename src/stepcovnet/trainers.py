@@ -198,6 +198,9 @@ def _get_arrow_experiment_name(
     parts.append(f"ff_dim_{ff_dim}")
     parts.append(f"dropout_{str(dropout_rate).replace('.', '_')}")
 
+    if model_params.snippet_half_frames > 0:
+        parts.append(f"snippets_half_{model_params.snippet_half_frames}")
+
     return "-".join(parts)
 
 
@@ -467,11 +470,13 @@ def run_arrow_train_from_config(
     train_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
+        snippet_half_frames=dataset_config.snippet_half_frames,
     )
 
     val_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.val_data_dir,
         batch_size=dataset_config.batch_size,
+        snippet_half_frames=dataset_config.snippet_half_frames,
     )
 
     experiment_name = _get_arrow_experiment_name(
@@ -485,6 +490,7 @@ def run_arrow_train_from_config(
         num_heads=model_config.num_heads,
         ff_dim=model_config.ff_dim,
         dropout_rate=model_config.dropout_rate,
+        snippet_half_frames=model_config.snippet_half_frames,
     )
 
     model.summary()

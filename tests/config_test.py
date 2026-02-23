@@ -11,9 +11,7 @@ from stepcovnet import config
 class OnsetDatasetConfigTest(unittest.TestCase):
     def test_create_with_required_fields(self):
         """Test creating config with only required fields."""
-        cfg = config.OnsetDatasetConfig(
-            data_dir="data/train", val_data_dir="data/val"
-        )
+        cfg = config.OnsetDatasetConfig(data_dir="data/train", val_data_dir="data/val")
         self.assertEqual(cfg.data_dir, "data/train")
         self.assertEqual(cfg.val_data_dir, "data/val")
         self.assertEqual(cfg.batch_size, 1)  # default
@@ -66,12 +64,11 @@ class OnsetDatasetConfigTest(unittest.TestCase):
 class ArrowDatasetConfigTest(unittest.TestCase):
     def test_create_with_required_fields(self):
         """Test creating config with only required fields."""
-        cfg = config.ArrowDatasetConfig(
-            data_dir="data/train", val_data_dir="data/val"
-        )
+        cfg = config.ArrowDatasetConfig(data_dir="data/train", val_data_dir="data/val")
         self.assertEqual(cfg.data_dir, "data/train")
         self.assertEqual(cfg.val_data_dir, "data/val")
         self.assertEqual(cfg.batch_size, 1)  # default
+        self.assertEqual(cfg.snippet_half_frames, 0)  # default: no snippets
 
     def test_as_dict(self):
         """Test converting config to dictionary."""
@@ -86,6 +83,16 @@ class ArrowDatasetConfigTest(unittest.TestCase):
         data = {"data_dir": "data/train", "val_data_dir": "data/val", "batch_size": 2}
         cfg = config.ArrowDatasetConfig.from_dict(data)
         self.assertEqual(cfg.batch_size, 2)
+
+    def test_from_dict_with_snippet_half_frames(self):
+        """Test creating config with snippet_half_frames (use_audio_snippets stripped for backwards compat)."""
+        data = {
+            "data_dir": "data/train",
+            "val_data_dir": "data/val",
+            "snippet_half_frames": 5,
+        }
+        cfg = config.ArrowDatasetConfig.from_dict(data)
+        self.assertEqual(cfg.snippet_half_frames, 5)
 
 
 class OnsetModelConfigTest(unittest.TestCase):
@@ -141,6 +148,7 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(cfg.num_heads, 4)
         self.assertEqual(cfg.ff_dim, 512)
         self.assertEqual(cfg.dropout_rate, 0.0)
+        self.assertEqual(cfg.snippet_half_frames, 0)  # default: no snippets
 
     def test_as_dict(self):
         """Test converting config to dictionary."""
@@ -158,13 +166,17 @@ class ArrowModelConfigTest(unittest.TestCase):
         # Should use defaults
         self.assertEqual(cfg.d_model, 128)
 
+    def test_from_dict_with_snippet_half_frames(self):
+        """Test creating config with snippet_half_frames."""
+        data = {"snippet_half_frames": 5}
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.snippet_half_frames, 5)
+
 
 class RunConfigTest(unittest.TestCase):
     def test_create_with_required_fields(self):
         """Test creating config with only required fields."""
-        cfg = config.RunConfig(
-            epoch=10, take_count=100, model_output_dir="out"
-        )
+        cfg = config.RunConfig(epoch=10, take_count=100, model_output_dir="out")
         self.assertEqual(cfg.epoch, 10)
         self.assertEqual(cfg.take_count, 100)
         self.assertEqual(cfg.model_output_dir, "out")
@@ -188,9 +200,7 @@ class RunConfigTest(unittest.TestCase):
 
     def test_as_dict(self):
         """Test converting config to dictionary."""
-        cfg = config.RunConfig(
-            epoch=5, take_count=50, model_output_dir="out", seed=123
-        )
+        cfg = config.RunConfig(epoch=5, take_count=50, model_output_dir="out", seed=123)
         d = cfg.as_dict()
         self.assertEqual(d["epoch"], 5)
         self.assertEqual(d["seed"], 123)
@@ -215,9 +225,7 @@ class OnsetExperimentConfigTest(unittest.TestCase):
             data_dir="data/train", val_data_dir="data/val"
         )
         model_cfg = config.OnsetModelConfig()
-        run_cfg = config.RunConfig(
-            epoch=10, take_count=1, model_output_dir="out"
-        )
+        run_cfg = config.RunConfig(epoch=10, take_count=1, model_output_dir="out")
         exp_cfg = config.OnsetExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )
@@ -231,9 +239,7 @@ class OnsetExperimentConfigTest(unittest.TestCase):
             data_dir="data/train", val_data_dir="data/val", batch_size=4
         )
         model_cfg = config.OnsetModelConfig(initial_filters=16)
-        run_cfg = config.RunConfig(
-            epoch=10, take_count=1, model_output_dir="out"
-        )
+        run_cfg = config.RunConfig(epoch=10, take_count=1, model_output_dir="out")
         exp_cfg = config.OnsetExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )
@@ -303,9 +309,7 @@ class OnsetExperimentConfigTest(unittest.TestCase):
             data_dir="data/train", val_data_dir="data/val"
         )
         model_cfg = config.OnsetModelConfig()
-        run_cfg = config.RunConfig(
-            epoch=10, take_count=1, model_output_dir="out"
-        )
+        run_cfg = config.RunConfig(epoch=10, take_count=1, model_output_dir="out")
         exp_cfg = config.OnsetExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )
@@ -337,9 +341,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
             data_dir="data/train", val_data_dir="data/val"
         )
         model_cfg = config.ArrowModelConfig()
-        run_cfg = config.RunConfig(
-            epoch=10, take_count=-1, model_output_dir="out"
-        )
+        run_cfg = config.RunConfig(epoch=10, take_count=-1, model_output_dir="out")
         exp_cfg = config.ArrowExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )
@@ -353,9 +355,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
             data_dir="data/train", val_data_dir="data/val", batch_size=2
         )
         model_cfg = config.ArrowModelConfig(num_layers=2)
-        run_cfg = config.RunConfig(
-            epoch=10, take_count=-1, model_output_dir="out"
-        )
+        run_cfg = config.RunConfig(epoch=10, take_count=-1, model_output_dir="out")
         exp_cfg = config.ArrowExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )

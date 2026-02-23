@@ -53,6 +53,18 @@ class ModelTest(unittest.TestCase):
         model = models.build_arrow_model(model_name="my_arrow_run")
         self.assertEqual(model.name, "stepcovnet_ARROW-my_arrow_run")
 
+    def test_build_arrow_model_with_audio_snippets(self):
+        """Arrow model with snippet_half_frames > 0 has two inputs and runs forward pass."""
+        model = models.build_arrow_model(
+            snippet_half_frames=5,
+        )
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(len(model.inputs), 2)
+        timing_input = np.random.random((1, 100, 1)).astype(np.float32)
+        snippet_input = np.random.random((1, 100, 11, 128)).astype(np.float32)
+        out = model.predict([timing_input, snippet_input])
+        self.assertEqual(out.shape, (1, 100, 256))
+
 
 class PositionalEncodingTest(unittest.TestCase):
     def test_positional_encoding_raises_on_odd_d_model(self):

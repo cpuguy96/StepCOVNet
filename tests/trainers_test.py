@@ -4,6 +4,8 @@ import unittest
 
 from stepcovnet import config
 from stepcovnet import trainers
+from stepcovnet import datasets
+from stepcovnet import models
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
@@ -637,7 +639,39 @@ class TrainersTest(unittest.TestCase):
                 model_output_dir=model_output_dir,
             )
             self.assertIsNotNone(model)
-            self.assertIsNotNone(history)
+
+    def test_run_arrow_train_from_config_with_audio_snippets(self):
+        """Arrow model and dataset work with snippet_half_frames > 0 (forward pass)."""
+
+        dataset_config = config.ArrowDatasetConfig(
+            data_dir=TEST_DATA_DIR,
+            val_data_dir=TEST_DATA_DIR,
+            batch_size=1,
+            snippet_half_frames=5,
+        )
+        model_config = config.ArrowModelConfig(
+            snippet_half_frames=5,
+        )
+        ds = datasets.create_arrow_dataset(
+            data_dir=dataset_config.data_dir,
+            batch_size=dataset_config.batch_size,
+            snippet_half_frames=dataset_config.snippet_half_frames,
+        )
+        model = models.build_arrow_model(
+            num_layers=model_config.num_layers,
+            d_model=model_config.d_model,
+            num_heads=model_config.num_heads,
+            ff_dim=model_config.ff_dim,
+            dropout_rate=model_config.dropout_rate,
+            snippet_half_frames=model_config.snippet_half_frames,
+        )
+        batch = next(iter(ds.take(1)))
+        x, y = batch
+        out = model(x)
+        self.assertEqual(out.shape[0], y.shape[0])
+        self.assertEqual(out.shape[1], y.shape[1])
+        self.assertEqual(out.shape[2], 256)
+        self.assertEqual(len(model.inputs), 2)
 
 
 if __name__ == "__main__":

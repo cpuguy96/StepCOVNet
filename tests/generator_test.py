@@ -24,12 +24,15 @@ class GeneratorTest(unittest.TestCase):
         mock_onset_model.predict.side_effect = _onset_pred_mock
 
         def _arrow_pred_mock(x):
+            if isinstance(x, list):
+                x = x[0]
             num_arrows = x.shape[1]
             self.assertEqual(x.shape, (1, num_arrows, 1))
             return np.random.random((1, num_arrows, 256)).astype(np.float32)
 
         mock_arrow_model = mock.MagicMock()
         mock_arrow_model.predict.side_effect = _arrow_pred_mock
+        mock_arrow_model.inputs = [None]
 
         for use_post_processing in [True, False]:
             with self.subTest(f"use_post_processing={use_post_processing}"):
@@ -51,6 +54,27 @@ class GeneratorTest(unittest.TestCase):
                     self.assertNotEqual(arrow, "0000")
                     self.assertGreaterEqual(float(onset), 0)
                     self.assertLessEqual(float(onset), 129)
+
+    def test_generate_output_data_with_two_input_arrow_model(self):
+        """generate_output_data works when arrow model has two inputs (snippets)."""
+        onset_model = keras.models.load_model(
+            os.path.join(TEST_DATA_DIR, "stepcovnet_ONSET-mayu_overfit.keras"),
+            compile=False,
+        )
+        arrow_model = models.build_arrow_model(
+            snippet_half_frames=5,
+        )
+        output_data = generator.generate_output_data(
+            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            song_title="M.A.Y.U",
+            bpm=128,
+            onset_model=onset_model,
+            arrow_model=arrow_model,
+        )
+        self.assertEqual(output_data.title, "M.A.Y.U")
+        self.assertEqual(output_data.bpm, 128)
+        self.assertIn("Challenge", output_data.notes)
+        self.assertGreater(len(output_data.notes["Challenge"]), 0)
 
     def test_generate_output_data(self):
         onset_model = keras.models.load_model(

@@ -9,6 +9,9 @@ Usage:
 
     # Override config file values:
     python scripts/train_arrow.py --config=configs/arrow_baseline.json --epochs=30 --batch_size=4
+
+    # With audio snippets (snippet_half_frames > 0; mel windows around each onset as second input):
+    python scripts/train_arrow.py --config=configs/arrow_baseline.json --snippet_half_frames=5
 """
 
 import argparse
@@ -124,6 +127,13 @@ PARSER.add_argument(
     default=None,
     required=False,
 )
+PARSER.add_argument(
+    "--snippet_half_frames",
+    type=int,
+    help="Half-window of frames around each onset (total = 2*snippet_half_frames+1). When > 0, mel snippets are used as second input.",
+    default=None,
+    required=False,
+)
 ARGS = PARSER.parse_args()
 
 
@@ -164,8 +174,15 @@ def main():
             data_dir=ARGS.train_data_dir,
             val_data_dir=ARGS.val_data_dir,
             batch_size=1,
+            snippet_half_frames=(
+                ARGS.snippet_half_frames if ARGS.snippet_half_frames is not None else 0
+            ),
         )
-        model_config = config.ArrowModelConfig()
+        model_config = config.ArrowModelConfig(
+            snippet_half_frames=(
+                ARGS.snippet_half_frames if ARGS.snippet_half_frames is not None else 0
+            ),
+        )
         # Default to a single batch for quick, backward-compatible testing.
         # Users can still override this via --take_count or in the config file.
         run_config = config.RunConfig(
@@ -183,6 +200,9 @@ def main():
         dataset_config.val_data_dir = ARGS.val_data_dir
     if ARGS.batch_size is not None:
         dataset_config.batch_size = ARGS.batch_size
+    if ARGS.snippet_half_frames is not None:
+        dataset_config.snippet_half_frames = ARGS.snippet_half_frames
+        model_config.snippet_half_frames = ARGS.snippet_half_frames
 
     if ARGS.num_layers is not None:
         model_config.num_layers = ARGS.num_layers

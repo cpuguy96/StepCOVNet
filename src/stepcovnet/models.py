@@ -5,7 +5,50 @@ import tensorflow as tf
 
 from stepcovnet import constants
 
-_MAX_NUM_ARROWS = 2048
+
+@keras.saving.register_keras_serializable()
+class SnippetCNN(keras.layers.Layer):
+    """2D CNN over each (n_frames, n_mels) snippet without TimeDistributed.
+
+    Reshapes (batch, steps, n_frames, n_mels) to (batch*steps, n_frames, n_mels),
+    applies Conv2D layers and global average pooling, then reshapes back to
+    (batch, steps, filters). Avoids TimeDistributed for XLA compatibility.
+    """
+
+    def __init__(self, n_frames, n_mels, filters=32, **kwargs):
+        super().__init__(**kwargs)
+        self.n_frames = n_frames
+        self.n_mels = n_mels
+        self.filters = filters
+        self.conv1 = keras.layers.Conv2D(
+            filters, (3, 3), activation="relu", padding="same", name="snippet_conv2d_1"
+        )
+        self.conv2 = keras.layers.Conv2D(
+            filters, (3, 3), activation="relu", padding="same", name="snippet_conv2d_2"
+        )
+        self.pool = keras.layers.GlobalAveragePooling2D(name="snippet_pool")
+
+    def call(self, inputs):
+        # (batch, steps, n_frames, n_mels) -> (batch*steps, n_frames, n_mels, 1)
+        shape = tf.shape(inputs)
+        b = tf.gather(shape, 0)
+        s = tf.gather(shape, 1)
+        flat = tf.reshape(inputs, (b * s, self.n_frames, self.n_mels, 1))
+        x = self.conv1(flat)
+        x = self.conv2(x)
+        x = self.pool(x)  # (batch*steps, filters)
+        return tf.reshape(x, (b, s, self.filters))
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "n_frames": self.n_frames,
+                "n_mels": self.n_mels,
+                "filters": self.filters,
+            }
+        )
+        return config
 
 
 @keras.saving.register_keras_serializable()
@@ -66,9 +109,6 @@ class PositionalEncoding(keras.layers.Layer):
     def call(self, inputs):
         # inputs shape: (batch_size, seq_len, d_model)
         seq_len = tf.shape(inputs)[1]  # type: ignore
-        # Add the positional encoding to the input embeddings
-        # Slice the pre-computed encoding to match the input sequence length
-        # --- FIX: Cast pos_encoding to the dtype of inputs before adding ---
         input_dtype = inputs.dtype
         pos_encoding_sliced = self.pos_encoding[:, :seq_len, :]  # type: ignore
         pos_encoding_casted = tf.cast(pos_encoding_sliced, dtype=input_dtype)
@@ -133,7 +173,13 @@ def _wavenet_residual_block(
 
 
 def _transformer_encoder(
-    inputs, d_model: int, num_heads: int, ff_dim: int, dropout_rate: float = 0.1
+    inputs,
+    d_model: int,
+    num_heads: int,
+    ff_dim: int,
+    dropout_rate: float = 0.1,
+    *,
+    name: str = "transformer_block",
 ):
     """
     Creates a single Transformer Encoder block.
@@ -143,9 +189,11 @@ def _transformer_encoder(
         num_heads: Number of attention heads.
         ff_dim: Inner dimension of the Feed-Forward Network.
         dropout_rate: Dropout rate.
+        name: Prefix for layer names in this block.
     Returns:
         Output tensor shape (batch_size, seq_len, d_model)
     """
+    prefix = name
     # --- Multi-Head Self-Attention ---
     # Ensure d_model is divisible by num_heads
     assert d_model % num_heads == 0
@@ -156,19 +204,28 @@ def _transformer_encoder(
         key_dim=kv_dim,
         value_dim=kv_dim,
         dtype="float32",  # Needed for numerical stability during inference
-    )(
-        inputs, inputs
-    )  # Self-attention
-    attn_output = keras.layers.Dropout(dropout_rate)(attn_output)
+        name=f"{prefix}_mha",
+    )(inputs, inputs)
+    attn_output = keras.layers.Dropout(dropout_rate, name=f"{prefix}_attn_dropout")(
+        attn_output
+    )
     # Residual connection & Layer Normalization
-    out1 = keras.layers.LayerNormalization(epsilon=1e-6)(inputs + attn_output)
+    out1 = keras.layers.LayerNormalization(
+        epsilon=1e-6, name=f"{prefix}_attn_layernorm"
+    )(inputs + attn_output)
 
     # --- Feed-Forward Network ---
-    ffn_output = keras.layers.Dense(ff_dim, activation="relu")(out1)
-    ffn_output = keras.layers.Dense(d_model)(ffn_output)
-    ffn_output = keras.layers.Dropout(dropout_rate)(ffn_output)
+    ffn_output = keras.layers.Dense(
+        ff_dim, activation="relu", name=f"{prefix}_ffn_dense1"
+    )(out1)
+    ffn_output = keras.layers.Dense(d_model, name=f"{prefix}_ffn_dense2")(ffn_output)
+    ffn_output = keras.layers.Dropout(dropout_rate, name=f"{prefix}_ffn_dropout")(
+        ffn_output
+    )
     # Residual connection & Layer Normalization
-    out2 = keras.layers.LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
+    out2 = keras.layers.LayerNormalization(
+        epsilon=1e-6, name=f"{prefix}_ffn_layernorm"
+    )(out1 + ffn_output)
 
     return out2
 
@@ -357,6 +414,7 @@ def build_arrow_model(
     ff_dim: int = 512,
     dropout_rate: float = 0.0,
     model_name: str = "",
+    snippet_half_frames: int = 0,
 ):
     """Builds a model for StepMania arrow prediction.
 
@@ -367,23 +425,39 @@ def build_arrow_model(
         ff_dim: The inner dimension of the feed-forward networks.
         dropout_rate: The dropout rate used in sublayers.
         model_name: Name for the model.
+        snippet_half_frames: Half-window of frames per snippet (total = 2*half+1).
+            When > 0, add a second input for mel snippets per step and fuse with timing embedding via a small CNN.
 
     Returns:
-        A Keras Model instance.
+        A Keras Model instance. Inputs accept variable sequence length (None); internally padded to constants.MAX_STEPS.
     """
-    # Input shape is (batch_size, sequence_length, 1)
-    inputs = keras.layers.Input(shape=(None, 1), name="inputs")
+    timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
+    timing_embed = keras.layers.Dense(d_model, name="input_projection")(timing_input)
+    timing_embed *= tf.math.sqrt(tf.cast(d_model, tf.float32), name="sqrt_d_model")
 
-    # Project the 1D input to the model's embedding dimension
-    x = keras.layers.Dense(d_model, name="input_projection")(inputs)
-    # Scale embeddings by sqrt(d_model) as per the original Transformer paper
-    x *= tf.math.sqrt(tf.cast(d_model, tf.float32))
+    if snippet_half_frames > 0:
+        snippet_n_frames = 2 * snippet_half_frames + 1
+        snippet_n_mels = constants.N_MELS
+        snippet_input = keras.layers.Input(
+            shape=(None, snippet_n_frames, snippet_n_mels),
+            name="snippet_input",
+        )
+        s = SnippetCNN(
+            n_frames=snippet_n_frames,
+            n_mels=snippet_n_mels,
+            filters=32,
+            name="snippet_cnn",
+        )(snippet_input)
+        s = keras.layers.Dense(d_model, name="snippet_projection")(s)
+        x = keras.layers.Add(name="fuse_timing_snippet")([timing_embed, s])
+        inputs = [timing_input, snippet_input]
+    else:
+        x = timing_embed
+        inputs = timing_input
 
-    # Inject positional information since Transformers have no inherent sense of order
-    x = PositionalEncoding(position=_MAX_NUM_ARROWS, d_model=d_model)(x)
+    x = PositionalEncoding(position=constants.MAX_STEPS, d_model=d_model)(x)
     x = keras.layers.Dropout(dropout_rate)(x)
 
-    # Stack multiple Transformer encoder layers
     for i in range(num_layers):
         x = _transformer_encoder(
             inputs=x,
@@ -391,9 +465,8 @@ def build_arrow_model(
             num_heads=num_heads,
             ff_dim=ff_dim,
             dropout_rate=dropout_rate,
+            name=f"transformer_block_{i}",
         )
-
-    # Output layer predicts the probability distribution over arrow types for each step
 
     outputs = keras.layers.Dense(
         constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"

@@ -64,11 +64,14 @@ class ArrowDatasetConfig:
         data_dir: Path to training data directory.
         val_data_dir: Path to validation data directory.
         batch_size: Number of samples per batch.
+        snippet_half_frames: Half-window of frames around each onset (total frames = 2*snippet_half_frames+1).
+            When > 0, audio snippets are loaded and included per step; when 0, only timing and chart are used.
     """
 
     data_dir: str
     val_data_dir: str
     batch_size: int = 1
+    snippet_half_frames: int = 0
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
@@ -142,6 +145,8 @@ class ArrowModelConfig:
         num_heads: Number of attention heads.
         ff_dim: Inner dimension of feed-forward networks.
         dropout_rate: Dropout rate used in sublayers.
+        snippet_half_frames: Half-window of frames per snippet (must match dataset).
+            When > 0, model accepts a second input (mel snippets per step); when 0, timing only.
     """
 
     num_layers: int = 1
@@ -149,6 +154,7 @@ class ArrowModelConfig:
     num_heads: int = 4
     ff_dim: int = 512
     dropout_rate: float = 0.0
+    snippet_half_frames: int = 0
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
