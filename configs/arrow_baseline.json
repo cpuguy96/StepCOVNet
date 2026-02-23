@@ -13,10 +13,10 @@
   },
   "run": {
     "epoch": 10,
-    "take_count": -1,
+    "take_count": 1,
     "model_output_dir": "models",
     "callback_root_dir": "callbacks",
-    "model_name": "onset_model_baseline",
-    "seed": 47
+    "model_name": "arrow_model_baseline",
+    "seed": 42
   }
 }

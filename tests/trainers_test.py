@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from stepcovnet import config
 from stepcovnet import trainers
@@ -252,6 +253,135 @@ class TrainersTest(unittest.TestCase):
                 os.path.isfile(saved_path),
                 f"Expected saved model at {saved_path}",
             )
+
+    def test_run_arrow_train_from_config_with_verbosity_quiet(self):
+        """Training with show_model_summary=False and fit_verbose=0 completes."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            callback_root_dir = os.path.join(temp_dir, "callbacks")
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                callback_root_dir=callback_root_dir,
+                show_model_summary=False,
+                fit_verbose=0,
+            )
+            model, history = trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+        self.assertIsNotNone(model)
+        self.assertIsNotNone(history)
+
+    def test_run_arrow_train_from_config_fit_receives_verbose(self):
+        """model.fit is called with verbose from run_config.fit_verbose."""
+        mock_model = mock.Mock()
+        mock_model.compile = mock.Mock()
+        mock_model.fit = mock.Mock(
+            return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                callback_root_dir="",
+                fit_verbose=2,
+            )
+            with mock.patch(
+                "stepcovnet.trainers.models.build_arrow_model",
+                return_value=mock_model,
+            ):
+                with mock.patch("stepcovnet.trainers._write_model"):
+                    trainers.run_arrow_train_from_config(
+                        dataset_config, model_config, run_config
+                    )
+        mock_model.fit.assert_called_once()
+        self.assertEqual(mock_model.fit.call_args.kwargs["verbose"], 2)
+
+    def test_run_arrow_train_from_config_show_model_summary_false_skips_summary(
+        self,
+    ):
+        """When show_model_summary is False, model.summary() is not called."""
+        mock_model = mock.Mock()
+        mock_model.compile = mock.Mock()
+        mock_model.fit = mock.Mock(
+            return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                callback_root_dir="",
+                show_model_summary=False,
+            )
+            with mock.patch(
+                "stepcovnet.trainers.models.build_arrow_model",
+                return_value=mock_model,
+            ):
+                with mock.patch("stepcovnet.trainers._write_model"):
+                    trainers.run_arrow_train_from_config(
+                        dataset_config, model_config, run_config
+                    )
+        mock_model.summary.assert_not_called()
+
+    def test_run_arrow_train_from_config_show_model_summary_true_calls_summary(
+        self,
+    ):
+        """When show_model_summary is True (default), model.summary() is called."""
+        mock_model = mock.Mock()
+        mock_model.compile = mock.Mock()
+        mock_model.fit = mock.Mock(
+            return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_output_dir = os.path.join(temp_dir, "models")
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+            )
+            model_config = config.ArrowModelConfig()
+            run_config = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                callback_root_dir="",
+                show_model_summary=True,
+            )
+            with mock.patch(
+                "stepcovnet.trainers.models.build_arrow_model",
+                return_value=mock_model,
+            ):
+                with mock.patch("stepcovnet.trainers._write_model"):
+                    trainers.run_arrow_train_from_config(
+                        dataset_config, model_config, run_config
+                    )
+        mock_model.summary.assert_called_once()
 
     def test_config_serialization(self):
         """Test that configs can be serialized to/from JSON."""

@@ -1,0 +1,16 @@
+{
+  "base_config": "configs/arrow_baseline.json",
+  "search_space": {
+    "model.dropout_rate": [0.0, 0.1, 0.2],
+    "model.num_layers": [1, 2],
+    "run.chart_validity_aux_weight": [0.0, 0.3],
+    "run.take_count": [1],
+    "run.epoch": [10]
+  },
+  "optimize": {
+    "metric": "val_loss",
+    "mode": "min"
+  },
+  "max_runs": 5,
+  "sweep_output_dir": "output/hyperparameter_search/arrow"
+}

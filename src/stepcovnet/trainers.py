@@ -312,7 +312,8 @@ def run_train_from_config(
         dropout_rate=model_config.dropout_rate,
     )
 
-    model.summary()
+    if run_config.show_model_summary:
+        model.summary()
 
     if dataset_config.use_gaussian_target:
         loss = keras.losses.MeanSquaredError()
@@ -357,6 +358,7 @@ def run_train_from_config(
         epochs=run_config.epoch,
         validation_data=val_data,
         callbacks=training_callbacks,
+        verbose=run_config.fit_verbose,  # type: ignore[arg-type]
     )
 
     _write_model(model, run_config.model_output_dir)
@@ -487,7 +489,8 @@ def run_arrow_train_from_config(
         snippet_half_frames=model_config.snippet_half_frames,
     )
 
-    model.summary()
+    if run_config.show_model_summary:
+        model.summary()
 
     # Combined loss: main (cross-entropy) + validity penalty + diversity balance.
     # Use chart_validity_aux_weight to punish invalid charts; use diversity_aux_weight
@@ -548,6 +551,7 @@ def run_arrow_train_from_config(
         epochs=run_config.epoch,
         validation_data=val_data,
         callbacks=training_callbacks,
+        verbose=run_config.fit_verbose,  # type: ignore[arg-type]
     )
 
     _write_model(model, run_config.model_output_dir)

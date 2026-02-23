@@ -196,6 +196,9 @@ class RunConfig:
         diversity_aux_weight: Weight for note-kind balance auxiliary loss (arrow training only).
             Encourages predicted hold/tap mix to match labels; use to balance chart_validity.
             Default 0.0.
+        show_model_summary: If True, print model summary before training. Default True.
+        fit_verbose: Keras model.fit verbosity: 0 (silent), 1 (progress bar), or 2 (one line per epoch).
+            Default 1.
     """
 
     epoch: int
@@ -207,6 +210,8 @@ class RunConfig:
     val_take_count: int = -1
     chart_validity_aux_weight: float = 0.0
     diversity_aux_weight: float = 0.0
+    show_model_summary: bool = True
+    fit_verbose: int = 1
 
     def __post_init__(self) -> None:
         """Validate run parameters and aux weights."""
@@ -230,6 +235,8 @@ class RunConfig:
             raise ValueError(
                 f"diversity_aux_weight must be >= 0, got {self.diversity_aux_weight}"
             )
+        if self.fit_verbose not in (0, 1, 2):
+            raise ValueError(f"fit_verbose must be 0, 1, or 2, got {self.fit_verbose}")
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.

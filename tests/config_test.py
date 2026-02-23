@@ -1,5 +1,3 @@
-"""Tests for configuration classes."""
-
 import json
 import os
 import tempfile
@@ -326,6 +324,64 @@ class RunConfigTest(unittest.TestCase):
             val_take_count=-1,
         )
         self.assertEqual(cfg.val_take_count, -1)
+
+    def test_verbosity_defaults(self):
+        """show_model_summary and fit_verbose default to True and 1."""
+        cfg = config.RunConfig(epoch=1, take_count=1, model_output_dir="out")
+        self.assertTrue(cfg.show_model_summary)
+        self.assertEqual(cfg.fit_verbose, 1)
+
+    def test_show_model_summary_explicit(self):
+        """show_model_summary can be set to False."""
+        cfg = config.RunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            show_model_summary=False,
+        )
+        self.assertFalse(cfg.show_model_summary)
+
+    def test_fit_verbose_accepts_0_1_2(self):
+        """fit_verbose accepts 0, 1, and 2."""
+        for v in (0, 1, 2):
+            cfg = config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                fit_verbose=v,
+            )
+            self.assertEqual(cfg.fit_verbose, v)
+
+    def test_fit_verbose_invalid_raises(self):
+        """fit_verbose other than 0, 1, 2 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                fit_verbose=3,
+            )
+        self.assertIn("fit_verbose", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                fit_verbose=-1,
+            )
+
+    def test_from_dict_verbosity(self):
+        """from_dict accepts show_model_summary and fit_verbose."""
+        data = {
+            "epoch": 1,
+            "take_count": 1,
+            "model_output_dir": "out",
+            "show_model_summary": False,
+            "fit_verbose": 0,
+        }
+        cfg = config.RunConfig.from_dict(data)
+        self.assertFalse(cfg.show_model_summary)
+        self.assertEqual(cfg.fit_verbose, 0)
 
 
 class OnsetExperimentConfigTest(unittest.TestCase):
