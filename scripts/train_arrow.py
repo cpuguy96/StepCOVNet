@@ -12,6 +12,9 @@ Usage:
 
     # With audio snippets (snippet_half_frames > 0; mel windows around each onset as second input):
     python scripts/train_arrow.py --config=configs/arrow_baseline.json --snippet_half_frames=5
+
+    # Balance validity vs diversity: punish invalid charts but avoid boring all-tap collapse
+    python scripts/train_arrow.py --config=configs/arrow_baseline.json --chart_validity_aux_weight=0.5 --diversity_aux_weight=0.2
 """
 
 import argparse
@@ -134,6 +137,20 @@ PARSER.add_argument(
     default=None,
     required=False,
 )
+PARSER.add_argument(
+    "--chart_validity_aux_weight",
+    type=float,
+    help="Weight for chart-validity auxiliary loss. Higher values punish invalid charts more; use with --diversity_aux_weight to avoid collapse to boring charts.",
+    default=None,
+    required=False,
+)
+PARSER.add_argument(
+    "--diversity_aux_weight",
+    type=float,
+    help="Weight for note-kind balance auxiliary loss. Encourages predicted hold/tap mix to match labels; balances chart validity.",
+    default=None,
+    required=False,
+)
 ARGS = PARSER.parse_args()
 
 
@@ -227,6 +244,10 @@ def main():
         run_config.callback_root_dir = ARGS.callback_root_dir
     if ARGS.model_name is not None:
         run_config.model_name = ARGS.model_name
+    if ARGS.chart_validity_aux_weight is not None:
+        run_config.chart_validity_aux_weight = ARGS.chart_validity_aux_weight
+    if ARGS.diversity_aux_weight is not None:
+        run_config.diversity_aux_weight = ARGS.diversity_aux_weight
 
     # Validate required fields
     if not dataset_config.data_dir or not dataset_config.val_data_dir:

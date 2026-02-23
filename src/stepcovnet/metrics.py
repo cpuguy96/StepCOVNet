@@ -439,7 +439,7 @@ def compute_hold_validity_violations(
 ) -> tuple[int, int, list[tuple[int, int, str]]]:
     """Check hold validity on a 1D sequence of arrow codes (0..255).
 
-    Uses the same rules as ArrowHoldValidityMetric: (1) every 3 (hold end) must
+    Uses the same hold rules as ChartValidityMetric: (1) every 3 (hold end) must
     have a preceding 2 (hold start) in that column; (2) 3 cannot immediately
     follow 1 (tap) in the same column.
 
@@ -479,7 +479,7 @@ def compute_hold_validity_violations(
                     run -= 1
                     run_unchanged = False
                 after_tap = i > 0 and col[i - 1] == 1
-                # At most one violation per hold-end (same as ArrowHoldValidityMetric)
+                # At most one violation per hold-end (same as ChartValidityMetric)
                 if after_tap:
                     violations += 1
                     if len(examples) < max_examples:
@@ -502,42 +502,182 @@ def _arrow_indices_to_column_digits(indices: tf.Tensor) -> tf.Tensor:
     return tf.stack([d0, d1, d2, d3], axis=-1)
 
 
-@keras.saving.register_keras_serializable()
-class ArrowHoldValidityMetric(keras.metrics.Metric):
+def _build_arrow_digit_onehot_table() -> tf.Tensor:
+    """Build (256, 4, 4) tensor: M[n, col, d] = 1 iff arrow n has digit d in column col."""
+    table = np.zeros((constants.N_ARROW_TYPES, 4, 4), dtype=np.float32)
+    for n in range(constants.N_ARROW_TYPES):
+        d0 = (n // 64) % 4
+        d1 = (n // 16) % 4
+        d2 = (n // 4) % 4
+        d3 = n % 4
+        table[n, 0, d0] = 1.0
+        table[n, 1, d1] = 1.0
+        table[n, 2, d2] = 1.0
+        table[n, 3, d3] = 1.0
+    return tf.constant(table, dtype=tf.float32)
+
+
+_ARROW_DIGIT_ONEHOT_TABLE = _build_arrow_digit_onehot_table()
+
+
+def chart_validity_auxiliary_loss(
+    y_true: tf.Tensor,
+    y_pred: tf.Tensor,
+    ignore_class: int = 0,
+) -> tf.Tensor:
+    """Differentiable auxiliary loss encouraging chart-valid predictions.
+
+    Soft penalties aligned with ChartValidityMetric: (1) Orphaned tail (3 in FREE).
+    (2) Hold-end (3) immediately after tap (1) in same column. (3) Tap during hold
+    (1 in HOLDING). (4) Nested hold (2 in HOLDING). (5) Unterminated hold (run > 0
+    at last valid step). Padding positions (y_true == ignore_class) are masked out.
+
+    Args:
+        y_true: (batch, seq) int arrow codes.
+        y_pred: (batch, seq, N_ARROW_TYPES) float probabilities.
+        ignore_class: Label value to treat as padding (default 0).
+
+    Returns:
+        Scalar tensor: mean penalty over valid (non-padding) positions.
     """
-    Metric that measures hold/release validity of predicted arrow sequences.
-    Rules: (1) Every 3 (hold end) must have a preceding 2 (hold start) in that column.
-    (2) 3 cannot immediately follow 1 (tap) in the same column.
-    Returns value in [0, 1]: 1 - (violations / max(1, total_hold_ends)), clamped.
-    1.0 when no hold ends; 0.0 when violations >= hold_ends (at most one violation per
-    hold-end, but clamped for safety). Uses ignore_class=0 (padding positions are skipped).
+    prob_digit = tf.einsum(
+        "bsn,ncd->bscd",
+        tf.cast(y_pred, tf.float32),
+        _ARROW_DIGIT_ONEHOT_TABLE,
+    )
+    p1 = prob_digit[:, :, :, 1]
+    p2 = prob_digit[:, :, :, 2]
+    p3 = prob_digit[:, :, :, 3]
+    delta = p2 - p3
+    run_soft = tf.cumsum(delta, axis=1)
+    run_prev = tf.concat(
+        [tf.zeros_like(run_soft[:, :1, :]), run_soft[:, :-1, :]],
+        axis=1,
+    )
+    mask = tf.cast(tf.not_equal(y_true, ignore_class), tf.float32)
+    mask_exp = tf.expand_dims(mask, axis=-1)
+
+    # (1) Orphan 3: P(3) when state is FREE (run_prev < 1)
+    penalty_orphan_3 = p3 * tf.maximum(0.0, 1.0 - run_prev)
+    # (2) 3 immediately after tap in same column
+    penalty_after_tap = p1[:, :-1, :] * p3[:, 1:, :]
+    penalty_after_tap = tf.concat(
+        [tf.zeros_like(penalty_after_tap[:, :1, :]), penalty_after_tap],
+        axis=1,
+    )
+    # Soft "state is HOLDING": smooth step at run_prev >= 1
+    state_holding_soft = tf.sigmoid((run_prev - 0.5) * 10.0)
+    # (3) Tap during hold
+    penalty_tap_during_hold = p1 * state_holding_soft
+    # (4) Nested hold
+    penalty_nested_hold = p2 * state_holding_soft
+    # (5) Unterminated: run > 0 at last valid step (soft last position per batch)
+    next_valid = tf.concat([mask[:, 1:], tf.zeros_like(mask[:, :1])], axis=1)
+    last_valid_soft = mask * (1.0 - next_valid)
+    last_valid_exp = tf.expand_dims(last_valid_soft, axis=-1)
+    penalty_unterminated = last_valid_exp * tf.maximum(0.0, run_soft)
+
+    step_penalties = (
+        penalty_orphan_3
+        + penalty_after_tap
+        + penalty_tap_during_hold
+        + penalty_nested_hold
+    )
+    step_masked = tf.reduce_sum(step_penalties * mask_exp) + tf.reduce_sum(
+        penalty_unterminated * mask_exp
+    )
+    mask_count = tf.maximum(tf.reduce_sum(mask), 1.0)
+    return step_masked / mask_count
+
+
+def note_kind_balance_auxiliary_loss(
+    y_true: tf.Tensor,
+    y_pred: tf.Tensor,
+    ignore_class: int = 0,
+) -> tf.Tensor:
+    """Differentiable auxiliary loss encouraging predicted hold/tap balance to match labels.
+
+    Computes per-step "hold rate" (fraction of columns that are hold-start or hold-end)
+    from soft predictions and from labels, then minimizes mean squared error over
+    non-padding steps. Prevents the model from collapsing to safe, boring charts
+    (e.g. all taps) when chart validity is heavily weighted: it must still match
+    the data's mix of taps vs holds.
+
+    Args:
+        y_true: (batch, seq) int arrow codes.
+        y_pred: (batch, seq, N_ARROW_TYPES) float probabilities.
+        ignore_class: Label value to treat as padding (default 0).
+
+    Returns:
+        Scalar tensor: mean squared error of (pred_hold_rate - true_hold_rate) over valid steps.
+    """
+    # Predicted per-column digit probs: (batch, seq, 4, 4)
+    prob_digit = tf.einsum(
+        "bsn,ncd->bscd",
+        tf.cast(y_pred, tf.float32),
+        _ARROW_DIGIT_ONEHOT_TABLE,
+    )
+    pred_hold_per_col = (
+        prob_digit[:, :, :, 2] + prob_digit[:, :, :, 3]
+    )  # (batch, seq, 4)
+    pred_hold_rate = tf.reduce_mean(pred_hold_per_col, axis=-1)  # (batch, seq)
+
+    # True digit probs from one-hot labels: (batch, seq, 4, 4)
+    true_onehot = tf.one_hot(
+        tf.cast(tf.clip_by_value(y_true, 0, constants.N_ARROW_TYPES - 1), tf.int32),
+        depth=constants.N_ARROW_TYPES,
+        dtype=tf.float32,
+    )
+    true_prob_digit = tf.einsum(
+        "bsn,ncd->bscd",
+        true_onehot,
+        _ARROW_DIGIT_ONEHOT_TABLE,
+    )
+    true_hold_per_col = true_prob_digit[:, :, :, 2] + true_prob_digit[:, :, :, 3]
+    true_hold_rate = tf.reduce_mean(true_hold_per_col, axis=-1)  # (batch, seq)
+
+    sq_err = tf.square(pred_hold_rate - true_hold_rate)
+    mask = tf.cast(tf.not_equal(y_true, ignore_class), tf.float32)
+    mask_count = tf.maximum(tf.reduce_sum(mask), 1.0)
+    return tf.reduce_sum(sq_err * mask) / mask_count
+
+
+@keras.saving.register_keras_serializable()
+class ChartValidityMetric(keras.metrics.Metric):
+    """
+    Metric that measures full sequence validity of StepMania chart predictions
+    per the 2-state (FREE / HOLDING) rules per column.
+
+    Vocabulary: 0=Empty, 1=Tap, 2=Hold Head, 3=Hold Tail. Evaluated per column.
+    Violations: (1) Orphaned tail (3 in FREE). (2) Tap during hold (1 in HOLDING).
+    (3) Nested hold (2 in HOLDING). (4) Unterminated hold (sequence ends in HOLDING).
+
+    Returns value in [0, 1]: 1 - (total_violations / max(1, total_valid_step_columns)),
+    i.e. fraction of step-column slots that do not participate in any violation.
+    Uses ignore_class=0 for padding (positions and columns are masked out).
     """
 
     def __init__(
         self,
         ignore_class: int = 0,
-        name: str = "arrow_hold_validity",
+        name: str = "chart_validity",
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
         self.ignore_class = ignore_class
-        self.eps = 1e-7
         self.total_violations = self.add_weight(
             name="total_violations", initializer="zeros"
         )
-        self.total_hold_ends = self.add_weight(
-            name="total_hold_ends", initializer="zeros"
+        self.total_valid_step_columns = self.add_weight(
+            name="total_valid_step_columns", initializer="zeros"
         )
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         y_true = tf.cast(y_true, tf.int32)
         y_pred = tf.cast(y_pred, tf.float32)
         pred_classes = tf.cast(tf.argmax(y_pred, axis=-1), tf.int32)
-        # Only consider positions that are not padding
         mask = tf.not_equal(y_true, self.ignore_class)
-        # Shape (batch, seq, 4): digit value 0..3 per column
         digits = _arrow_indices_to_column_digits(pred_classes)  # type: ignore[arg-type]
-        # For padding positions, treat as 0 so they don't create spurious 2/3
         mask_exp = tf.expand_dims(tf.cast(mask, tf.float32), axis=-1)
         digits_f = tf.cast(digits, tf.float32)
         digits_masked = tf.where(
@@ -546,7 +686,7 @@ class ArrowHoldValidityMetric(keras.metrics.Metric):
             tf.zeros_like(digits_f),
         )
         digits = tf.cast(digits_masked, tf.int32)
-        # Running balance per column: +1 for 2, -1 for 3. (batch, seq, 4)
+
         delta = tf.where(
             tf.equal(digits, 2),
             tf.ones_like(digits, dtype=tf.float32),
@@ -561,33 +701,48 @@ class ArrowHoldValidityMetric(keras.metrics.Metric):
             [tf.zeros_like(run[:, :1, :]), run[:, :-1, :]],  # type: ignore[call-overload]
             axis=1,
         )
-        # Violation 1: 3 with no preceding 2 (balance before this step < 1)
-        violation_unmatched = tf.cast(
-            tf.equal(digits, 3) & (run_prev < 1.0), tf.float32
+        state_free = run_prev < 1.0
+        state_holding = tf.logical_not(state_free)
+
+        violation_orphan_3 = tf.cast(tf.equal(digits, 3) & state_free, tf.float32)
+        violation_tap_during_hold = tf.cast(
+            tf.equal(digits, 1) & state_holding, tf.float32
         )
-        # Violation 2: 3 immediately after 1 in same column
-        digits_prev = tf.concat(
-            [tf.zeros_like(digits[:, :1, :]), digits[:, :-1, :]],  # type: ignore[index]
+        violation_nested_hold = tf.cast(tf.equal(digits, 2) & state_holding, tf.float32)
+
+        seq_len = tf.shape(digits)[1]
+        seq_indices = tf.range(seq_len, dtype=tf.int32)
+        last_valid_idx = tf.argmax(
+            tf.cast(mask, tf.int32) * seq_indices[tf.newaxis, :],
             axis=1,
+            output_type=tf.int32,
         )
-        violation_after_tap = tf.cast(
-            tf.equal(digits, 3) & tf.equal(digits_prev, 1), tf.float32
+        run_at_end = tf.gather(run, last_valid_idx, axis=1, batch_dims=1)
+        valid_batch = tf.reduce_sum(tf.cast(mask, tf.float32), axis=1) > 0.0
+        violation_unterminated = tf.cast(
+            (run_at_end > 0.0) & valid_batch[:, tf.newaxis], tf.float32
         )
-        # At most one violation per hold-end (avoid double-count when both rules hit)
-        violation_any = tf.maximum(violation_unmatched, violation_after_tap)
-        violations_batch = tf.reduce_sum(violation_any)
-        hold_ends_batch = tf.reduce_sum(tf.cast(tf.equal(digits, 3), tf.float32))
-        self.total_violations.assign_add(violations_batch)
-        self.total_hold_ends.assign_add(hold_ends_batch)
+
+        step_violations = (
+            violation_orphan_3 + violation_tap_during_hold + violation_nested_hold
+        )
+        step_violations_masked = step_violations * mask_exp
+        total_step_violations = tf.reduce_sum(step_violations_masked)
+        total_unterminated = tf.reduce_sum(violation_unterminated)
+        total_violations_batch = total_step_violations + total_unterminated
+        total_slots = tf.reduce_sum(tf.cast(mask, tf.float32)) * 4.0
+
+        self.total_violations.assign_add(total_violations_batch)
+        self.total_valid_step_columns.assign_add(total_slots)
 
     def result(self):
-        denom = tf.maximum(1.0, self.total_hold_ends)
+        denom = tf.maximum(1.0, self.total_valid_step_columns)
         ratio = self.total_violations / denom
         return tf.clip_by_value(1.0 - ratio, 0.0, 1.0)
 
     def reset_state(self):
         self.total_violations.assign(0.0)
-        self.total_hold_ends.assign(0.0)
+        self.total_valid_step_columns.assign(0.0)
 
     def get_config(self):
         config = super().get_config()

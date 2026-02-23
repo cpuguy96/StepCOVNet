@@ -1,7 +1,9 @@
 import unittest
 
 import numpy as np
+import tensorflow as tf
 
+from stepcovnet import constants
 from stepcovnet import metrics
 
 
@@ -211,84 +213,6 @@ class ArrowNoteKindDistributionMetricTest(unittest.TestCase):
         self.assertEqual(config["name"], "custom")
 
 
-class ArrowHoldValidityMetricTest(unittest.TestCase):
-    """Hold rules: 3 must follow 2 in same column; 3 cannot follow 1 in same column."""
-
-    def setUp(self):
-        self.metric = metrics.ArrowHoldValidityMetric(
-            ignore_class=0, name="arrow_hold_validity"
-        )
-
-    def test_valid_hold_sequence_returns_one(self):
-        # Column 0: 2 then 3. Codes: 2=0002 (hold start col0), 3=0003 (hold end col0)
-        # So sequence [2, 3] is valid. y_true for mask (no padding).
-        y_true = np.array([[1, 1]], dtype=np.int32)
-        y_pred = _one_hot_pred(1, 2, 256, np.array([[2, 3]]))
-        self.metric.update_state(y_true, y_pred)
-        result = self.metric.result()
-        self.assertAlmostEqual(float(result), 1.0, places=5)
-
-    def test_unmatched_hold_end_is_violation(self):
-        # 3 with no preceding 2 in that column -> violation
-        y_true = np.array([[1, 1]], dtype=np.int32)
-        y_pred = _one_hot_pred(
-            1, 2, 256, np.array([[3, 1]])
-        )  # 3 at first step (no 2 before)
-        self.metric.update_state(y_true, y_pred)
-        result = self.metric.result()
-        self.assertLess(float(result), 1.0)
-
-    def test_hold_end_after_tap_is_violation(self):
-        # 1 then 3 in same column -> violation
-        y_true = np.array([[1, 1]], dtype=np.int32)
-        y_pred = _one_hot_pred(
-            1, 2, 256, np.array([[1, 3]])
-        )  # tap then hold end in col0
-        self.metric.update_state(y_true, y_pred)
-        result = self.metric.result()
-        self.assertLess(float(result), 1.0)
-
-    def test_no_hold_ends_returns_one(self):
-        y_true = np.array([[1, 1]], dtype=np.int32)
-        y_pred = _one_hot_pred(1, 2, 256, np.array([[1, 1]]))  # no 2 or 3
-        self.metric.update_state(y_true, y_pred)
-        result = self.metric.result()
-        self.assertAlmostEqual(float(result), 1.0, places=5)
-
-    def test_reset_state(self):
-        y_true = np.array([[1]], dtype=np.int32)
-        y_pred = _one_hot_pred(1, 1, 256, np.array([[3]]))
-        self.metric.update_state(y_true, y_pred)
-        self.metric.reset_state()
-        y_pred_valid = _one_hot_pred(1, 2, 256, np.array([[2, 3]]))
-        y_true_valid = np.array([[1, 1]], dtype=np.int32)
-        self.metric.update_state(y_true_valid, y_pred_valid)
-        result = self.metric.result()
-        self.assertAlmostEqual(float(result), 1.0, places=5)
-
-    def test_get_config(self):
-        m = metrics.ArrowHoldValidityMetric(ignore_class=0, name="custom")
-        config = m.get_config()
-        self.assertEqual(config["ignore_class"], 0)
-        self.assertEqual(config["name"], "custom")
-
-    def test_metric_result_always_in_zero_one(self):
-        # Ensure result is clamped to [0, 1] even in edge cases (e.g. no hold ends)
-        y_true = np.array([[1, 1]], dtype=np.int32)
-        y_pred = _one_hot_pred(1, 2, 256, np.array([[1, 1]]))
-        self.metric.update_state(y_true, y_pred)
-        result = float(self.metric.result())
-        self.assertGreaterEqual(result, 0.0)
-        self.assertLessEqual(result, 1.0)
-        # Violation case should also stay in range
-        self.metric.reset_state()
-        y_pred_bad = _one_hot_pred(1, 2, 256, np.array([[3, 3]]))
-        self.metric.update_state(y_true, y_pred_bad)
-        result = float(self.metric.result())
-        self.assertGreaterEqual(result, 0.0)
-        self.assertLessEqual(result, 1.0)
-
-
 class ComputeHoldValidityViolationsTest(unittest.TestCase):
     """Tests for compute_hold_validity_violations (numpy helper used by check script)."""
 
@@ -335,7 +259,7 @@ class ComputeHoldValidityViolationsTest(unittest.TestCase):
 
     def test_both_rules_violated_single_hold_end_counted_once(self):
         # 1 then 3 in same column: violates both (unmatched 3 and 3 after tap).
-        # Must count at most one violation per hold-end, like ArrowHoldValidityMetric.
+        # Must count at most one violation per hold-end (same as ChartValidityMetric).
         codes = np.array([1, 3], dtype=np.int32)
         violations, hold_ends, examples = metrics.compute_hold_validity_violations(
             codes
@@ -343,6 +267,197 @@ class ComputeHoldValidityViolationsTest(unittest.TestCase):
         self.assertEqual(hold_ends, 1)
         self.assertEqual(violations, 1, "at most one violation per hold-end")
         self.assertLessEqual(violations, hold_ends)
+
+
+class ChartValidityMetricTest(unittest.TestCase):
+    """Full sequence validity: orphan 3, tap during hold, nested hold, unterminated hold."""
+
+    def setUp(self):
+        self.metric = metrics.ChartValidityMetric(ignore_class=0, name="chart_validity")
+
+    def test_valid_sequence_returns_one(self):
+        # Column 0: 2 then 3 (hold start then end). Codes: 128, 192.
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
+        self.metric.update_state(y_true, y_pred)
+        result = self.metric.result()
+        self.assertAlmostEqual(float(result), 1.0, places=5)
+
+    def test_orphaned_tail_is_violation(self):
+        # 3 with no preceding 2 in that column. 2 steps × 4 cols = 8 slots, 1 violation.
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[192, 0]]))  # 3 then empty in col0
+        self.metric.update_state(y_true, y_pred)
+        result = float(self.metric.result())
+        self.assertLessEqual(result, 0.9, "violations should drop metric well below 1")
+        self.assertAlmostEqual(
+            result, 1.0 - 1.0 / 8.0, places=4, msg="1 violation / 8 slots = 0.875"
+        )
+
+    def test_tap_during_hold_is_violation(self):
+        # 2, 1, 3 in same column: 1 is in HOLDING. 3 steps × 4 cols = 12 slots, 1 violation.
+        y_true = np.array([[1, 1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 3, 256, np.array([[128, 64, 192]]))
+        self.metric.update_state(y_true, y_pred)
+        result = float(self.metric.result())
+        self.assertLessEqual(result, 0.93, "violations should drop metric well below 1")
+        self.assertAlmostEqual(
+            result, 1.0 - 1.0 / 12.0, places=3, msg="1 violation / 12 slots ≈ 0.9167"
+        )
+
+    def test_nested_hold_is_violation(self):
+        # 2, 2, 3 in same column: second 2 is in HOLDING (nested) + sequence ends with run=1 (unterminated). 12 slots, 2 violations.
+        y_true = np.array([[1, 1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 3, 256, np.array([[128, 128, 192]]))
+        self.metric.update_state(y_true, y_pred)
+        result = float(self.metric.result())
+        self.assertLessEqual(result, 0.85, "violations should drop metric well below 1")
+        self.assertAlmostEqual(
+            result, 1.0 - 2.0 / 12.0, places=3, msg="2 violations / 12 slots = 0.8333"
+        )
+
+    def test_unterminated_hold_is_violation(self):
+        # Single 2 (hold start) with no 3: sequence ends in HOLDING. 1 step × 4 cols = 4 slots, 1 violation.
+        y_true = np.array([[1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 1, 256, np.array([[128]]))
+        self.metric.update_state(y_true, y_pred)
+        result = float(self.metric.result())
+        self.assertLessEqual(
+            result, 0.8, "unterminated hold should drop metric strongly"
+        )
+        self.assertAlmostEqual(
+            result, 1.0 - 1.0 / 4.0, places=4, msg="1 violation / 4 slots = 0.75"
+        )
+
+    def test_all_empty_no_violations(self):
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[0, 0]]))
+        self.metric.update_state(y_true, y_pred)
+        result = self.metric.result()
+        self.assertAlmostEqual(float(result), 1.0, places=5)
+
+    def test_reset_state(self):
+        y_true = np.array([[1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 1, 256, np.array([[192]]))
+        self.metric.update_state(y_true, y_pred)
+        self.metric.reset_state()
+        y_true_valid = np.array([[1, 1]], dtype=np.int32)
+        y_pred_valid = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
+        self.metric.update_state(y_true_valid, y_pred_valid)
+        result = self.metric.result()
+        self.assertAlmostEqual(float(result), 1.0, places=5)
+
+    def test_get_config(self):
+        m = metrics.ChartValidityMetric(ignore_class=0, name="custom")
+        config = m.get_config()
+        self.assertEqual(config["ignore_class"], 0)
+        self.assertEqual(config["name"], "custom")
+
+    def test_result_in_zero_one(self):
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
+        self.metric.update_state(y_true, y_pred)
+        result = float(self.metric.result())
+        self.assertGreaterEqual(result, 0.0)
+        self.assertLessEqual(result, 1.0)
+        self.metric.reset_state()
+        y_pred_bad = _one_hot_pred(
+            1, 2, 256, np.array([[192, 192]])
+        )  # 2 orphan 3s, 8 slots
+        self.metric.update_state(y_true, y_pred_bad)
+        result = float(self.metric.result())
+        self.assertGreaterEqual(result, 0.0)
+        self.assertLessEqual(result, 1.0)
+        self.assertLessEqual(
+            result, 0.8, "multiple violations should produce much lower metric"
+        )
+
+
+class ChartValidityAuxiliaryLossTest(unittest.TestCase):
+    """Tests for chart_validity_auxiliary_loss (differentiable aux loss for training)."""
+
+    def test_returns_scalar_and_non_negative(self):
+        batch, seq, num_classes = 2, 10, constants.N_ARROW_TYPES
+        y_true = tf.constant(
+            [[1, 128, 192, 0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0, 0, 0]]
+        )
+        y_pred = tf.random.uniform((batch, seq, num_classes))
+        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertGreaterEqual(loss.numpy(), 0.0)
+
+    def test_padding_masked(self):
+        # All padding (0) -> no valid positions, loss should be 0
+        y_true = tf.constant([[0, 0, 0]])
+        y_pred = tf.random.uniform((1, 3, constants.N_ARROW_TYPES))
+        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertAlmostEqual(loss.numpy(), 0.0, places=5)
+
+    def test_valid_sequence_low_penalty(self):
+        # Perfect prediction: valid hold (128=hold start col0, 192=hold end col0).
+        # Soft penalties (sigmoid etc.) can yield a tiny non-zero value; expect low loss.
+        y_true = tf.constant([[1, 1]], dtype=tf.int32)
+        y_pred = _one_hot_pred(1, 2, constants.N_ARROW_TYPES, np.array([[128, 192]]))
+        y_pred = tf.constant(y_pred)
+        loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertLess(loss.numpy(), 0.01, "valid sequence should have low penalty")
+
+    def test_invalid_orphan_tail_higher_penalty(self):
+        # Predict orphan 3 (192) at first step -> penalty > 0
+        y_true = tf.constant([[1, 1]], dtype=tf.int32)
+        y_pred = _one_hot_pred(1, 2, constants.N_ARROW_TYPES, np.array([[192, 1]]))
+        y_pred = tf.constant(y_pred)
+        loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertGreater(loss.numpy(), 0.0)
+
+
+class NoteKindBalanceAuxiliaryLossTest(unittest.TestCase):
+    """Tests for note_kind_balance_auxiliary_loss (hold/tap balance vs labels)."""
+
+    def test_returns_scalar_and_non_negative(self):
+        batch, seq, num_classes = 2, 10, constants.N_ARROW_TYPES
+        y_true = tf.constant(
+            [[1, 128, 192, 0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0, 0, 0]]
+        )
+        y_pred = tf.random.uniform((batch, seq, num_classes))
+        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertGreaterEqual(loss.numpy(), 0.0)
+
+    def test_padding_masked(self):
+        # All padding -> no valid steps; denominator uses max(1, mask_count) so loss = 0
+        y_true = tf.constant([[0, 0, 0]])
+        y_pred = tf.random.uniform((1, 3, constants.N_ARROW_TYPES))
+        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertAlmostEqual(loss.numpy(), 0.0, places=5)
+
+    def test_perfect_match_zero_loss(self):
+        # y_pred one-hot matching y_true -> pred_hold_rate = true_hold_rate -> MSE = 0
+        y_true = tf.constant(
+            [[1, 128, 192]], dtype=tf.int32
+        )  # tap, hold start, hold end
+        y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 128, 192]]))
+        y_pred = tf.constant(y_pred)
+        loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertAlmostEqual(loss.numpy(), 0.0, places=5)
+
+    def test_mismatch_positive_loss(self):
+        # Labels have holds (128, 192); predict all taps (1) -> hold rate mismatch -> loss > 0
+        y_true = tf.constant([[1, 128, 192]], dtype=tf.int32)
+        y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 1, 1]]))
+        y_pred = tf.constant(y_pred)
+        loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertGreater(loss.numpy(), 0.0)
 
 
 if __name__ == "__main__":

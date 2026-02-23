@@ -190,6 +190,12 @@ class RunConfig:
         callback_root_dir: Root directory for storing training callbacks (checkpoints, logs).
         model_name: Name of the model. If empty, generated from experiment name.
         seed: Random seed for reproducibility (optional).
+        chart_validity_aux_weight: Weight for chart-validity auxiliary loss (arrow training only).
+            Higher values punish invalid charts more; use with diversity_aux_weight to avoid
+            collapse to boring (e.g. all-tap) charts. Default 0.0.
+        diversity_aux_weight: Weight for note-kind balance auxiliary loss (arrow training only).
+            Encourages predicted hold/tap mix to match labels; use to balance chart_validity.
+            Default 0.0.
     """
 
     epoch: int
@@ -199,6 +205,8 @@ class RunConfig:
     model_name: str = ""
     seed: int | None = None
     val_take_count: int = -1
+    chart_validity_aux_weight: float = 0.0
+    diversity_aux_weight: float = 0.0
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.

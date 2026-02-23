@@ -495,16 +495,37 @@ def run_arrow_train_from_config(
 
     model.summary()
 
+    # Combined loss: main (cross-entropy) + validity penalty + diversity balance.
+    # Use chart_validity_aux_weight to punish invalid charts; use diversity_aux_weight
+    # so the model doesn't collapse to boring all-tap charts when validity is strong.
+    _main_loss = keras.losses.SparseCategoricalCrossentropy(ignore_class=0)
+    _chart_validity_weight = run_config.chart_validity_aux_weight
+    _diversity_weight = run_config.diversity_aux_weight
+
+    def _arrow_combined_loss(y_true, y_pred):
+        main = _main_loss(y_true, y_pred)
+        validity_aux = metrics.chart_validity_auxiliary_loss(
+            y_true, y_pred, ignore_class=0
+        )
+        diversity_aux = metrics.note_kind_balance_auxiliary_loss(
+            y_true, y_pred, ignore_class=0
+        )
+        return (
+            main
+            + tf.multiply(validity_aux, _chart_validity_weight)
+            + tf.multiply(diversity_aux, _diversity_weight)
+        )
+
     model.compile(
         optimizer=keras.optimizers.Adam(
             learning_rate=1e-3, clipnorm=1.0
         ),  # type: ignore
-        loss=keras.losses.SparseCategoricalCrossentropy(ignore_class=0),
+        loss=_arrow_combined_loss,
         metrics=[
             keras.metrics.SparseCategoricalAccuracy(name="acc"),
             metrics.ArrowDistributionMatchMetric(name="arrow_dist_match"),
             metrics.ArrowNoteKindDistributionMetric(name="arrow_note_kind_dist_match"),
-            metrics.ArrowHoldValidityMetric(name="arrow_hold_validity"),
+            metrics.ChartValidityMetric(name="chart_validity"),
         ],
     )
 

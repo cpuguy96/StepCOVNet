@@ -1,4 +1,4 @@
-r"""Check training chart files for hold validity (same rules as ArrowHoldValidityMetric).
+r"""Check training chart files for hold validity (same rules as ChartValidityMetric).
 
 Reports any chart that has hold violations: a 3 (hold end) with no preceding 2 (hold start)
 in that column, or a 3 immediately after a 1 (tap) in the same column.
