@@ -355,6 +355,108 @@ class EndToEndMinimalTest(unittest.TestCase):
             self.assertIn("best_val_loss", results[0])
 
 
+class WorkersOptionTest(unittest.TestCase):
+    """--workers must be >= 1; parallel path uses ProcessPoolExecutor."""
+
+    def test_workers_zero_exits_with_error(self):
+        """--workers=0 causes main to call parser.error and exit."""
+        with mock.patch(
+            "sys.argv",
+            [
+                "hyperparameter_search_arrow",
+                "--sweep_config",
+                "x.json",
+                "--workers",
+                "0",
+            ],
+        ):
+            with mock.patch.object(
+                sweep_module.PARSER, "error", side_effect=SystemExit(2)
+            ):
+                with self.assertRaises(SystemExit):
+                    sweep_module.main()
+
+    def test_workers_two_uses_parallel_path(self):
+        """With --workers=2 and 2 grid points, executor receives 2 submit() calls and results are collected."""
+        from concurrent.futures import Future
+
+        submitted_futures = []
+
+        class FakeExecutor:
+            def __init__(self, max_workers=None):
+                self.max_workers = max_workers
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def submit(self, fn, *args):
+                run_index, overrides = args[0], args[1]
+                fut = Future()
+                fut.set_result(
+                    (run_index, {"best_val_loss": 0.5 - run_index * 0.1}, overrides)
+                )
+                submitted_futures.append(fut)
+                return fut
+
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": base_config_path,
+                        "search_space": {"model.dropout_rate": [0.0, 0.1]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
+                    },
+                    f,
+                )
+            base = config.ArrowExperimentConfig.from_json(base_config_path)
+            base.dataset.data_dir = TEST_DATA_DIR
+            base.dataset.val_data_dir = TEST_DATA_DIR
+            base.run.take_count = 2
+            base_config_override = os.path.join(temp_dir, "base_arrow.json")
+            base.to_json(base_config_override)
+            with open(sweep_path, "r") as f:
+                sweep_data = json.load(f)
+            sweep_data["base_config"] = base_config_override
+            with open(sweep_path, "w") as f:
+                json.dump(sweep_data, f)
+
+            with mock.patch.object(
+                sweep_module, "ProcessPoolExecutor", return_value=FakeExecutor()
+            ):
+                with mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--sweep_config",
+                        sweep_path,
+                        "--workers",
+                        "2",
+                    ],
+                ):
+                    exit_code = sweep_module.main()
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(
+                len(submitted_futures), 2, "should submit 2 runs (2 grid points)"
+            )
+            results_path = os.path.join(temp_dir, "sweep_out", "results.json")
+            self.assertTrue(os.path.isfile(results_path))
+            with open(results_path) as f:
+                results = json.load(f)
+            self.assertEqual(len(results), 2)
+            self.assertEqual(results[0]["run_index"], 0)
+            self.assertEqual(results[1]["run_index"], 1)
+
+
 class SweepVerbosityTest(unittest.TestCase):
     """Sweep sets show_model_summary=False and fit_verbose=0 for each run."""
 

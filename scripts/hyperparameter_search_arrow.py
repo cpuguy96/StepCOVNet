@@ -5,9 +5,15 @@ val_take_count=-1 and batch_size=1. epoch and take_count can be set in the
 base config or swept via search_space (run.epoch, run.take_count). Records
 metrics per run and writes results plus best_config.json.
 
+Training jobs can run in parallel with --workers. Each run writes to its own
+subdirectory (run_0, run_1, ...) under the sweep output to avoid clashes.
+When using multiple workers with a single GPU, consider --workers=1 or
+setting CUDA_VISIBLE_DEVICES to avoid OOM or contention.
+
 Usage:
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --max_runs=5
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --workers=2
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ import itertools
 import json
 import os
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any
 
@@ -43,6 +50,12 @@ PARSER.add_argument(
     type=int,
     default=None,
     help="Cap number of runs. Overrides sweep config max_runs if set (default: use config or no cap).",
+)
+PARSER.add_argument(
+    "--workers",
+    type=int,
+    default=1,
+    help="Number of training jobs to run in parallel (default: 1 = sequential).",
 )
 
 
@@ -153,6 +166,42 @@ def extract_metrics(history: Any) -> dict[str, Any]:
         best_epoch_1based = int((vals.index(best_val) + 1))
         result[f"best_epoch_{name}"] = best_epoch_1based
     return result
+
+
+def _run_single_training(
+    run_index: int,
+    overrides: dict[str, Any],
+    base_config_dict: dict[str, Any],
+    sweep_output_dir: str,
+    project_root: str,
+) -> tuple[int, dict[str, Any], dict[str, Any]]:
+    """Run one training job (for use in a worker process).
+
+    Ensures project root is on sys.path, builds config, sets per-run output
+    dirs, runs training, returns (run_index, metrics, overrides).
+    """
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    from stepcovnet import config
+    from stepcovnet import trainers
+
+    base = config.ArrowExperimentConfig.from_dict(base_config_dict)
+    run_config = apply_overrides(base, overrides)
+    run_config.run.model_output_dir = os.path.join(
+        sweep_output_dir, "models", f"run_{run_index}"
+    )
+    run_config.run.callback_root_dir = os.path.join(
+        sweep_output_dir, "callbacks", f"run_{run_index}"
+    )
+    os.makedirs(run_config.run.model_output_dir, exist_ok=True)
+    os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
+    _model, history = trainers.run_arrow_train_from_config(
+        run_config.dataset,
+        run_config.model,
+        run_config.run,
+    )
+    metrics = extract_metrics(history)
+    return (run_index, metrics, overrides)
 
 
 def select_best_run(
@@ -266,6 +315,8 @@ def _print_sweep_summary(
 
 def main() -> int:
     args = PARSER.parse_args()
+    if args.workers < 1:
+        PARSER.error("--workers must be >= 1")
     sweep = load_sweep_config(args.sweep_config)
     base_path = sweep["base_config"]
     if not os.path.isabs(base_path):
@@ -310,23 +361,48 @@ def main() -> int:
         optimize_mode=optimize_mode,
         base_config_path=base_path,
     )
+    if args.workers > 1:
+        print(f"  Workers:       {args.workers} (parallel)\n")
 
-    results = []
-    for i, overrides in enumerate(combinations):
-        run_config = apply_overrides(base_config, overrides)
-        run_config.run.model_output_dir = model_output_dir
-        run_config.run.callback_root_dir = callback_root_dir
+    base_config_dict = base_config.as_dict()
 
-        _print_run_header(i, len(combinations), overrides)
-        model, history = trainers.run_arrow_train_from_config(
-            run_config.dataset,
-            run_config.model,
-            run_config.run,
-        )
-        metrics = extract_metrics(history)
-        row = {"run_index": i, "overrides": overrides, **metrics}
-        results.append(row)
-        _print_run_result(i, metrics, optimize_metric)
+    if args.workers <= 1:
+        results = []
+        for i, overrides in enumerate(combinations):
+            run_config = apply_overrides(base_config, overrides)
+            run_config.run.model_output_dir = os.path.join(model_output_dir, f"run_{i}")
+            run_config.run.callback_root_dir = os.path.join(
+                callback_root_dir, f"run_{i}"
+            )
+            os.makedirs(run_config.run.model_output_dir, exist_ok=True)
+            os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
+
+            _print_run_header(i, len(combinations), overrides)
+            model, history = trainers.run_arrow_train_from_config(
+                run_config.dataset,
+                run_config.model,
+                run_config.run,
+            )
+            metrics = extract_metrics(history)
+            row = {"run_index": i, "overrides": overrides, **metrics}
+            results.append(row)
+            _print_run_result(i, metrics, optimize_metric)
+    else:
+        results_by_index: dict[int, dict[str, Any]] = {}
+        worker_args = [
+            (i, overrides, base_config_dict, sweep_output_dir, _PROJECT_ROOT)
+            for i, overrides in enumerate(combinations)
+        ]
+        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(_run_single_training, *a): a[0] for a in worker_args
+            }
+            for future in as_completed(futures):
+                run_index, metrics, overrides = future.result()
+                row = {"run_index": run_index, "overrides": overrides, **metrics}
+                results_by_index[run_index] = row
+                _print_run_result(run_index, metrics, optimize_metric)
+        results = [results_by_index[i] for i in range(len(combinations))]
 
     # Write results
     results_path = os.path.join(sweep_output_dir, "results.json")
@@ -336,8 +412,10 @@ def main() -> int:
     best_idx = select_best_run(results, optimize_metric, optimize_mode)
     best_overrides = results[best_idx]["overrides"]
     best_config = apply_overrides(base_config, best_overrides)
-    best_config.run.model_output_dir = model_output_dir
-    best_config.run.callback_root_dir = callback_root_dir
+    best_config.run.model_output_dir = os.path.join(model_output_dir, f"run_{best_idx}")
+    best_config.run.callback_root_dir = os.path.join(
+        callback_root_dir, f"run_{best_idx}"
+    )
     best_config.run.val_take_count = _VAL_TAKE_COUNT_FIXED
     best_config.dataset.batch_size = _BATCH_SIZE_FIXED
 
