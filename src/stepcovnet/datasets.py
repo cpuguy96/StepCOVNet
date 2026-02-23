@@ -578,14 +578,27 @@ def create_arrow_dataset(
     ds = ds.cache()
 
     if batch_size > 1:
-        ds = ds.padded_batch(
-            batch_size,
-            padded_shapes=((None,), (None,)),
-            padding_values=(
-                (0.0),
-                0,
-            ),
-        )
+        if snippet_half_frames > 0:
+            ds = ds.padded_batch(
+                batch_size,
+                padded_shapes=(
+                    {
+                        "timing_input": (None, 1),
+                        "snippet_input": (None, n_frames_window, _N_MELS),
+                    },
+                    (None,),
+                ),
+                padding_values=(
+                    {"timing_input": 0.0, "snippet_input": 0.0},
+                    0,
+                ),
+            )
+        else:
+            ds = ds.padded_batch(
+                batch_size,
+                padded_shapes=((None, 1), (None,)),
+                padding_values=(0.0, 0),
+            )
     else:
         ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)
 

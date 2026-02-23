@@ -46,6 +46,17 @@ class DatasetsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             datasets.create_arrow_dataset("")
 
+    def test_create_arrow_dataset_batch_size_two_timing_only(self):
+        """Multi-sample batching without snippets uses (times [None,1], cols [None])."""
+        ds = datasets.create_arrow_dataset(TEST_DATA_DIR, batch_size=2)
+        batch = next(iter(ds.take(1)))
+        times, cols = batch
+        self.assertGreaterEqual(times.shape[0], 1)
+        self.assertLessEqual(times.shape[0], 2)
+        self.assertEqual(times.shape[0], cols.shape[0])
+        self.assertEqual(times.shape[2], 1)
+        self.assertEqual(times.shape[1], cols.shape[1])
+
     def test_create_arrow_dataset_with_audio_snippets(self):
         ds = datasets.create_arrow_dataset(
             TEST_DATA_DIR,
@@ -69,6 +80,30 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(times.shape[1], snippets.shape[1])
         self.assertEqual(times.shape[1], targets.shape[1])
         self.assertGreater(np.sum(targets[0].numpy() > 0), 0)
+
+    def test_create_arrow_dataset_with_audio_snippets_batch_size_two(self):
+        """Multi-sample batching with snippets uses correct padded_shapes (dict + cols)."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            batch_size=2,
+            snippet_half_frames=5,
+        )
+        batch = next(iter(ds.take(1)))
+        features, targets = batch
+        self.assertIn("timing_input", features)
+        self.assertIn("snippet_input", features)
+        times = features["timing_input"]
+        snippets = features["snippet_input"]
+        batch_dim = times.shape[0]
+        self.assertGreaterEqual(batch_dim, 1)
+        self.assertLessEqual(batch_dim, 2)
+        self.assertEqual(snippets.shape[0], batch_dim)
+        self.assertEqual(targets.shape[0], batch_dim)
+        self.assertEqual(times.shape[2], 1)
+        self.assertEqual(snippets.shape[2], 11)
+        self.assertEqual(snippets.shape[3], 128)
+        self.assertEqual(times.shape[1], snippets.shape[1])
+        self.assertEqual(times.shape[1], targets.shape[1])
 
     def test_extract_arrow_snippets_returns_correct_shapes(self):
         pairs = datasets._load_and_pair_files(TEST_DATA_DIR)
