@@ -42,7 +42,7 @@ PARSER.add_argument(
     "--max_runs",
     type=int,
     default=None,
-    help="Cap number of runs (default: no cap).",
+    help="Cap number of runs. Overrides sweep config max_runs if set (default: use config or no cap).",
 )
 
 
@@ -174,6 +174,96 @@ def select_best_run(
     return int(max(range(len(results)), key=lambda i: results[i][best_key]))
 
 
+def _format_overrides(overrides: dict[str, Any]) -> str:
+    """Format overrides as aligned key: value lines."""
+    if not overrides:
+        return "  (none)"
+    lines = []
+    for k, v in sorted(overrides.items()):
+        lines.append(f"  {k}: {v}")
+    return "\n".join(lines)
+
+
+def _print_sweep_header(
+    total_runs: int,
+    sweep_output_dir: str,
+    optimize_metric: str,
+    optimize_mode: str,
+    base_config_path: str,
+) -> None:
+    """Print a clear header when the sweep starts."""
+    width = 60
+    print()
+    print("=" * width)
+    print("  ARROW Hyperparameter Sweep")
+    print("=" * width)
+    print(f"  Base config:    {base_config_path}")
+    print(f"  Output dir:    {sweep_output_dir}")
+    print(f"  Total runs:    {total_runs}")
+    print(f"  Optimize:      {optimize_mode} {optimize_metric}")
+    print("=" * width)
+    print()
+
+
+def _print_run_header(
+    run_index: int, total_runs: int, overrides: dict[str, Any]
+) -> None:
+    """Print a per-run banner with overrides."""
+    width = 60
+    title = f" Run {run_index + 1}/{total_runs} "
+    padding = (width - len(title)) // 2
+    print()
+    print("-" * width)
+    print(" " * padding + title + " " * (width - padding - len(title)))
+    print("-" * width)
+    print(_format_overrides(overrides))
+    print("-" * width)
+
+
+def _print_run_result(
+    run_index: int, metrics: dict[str, Any], optimize_metric: str
+) -> None:
+    """Print key metric after a run completes."""
+    best_key = f"best_{optimize_metric}"
+    val = metrics.get(best_key)
+    if val is not None:
+        print(f"  -> {best_key}: {val:.6f}")
+    print()
+
+
+def _print_sweep_summary(
+    results: list[dict[str, Any]],
+    best_idx: int,
+    best_overrides: dict[str, Any],
+    optimize_metric: str,
+    optimize_mode: str,
+    results_path: str,
+    best_config_path: str,
+) -> None:
+    """Print final summary with best run and file paths."""
+    width = 60
+    best_key = f"best_{optimize_metric}"
+    best_val = results[best_idx][best_key]
+
+    print()
+    print("=" * width)
+    print("  SWEEP COMPLETE")
+    print("=" * width)
+    print()
+    print("  Best run:")
+    print(f"    Index:   {best_idx + 1} (of {len(results)})")
+    print(f"    {best_key}: {best_val:.6f}")
+    print("    Overrides:")
+    for k, v in sorted(best_overrides.items()):
+        print(f"      {k}: {v}")
+    print()
+    print("  Output files:")
+    print(f"    Results:     {results_path}")
+    print(f"    Best config: {best_config_path}")
+    print()
+    print("=" * width)
+
+
 def main() -> int:
     args = PARSER.parse_args()
     sweep = load_sweep_config(args.sweep_config)
@@ -184,8 +274,9 @@ def main() -> int:
 
     search_space = sweep["search_space"]
     combinations = expand_grid(search_space)
-    if args.max_runs is not None:
-        combinations = combinations[: args.max_runs]
+    max_runs = args.max_runs if args.max_runs is not None else sweep.get("max_runs")
+    if max_runs is not None:
+        combinations = combinations[:max_runs]
 
     sweep_output_dir = sweep.get("sweep_output_dir")
     if not sweep_output_dir:
@@ -212,13 +303,21 @@ def main() -> int:
     optimize_metric = sweep["optimize"]["metric"]
     optimize_mode = sweep["optimize"]["mode"]
 
+    _print_sweep_header(
+        total_runs=len(combinations),
+        sweep_output_dir=sweep_output_dir,
+        optimize_metric=optimize_metric,
+        optimize_mode=optimize_mode,
+        base_config_path=base_path,
+    )
+
     results = []
     for i, overrides in enumerate(combinations):
         run_config = apply_overrides(base_config, overrides)
         run_config.run.model_output_dir = model_output_dir
         run_config.run.callback_root_dir = callback_root_dir
 
-        print(f"Run {i + 1}/{len(combinations)}: {overrides}")
+        _print_run_header(i, len(combinations), overrides)
         model, history = trainers.run_arrow_train_from_config(
             run_config.dataset,
             run_config.model,
@@ -227,6 +326,7 @@ def main() -> int:
         metrics = extract_metrics(history)
         row = {"run_index": i, "overrides": overrides, **metrics}
         results.append(row)
+        _print_run_result(i, metrics, optimize_metric)
 
     # Write results
     results_path = os.path.join(sweep_output_dir, "results.json")
@@ -245,10 +345,15 @@ def main() -> int:
     with open(best_config_path, "w") as f:
         json.dump(best_config.as_dict(), f, indent=2)
 
-    print(f"Results written to {results_path}")
-    print(f"Best run index: {best_idx} (optimize {optimize_mode} {optimize_metric})")
-    print(f"Best overrides: {best_overrides}")
-    print(f"Best config saved to {best_config_path}")
+    _print_sweep_summary(
+        results=results,
+        best_idx=best_idx,
+        best_overrides=best_overrides,
+        optimize_metric=optimize_metric,
+        optimize_mode=optimize_mode,
+        results_path=results_path,
+        best_config_path=best_config_path,
+    )
 
     return 0
 
