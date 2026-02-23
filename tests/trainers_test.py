@@ -126,7 +126,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
@@ -206,7 +206,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
@@ -235,7 +235,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
@@ -265,7 +265,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
@@ -295,7 +295,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
@@ -331,7 +331,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
@@ -366,7 +366,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
@@ -571,7 +571,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig()
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=-1,  # Entire dataset
                 model_output_dir=model_output_dir,
@@ -593,7 +593,7 @@ class TrainersTest(unittest.TestCase):
                 batch_size=1,
             )
             model_config = config.ArrowModelConfig(num_layers=2)
-            run_config = config.RunConfig(
+            run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
                 model_output_dir=model_output_dir,
