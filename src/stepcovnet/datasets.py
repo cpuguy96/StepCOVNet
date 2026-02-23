@@ -152,7 +152,7 @@ def extract_arrow_snippets(
     n_steps = len(times)
     if n_steps == 0:
         return (
-            times,
+            times.astype(np.float32),
             np.zeros((0, 2 * half_frames + 1, _N_MELS), dtype=np.float32),
             cols,
         )
