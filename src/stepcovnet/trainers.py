@@ -496,7 +496,9 @@ def run_arrow_train_from_config(
     model.summary()
 
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3),  # type: ignore
+        optimizer=keras.optimizers.Adam(
+            learning_rate=1e-3, clipnorm=1.0
+        ),  # type: ignore
         loss=keras.losses.SparseCategoricalCrossentropy(ignore_class=0),
         metrics=[
             keras.metrics.SparseCategoricalAccuracy(name="acc"),
