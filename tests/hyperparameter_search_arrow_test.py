@@ -126,6 +126,48 @@ class SweepConfigLoadingTest(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_load_accepts_search_grid_and_random(self):
+        """Sweep config may contain 'search': 'grid' or 'random'."""
+        for search_val in ("grid", "random"):
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as f:
+                json.dump(
+                    {
+                        "base_config": "configs/arrow_baseline.json",
+                        "search_space": {"model.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "search": search_val,
+                    },
+                    f,
+                )
+                path = f.name
+            try:
+                data = sweep_module.load_sweep_config(path)
+                self.assertEqual(data["search"], search_val)
+            finally:
+                os.unlink(path)
+
+    def test_load_rejects_invalid_search(self):
+        """Sweep config 'search' must be 'grid' or 'random'."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(
+                {
+                    "base_config": "configs/arrow_baseline.json",
+                    "search_space": {"model.dropout_rate": [0.0]},
+                    "optimize": {"metric": "val_loss", "mode": "min"},
+                    "search": "monte_carlo",
+                },
+                f,
+            )
+            path = f.name
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                sweep_module.load_sweep_config(path)
+            self.assertIn("search", str(ctx.exception))
+        finally:
+            os.unlink(path)
+
 
 class GridExpansionTest(unittest.TestCase):
     """Grid expansion: number of combinations and structure."""
@@ -353,6 +395,155 @@ class EndToEndMinimalTest(unittest.TestCase):
             self.assertEqual(len(results), 1)
             self.assertIn("overrides", results[0])
             self.assertIn("best_val_loss", results[0])
+
+
+class RandomSearchTest(unittest.TestCase):
+    """Random search samples a subset of combinations; seed gives reproducibility."""
+
+    def test_random_search_samples_subset_and_saves_seed(self):
+        """With --search=random --max_runs=2 --seed=42, exactly 2 runs are executed and sweep_config records seed."""
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        full_grid_size = 4  # 2 x 2
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": base_config_path,
+                        "search_space": {
+                            "model.dropout_rate": [0.0, 0.1],
+                            "run.chart_validity_aux_weight": [0.0, 0.3],
+                        },
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
+                    },
+                    f,
+                )
+            base = config.ArrowExperimentConfig.from_json(base_config_path)
+            base.dataset.data_dir = TEST_DATA_DIR
+            base.dataset.val_data_dir = TEST_DATA_DIR
+            base.run.take_count = 2
+            base_config_override = os.path.join(temp_dir, "base_arrow.json")
+            base.to_json(base_config_override)
+            with open(sweep_path, "r") as f:
+                sweep_data = json.load(f)
+            sweep_data["base_config"] = base_config_override
+            with open(sweep_path, "w") as f:
+                json.dump(sweep_data, f)
+
+            with mock.patch(
+                "sys.argv",
+                [
+                    "hyperparameter_search_arrow",
+                    "--sweep_config",
+                    sweep_path,
+                    "--search",
+                    "random",
+                    "--max_runs",
+                    "2",
+                    "--seed",
+                    "42",
+                ],
+            ):
+                exit_code = sweep_module.main()
+            self.assertEqual(exit_code, 0)
+            results_path = os.path.join(temp_dir, "sweep_out", "results.json")
+            self.assertTrue(os.path.isfile(results_path))
+            with open(results_path) as f:
+                results = json.load(f)
+            self.assertEqual(
+                len(results), 2, "random search should run exactly 2 trials"
+            )
+            full_combinations = sweep_module.expand_grid(
+                {
+                    "model.dropout_rate": [0.0, 0.1],
+                    "run.chart_validity_aux_weight": [0.0, 0.3],
+                }
+            )
+            for r in results:
+                self.assertIn(r["overrides"], full_combinations)
+            sweep_config_path = os.path.join(temp_dir, "sweep_out", "sweep_config.json")
+            with open(sweep_config_path) as f:
+                saved = json.load(f)
+            self.assertEqual(saved.get("_effective_search"), "random")
+            self.assertEqual(saved.get("_effective_seed"), 42)
+
+    def test_search_from_config_when_cli_omitted(self):
+        """Sweep config 'search': 'random' is used when --search is not passed."""
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": base_config_path,
+                        "search_space": {
+                            "model.dropout_rate": [0.0, 0.1],
+                            "run.chart_validity_aux_weight": [0.0, 0.3],
+                        },
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
+                        "search": "random",
+                        "max_runs": 2,
+                        "seed": 42,
+                    },
+                    f,
+                )
+            base = config.ArrowExperimentConfig.from_json(base_config_path)
+            base.dataset.data_dir = TEST_DATA_DIR
+            base.dataset.val_data_dir = TEST_DATA_DIR
+            base.run.take_count = 2
+            base_config_override = os.path.join(temp_dir, "base_arrow.json")
+            base.to_json(base_config_override)
+            with open(sweep_path, "r") as f:
+                sweep_data = json.load(f)
+            sweep_data["base_config"] = base_config_override
+            with open(sweep_path, "w") as f:
+                json.dump(sweep_data, f)
+
+            # Do not pass --search; config "search": "random" must be used
+            with mock.patch(
+                "sys.argv",
+                [
+                    "hyperparameter_search_arrow",
+                    "--sweep_config",
+                    sweep_path,
+                ],
+            ):
+                exit_code = sweep_module.main()
+            self.assertEqual(exit_code, 0)
+            sweep_config_path = os.path.join(temp_dir, "sweep_out", "sweep_config.json")
+            with open(sweep_config_path) as f:
+                saved = json.load(f)
+            self.assertEqual(
+                saved.get("_effective_search"),
+                "random",
+                "config 'search' should be honored when --search not passed",
+            )
+            with open(os.path.join(temp_dir, "sweep_out", "results.json")) as f:
+                results = json.load(f)
+            self.assertEqual(len(results), 2)
+
+    def test_random_search_same_seed_same_order(self):
+        """Same seed produces the same sampled overrides (reproducibility)."""
+        search_space = {"model.dropout_rate": [0.0, 0.1, 0.2], "run.epoch": [1, 2]}
+        full = sweep_module.expand_grid(search_space)
+        self.assertEqual(len(full), 6)
+        import random
+
+        random.seed(99)
+        first = random.sample(full, 3)
+        random.seed(99)
+        second = random.sample(full, 3)
+        self.assertEqual(first, second)
 
 
 class WorkersOptionTest(unittest.TestCase):

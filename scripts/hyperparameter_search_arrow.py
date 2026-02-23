@@ -1,9 +1,10 @@
 r"""Hyperparameter search for the ARROW model.
 
-Runs multiple training jobs from a sweep config (grid search). Enforces
-val_take_count=-1 and batch_size=1. epoch and take_count can be set in the
-base config or swept via search_space (run.epoch, run.take_count). Records
-metrics per run and writes results plus best_config.json.
+Runs multiple training jobs from a sweep config. Supports grid search (all
+combinations or first N) or random search (random subset of combinations).
+Enforces val_take_count=-1 and batch_size=1. epoch and take_count can be set
+in the base config or swept via search_space (run.epoch, run.take_count).
+Records metrics per run and writes results plus best_config.json.
 
 Training jobs can run in parallel with --workers. Each run writes to its own
 subdirectory (run_0, run_1, ...) under the sweep output to avoid clashes.
@@ -13,6 +14,8 @@ setting CUDA_VISIBLE_DEVICES to avoid OOM or contention.
 Usage:
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --max_runs=5
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --search=random --max_runs=10
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --search=random --max_runs=10 --seed=42
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --workers=2
 """
 
@@ -22,6 +25,7 @@ import argparse
 import itertools
 import json
 import os
+import random
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
@@ -37,7 +41,7 @@ from stepcovnet import config
 from stepcovnet import trainers
 
 PARSER = argparse.ArgumentParser(
-    description="Run ARROW hyperparameter search (grid). epoch and take_count configurable via base config or search_space."
+    description="Run ARROW hyperparameter search (grid or random). epoch and take_count configurable via base config or search_space."
 )
 PARSER.add_argument(
     "--sweep_config",
@@ -46,10 +50,23 @@ PARSER.add_argument(
     help="Path to sweep JSON (base_config, search_space, optimize).",
 )
 PARSER.add_argument(
+    "--search",
+    type=str,
+    choices=("grid", "random"),
+    default=None,
+    help="Search strategy: grid or random. Default: from sweep config 'search', or 'grid' if unset.",
+)
+PARSER.add_argument(
     "--max_runs",
     type=int,
     default=None,
-    help="Cap number of runs. Overrides sweep config max_runs if set (default: use config or no cap).",
+    help="Cap number of runs. For grid: take first max_runs; for random: sample this many (required for random if not in config).",
+)
+PARSER.add_argument(
+    "--seed",
+    type=int,
+    default=None,
+    help="Random seed for random search (reproducibility). Overrides sweep config seed if set.",
 )
 PARSER.add_argument(
     "--workers",
@@ -105,6 +122,10 @@ def load_sweep_config(path: str) -> dict[str, Any]:
             raise ValueError(
                 f"sweep config search_space[{key!r}] must be a list, got {type(values)}"
             )
+    if "search" in data and data["search"] not in ("grid", "random"):
+        raise ValueError(
+            f"sweep config 'search' must be 'grid' or 'random', got {data['search']!r}"
+        )
     return data
 
 
@@ -239,6 +260,8 @@ def _print_sweep_header(
     optimize_metric: str,
     optimize_mode: str,
     base_config_path: str,
+    search: str = "grid",
+    full_grid_size: int | None = None,
 ) -> None:
     """Print a clear header when the sweep starts."""
     width = 60
@@ -248,7 +271,17 @@ def _print_sweep_header(
     print("=" * width)
     print(f"  Base config:    {base_config_path}")
     print(f"  Output dir:    {sweep_output_dir}")
-    print(f"  Total runs:    {total_runs}")
+    print(f"  Search:        {search}")
+    if (
+        search == "random"
+        and full_grid_size is not None
+        and full_grid_size != total_runs
+    ):
+        print(
+            f"  Total runs:    {total_runs} (sampled from {full_grid_size} combinations)"
+        )
+    else:
+        print(f"  Total runs:    {total_runs}")
     print(f"  Optimize:      {optimize_mode} {optimize_metric}")
     print("=" * width)
     print()
@@ -323,11 +356,28 @@ def main() -> int:
         base_path = os.path.join(_PROJECT_ROOT, base_path)
     base_config = config.ArrowExperimentConfig.from_json(base_path)
 
-    search_space = sweep["search_space"]
-    combinations = expand_grid(search_space)
+    # Resolve options: CLI overrides sweep config
+    effective_search = (
+        args.search if args.search is not None else sweep.get("search") or "grid"
+    )
+    if effective_search not in ("grid", "random"):
+        PARSER.error(f"--search must be 'grid' or 'random', got {effective_search!r}")
     max_runs = args.max_runs if args.max_runs is not None else sweep.get("max_runs")
-    if max_runs is not None:
-        combinations = combinations[:max_runs]
+
+    search_space = sweep["search_space"]
+    full_combinations = expand_grid(search_space)
+
+    if effective_search == "random":
+        seed = args.seed if args.seed is not None else sweep.get("seed")
+        if seed is not None:
+            random.seed(seed)
+        n_sample = min(max_runs or len(full_combinations), len(full_combinations))
+        combinations = random.sample(full_combinations, n_sample)
+    else:
+        # grid: use first max_runs if cap set
+        combinations = (
+            full_combinations[:max_runs] if max_runs is not None else full_combinations
+        )
 
     sweep_output_dir = sweep.get("sweep_output_dir")
     if not sweep_output_dir:
@@ -346,8 +396,13 @@ def main() -> int:
     os.makedirs(callback_root_dir, exist_ok=True)
     os.makedirs(model_output_dir, exist_ok=True)
 
-    # Save sweep config for reproducibility
+    # Save sweep config for reproducibility (include effective search and seed)
     sweep_save = {**sweep, "base_config": base_path}
+    sweep_save["_effective_search"] = effective_search
+    if effective_search == "random":
+        seed_used = args.seed if args.seed is not None else sweep.get("seed")
+        if seed_used is not None:
+            sweep_save["_effective_seed"] = seed_used
     with open(os.path.join(sweep_output_dir, "sweep_config.json"), "w") as f:
         json.dump(sweep_save, f, indent=2)
 
@@ -360,6 +415,8 @@ def main() -> int:
         optimize_metric=optimize_metric,
         optimize_mode=optimize_mode,
         base_config_path=base_path,
+        search=effective_search,
+        full_grid_size=len(full_combinations) if effective_search == "random" else None,
     )
     if args.workers > 1:
         print(f"  Workers:       {args.workers} (parallel)\n")
