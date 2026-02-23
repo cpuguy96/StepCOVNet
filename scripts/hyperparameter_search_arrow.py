@@ -322,9 +322,7 @@ def _print_run_header(
     print("-" * width)
 
 
-def _print_run_result(
-    run_index: int, metrics: dict[str, Any], optimize_metric: str
-) -> None:
+def _print_run_result(metrics: dict[str, Any], optimize_metric: str) -> None:
     """Print key metric after a run completes."""
     best_key = f"best_{optimize_metric}"
     val = metrics.get(best_key)
@@ -353,7 +351,8 @@ def _print_sweep_summary(
     print("=" * width)
     print()
     print("  Best run:")
-    print(f"    Index:   {best_idx + 1} (of {len(results)})")
+    print(f"    Index:    {best_idx + 1} (of {len(results)})")
+    print(f"    Optimize: {optimize_mode} {optimize_metric}")
     print(f"    {best_key}: {best_val:.6f}")
     print("    Overrides:")
     for k, v in sorted(best_overrides.items()):
@@ -469,7 +468,8 @@ def main() -> int:
                 "overrides": overrides_result,
                 **metrics,
             }
-            _print_run_result(run_index, metrics, optimize_metric)
+            _print_run_header(run_index, len(combinations), overrides_result)
+            _print_run_result(metrics, optimize_metric)
     results = [results_by_index[i] for i in range(len(combinations))]
 
     # Write results
