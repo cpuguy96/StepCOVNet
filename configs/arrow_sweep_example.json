@@ -11,7 +11,7 @@
     "run.epoch": [10]
   },
   "optimize": {
-    "metric": "val_loss",
+    "metric": "val_main_loss",
     "mode": "min"
   },
   "max_runs": 5,

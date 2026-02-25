@@ -534,7 +534,7 @@ def run_arrow_train_from_config(
     if run_config.callback_root_dir:
         training_callbacks, callback_name = _get_callbacks(
             root_dir=run_config.callback_root_dir,
-            monitor_metric="val_loss",
+            monitor_metric="val_main_loss",
             monitor_mode="min",
             experiment_name=experiment_name,
         )
