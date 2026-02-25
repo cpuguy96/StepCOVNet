@@ -202,7 +202,7 @@ def main():
         )
         # Default to a single batch for quick, backward-compatible testing.
         # Users can still override this via --take_count or in the config file.
-        run_config = config.RunConfig(
+        run_config = config.ArrowRunConfig(
             epoch=10,
             take_count=1,
             model_output_dir=ARGS.model_output_dir,
