@@ -214,17 +214,22 @@ def _run_single_training(
     base_config_dict: dict[str, Any],
     sweep_output_dir: str,
     project_root: str,
+    effective_seed: int | None = None,
 ) -> tuple[int, dict[str, Any], dict[str, Any]]:
     """Run one training job (for use in a worker process).
 
     Ensures project root is on sys.path, builds config, sets per-run output
     dirs, runs training, returns (run_index, metrics, overrides).
+    If effective_seed is set (from sweep config or --seed), it is applied to
+    run_config.run.seed so training uses the same seed for reproducibility.
     """
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 
     base = config.ArrowExperimentConfig.from_dict(base_config_dict)
     run_config = apply_overrides(base, overrides)
+    if effective_seed is not None:
+        run_config.run.seed = effective_seed
     run_config.run.model_output_dir = os.path.join(
         sweep_output_dir, "models", f"run_{run_index}"
     )
@@ -387,11 +392,11 @@ def main() -> int:
 
     search_space = sweep["search_space"]
     full_combinations = expand_grid(search_space)
+    effective_seed = args.seed if args.seed is not None else sweep.get("seed")
 
     if effective_search == "random":
-        seed = args.seed if args.seed is not None else sweep.get("seed")
-        if seed is not None:
-            random.seed(seed)
+        if effective_seed is not None:
+            random.seed(effective_seed)
         n_sample = min(max_runs or len(full_combinations), len(full_combinations))
         combinations = random.sample(full_combinations, n_sample)
     else:
@@ -420,10 +425,8 @@ def main() -> int:
     # Save sweep config for reproducibility (include effective search and seed)
     sweep_save = {**sweep, "base_config": base_path}
     sweep_save["_effective_search"] = effective_search
-    if effective_search == "random":
-        seed_used = args.seed if args.seed is not None else sweep.get("seed")
-        if seed_used is not None:
-            sweep_save["_effective_seed"] = seed_used
+    if effective_seed is not None:
+        sweep_save["_effective_seed"] = effective_seed
     with open(os.path.join(sweep_output_dir, "sweep_config.json"), "w") as f:
         json.dump(sweep_save, f, indent=2)
 
@@ -457,6 +460,7 @@ def main() -> int:
                 base_config_dict,
                 sweep_output_dir,
                 _PROJECT_ROOT,
+                effective_seed,
             ): i
             for i, overrides in enumerate(combinations)
         }
