@@ -601,7 +601,8 @@ def chart_validity_auxiliary_loss(
         ignore_class: Label value to treat as padding (default 0).
 
     Returns:
-        Scalar tensor: mean penalty over valid (non-padding) positions.
+        Scalar tensor: mean penalty over valid step-columns (same denominator as
+        ChartValidityMetric: mask_count * 4).
     """
     prob_digit = tf.einsum(
         "bsn,ncd->bscd",
@@ -638,8 +639,10 @@ def chart_validity_auxiliary_loss(
     weights = _chart_validity_violation_weights(prob_digit, mask, last_valid_weights)
     mask_exp = tf.expand_dims(mask, axis=-1)
     step_masked = tf.reduce_sum(weights * mask_exp)
+    # Match ChartValidityMetric denominator: valid step-columns (4 per valid step).
     mask_count = tf.maximum(tf.reduce_sum(mask), 1.0)
-    return step_masked / mask_count
+    total_valid_step_columns = mask_count * 4.0
+    return step_masked / total_valid_step_columns
 
 
 def note_kind_balance_auxiliary_loss(
@@ -692,6 +695,70 @@ def note_kind_balance_auxiliary_loss(
     mask = tf.cast(tf.not_equal(y_true, ignore_class), tf.float32)
     mask_count = tf.maximum(tf.reduce_sum(mask), 1.0)
     return tf.reduce_sum(sq_err * mask) / mask_count
+
+
+@keras.saving.register_keras_serializable()
+class ChartValidityAuxiliaryLossMetric(keras.metrics.Metric):
+    """Metric that reports the chart_validity_auxiliary_loss (same as in the combined loss)."""
+
+    def __init__(
+        self,
+        ignore_class: int = 0,
+        name: str = "chart_validity_aux_loss",
+        **kwargs,
+    ):
+        super().__init__(name=name, **kwargs)
+        self.ignore_class = ignore_class
+        self._mean = keras.metrics.Mean(name=f"{name}_mean")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        value = chart_validity_auxiliary_loss(
+            y_true, y_pred, ignore_class=self.ignore_class
+        )
+        self._mean.update_state(value)
+
+    def result(self):
+        return self._mean.result()
+
+    def reset_state(self):
+        self._mean.reset_state()
+
+    def get_config(self):
+        config = super().get_config()
+        config["ignore_class"] = self.ignore_class
+        return config
+
+
+@keras.saving.register_keras_serializable()
+class NoteKindBalanceAuxiliaryLossMetric(keras.metrics.Metric):
+    """Metric that reports the note_kind_balance_auxiliary_loss (same as in the combined loss)."""
+
+    def __init__(
+        self,
+        ignore_class: int = 0,
+        name: str = "note_kind_balance_aux_loss",
+        **kwargs,
+    ):
+        super().__init__(name=name, **kwargs)
+        self.ignore_class = ignore_class
+        self._mean = keras.metrics.Mean(name=f"{name}_mean")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        value = note_kind_balance_auxiliary_loss(
+            y_true, y_pred, ignore_class=self.ignore_class
+        )
+        self._mean.update_state(value)
+
+    def result(self):
+        return self._mean.result()
+
+    def reset_state(self):
+        self._mean.reset_state()
+
+    def get_config(self):
+        config = super().get_config()
+        config["ignore_class"] = self.ignore_class
+        return config
 
 
 @keras.saving.register_keras_serializable()

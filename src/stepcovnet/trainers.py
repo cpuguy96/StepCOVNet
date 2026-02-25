@@ -500,7 +500,7 @@ def run_arrow_train_from_config(
     _diversity_weight = run_config.diversity_aux_weight
 
     def _arrow_combined_loss(y_true, y_pred):
-        main = _main_loss(y_true, y_pred)
+        main_loss = _main_loss(y_true, y_pred)
         validity_aux = metrics.chart_validity_auxiliary_loss(
             y_true, y_pred, ignore_class=0
         )
@@ -508,7 +508,7 @@ def run_arrow_train_from_config(
             y_true, y_pred, ignore_class=0
         )
         return (
-            main
+            main_loss
             + tf.multiply(validity_aux, _chart_validity_weight)
             + tf.multiply(diversity_aux, _diversity_weight)
         )
@@ -520,6 +520,11 @@ def run_arrow_train_from_config(
         loss=_arrow_combined_loss,
         metrics=[
             keras.metrics.SparseCategoricalAccuracy(name="acc"),
+            keras.metrics.SparseCategoricalCrossentropy(name="main_loss"),
+            metrics.ChartValidityAuxiliaryLossMetric(name="chart_validity_aux_loss"),
+            metrics.NoteKindBalanceAuxiliaryLossMetric(
+                name="note_kind_balance_aux_loss"
+            ),
             metrics.ArrowDistributionMatchMetric(name="arrow_dist_match"),
             metrics.ArrowNoteKindDistributionMetric(name="arrow_note_kind_dist_match"),
             metrics.ChartValidityMetric(name="chart_validity"),

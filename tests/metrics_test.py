@@ -473,6 +473,43 @@ class ChartValidityLossMetricAlignmentTest(unittest.TestCase):
         self.assertGreater(loss.numpy(), 0.01)
 
 
+class ChartValidityAuxiliaryLossMetricTest(unittest.TestCase):
+    """Tests for ChartValidityAuxiliaryLossMetric (reports chart_validity_auxiliary_loss)."""
+
+    def test_result_matches_underlying_loss(self):
+        y_true = np.array([[1, 128, 192]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 128, 192]]))
+        metric = metrics.ChartValidityAuxiliaryLossMetric(ignore_class=0)
+        metric.update_state(y_true, y_pred)
+        expected = metrics.chart_validity_auxiliary_loss(
+            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+        )
+        self.assertAlmostEqual(
+            float(metric.result()), float(expected.numpy()), places=5
+        )
+
+    def test_reset_state(self):
+        metric = metrics.ChartValidityAuxiliaryLossMetric(ignore_class=0)
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, constants.N_ARROW_TYPES, np.array([[192, 1]]))
+        metric.update_state(y_true, y_pred)
+        metric.reset_state()
+        y_true_valid = np.array([[1, 128, 192]], dtype=np.int32)
+        y_pred_valid = _one_hot_pred(
+            1, 3, constants.N_ARROW_TYPES, np.array([[1, 128, 192]])
+        )
+        metric.update_state(y_true_valid, y_pred_valid)
+        self.assertLess(float(metric.result()), 0.01)
+
+    def test_get_config(self):
+        m = metrics.ChartValidityAuxiliaryLossMetric(
+            ignore_class=0, name="chart_validity_aux_loss"
+        )
+        config = m.get_config()
+        self.assertEqual(config["ignore_class"], 0)
+        self.assertEqual(config["name"], "chart_validity_aux_loss")
+
+
 class NoteKindBalanceAuxiliaryLossTest(unittest.TestCase):
     """Tests for note_kind_balance_auxiliary_loss (hold/tap balance vs labels)."""
 
@@ -515,6 +552,43 @@ class NoteKindBalanceAuxiliaryLossTest(unittest.TestCase):
         loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
         self.assertGreater(loss.numpy(), 0.0)
+
+
+class NoteKindBalanceAuxiliaryLossMetricTest(unittest.TestCase):
+    """Tests for NoteKindBalanceAuxiliaryLossMetric (reports note_kind_balance_auxiliary_loss)."""
+
+    def test_result_matches_underlying_loss(self):
+        y_true = np.array([[1, 128, 192]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 128, 192]]))
+        metric = metrics.NoteKindBalanceAuxiliaryLossMetric(ignore_class=0)
+        metric.update_state(y_true, y_pred)
+        expected = metrics.note_kind_balance_auxiliary_loss(
+            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+        )
+        self.assertAlmostEqual(
+            float(metric.result()), float(expected.numpy()), places=5
+        )
+
+    def test_reset_state(self):
+        metric = metrics.NoteKindBalanceAuxiliaryLossMetric(ignore_class=0)
+        y_true = np.array([[1, 128, 192]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 1, 1]]))
+        metric.update_state(y_true, y_pred)
+        metric.reset_state()
+        y_true_match = np.array([[1, 128, 192]], dtype=np.int32)
+        y_pred_match = _one_hot_pred(
+            1, 3, constants.N_ARROW_TYPES, np.array([[1, 128, 192]])
+        )
+        metric.update_state(y_true_match, y_pred_match)
+        self.assertAlmostEqual(float(metric.result()), 0.0, places=5)
+
+    def test_get_config(self):
+        m = metrics.NoteKindBalanceAuxiliaryLossMetric(
+            ignore_class=0, name="note_kind_balance_aux_loss"
+        )
+        config = m.get_config()
+        self.assertEqual(config["ignore_class"], 0)
+        self.assertEqual(config["name"], "note_kind_balance_aux_loss")
 
 
 if __name__ == "__main__":
