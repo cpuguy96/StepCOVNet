@@ -352,6 +352,20 @@ class ExtractMetricsTest(unittest.TestCase):
         self.assertEqual(metrics["best_val_acc"], 0.85)
         self.assertEqual(metrics["best_epoch_val_acc"], 3)
 
+    def test_extract_metrics_treats_loss_suffix_as_minimize(self):
+        """val_main_loss and other *_loss metrics use min for best, not max."""
+        history = mock.Mock()
+        history.history = {
+            "val_main_loss": [0.9, 0.5, 0.7],
+            "val_chart_validity_aux_loss": [0.2, 0.1, 0.15],
+            "val_acc": [0.6, 0.8, 0.7],
+        }
+        metrics = sweep_module.extract_metrics(history)
+        self.assertEqual(metrics["best_val_main_loss"], 0.5)
+        self.assertEqual(metrics["best_epoch_val_main_loss"], 2)
+        self.assertEqual(metrics["best_val_chart_validity_aux_loss"], 0.1)
+        self.assertEqual(metrics["best_val_acc"], 0.8)
+
 
 class EndToEndMinimalTest(unittest.TestCase):
     """One combination, real test data dir; results and best_config written."""

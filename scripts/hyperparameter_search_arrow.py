@@ -200,7 +200,8 @@ def extract_metrics(history: Any) -> dict[str, Any]:
         if not vals:
             continue
         result[f"final_{name}"] = float(vals[-1])
-        is_loss = name == "val_loss"
+        # Loss metrics (val_loss, val_main_loss, val_*_aux_loss, etc.) are minimized.
+        is_loss = name.endswith("_loss")
         best_val = min(vals) if is_loss else max(vals)
         result[f"best_{name}"] = float(best_val)
         best_epoch_1based = int((vals.index(best_val) + 1))
