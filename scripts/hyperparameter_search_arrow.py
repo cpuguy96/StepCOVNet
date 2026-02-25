@@ -337,6 +337,30 @@ def _print_run_result(metrics: dict[str, Any], optimize_metric: str) -> None:
     print()
 
 
+def _is_better_than(current_val: float, best_so_far: float | None, mode: str) -> bool:
+    """Return True if current_val is better than best_so_far (or best_so_far is None)."""
+    if best_so_far is None:
+        return True
+    if mode == "min":
+        return current_val < best_so_far
+    return current_val > best_so_far
+
+
+def _print_best_so_far(
+    run_index: int,
+    total_runs: int,
+    best_key: str,
+    value: float,
+    overrides: dict[str, Any],
+) -> None:
+    """Print message when this run has the best val metrics seen so far."""
+    print(
+        f"  *** NEW BEST (run {run_index + 1}/{total_runs}): {best_key} = {value:.6f} ***"
+    )
+    print(_format_overrides(overrides))
+    print()
+
+
 def _print_sweep_summary(
     results: list[dict[str, Any]],
     best_idx: int,
@@ -415,8 +439,11 @@ def main() -> int:
         )
     else:
         if not os.path.isabs(sweep_output_dir):
-            sweep_output_dir = os.path.join(_PROJECT_ROOT, sweep_output_dir, 
-            f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
+            sweep_output_dir = os.path.join(
+                _PROJECT_ROOT,
+                sweep_output_dir,
+                f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            )
     os.makedirs(sweep_output_dir, exist_ok=True)
 
     callback_root_dir = os.path.join(sweep_output_dir, "callbacks")
@@ -449,6 +476,9 @@ def main() -> int:
 
     base_config_dict = base_config.as_dict()
 
+    best_key = f"best_{optimize_metric}"
+    best_metric_so_far: float | None = None
+
     results_by_index: dict[int, dict[str, Any]] = {}
     with futures.ProcessPoolExecutor(
         max_workers=args.workers,
@@ -476,6 +506,19 @@ def main() -> int:
             }
             _print_run_header(run_index, len(combinations), overrides_result)
             _print_run_result(metrics, optimize_metric)
+            # Check if this run has the best val metric seen so far
+            val = metrics.get(best_key)
+            if val is not None and _is_better_than(
+                val, best_metric_so_far, optimize_mode
+            ):
+                best_metric_so_far = val
+                _print_best_so_far(
+                    run_index,
+                    len(combinations),
+                    best_key,
+                    val,
+                    overrides_result,
+                )
     results = [results_by_index[i] for i in range(len(combinations))]
 
     # Write results

@@ -335,6 +335,22 @@ class BestRunSelectionTest(unittest.TestCase):
         self.assertIn("empty", str(ctx.exception))
 
 
+class IsBetterThanTest(unittest.TestCase):
+    """_is_better_than for best-so-far comparison (min/max, None)."""
+
+    def test_min_mode_lower_is_better(self):
+        self.assertTrue(sweep_module._is_better_than(0.3, None, "min"))
+        self.assertTrue(sweep_module._is_better_than(0.3, 0.5, "min"))
+        self.assertFalse(sweep_module._is_better_than(0.5, 0.3, "min"))
+        self.assertFalse(sweep_module._is_better_than(0.3, 0.3, "min"))
+
+    def test_max_mode_higher_is_better(self):
+        self.assertTrue(sweep_module._is_better_than(0.9, None, "max"))
+        self.assertTrue(sweep_module._is_better_than(0.9, 0.5, "max"))
+        self.assertFalse(sweep_module._is_better_than(0.3, 0.5, "max"))
+        self.assertFalse(sweep_module._is_better_than(0.5, 0.5, "max"))
+
+
 class ExtractMetricsTest(unittest.TestCase):
     """Extract best/final metrics from history."""
 
@@ -658,6 +674,124 @@ class WorkersOptionTest(unittest.TestCase):
             self.assertEqual(len(results), 2)
             self.assertEqual(results[0]["run_index"], 0)
             self.assertEqual(results[1]["run_index"], 1)
+
+    def test_new_best_printed_when_run_has_best_val_metric_so_far(self):
+        """When a run has the best optimize metric seen so far, 'NEW BEST' is printed."""
+        from concurrent.futures import Future
+
+        submitted_futures = []
+        # Run 0: 0.5, run 1: 0.3 (best), run 2: 0.4
+        metrics_by_run = {0: 0.5, 1: 0.3, 2: 0.4}
+
+        class FakeExecutor:
+            def __init__(self, max_workers=None, max_tasks_per_child=None, **kwargs):
+                self.max_workers = max_workers
+                self.max_tasks_per_child = max_tasks_per_child
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def submit(self, fn, *args):
+                run_index, overrides = args[0], args[1]
+                fut = Future()
+                fut.set_result(
+                    (
+                        run_index,
+                        {"best_val_main_loss": metrics_by_run[run_index]},
+                        overrides,
+                    )
+                )
+                submitted_futures.append(fut)
+                return fut
+
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": base_config_path,
+                        "search_space": {
+                            "model.dropout_rate": [0.0, 0.1, 0.2],
+                        },
+                        "optimize": {"metric": "val_main_loss", "mode": "min"},
+                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
+                    },
+                    f,
+                )
+            base = config.ArrowExperimentConfig.from_json(base_config_path)
+            base.dataset.data_dir = TEST_DATA_DIR
+            base.dataset.val_data_dir = TEST_DATA_DIR
+            base.run.take_count = 2
+            base_config_override = os.path.join(temp_dir, "base_arrow.json")
+            base.to_json(base_config_override)
+            with open(sweep_path, "r") as f:
+                sweep_data = json.load(f)
+            sweep_data["base_config"] = base_config_override
+            with open(sweep_path, "w") as f:
+                json.dump(sweep_data, f)
+
+            # Complete in order: run 1 first (best 0.3), then run 0 (0.5), then run 2 (0.4).
+            # So we should see exactly one "NEW BEST" for run 1.
+            def ordered_as_completed(future_to_index):
+                order = [1, 0, 2]
+                for run_idx in order:
+                    for fut, idx in future_to_index.items():
+                        if idx == run_idx:
+                            yield fut
+                            break
+
+            print_calls = []
+
+            def capture_print(*args, **kwargs):
+                print_calls.append(" ".join(str(a) for a in args))
+
+            with mock.patch.object(
+                sweep_module.futures, "ProcessPoolExecutor", return_value=FakeExecutor()
+            ):
+                with mock.patch.object(
+                    sweep_module.futures,
+                    "as_completed",
+                    side_effect=ordered_as_completed,
+                ):
+                    with mock.patch("builtins.print", side_effect=capture_print):
+                        with mock.patch(
+                            "sys.argv",
+                            [
+                                "hyperparameter_search_arrow",
+                                "--sweep_config",
+                                sweep_path,
+                                "--workers",
+                                "1",
+                            ],
+                        ):
+                            exit_code = sweep_module.main()
+            self.assertEqual(exit_code, 0)
+            out = "\n".join(print_calls)
+            self.assertIn("NEW BEST", out, "Expected at least one 'NEW BEST' message")
+            self.assertIn(
+                "run 2/3",
+                out,
+                "NEW BEST should mention run 2/3 (run index 1, best metric)",
+            )
+            self.assertIn(
+                "0.300000",
+                out,
+                "NEW BEST should show best value 0.3",
+            )
+            # Only run 1 is best when it completes first; runs 0 and 2 are worse
+            self.assertEqual(
+                out.count("NEW BEST"),
+                1,
+                "Exactly one run should be 'new best' when best completes first",
+            )
 
 
 @pytest.mark.slow
