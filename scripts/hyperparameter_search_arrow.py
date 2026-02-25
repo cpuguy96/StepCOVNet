@@ -410,12 +410,13 @@ def main() -> int:
     if not sweep_output_dir:
         sweep_output_dir = os.path.join(
             _PROJECT_ROOT,
-            "callbacks",
+            "output",
             f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
         )
     else:
         if not os.path.isabs(sweep_output_dir):
-            sweep_output_dir = os.path.join(_PROJECT_ROOT, sweep_output_dir)
+            sweep_output_dir = os.path.join(_PROJECT_ROOT, sweep_output_dir, 
+            f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
     os.makedirs(sweep_output_dir, exist_ok=True)
 
     callback_root_dir = os.path.join(sweep_output_dir, "callbacks")
