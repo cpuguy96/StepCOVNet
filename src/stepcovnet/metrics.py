@@ -529,6 +529,60 @@ def _build_arrow_digit_onehot_table() -> tf.Tensor:
 _ARROW_DIGIT_ONEHOT_TABLE = _build_arrow_digit_onehot_table()
 
 
+def _chart_validity_violation_weights(
+    prob_digit: tf.Tensor,
+    mask: tf.Tensor,
+    last_valid_weights: tf.Tensor,
+    *,
+    soft: bool = True,
+) -> tf.Tensor:
+    """Compute per-step-column chart validity violation weights (single source of truth).
+
+    Encodes the same four rules as compute_chart_validity_violations and the public
+    chart_validity_auxiliary_loss / ChartValidityMetric:
+    (1) Orphaned tail: 3 (hold end) when state is FREE (run_prev < 1).
+    (2) Tap during hold: 1 (tap) when state is HOLDING.
+    (3) Nested hold: 2 (hold start) when state is HOLDING.
+    (4) Unterminated hold: run > 0 at last valid step (positions given by last_valid_weights).
+
+    Args:
+        prob_digit: (batch, seq, 4, 4) float; digit probs per step per column.
+                    Can be soft (loss) or one-hot (metric).
+        mask: (batch, seq) float; 1 at valid steps.
+        last_valid_weights: (batch, seq, 4) float; non-zero only at "last valid step"
+                            positions where unterminated is applied.
+        soft: If True (loss), use differentiable sigmoid for HOLDING state; if False
+             (metric), use hard step so violation counts are exact 0/1.
+
+    Returns:
+        (batch, seq, 4) float; violation weight per step-column.
+    """
+    p1 = prob_digit[:, :, :, 1]
+    p2 = prob_digit[:, :, :, 2]
+    p3 = prob_digit[:, :, :, 3]
+    delta = p2 - p3
+    run_soft = tf.cumsum(delta, axis=1)
+    run_prev = tf.concat(
+        [tf.zeros_like(run_soft[:, :1, :]), run_soft[:, :-1, :]],
+        axis=1,
+    )
+    # (1) Orphan 3: P(3) when state is FREE (run_prev < 1)
+    penalty_orphan_3 = p3 * tf.maximum(0.0, 1.0 - run_prev)
+    if soft:
+        state_holding = tf.sigmoid((run_prev - 0.5) * 10.0)
+    else:
+        state_holding = tf.cast(run_prev >= 1.0, tf.float32)
+    # (2) Tap during hold
+    penalty_tap_during_hold = p1 * state_holding
+    # (3) Nested hold
+    penalty_nested_hold = p2 * state_holding
+    # (4) Unterminated: run > 0 at last valid step
+    penalty_unterminated = last_valid_weights * tf.maximum(0.0, run_soft)
+
+    step_penalties = penalty_orphan_3 + penalty_tap_during_hold + penalty_nested_hold
+    return step_penalties + penalty_unterminated
+
+
 def chart_validity_auxiliary_loss(
     y_true: tf.Tensor,
     y_pred: tf.Tensor,
@@ -554,36 +608,36 @@ def chart_validity_auxiliary_loss(
         tf.cast(y_pred, tf.float32),
         _ARROW_DIGIT_ONEHOT_TABLE,
     )
-    p1 = prob_digit[:, :, :, 1]
-    p2 = prob_digit[:, :, :, 2]
-    p3 = prob_digit[:, :, :, 3]
-    delta = p2 - p3
-    run_soft = tf.cumsum(delta, axis=1)
-    run_prev = tf.concat(
-        [tf.zeros_like(run_soft[:, :1, :]), run_soft[:, :-1, :]],
-        axis=1,
-    )
     mask = tf.cast(tf.not_equal(y_true, ignore_class), tf.float32)
-    mask_exp = tf.expand_dims(mask, axis=-1)
-
-    # (1) Orphan 3: P(3) when state is FREE (run_prev < 1)
-    penalty_orphan_3 = p3 * tf.maximum(0.0, 1.0 - run_prev)
-    # Soft "state is HOLDING": smooth step at run_prev >= 1
-    state_holding_soft = tf.sigmoid((run_prev - 0.5) * 10.0)
-    # (2) Tap during hold
-    penalty_tap_during_hold = p1 * state_holding_soft
-    # (3) Nested hold
-    penalty_nested_hold = p2 * state_holding_soft
-    # (4) Unterminated: run > 0 at last valid step (soft last position per batch)
-    next_valid = tf.concat([mask[:, 1:], tf.zeros_like(mask[:, :1])], axis=1)
-    last_valid_soft = mask * (1.0 - next_valid)
-    last_valid_exp = tf.expand_dims(last_valid_soft, axis=-1)
-    penalty_unterminated = last_valid_exp * tf.maximum(0.0, run_soft)
-
-    step_penalties = penalty_orphan_3 + penalty_tap_during_hold + penalty_nested_hold
-    step_masked = tf.reduce_sum(step_penalties * mask_exp) + tf.reduce_sum(
-        penalty_unterminated * mask_exp
+    # Mask prob_digit at padding so run state (cumsum) matches metric and is
+    # unchanged at padded positions (single source of truth).
+    mask_exp_4d = tf.reshape(mask, [tf.shape(mask)[0], tf.shape(mask)[1], 1, 1])
+    prob_digit = prob_digit * mask_exp_4d
+    # Last valid step: single index per batch (argmax), same as ChartValidityMetric,
+    # so unterminated-hold penalty is applied at the same position as the metric.
+    seq_len = tf.shape(prob_digit)[1]
+    batch_size = tf.shape(prob_digit)[0]
+    seq_indices = tf.range(seq_len, dtype=tf.int32)
+    last_valid_idx = tf.argmax(
+        tf.cast(tf.not_equal(y_true, ignore_class), tf.int32)
+        * seq_indices[tf.newaxis, :],
+        axis=1,
+        output_type=tf.int32,
     )
+    batch_idx = tf.range(batch_size, dtype=tf.int32)
+    scatter_indices = tf.stack([batch_idx, last_valid_idx], axis=1)
+    last_valid_weights = tf.scatter_nd(
+        scatter_indices,
+        tf.ones((batch_size, 4), dtype=tf.float32),
+        [batch_size, seq_len, 4],
+    )
+    valid_batch = tf.reduce_sum(mask, axis=1) > 0.0
+    last_valid_weights = last_valid_weights * tf.cast(
+        valid_batch[:, tf.newaxis, tf.newaxis], tf.float32
+    )
+    weights = _chart_validity_violation_weights(prob_digit, mask, last_valid_weights)
+    mask_exp = tf.expand_dims(mask, axis=-1)
+    step_masked = tf.reduce_sum(weights * mask_exp)
     mask_count = tf.maximum(tf.reduce_sum(mask), 1.0)
     return step_masked / mask_count
 
@@ -674,61 +728,50 @@ class ChartValidityMetric(keras.metrics.Metric):
         y_true = tf.cast(y_true, tf.int32)
         y_pred = tf.cast(y_pred, tf.float32)
         pred_classes = tf.cast(tf.argmax(y_pred, axis=-1), tf.int32)
-        mask = tf.not_equal(y_true, self.ignore_class)
-        digits = _arrow_indices_to_column_digits(pred_classes)  # type: ignore[arg-type]
-        mask_exp = tf.expand_dims(tf.cast(mask, tf.float32), axis=-1)
-        digits_f = tf.cast(digits, tf.float32)
-        digits_masked = tf.where(
-            tf.broadcast_to(mask_exp > 0.5, tf.shape(digits_f)),
-            digits_f,
-            tf.zeros_like(digits_f),
-        )
-        digits = tf.cast(digits_masked, tf.int32)
+        mask_bool = tf.not_equal(y_true, self.ignore_class)
+        mask = tf.cast(mask_bool, tf.float32)
 
-        delta = tf.where(
-            tf.equal(digits, 2),
-            tf.ones_like(digits, dtype=tf.float32),
-            tf.where(
-                tf.equal(digits, 3),
-                -tf.ones_like(digits, dtype=tf.float32),
-                tf.zeros_like(digits, dtype=tf.float32),
-            ),
+        # One-hot digit probs from argmax; mask padding so run state is unchanged there.
+        pred_onehot = tf.one_hot(
+            tf.clip_by_value(pred_classes, 0, constants.N_ARROW_TYPES - 1),
+            depth=constants.N_ARROW_TYPES,
+            dtype=tf.float32,
         )
-        run = tf.cumsum(delta, axis=1)
-        run_prev = tf.concat(
-            [tf.zeros_like(run[:, :1, :]), run[:, :-1, :]],  # type: ignore[call-overload]
-            axis=1,
+        prob_digit = tf.einsum(
+            "bsn,ncd->bscd",
+            pred_onehot,
+            _ARROW_DIGIT_ONEHOT_TABLE,
         )
-        state_free = run_prev < 1.0
-        state_holding = tf.logical_not(state_free)
+        mask_exp_4d = tf.reshape(mask, [tf.shape(mask)[0], tf.shape(mask)[1], 1, 1])
+        prob_digit = prob_digit * mask_exp_4d
 
-        violation_orphan_3 = tf.cast(tf.equal(digits, 3) & state_free, tf.float32)
-        violation_tap_during_hold = tf.cast(
-            tf.equal(digits, 1) & state_holding, tf.float32
-        )
-        violation_nested_hold = tf.cast(tf.equal(digits, 2) & state_holding, tf.float32)
-
-        seq_len = tf.shape(digits)[1]
+        # last_valid_weights: 1 at (b, last_valid_idx[b], :) for each b, 0 elsewhere.
+        seq_len = tf.shape(prob_digit)[1]
+        batch_size = tf.shape(prob_digit)[0]
         seq_indices = tf.range(seq_len, dtype=tf.int32)
         last_valid_idx = tf.argmax(
-            tf.cast(mask, tf.int32) * seq_indices[tf.newaxis, :],
+            tf.cast(mask_bool, tf.int32) * seq_indices[tf.newaxis, :],
             axis=1,
             output_type=tf.int32,
         )
-        run_at_end = tf.gather(run, last_valid_idx, axis=1, batch_dims=1)
-        valid_batch = tf.reduce_sum(tf.cast(mask, tf.float32), axis=1) > 0.0
-        violation_unterminated = tf.cast(
-            (run_at_end > 0.0) & valid_batch[:, tf.newaxis], tf.float32
+        batch_idx = tf.range(batch_size, dtype=tf.int32)
+        scatter_indices = tf.stack([batch_idx, last_valid_idx], axis=1)
+        last_valid_weights = tf.scatter_nd(
+            scatter_indices,
+            tf.ones((batch_size, 4), dtype=tf.float32),
+            [batch_size, seq_len, 4],
+        )
+        valid_batch = tf.reduce_sum(mask, axis=1) > 0.0
+        last_valid_weights = last_valid_weights * tf.cast(
+            valid_batch[:, tf.newaxis, tf.newaxis], tf.float32
         )
 
-        step_violations = (
-            violation_orphan_3 + violation_tap_during_hold + violation_nested_hold
+        weights = _chart_validity_violation_weights(
+            prob_digit, mask, last_valid_weights, soft=False
         )
-        step_violations_masked = step_violations * mask_exp
-        total_step_violations = tf.reduce_sum(step_violations_masked)
-        total_unterminated = tf.reduce_sum(violation_unterminated)
-        total_violations_batch = total_step_violations + total_unterminated
-        total_slots = tf.reduce_sum(tf.cast(mask, tf.float32)) * 4.0
+        mask_exp = tf.expand_dims(mask, axis=-1)
+        total_violations_batch = tf.reduce_sum(weights * mask_exp)
+        total_slots = tf.reduce_sum(mask) * 4.0
 
         self.total_violations.assign_add(total_violations_batch)
         self.total_valid_step_columns.assign_add(total_slots)

@@ -442,7 +442,35 @@ class ChartValidityAuxiliaryLossTest(unittest.TestCase):
         y_pred = tf.constant(y_pred)
         loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertGreater(loss.numpy(), 0.0)
+        self.assertGreater(loss.numpy(), 0.01)
+
+
+class ChartValidityLossMetricAlignmentTest(unittest.TestCase):
+    """Loss and metric share _chart_validity_violation_weights; check they stay aligned."""
+
+    def test_valid_sequence_metric_one_loss_low(self):
+        # One-hot pred matching labels (valid hold): metric = 1.0, loss low
+        y_true = np.array([[1, 128, 192]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 128, 192]]))
+        metric = metrics.ChartValidityMetric(ignore_class=0)
+        metric.update_state(y_true, y_pred)
+        self.assertAlmostEqual(float(metric.result()), 1.0, places=5)
+        loss = metrics.chart_validity_auxiliary_loss(
+            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+        )
+        self.assertLess(loss.numpy(), 0.01)
+
+    def test_invalid_sequence_metric_below_one_loss_positive(self):
+        # Orphan 3 at first step: metric < 1, loss > 0
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, constants.N_ARROW_TYPES, np.array([[192, 1]]))
+        metric = metrics.ChartValidityMetric(ignore_class=0)
+        metric.update_state(y_true, y_pred)
+        self.assertLess(float(metric.result()), 1.0)
+        loss = metrics.chart_validity_auxiliary_loss(
+            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+        )
+        self.assertGreater(loss.numpy(), 0.01)
 
 
 class NoteKindBalanceAuxiliaryLossTest(unittest.TestCase):
