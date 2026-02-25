@@ -572,6 +572,96 @@ class RandomSearchTest(unittest.TestCase):
         self.assertEqual(first, second)
 
 
+class ResumeSweepTest(unittest.TestCase):
+    """--resume_from loads partial results and runs only missing runs."""
+
+    def test_resume_from_and_sweep_config_mutually_exclusive(self):
+        """Passing both --resume_from and --sweep_config exits with error."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            resume_dir = os.path.join(temp_dir, "resume_dir")
+            os.makedirs(resume_dir, exist_ok=True)
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": "configs/arrow_baseline.json",
+                        "search_space": {"model.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "sweep_output_dir": temp_dir,
+                    },
+                    f,
+                )
+            result = _run_sweep_script(
+                "--resume_from",
+                os.path.abspath(resume_dir),
+                "--sweep_config",
+                os.path.abspath(sweep_path),
+            )
+            self.assertNotEqual(result.returncode, 0)
+            out = (result.stdout or "") + (result.stderr or "")
+            self.assertIn("resume_from", out)
+            self.assertIn("sweep_config", out)
+
+    def test_resume_from_partial_sweep_dir_runs_remaining(self):
+        """With a sweep dir containing sweep_config.json and partial results.json, --resume_from runs only missing runs."""
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = config.ArrowExperimentConfig.from_json(base_config_path)
+            base.dataset.data_dir = TEST_DATA_DIR
+            base.dataset.val_data_dir = TEST_DATA_DIR
+            base.run.take_count = 2
+            base_config_override = os.path.join(temp_dir, "base_arrow.json")
+            base.to_json(base_config_override)
+
+            resume_dir = os.path.join(temp_dir, "sweep_resume")
+            os.makedirs(resume_dir, exist_ok=True)
+            os.makedirs(os.path.join(resume_dir, "models"), exist_ok=True)
+            os.makedirs(os.path.join(resume_dir, "callbacks"), exist_ok=True)
+
+            search_space = {"model.dropout_rate": [0.0, 0.1]}
+            combinations = sweep_module.expand_grid(search_space)
+            sweep_config = {
+                "base_config": os.path.abspath(base_config_override),
+                "search_space": search_space,
+                "optimize": {"metric": "val_loss", "mode": "min"},
+                "_effective_search": "grid",
+                "max_runs": None,
+            }
+            with open(os.path.join(resume_dir, "sweep_config.json"), "w") as f:
+                json.dump(sweep_config, f, indent=2)
+
+            # One run done (index 0), one pending (index 1)
+            partial_results = [
+                {
+                    "run_index": 0,
+                    "overrides": combinations[0],
+                    "best_val_loss": 0.5,
+                    "final_val_loss": 0.5,
+                },
+                None,
+            ]
+            with open(os.path.join(resume_dir, "results.json"), "w") as f:
+                json.dump(partial_results, f, indent=2)
+
+            result = _run_sweep_script("--resume_from", os.path.abspath(resume_dir))
+            self.assertEqual(
+                result.returncode, 0, (result.stdout or "") + (result.stderr or "")
+            )
+            with open(os.path.join(resume_dir, "results.json")) as f:
+                results = json.load(f)
+            self.assertEqual(len(results), 2)
+            self.assertIsNotNone(results[0])
+            self.assertIsNotNone(results[1])
+            self.assertIn("best_val_loss", results[1])
+            self.assertTrue(
+                os.path.isfile(os.path.join(resume_dir, "best_config.json"))
+            )
+
+
 class WorkersOptionTest(unittest.TestCase):
     """--workers must be >= 1; parallel path uses ProcessPoolExecutor."""
 

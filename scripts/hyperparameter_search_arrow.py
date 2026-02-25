@@ -17,6 +17,9 @@ Usage:
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --search=random --max_runs=10
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --search=random --max_runs=10 --seed=42
     python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --workers=2
+
+Resume after a crash (run from project root, same sweep_output_dir as before):
+    python scripts/hyperparameter_search_arrow.py --resume_from=output/hparam_search/arrow_sweep_20250225-123456
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ import random
 import sys
 from concurrent import futures
 import datetime
-from typing import Any
+from typing import Any, cast
 
 # Add project root for imports when run as script
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,8 +51,8 @@ PARSER = argparse.ArgumentParser(
 PARSER.add_argument(
     "--sweep_config",
     type=str,
-    required=True,
-    help="Path to sweep JSON (base_config, search_space, optimize).",
+    default=None,
+    help="Path to sweep JSON (base_config, search_space, optimize). Required for a new sweep; do not set when using --resume_from.",
 )
 PARSER.add_argument(
     "--search",
@@ -75,6 +78,13 @@ PARSER.add_argument(
     type=int,
     default=1,
     help="Number of training jobs to run in parallel (default: 1).",
+)
+PARSER.add_argument(
+    "--resume_from",
+    type=str,
+    default=None,
+    metavar="DIR",
+    help="Resume a previous sweep from this output directory. Loads sweep_config.json and results.json, runs only missing runs. Cannot be used with --sweep_config.",
 )
 
 
@@ -129,6 +139,51 @@ def load_sweep_config(path: str) -> dict[str, Any]:
             f"sweep config 'search' must be 'grid' or 'random', got {data['search']!r}"
         )
     return data
+
+
+def _load_resume_state(
+    sweep_output_dir: str,
+) -> tuple[dict[str, Any], list[dict[str, Any] | None]]:
+    """Load sweep config and partial/full results from a previous run for resume.
+
+    Returns (sweep_save, results_list). results_list has length = total runs;
+    completed runs have a dict, incomplete have None.
+    """
+    config_path = os.path.join(sweep_output_dir, "sweep_config.json")
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(
+            f"Cannot resume: {config_path!r} not found. Use the exact sweep output directory from the interrupted run."
+        )
+    with open(config_path, "r") as f:
+        sweep_save = json.load(f)
+    results_path = os.path.join(sweep_output_dir, "results.json")
+    if os.path.isfile(results_path):
+        with open(results_path, "r") as f:
+            results_list = json.load(f)
+        if not isinstance(results_list, list):
+            raise ValueError(
+                f"Resume results.json must be a list, got {type(results_list).__name__}"
+            )
+    else:
+        results_list = []
+    return sweep_save, results_list
+
+
+def _rebuild_combinations_from_saved(
+    sweep_save: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Rebuild the same combination list from a saved sweep_config.json."""
+    search_space = sweep_save["search_space"]
+    full_combinations = expand_grid(search_space)
+    effective_search = sweep_save.get("_effective_search", "grid")
+    effective_seed = sweep_save.get("_effective_seed")
+    max_runs = sweep_save.get("max_runs")
+    if effective_search == "random":
+        if effective_seed is not None:
+            random.seed(effective_seed)
+        n_sample = min(max_runs or len(full_combinations), len(full_combinations))
+        return random.sample(full_combinations, n_sample)
+    return full_combinations[:max_runs] if max_runs is not None else full_combinations
 
 
 def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
@@ -395,17 +450,149 @@ def _print_sweep_summary(
     print("=" * width)
 
 
-def main() -> int:
-    args = PARSER.parse_args()
-    if args.workers < 1:
-        PARSER.error("--workers must be >= 1")
+class _SweepContext:
+    """State for a sweep (fresh or resumed): config, combinations, output dir, and results.
+
+    Plain class (no dataclass) so the script can be loaded via importlib in tests.
+    """
+
+    __slots__ = (
+        "base_config",
+        "base_path",
+        "combinations",
+        "sweep_output_dir",
+        "sweep_save",
+        "effective_search",
+        "effective_seed",
+        "full_combinations",
+        "results_by_index",
+        "pending",
+    )
+
+    def __init__(
+        self,
+        *,
+        base_config: Any,
+        base_path: str,
+        combinations: list[dict[str, Any]],
+        sweep_output_dir: str,
+        sweep_save: dict[str, Any],
+        effective_search: str,
+        effective_seed: int | None,
+        full_combinations: list[dict[str, Any]],
+        results_by_index: dict[int, dict[str, Any]],
+        pending: list[tuple[int, dict[str, Any]]],
+    ) -> None:
+        self.base_config = base_config
+        self.base_path = base_path
+        self.combinations = combinations
+        self.sweep_output_dir = sweep_output_dir
+        self.sweep_save = sweep_save
+        self.effective_search = effective_search
+        self.effective_seed = effective_seed
+        self.full_combinations = full_combinations
+        self.results_by_index = results_by_index
+        self.pending = pending
+
+
+def _setup_resume(resume_from: str) -> _SweepContext | None:
+    """Load state from a previous run. If all runs are already complete, write best_config and return None."""
+    if not os.path.isabs(resume_from):
+        resume_from = os.path.join(_PROJECT_ROOT, resume_from)
+    if not os.path.isdir(resume_from):
+        PARSER.error(f"--resume_from directory does not exist: {resume_from}")
+    sweep_save, results_list = _load_resume_state(resume_from)
+    base_path = sweep_save["base_config"]
+    if not os.path.isabs(base_path):
+        base_path = os.path.join(_PROJECT_ROOT, base_path)
+    base_config = config.ArrowExperimentConfig.from_json(base_path)
+    combinations = _rebuild_combinations_from_saved(sweep_save)
+    if len(results_list) < len(combinations):
+        results_list.extend([None] * (len(combinations) - len(results_list)))
+    else:
+        results_list = results_list[: len(combinations)]
+    completed = {i for i in range(len(combinations)) if results_list[i] is not None}
+    pending = [
+        (i, overrides) for i, overrides in enumerate(combinations) if i not in completed
+    ]
+    results_by_index = cast(
+        dict[int, dict[str, Any]],
+        {
+            i: results_list[i]
+            for i in range(len(combinations))
+            if results_list[i] is not None
+        },
+    )
+    if not pending:
+        _finish_sweep_early(
+            sweep_output_dir=resume_from,
+            base_config=base_config,
+            combinations=combinations,
+            results_by_index=results_by_index,
+            sweep_save=sweep_save,
+        )
+        return None
+    print(f"Resume: {len(completed)} runs already done, {len(pending)} remaining.\n")
+    return _SweepContext(
+        base_config=base_config,
+        base_path=base_path,
+        combinations=combinations,
+        sweep_output_dir=resume_from,
+        sweep_save=sweep_save,
+        effective_search=sweep_save.get("_effective_search", "grid"),
+        effective_seed=sweep_save.get("_effective_seed"),
+        full_combinations=expand_grid(sweep_save["search_space"]),
+        results_by_index=results_by_index,
+        pending=pending,
+    )
+
+
+def _finish_sweep_early(
+    sweep_output_dir: str,
+    base_config: config.ArrowExperimentConfig,
+    combinations: list[dict[str, Any]],
+    results_by_index: dict[int, dict[str, Any]],
+    sweep_save: dict[str, Any],
+) -> None:
+    """Write best_config and summary when resuming with no pending runs."""
+    optimize_metric = sweep_save["optimize"]["metric"]
+    optimize_mode = sweep_save["optimize"]["mode"]
+    results: list[dict[str, Any]] = [
+        results_by_index[i] for i in range(len(combinations))
+    ]
+    best_idx = select_best_run(results, optimize_metric, optimize_mode)
+    best_overrides = results[best_idx]["overrides"]
+    best_config = apply_overrides(base_config, best_overrides)
+    callback_root_dir = os.path.join(sweep_output_dir, "callbacks")
+    model_output_dir = os.path.join(sweep_output_dir, "models")
+    best_config.run.model_output_dir = os.path.join(model_output_dir, f"run_{best_idx}")
+    best_config.run.callback_root_dir = os.path.join(
+        callback_root_dir, f"run_{best_idx}"
+    )
+    best_config.run.val_take_count = _VAL_TAKE_COUNT_FIXED
+    best_config.dataset.batch_size = _BATCH_SIZE_FIXED
+    best_config_path = os.path.join(sweep_output_dir, "best_config.json")
+    with open(best_config_path, "w") as f:
+        json.dump(best_config.as_dict(), f, indent=2)
+    results_path = os.path.join(sweep_output_dir, "results.json")
+    _print_sweep_summary(
+        results=results,
+        best_idx=best_idx,
+        best_overrides=best_overrides,
+        optimize_metric=optimize_metric,
+        optimize_mode=optimize_mode,
+        results_path=results_path,
+        best_config_path=best_config_path,
+    )
+
+
+def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
+    """Load sweep config, build combinations, create output dir, save sweep_config.json."""
     sweep = load_sweep_config(args.sweep_config)
     base_path = sweep["base_config"]
     if not os.path.isabs(base_path):
         base_path = os.path.join(_PROJECT_ROOT, base_path)
     base_config = config.ArrowExperimentConfig.from_json(base_path)
-
-    # Resolve options: CLI overrides sweep config
     effective_search = (
         args.search if args.search is not None else sweep.get("search") or "grid"
     )
@@ -414,22 +601,18 @@ def main() -> int:
     max_runs = args.max_runs if args.max_runs is not None else sweep.get("max_runs")
     if max_runs is not None and max_runs <= 0:
         PARSER.error("max_runs must be > 0 when set (got %s)" % max_runs)
-
     search_space = sweep["search_space"]
     full_combinations = expand_grid(search_space)
     effective_seed = args.seed if args.seed is not None else sweep.get("seed")
-
     if effective_search == "random":
         if effective_seed is not None:
             random.seed(effective_seed)
         n_sample = min(max_runs or len(full_combinations), len(full_combinations))
         combinations = random.sample(full_combinations, n_sample)
     else:
-        # grid: use first max_runs if cap set
         combinations = (
             full_combinations[:max_runs] if max_runs is not None else full_combinations
         )
-
     sweep_output_dir = sweep.get("sweep_output_dir")
     if not sweep_output_dir:
         sweep_output_dir = os.path.join(
@@ -445,41 +628,61 @@ def main() -> int:
                 f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
             )
     os.makedirs(sweep_output_dir, exist_ok=True)
-
     callback_root_dir = os.path.join(sweep_output_dir, "callbacks")
     model_output_dir = os.path.join(sweep_output_dir, "models")
     os.makedirs(callback_root_dir, exist_ok=True)
     os.makedirs(model_output_dir, exist_ok=True)
-
-    # Save sweep config for reproducibility (include effective search and seed)
     sweep_save = {**sweep, "base_config": base_path}
     sweep_save["_effective_search"] = effective_search
     if effective_seed is not None:
         sweep_save["_effective_seed"] = effective_seed
     with open(os.path.join(sweep_output_dir, "sweep_config.json"), "w") as f:
         json.dump(sweep_save, f, indent=2)
-
-    optimize_metric = sweep["optimize"]["metric"]
-    optimize_mode = sweep["optimize"]["mode"]
-
-    _print_sweep_header(
-        total_runs=len(combinations),
+    return _SweepContext(
+        base_config=base_config,
+        base_path=base_path,
+        combinations=combinations,
         sweep_output_dir=sweep_output_dir,
+        sweep_save=sweep_save,
+        effective_search=effective_search,
+        effective_seed=effective_seed,
+        full_combinations=full_combinations,
+        results_by_index={},
+        pending=list(enumerate(combinations)),
+    )
+
+
+def _run_pending(ctx: _SweepContext, args: argparse.Namespace) -> None:
+    """Run pending training jobs, update ctx.results_by_index, write checkpoints, print progress."""
+    optimize_metric = ctx.sweep_save["optimize"]["metric"]
+    optimize_mode = ctx.sweep_save["optimize"]["mode"]
+    best_key = f"best_{optimize_metric}"
+    best_metric_so_far: float | None = None
+    for _idx, r in ctx.results_by_index.items():
+        val = r.get(best_key)
+        if val is not None and _is_better_than(val, best_metric_so_far, optimize_mode):
+            best_metric_so_far = val
+    _print_sweep_header(
+        total_runs=len(ctx.combinations),
+        sweep_output_dir=ctx.sweep_output_dir,
         optimize_metric=optimize_metric,
         optimize_mode=optimize_mode,
-        base_config_path=base_path,
-        search=effective_search,
-        full_grid_size=len(full_combinations) if effective_search == "random" else None,
+        base_config_path=ctx.base_path,
+        search=ctx.effective_search,
+        full_grid_size=(
+            len(ctx.full_combinations) if ctx.effective_search == "random" else None
+        ),
     )
     if args.workers > 1:
         print(f"  Workers:       {args.workers} (parallel)\n")
+    results_path = os.path.join(ctx.sweep_output_dir, "results.json")
 
-    base_config_dict = base_config.as_dict()
+    def write_checkpoint() -> None:
+        ordered = [ctx.results_by_index.get(i) for i in range(len(ctx.combinations))]
+        with open(results_path, "w") as f:
+            json.dump(ordered, f, indent=2)
 
-    best_key = f"best_{optimize_metric}"
-    best_metric_so_far: float | None = None
-
-    results_by_index: dict[int, dict[str, Any]] = {}
+    base_config_dict = ctx.base_config.as_dict()
     with futures.ProcessPoolExecutor(
         max_workers=args.workers,
         max_tasks_per_child=1,
@@ -490,56 +693,57 @@ def main() -> int:
                 i,
                 overrides,
                 base_config_dict,
-                sweep_output_dir,
+                ctx.sweep_output_dir,
                 _PROJECT_ROOT,
-                effective_seed,
+                ctx.effective_seed,
             ): i
-            for i, overrides in enumerate(combinations)
+            for i, overrides in ctx.pending
         }
         for future in futures.as_completed(future_to_index):
             run_index = future_to_index[future]
             run_index_result, metrics, overrides_result = future.result()
-            results_by_index[run_index] = {
+            ctx.results_by_index[run_index] = {
                 "run_index": run_index_result,
                 "overrides": overrides_result,
                 **metrics,
             }
-            _print_run_header(run_index, len(combinations), overrides_result)
+            write_checkpoint()
+            _print_run_header(run_index, len(ctx.combinations), overrides_result)
             _print_run_result(metrics, optimize_metric)
-            # Check if this run has the best val metric seen so far
             val = metrics.get(best_key)
             if val is not None and _is_better_than(
                 val, best_metric_so_far, optimize_mode
             ):
                 best_metric_so_far = val
                 _print_best_so_far(
-                    run_index,
-                    len(combinations),
-                    best_key,
-                    val,
-                    overrides_result,
+                    run_index, len(ctx.combinations), best_key, val, overrides_result
                 )
-    results = [results_by_index[i] for i in range(len(combinations))]
 
-    # Write results
-    results_path = os.path.join(sweep_output_dir, "results.json")
+
+def _write_final_results_and_best(ctx: _SweepContext) -> None:
+    """Build full results list, write results.json and best_config.json, print summary."""
+    results: list[dict[str, Any]] = [
+        ctx.results_by_index[i] for i in range(len(ctx.combinations))
+    ]
+    results_path = os.path.join(ctx.sweep_output_dir, "results.json")
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
-
+    optimize_metric = ctx.sweep_save["optimize"]["metric"]
+    optimize_mode = ctx.sweep_save["optimize"]["mode"]
     best_idx = select_best_run(results, optimize_metric, optimize_mode)
     best_overrides = results[best_idx]["overrides"]
-    best_config = apply_overrides(base_config, best_overrides)
+    best_config = apply_overrides(ctx.base_config, best_overrides)
+    callback_root_dir = os.path.join(ctx.sweep_output_dir, "callbacks")
+    model_output_dir = os.path.join(ctx.sweep_output_dir, "models")
     best_config.run.model_output_dir = os.path.join(model_output_dir, f"run_{best_idx}")
     best_config.run.callback_root_dir = os.path.join(
         callback_root_dir, f"run_{best_idx}"
     )
     best_config.run.val_take_count = _VAL_TAKE_COUNT_FIXED
     best_config.dataset.batch_size = _BATCH_SIZE_FIXED
-
-    best_config_path = os.path.join(sweep_output_dir, "best_config.json")
+    best_config_path = os.path.join(ctx.sweep_output_dir, "best_config.json")
     with open(best_config_path, "w") as f:
         json.dump(best_config.as_dict(), f, indent=2)
-
     _print_sweep_summary(
         results=results,
         best_idx=best_idx,
@@ -550,6 +754,27 @@ def main() -> int:
         best_config_path=best_config_path,
     )
 
+
+def main() -> int:
+    args = PARSER.parse_args()
+    if args.workers < 1:
+        PARSER.error("--workers must be >= 1")
+    if not args.resume_from and not args.sweep_config:
+        PARSER.error("--sweep_config is required unless --resume_from is set")
+    if args.resume_from and args.sweep_config:
+        PARSER.error(
+            "Cannot set both --resume_from and --sweep_config; use only --resume_from to resume."
+        )
+
+    if args.resume_from:
+        ctx = _setup_resume(args.resume_from)
+        if ctx is None:
+            return 0
+    else:
+        ctx = _setup_fresh_sweep(args)
+
+    _run_pending(ctx, args)
+    _write_final_results_and_best(ctx)
     return 0
 
 
