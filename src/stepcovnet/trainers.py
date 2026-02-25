@@ -520,7 +520,10 @@ def run_arrow_train_from_config(
         loss=_arrow_combined_loss,
         metrics=[
             keras.metrics.SparseCategoricalAccuracy(name="acc"),
-            keras.metrics.SparseCategoricalCrossentropy(name="main_loss"),
+            keras.metrics.SparseCategoricalCrossentropy(
+                name="main_loss",
+                # ignore_class=0 # Set ignore class once Keras PR is merged.
+            ),
             metrics.ChartValidityAuxiliaryLossMetric(name="chart_validity_aux_loss"),
             metrics.NoteKindBalanceAuxiliaryLossMetric(
                 name="note_kind_balance_aux_loss"
