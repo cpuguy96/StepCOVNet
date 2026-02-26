@@ -249,10 +249,16 @@ class ArrowRunConfig(RunConfig):
         diversity_aux_weight: Weight for note-kind balance auxiliary loss.
             Encourages predicted hold/tap mix to match labels; use to balance chart_validity.
             Default 0.0.
+        warmup_epochs: Number of epochs for linear LR warmup before cosine decay. 0 disables the schedule (fixed LR).
+        lr_peak: Peak learning rate reached at end of warmup (also the fixed LR when warmup is disabled).
+        lr_min: Minimum learning rate at start of warmup and end of cosine decay.
     """
 
     chart_validity_aux_weight: float = 0.0
     diversity_aux_weight: float = 0.0
+    warmup_epochs: int = 0
+    lr_peak: float = 1e-3
+    lr_min: float = 1e-5
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -263,6 +269,20 @@ class ArrowRunConfig(RunConfig):
         if self.diversity_aux_weight < 0:
             raise ValueError(
                 f"diversity_aux_weight must be >= 0, got {self.diversity_aux_weight}"
+            )
+        if self.warmup_epochs < 0:
+            raise ValueError(f"warmup_epochs must be >= 0, got {self.warmup_epochs}")
+        if self.warmup_epochs >= self.epoch:
+            raise ValueError(
+                f"warmup_epochs ({self.warmup_epochs}) must be < epoch ({self.epoch})"
+            )
+        if self.lr_peak <= 0:
+            raise ValueError(f"lr_peak must be > 0, got {self.lr_peak}")
+        if self.lr_min < 0:
+            raise ValueError(f"lr_min must be >= 0, got {self.lr_min}")
+        if self.lr_min >= self.lr_peak:
+            raise ValueError(
+                f"lr_min ({self.lr_min}) must be < lr_peak ({self.lr_peak})"
             )
 
     @classmethod

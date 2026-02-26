@@ -151,6 +151,27 @@ PARSER.add_argument(
     default=None,
     required=False,
 )
+PARSER.add_argument(
+    "--warmup_epochs",
+    type=int,
+    help="Number of epochs for linear LR warmup before cosine decay. 0 disables the schedule (fixed LR).",
+    default=None,
+    required=False,
+)
+PARSER.add_argument(
+    "--lr_peak",
+    type=float,
+    help="Peak learning rate reached at end of warmup (also the fixed LR when warmup is disabled).",
+    default=None,
+    required=False,
+)
+PARSER.add_argument(
+    "--lr_min",
+    type=float,
+    help="Minimum learning rate at start of warmup and end of cosine decay.",
+    default=None,
+    required=False,
+)
 ARGS = PARSER.parse_args()
 
 
@@ -248,6 +269,12 @@ def main():
         run_config.chart_validity_aux_weight = ARGS.chart_validity_aux_weight
     if ARGS.diversity_aux_weight is not None:
         run_config.diversity_aux_weight = ARGS.diversity_aux_weight
+    if ARGS.warmup_epochs is not None:
+        run_config.warmup_epochs = ARGS.warmup_epochs
+    if ARGS.lr_peak is not None:
+        run_config.lr_peak = ARGS.lr_peak
+    if ARGS.lr_min is not None:
+        run_config.lr_min = ARGS.lr_min
 
     # Validate required fields
     if not dataset_config.data_dir or not dataset_config.val_data_dir:

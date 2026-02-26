@@ -2,6 +2,7 @@
 
 import datetime
 import logging
+import math
 import os
 
 import keras
@@ -441,6 +442,34 @@ def run_train(
     return run_train_from_config(dataset_config, model_config, run_config)
 
 
+def _build_cosine_warmup_schedule(
+    total_epochs: int,
+    warmup_epochs: int,
+    lr_peak: float,
+    lr_min: float,
+) -> keras.callbacks.LearningRateScheduler:
+    """Build a LearningRateScheduler that linearly warms up then cosine-decays.
+
+    Args:
+        total_epochs: Total number of training epochs.
+        warmup_epochs: Epochs for linear warmup from lr_min to lr_peak.
+        lr_peak: Peak (maximum) learning rate reached at end of warmup.
+        lr_min: Minimum learning rate at start of warmup and end of decay.
+
+    Returns:
+        A Keras LearningRateScheduler callback.
+    """
+    decay_epochs = total_epochs - warmup_epochs
+
+    def schedule(epoch: int, _lr: float) -> float:
+        if epoch < warmup_epochs:
+            return lr_min + (lr_peak - lr_min) * epoch / warmup_epochs
+        progress = (epoch - warmup_epochs) / max(decay_epochs, 1)
+        return lr_min + 0.5 * (lr_peak - lr_min) * (1.0 + math.cos(math.pi * progress))
+
+    return keras.callbacks.LearningRateScheduler(schedule)
+
+
 def run_arrow_train_from_config(
     dataset_config: config.ArrowDatasetConfig,
     model_config: config.ArrowModelConfig,
@@ -513,9 +542,12 @@ def run_arrow_train_from_config(
             + tf.multiply(diversity_aux, _diversity_weight)
         )
 
+    use_lr_schedule = run_config.warmup_epochs > 0
+    initial_lr = run_config.lr_min if use_lr_schedule else run_config.lr_peak
+
     model.compile(
         optimizer=keras.optimizers.Adam(
-            learning_rate=1e-3, clipnorm=1.0
+            learning_rate=initial_lr, clipnorm=1.0
         ),  # type: ignore
         loss=_arrow_combined_loss,
         metrics=[
@@ -533,6 +565,17 @@ def run_arrow_train_from_config(
             metrics.ChartValidityMetric(name="chart_validity"),
         ],
     )
+
+    lr_callbacks: list[keras.callbacks.Callback] = []
+    if use_lr_schedule:
+        lr_callbacks.append(
+            _build_cosine_warmup_schedule(
+                total_epochs=run_config.epoch,
+                warmup_epochs=run_config.warmup_epochs,
+                lr_peak=run_config.lr_peak,
+                lr_min=run_config.lr_min,
+            )
+        )
 
     if run_config.callback_root_dir:
         training_callbacks, callback_name = _get_callbacks(
@@ -558,7 +601,7 @@ def run_arrow_train_from_config(
         train_dataset.take(run_config.take_count),
         epochs=run_config.epoch,
         validation_data=val_data,
-        callbacks=training_callbacks,
+        callbacks=lr_callbacks + training_callbacks,
         verbose=run_config.fit_verbose,  # type: ignore[arg-type]
     )
 
