@@ -463,7 +463,11 @@ def _build_cosine_warmup_schedule(
 
     def schedule(epoch: int, _lr: float) -> float:
         if epoch < warmup_epochs:
-            return lr_min + (lr_peak - lr_min) * epoch / warmup_epochs
+            # Reach lr_peak at the last warmup epoch (epoch == warmup_epochs - 1).
+            if warmup_epochs == 1:
+                return lr_peak
+            progress = epoch / (warmup_epochs - 1)
+            return lr_min + (lr_peak - lr_min) * progress
         progress = (epoch - warmup_epochs) / max(decay_epochs, 1)
         return lr_min + 0.5 * (lr_peak - lr_min) * (1.0 + math.cos(math.pi * progress))
 
