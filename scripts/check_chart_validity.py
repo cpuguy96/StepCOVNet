@@ -13,9 +13,7 @@ import argparse
 import pathlib
 import sys
 
-from stepcovnet import datasets
-from stepcovnet import generator
-from stepcovnet import metrics
+from stepcovnet import datasets, generator, metrics
 
 # Chart .txt has 4 header lines (TITLE, BPM, NOTES, difficulty), then one line per step (1-based).
 _CHART_HEADER_LINES = 4

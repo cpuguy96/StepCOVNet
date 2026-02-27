@@ -8,10 +8,7 @@ import os
 import keras
 import tensorflow as tf
 
-from stepcovnet import config
-from stepcovnet import datasets
-from stepcovnet import metrics
-from stepcovnet import models
+from stepcovnet import config, datasets, metrics, models
 
 
 def _get_tb_callback(root_dir: str, callback_name: str):
@@ -550,9 +547,7 @@ def run_arrow_train_from_config(
     initial_lr = run_config.lr_min if use_lr_schedule else run_config.lr_peak
 
     model.compile(
-        optimizer=keras.optimizers.Adam(
-            learning_rate=initial_lr, clipnorm=1.0
-        ),  # type: ignore
+        optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),  # type: ignore
         loss=_arrow_combined_loss,
         metrics=[
             keras.metrics.SparseCategoricalAccuracy(name="acc"),

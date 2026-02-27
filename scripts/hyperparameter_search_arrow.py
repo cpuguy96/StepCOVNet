@@ -25,16 +25,17 @@ Resume after a crash (run from project root, same sweep_output_dir as before):
 from __future__ import annotations
 
 import argparse
+import datetime
 import gc
 import itertools
 import json
 import os
-import tensorflow as tf
 import random
 import sys
 from concurrent import futures
-import datetime
 from typing import Any, cast
+
+import tensorflow as tf
 
 # Add project root for imports when run as script
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,8 +43,7 @@ _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from stepcovnet import config
-from stepcovnet import trainers
+from stepcovnet import config, trainers  # noqa: E402
 
 PARSER = argparse.ArgumentParser(
     description="Run ARROW hyperparameter search (grid or random). epoch and take_count configurable via base config or search_space."
@@ -107,7 +107,7 @@ _BATCH_SIZE_FIXED = 1
 
 def load_sweep_config(path: str) -> dict[str, Any]:
     """Load and validate sweep config from JSON."""
-    with open(path, "r") as f:
+    with open(path) as f:
         data = json.load(f)
     if not isinstance(data, dict):
         raise ValueError("sweep config must be a JSON object")
@@ -154,11 +154,11 @@ def _load_resume_state(
         raise FileNotFoundError(
             f"Cannot resume: {config_path!r} not found. Use the exact sweep output directory from the interrupted run."
         )
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         sweep_save = json.load(f)
     results_path = os.path.join(sweep_output_dir, "results.json")
     if os.path.isfile(results_path):
-        with open(results_path, "r") as f:
+        with open(results_path) as f:
             results_list = json.load(f)
         if not isinstance(results_list, list):
             raise ValueError(
@@ -192,7 +192,7 @@ def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
     value_lists = [search_space[k] for k in keys]
     combinations = []
     for combo in itertools.product(*value_lists):
-        combinations.append(dict(zip(keys, combo)))
+        combinations.append(dict(zip(keys, combo, strict=False)))
     return combinations
 
 
@@ -259,7 +259,7 @@ def extract_metrics(history: Any) -> dict[str, Any]:
         is_loss = name.endswith("_loss")
         best_val = min(vals) if is_loss else max(vals)
         result[f"best_{name}"] = float(best_val)
-        best_epoch_1based = int((vals.index(best_val) + 1))
+        best_epoch_1based = int(vals.index(best_val) + 1)
         result[f"best_epoch_{name}"] = best_epoch_1based
     return result
 
@@ -600,7 +600,7 @@ def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
         PARSER.error(f"--search must be 'grid' or 'random', got {effective_search!r}")
     max_runs = args.max_runs if args.max_runs is not None else sweep.get("max_runs")
     if max_runs is not None and max_runs <= 0:
-        PARSER.error("max_runs must be > 0 when set (got %s)" % max_runs)
+        PARSER.error(f"max_runs must be > 0 when set (got {max_runs})")
     search_space = sweep["search_space"]
     full_combinations = expand_grid(search_space)
     effective_seed = args.seed if args.seed is not None else sweep.get("seed")

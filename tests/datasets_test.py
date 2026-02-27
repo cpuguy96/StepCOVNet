@@ -3,8 +3,7 @@ import unittest
 
 import numpy as np
 
-from stepcovnet import constants
-from stepcovnet import datasets
+from stepcovnet import constants, datasets
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 

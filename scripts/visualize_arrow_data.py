@@ -10,13 +10,10 @@ import argparse
 import os
 import sys
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
-from stepcovnet import constants
-from stepcovnet import datasets
-from stepcovnet import generator
-from stepcovnet import metrics
+from stepcovnet import constants, datasets, generator, metrics
 
 # Note-kind labels: 0=empty, 1=single, 2=chord, 3=hold_start, 4=hold_end, 5=hold_both
 NOTE_KIND_LABELS = [
@@ -99,7 +96,7 @@ def _build_note_kind_lookup() -> np.ndarray:
 def _parse_bpm(chart_path: str) -> float | None:
     """Read BPM from chart header (second line). Returns None on error."""
     try:
-        with open(chart_path, "r") as f:
+        with open(chart_path) as f:
             f.readline()  # TITLE
             line = f.readline()
         return float(line.removeprefix("BPM").strip())
@@ -734,7 +731,7 @@ def plot_interval_vs_note_kind(agg: dict, output_dir: str | None, show: bool) ->
     ax.set_xticks(range(N_INTERVAL_BINS))
     interval_labels = [
         (
-            f"{INTERVAL_BIN_EDGES[j]:.1f}-{INTERVAL_BIN_EDGES[j+1]:.1f}"
+            f"{INTERVAL_BIN_EDGES[j]:.1f}-{INTERVAL_BIN_EDGES[j + 1]:.1f}"
             if np.isfinite(INTERVAL_BIN_EDGES[j + 1])
             else f"{INTERVAL_BIN_EDGES[j]:.1f}+"
         )
@@ -782,7 +779,7 @@ def plot_time_bin_vs_chord_size(agg: dict, output_dir: str | None, show: bool) -
             x + (sz - 1.5) * width,
             counts[sz],
             width=width,
-            label=f"Chord size {sz+1}",
+            label=f"Chord size {sz + 1}",
         )
     ax.set_xticks(x)
     ax.set_xticklabels([f"{TIME_BIN_EDGES[i]:.1f}" for i in range(N_TIME_BINS)])
@@ -824,7 +821,7 @@ def plot_interval_vs_chord_size(agg: dict, output_dir: str | None, show: bool) -
     ax.set_xticks(range(N_INTERVAL_BINS))
     interval_labels = [
         (
-            f"{INTERVAL_BIN_EDGES[j]:.1f}-{INTERVAL_BIN_EDGES[j+1]:.1f}"
+            f"{INTERVAL_BIN_EDGES[j]:.1f}-{INTERVAL_BIN_EDGES[j + 1]:.1f}"
             if np.isfinite(INTERVAL_BIN_EDGES[j + 1])
             else f"{INTERVAL_BIN_EDGES[j]:.1f}+"
         )

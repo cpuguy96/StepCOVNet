@@ -15,8 +15,7 @@ import argparse
 
 import tensorflow as tf
 
-from stepcovnet import config
-from stepcovnet import trainers
+from stepcovnet import config, trainers
 
 PARSER = argparse.ArgumentParser(description="Train onset detection model.")
 PARSER.add_argument(

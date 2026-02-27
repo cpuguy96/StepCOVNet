@@ -7,9 +7,9 @@ for saving with runs and loading for re-running experiments.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
-import dataclasses
 
 
 @dataclasses.dataclass
@@ -368,7 +368,7 @@ class OnsetExperimentConfig:
             json.JSONDecodeError: If the file contains invalid JSON.
             KeyError: If required keys are missing from the JSON.
         """
-        with open(path, "r") as f:
+        with open(path) as f:
             data = json.load(f)
         return cls.from_dict(data)
 
@@ -452,6 +452,6 @@ class ArrowExperimentConfig:
             json.JSONDecodeError: If the file contains invalid JSON.
             KeyError: If required keys are missing from the JSON.
         """
-        with open(path, "r") as f:
+        with open(path) as f:
             data = json.load(f)
         return cls.from_dict(data)

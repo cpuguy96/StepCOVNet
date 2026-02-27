@@ -8,9 +8,9 @@ import argparse
 
 import keras
 
-from stepcovnet import generator
 from stepcovnet import (
-    models,  # Required to ensure registration of custom Keras layers/functions for model loading.
+    generator,
+    models,  # noqa: F401 (required to ensure registration of custom Keras layers/functions for model loading)
 )
 
 PARSER = argparse.ArgumentParser(description="Generate step chart from audio.")

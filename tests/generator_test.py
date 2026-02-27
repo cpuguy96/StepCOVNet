@@ -5,8 +5,8 @@ from unittest import mock
 import keras
 import numpy as np
 
-from stepcovnet import generator
 from stepcovnet import (
+    generator,
     models,  # Required to ensure registration of custom Keras layers/functions for model loading.
 )
 
@@ -158,7 +158,7 @@ class GeneratorTest(unittest.TestCase):
             title="Test Song", bpm=120, notes={"Challenge": [("3103", "1.04")]}
         )
         expected_output = (
-            "TITLE Test Song\nBPM 120\nNOTES\nDIFFICULTY " "Challenge\n1.04 3103\n"
+            "TITLE Test Song\nBPM 120\nNOTES\nDIFFICULTY Challenge\n1.04 3103\n"
         )
         self.assertEqual(output_data.generate_txt_output(), expected_output)
 

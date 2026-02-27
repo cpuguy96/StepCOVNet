@@ -26,11 +26,11 @@ allowing rhythm game enthusiasts to create charts for their favorite songs insta
 
 - [Installation](#-installation)
 - [Usage](#-usage)
-    - [Generating Charts](#generating-charts)
-    - [Training Models](#training-models)
-        - [Data Preparation](#data-preparation)
-        - [Training Onset Model](#training-onset-model)
-        - [Training Arrow Model](#training-arrow-model)
+  - [Generating Charts](#generating-charts)
+  - [Training Models](#training-models)
+    - [Data Preparation](#data-preparation)
+    - [Training Onset Model](#training-onset-model)
+    - [Training Arrow Model](#training-arrow-model)
 - [Project Structure](#-project-structure)
 - [Contributing](#-contributing)
 - [Credits](#-credits)
@@ -39,12 +39,14 @@ allowing rhythm game enthusiasts to create charts for their favorite songs insta
 ## 💻 Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/cpuguy96/StepCOVNet.git
    cd StepCOVNet
    ```
 
 2. **Set up a virtual environment (Recommended)**
+
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
@@ -80,15 +82,15 @@ python scripts/generate.py \
   --output_file "output/chart.txt"
 ```
 
-| Argument                | Description                                                                 |
-|:------------------------|:----------------------------------------------------------------------------|
-| `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, etc.)                        |
-| `--song_title`          | Title of the song                                                          |
-| `--bpm`                 | Beats Per Minute of the song                                               |
-| `--onset_model_path`    | Path to the trained onset detection model (`.keras`)                       |
-| `--arrow_model_path`    | Path to the trained arrow prediction model (`.keras`)                      |
-| `--output_file`         | Path where the generated chart text file will be saved                     |
-| `--use_post_processing` | Refine onset timings with peak-picking (recommended for cleaner charts)    |
+| Argument                | Description                                                             |
+| :---------------------- | :---------------------------------------------------------------------- |
+| `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, etc.)                     |
+| `--song_title`          | Title of the song                                                       |
+| `--bpm`                 | Beats Per Minute of the song                                            |
+| `--onset_model_path`    | Path to the trained onset detection model (`.keras`)                    |
+| `--arrow_model_path`    | Path to the trained arrow prediction model (`.keras`)                   |
+| `--output_file`         | Path where the generated chart text file will be saved                  |
+| `--use_post_processing` | Refine onset timings with peak-picking (recommended for cleaner charts) |
 
 ### Training Models
 
@@ -118,7 +120,7 @@ python scripts/train_onset.py \
 ```
 
 | Argument              | Description                              | Default        |
-|:----------------------|:-----------------------------------------|:---------------|
+| :-------------------- | :--------------------------------------- | :------------- |
 | `--train_data_dir`    | Directory containing training data       | Required       |
 | `--val_data_dir`      | Directory containing validation data     | Required       |
 | `--model_output_dir`  | Directory to save the trained model      | Required       |
@@ -140,7 +142,7 @@ python scripts/train_arrow.py \
 ```
 
 | Argument              | Description                              | Default        |
-|:----------------------|:-----------------------------------------|:---------------|
+| :-------------------- | :--------------------------------------- | :------------- |
 | `--train_data_dir`    | Directory containing training data       | Required       |
 | `--val_data_dir`      | Directory containing validation data     | Required       |
 | `--model_output_dir`  | Directory to save the trained model      | Required       |
@@ -182,9 +184,9 @@ Please ensure your code passes existing tests and linting standards.
 
 ## 🌟 Credits
 
-* **Inspiration**: [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf)
-* **Base Code**: Derived from [musical-onset-efficient](https://github.com/ronggong/musical-onset-efficient)
-* **Collaboration**: Special thanks to [Jhaco](https://github.com/jhaco) for support and collaboration.
+- **Inspiration**: [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf)
+- **Base Code**: Derived from [musical-onset-efficient](https://github.com/ronggong/musical-onset-efficient)
+- **Collaboration**: Special thanks to [Jhaco](https://github.com/jhaco) for support and collaboration.
 
 ## 📄 License
 

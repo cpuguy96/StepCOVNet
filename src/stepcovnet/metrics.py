@@ -1,7 +1,7 @@
 """Custom metrics and divergence functions for evaluating step detection models."""
 
-import numpy as np
 import keras
+import numpy as np
 import tensorflow as tf
 from keras import backend as K
 

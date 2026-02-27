@@ -55,7 +55,7 @@ class SnippetCNN(keras.layers.Layer):
 class PositionalEncoding(keras.layers.Layer):
     def __init__(self, position, d_model, **kwargs):
         # Add **kwargs to accept base Layer arguments like 'name'
-        super(PositionalEncoding, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         # Ensure d_model is compatible with potential float16 usage later
         if d_model % 2 != 0:
             raise ValueError(
@@ -75,7 +75,8 @@ class PositionalEncoding(keras.layers.Layer):
         # Original formula: angle = pos / (10000^(2i / d_model))
         # Use floating point literals and casting for compatibility
         angles = 1.0 / tf.pow(
-            10000.0, (2.0 * tf.cast(i // 2, tf.float32)) / d_model_float  # type: ignore
+            10000.0,
+            (2.0 * tf.cast(i // 2, tf.float32)) / d_model_float,  # type: ignore
         )
         return tf.cast(position, tf.float32) * angles
 
@@ -251,7 +252,7 @@ def _crop_to_match(inputs):
 def build_unet_wavenet_model(
     initial_filters: int = 16,
     depth: int = 2,
-    dilation_rates: list[int] = [1, 2, 4, 8],
+    dilation_rates: list[int] | None = None,
     kernel_size: int = 3,
     dropout_rate: float = 0.0,
     model_name: str = "",
@@ -278,6 +279,9 @@ def build_unet_wavenet_model(
     Returns:
         A Keras Model instance.
     """
+    if dilation_rates is None:
+        dilation_rates = [1, 2, 4, 8]
+
     inputs = keras.Input(shape=(None, constants.N_MELS), name="input_features")
     x = inputs
 

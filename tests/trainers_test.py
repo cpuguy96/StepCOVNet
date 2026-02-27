@@ -3,10 +3,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from stepcovnet import config
-from stepcovnet import trainers
-from stepcovnet import datasets
-from stepcovnet import models
+from stepcovnet import config, datasets, models, trainers
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 

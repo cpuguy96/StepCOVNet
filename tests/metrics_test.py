@@ -3,8 +3,7 @@ import unittest
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import constants
-from stepcovnet import metrics
+from stepcovnet import constants, metrics
 
 
 class OnsetF1MetricTest(unittest.TestCase):

@@ -30,11 +30,11 @@ class OutputData:
         Returns:
             A string containing the song title, BPM, and note data for all difficulties.
         """
-        title = "TITLE %s\n" % self.title
-        bpm = "BPM %s\n" % str(self.bpm)
+        title = f"TITLE {self.title}\n"
+        bpm = f"BPM {self.bpm}\n"
         notes = "NOTES\n"
         for difficulty in self.notes:
-            notes += "DIFFICULTY %s\n" % difficulty
+            notes += f"DIFFICULTY {difficulty}\n"
             for timing, arrow in self.notes[difficulty]:
                 notes += f"{arrow} {timing}" + "\n"
 
@@ -122,7 +122,7 @@ def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
     """
     note_data = []
     assert len(onsets) == len(arrows)
-    for onset, arrow in zip(onsets, arrows):
+    for onset, arrow in zip(onsets, arrows, strict=False):
         if not (int_arrow := int(arrow)):
             # Remove all padding arrows from the output.
             continue

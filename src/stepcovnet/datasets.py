@@ -74,7 +74,7 @@ def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
     pairs = []
     for root, _, files in os.walk(data_dir):
         audio_files = [f for f in files if f.endswith((".mp3", ".ogg", ".wav"))]
-        chart_files = [f for f in files if f.endswith((".txt"))]
+        chart_files = [f for f in files if f.endswith(".txt")]
 
         # Pair files with same stem (e.g., 'song.mp3' and 'song.sm')
         for audio_file in audio_files:
@@ -103,7 +103,7 @@ def _parse_step_chart(
     Returns:
         A tuple containing an array of step timings and an array of note encodings.
     """
-    with open(chart_path, "r") as f:
+    with open(chart_path) as f:
         f.readline()  # TITLE
         _ = float(f.readline().removeprefix("BPM").strip())  # BPM
         f.readline()  # NOTES
@@ -124,6 +124,29 @@ def _parse_step_chart(
                 cols.append(_base4_to_int(arrows))
 
     return np.array(times), np.array(cols, dtype=np.int32)
+
+
+def _extract_snippet_windows(
+    spec: np.ndarray,
+    times_seconds: np.ndarray,
+    half_frames: int,
+) -> np.ndarray:
+    """Extract (time_steps, n_mels) windows around each time; spec is (time_steps, n_mels)."""
+    n_frames_total = spec.shape[0]
+    n_mels = spec.shape[1]
+    n_frames_window = 2 * half_frames + 1
+    n_times = len(times_seconds)
+    snippets = np.zeros((n_times, n_frames_window, n_mels), dtype=np.float32)
+    for i, t in enumerate(times_seconds):
+        frame_idx = int(round(t / HOP_COEFF))
+        start = frame_idx - half_frames
+        end = frame_idx + half_frames + 1
+        src_start = max(0, start)
+        src_end = min(n_frames_total, end)
+        dst_start = src_start - start
+        dst_end = dst_start + (src_end - src_start)
+        snippets[i, dst_start:dst_end, :] = spec[src_start:src_end, :]
+    return snippets
 
 
 def extract_arrow_snippets(
@@ -159,19 +182,8 @@ def extract_arrow_snippets(
 
     spec = audio_to_spectrogram(audio_path)
     spec = normalize_onset_spectrogram(spec.T).T
-    n_frames_total = spec.shape[1]
-    n_frames_window = 2 * half_frames + 1
-    n_mels = spec.shape[0]
-    snippets = np.zeros((n_steps, n_frames_window, n_mels), dtype=np.float32)
-    for i, t in enumerate(times):
-        frame_idx = int(round(t / HOP_COEFF))
-        start = frame_idx - half_frames
-        end = frame_idx + half_frames + 1
-        src_start = max(0, start)
-        src_end = min(n_frames_total, end)
-        dst_start = src_start - start
-        dst_end = dst_start + (src_end - src_start)
-        snippets[i, dst_start:dst_end, :] = spec[:, src_start:src_end].T
+    spec_time_major = spec.T
+    snippets = _extract_snippet_windows(spec_time_major, times, half_frames)
     times_norm = times / (np.max(times) + 1e-9)
     return times_norm.astype(np.float32), snippets, cols
 
@@ -193,21 +205,7 @@ def extract_snippets_from_spec(
     Returns:
         snippets: (n_times, n_frames, n_mels) float32.
     """
-    n_frames_total = spec.shape[0]
-    n_mels = spec.shape[1]
-    n_frames_window = 2 * half_frames + 1
-    n_times = len(times_seconds)
-    snippets = np.zeros((n_times, n_frames_window, n_mels), dtype=np.float32)
-    for i, t in enumerate(times_seconds):
-        frame_idx = int(round(t / HOP_COEFF))
-        start = frame_idx - half_frames
-        end = frame_idx + half_frames + 1
-        src_start = max(0, start)
-        src_end = min(n_frames_total, end)
-        dst_start = src_start - start
-        dst_end = dst_start + (src_end - src_start)
-        snippets[i, dst_start:dst_end, :] = spec[src_start:src_end, :]
-    return snippets
+    return _extract_snippet_windows(spec, times_seconds, half_frames)
 
 
 def audio_to_spectrogram(audio_path: str) -> np.ndarray:
@@ -344,7 +342,7 @@ def _apply_spec_augment(
 def _create_target(times: np.ndarray, cols: np.ndarray, spec_length: int) -> np.ndarray:
     """Create target vector from step times and columns."""
     target = np.zeros((spec_length, _N_TARGET), dtype=np.float32)
-    for time, col in zip(times, cols):
+    for time, col in zip(times, cols, strict=False):
         frame_idx = int(time / HOP_COEFF)
         if frame_idx < spec_length:
             target[frame_idx, col] = 1.0
@@ -369,7 +367,7 @@ def _create_target_gaussian(
     x = np.arange(-kernel_width, kernel_width + 1)
     gaussian_kernel = np.exp(-(x**2) / (2 * sigma**2))
 
-    for frame_idx, col in zip(frame_indices, cols):
+    for frame_idx, col in zip(frame_indices, cols, strict=False):
         if col >= _N_TARGET:
             continue
 

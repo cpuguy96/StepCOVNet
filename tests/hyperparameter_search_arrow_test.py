@@ -9,8 +9,7 @@ from unittest import mock
 
 import pytest
 
-from stepcovnet import config
-from stepcovnet import trainers
+from stepcovnet import config, trainers
 
 # Load the script as a module so we can test its functions without running main()
 _SCRIPT_PATH = os.path.join(
@@ -420,7 +419,7 @@ class EndToEndMinimalTest(unittest.TestCase):
             base.run.take_count = 2
             base_config_override = os.path.join(temp_dir, "base_arrow.json")
             base.to_json(base_config_override)
-            with open(sweep_path, "r") as f:
+            with open(sweep_path) as f:
                 sweep_data = json.load(f)
             sweep_data["base_config"] = base_config_override
             with open(sweep_path, "w") as f:
@@ -474,7 +473,7 @@ class RandomSearchTest(unittest.TestCase):
             base.run.take_count = 2
             base_config_override = os.path.join(temp_dir, "base_arrow.json")
             base.to_json(base_config_override)
-            with open(sweep_path, "r") as f:
+            with open(sweep_path) as f:
                 sweep_data = json.load(f)
             sweep_data["base_config"] = base_config_override
             with open(sweep_path, "w") as f:
@@ -543,7 +542,7 @@ class RandomSearchTest(unittest.TestCase):
             base.run.take_count = 2
             base_config_override = os.path.join(temp_dir, "base_arrow.json")
             base.to_json(base_config_override)
-            with open(sweep_path, "r") as f:
+            with open(sweep_path) as f:
                 sweep_data = json.load(f)
             sweep_data["base_config"] = base_config_override
             with open(sweep_path, "w") as f:
@@ -696,7 +695,6 @@ class WorkersOptionTest(unittest.TestCase):
         submitted_futures = []
 
         class FakeExecutor:
-
             def __init__(self, max_workers=None, max_tasks_per_child=None, **kwargs):
                 self.max_workers = max_workers
                 self.max_tasks_per_child = max_tasks_per_child
@@ -739,7 +737,7 @@ class WorkersOptionTest(unittest.TestCase):
             base.run.take_count = 2
             base_config_override = os.path.join(temp_dir, "base_arrow.json")
             base.to_json(base_config_override)
-            with open(sweep_path, "r") as f:
+            with open(sweep_path) as f:
                 sweep_data = json.load(f)
             sweep_data["base_config"] = base_config_override
             with open(sweep_path, "w") as f:
@@ -828,7 +826,7 @@ class WorkersOptionTest(unittest.TestCase):
             base.run.take_count = 2
             base_config_override = os.path.join(temp_dir, "base_arrow.json")
             base.to_json(base_config_override)
-            with open(sweep_path, "r") as f:
+            with open(sweep_path) as f:
                 sweep_data = json.load(f)
             sweep_data["base_config"] = base_config_override
             with open(sweep_path, "w") as f:
@@ -977,7 +975,7 @@ class SweepVerbosityTest(unittest.TestCase):
             base.run.take_count = 2
             base_config_override = os.path.join(temp_dir, "base_arrow.json")
             base.to_json(base_config_override)
-            with open(sweep_path, "r") as f:
+            with open(sweep_path) as f:
                 sweep_data = json.load(f)
             sweep_data["base_config"] = base_config_override
             with open(sweep_path, "w") as f:
