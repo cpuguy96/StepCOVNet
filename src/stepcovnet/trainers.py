@@ -254,6 +254,74 @@ def _save_config(
     logging.info(f"Saved experiment config to {config_path}")
 
 
+def _build_experiment_callbacks(
+    run_config: config.RunConfig | config.ArrowRunConfig,
+    experiment_name: str,
+    monitor_metric: str,
+    monitor_mode: str,
+    experiment_config: config.OnsetExperimentConfig | config.ArrowExperimentConfig,
+) -> list[keras.callbacks.Callback]:
+    """Build callbacks for an experiment and save its config if callbacks enabled.
+
+    Args:
+        run_config: Training run configuration (onset or arrow).
+        experiment_name: Human-readable experiment name for log directories.
+        monitor_metric: Metric name to monitor for checkpointing.
+        monitor_mode: Mode for monitoring ('min' or 'max').
+        experiment_config: Combined dataset/model/run configuration to persist.
+
+    Returns:
+        List of Keras callbacks (empty when callback_root_dir is not set).
+    """
+    if not run_config.callback_root_dir:
+        return []
+
+    training_callbacks, callback_name = _get_callbacks(
+        root_dir=run_config.callback_root_dir,
+        monitor_metric=monitor_metric,
+        monitor_mode=monitor_mode,
+        experiment_name=experiment_name,
+    )
+    _save_config(experiment_config, run_config.callback_root_dir, callback_name)
+    return training_callbacks
+
+
+def _fit_and_save_model(
+    model: keras.Model,
+    train_dataset,
+    val_dataset,
+    run_config: config.RunConfig | config.ArrowRunConfig,
+    callbacks: list[keras.callbacks.Callback],
+) -> keras.callbacks.History:
+    """Run model.fit with common settings, then persist the trained model.
+
+    Args:
+        model: Compiled Keras model to train.
+        train_dataset: Training dataset.
+        val_dataset: Validation dataset.
+        run_config: Training run configuration (onset or arrow).
+        callbacks: List of callbacks to pass to model.fit.
+
+    Returns:
+        Training history object from model.fit.
+    """
+    if run_config.seed is not None:
+        tf.random.set_seed(run_config.seed)
+
+    val_data = val_dataset.take(run_config.val_take_count)
+    train_history = model.fit(
+        train_dataset.take(run_config.take_count),
+        epochs=run_config.epoch,
+        validation_data=val_data,
+        callbacks=callbacks,
+        verbose=run_config.fit_verbose,  # type: ignore[arg-type]
+    )
+
+    _write_model(model, run_config.model_output_dir)
+
+    return train_history
+
+
 def run_train_from_config(
     dataset_config: config.OnsetDatasetConfig,
     model_config: config.OnsetModelConfig,
@@ -331,35 +399,24 @@ def run_train_from_config(
         ],
     )
 
-    if run_config.callback_root_dir:
-        training_callbacks, callback_name = _get_callbacks(
-            root_dir=run_config.callback_root_dir,
-            monitor_metric="val_pr_auc",
-            monitor_mode="max",
-            experiment_name=experiment_name,
-        )
-
-        # Save config
-        experiment_config = config.OnsetExperimentConfig(
-            dataset=dataset_config, model=model_config, run=run_config
-        )
-        _save_config(experiment_config, run_config.callback_root_dir, callback_name)
-    else:
-        training_callbacks = []
-
-    if run_config.seed is not None:
-        tf.random.set_seed(run_config.seed)
-
-    val_data = val_dataset.take(run_config.val_take_count)
-    train_history = model.fit(
-        train_dataset.take(run_config.take_count),
-        epochs=run_config.epoch,
-        validation_data=val_data,
-        callbacks=training_callbacks,
-        verbose=run_config.fit_verbose,  # type: ignore[arg-type]
+    experiment_config = config.OnsetExperimentConfig(
+        dataset=dataset_config, model=model_config, run=run_config
+    )
+    training_callbacks = _build_experiment_callbacks(
+        run_config=run_config,
+        experiment_name=experiment_name,
+        monitor_metric="val_pr_auc",
+        monitor_mode="max",
+        experiment_config=experiment_config,
     )
 
-    _write_model(model, run_config.model_output_dir)
+    train_history = _fit_and_save_model(
+        model=model,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        run_config=run_config,
+        callbacks=training_callbacks,
+    )
 
     return model, train_history
 
@@ -576,35 +633,24 @@ def run_arrow_train_from_config(
             )
         )
 
-    if run_config.callback_root_dir:
-        training_callbacks, callback_name = _get_callbacks(
-            root_dir=run_config.callback_root_dir,
-            monitor_metric="val_main_loss",
-            monitor_mode="min",
-            experiment_name=experiment_name,
-        )
-
-        # Save config
-        experiment_config = config.ArrowExperimentConfig(
-            dataset=dataset_config, model=model_config, run=run_config
-        )
-        _save_config(experiment_config, run_config.callback_root_dir, callback_name)
-    else:
-        training_callbacks = []
-
-    if run_config.seed is not None:
-        tf.random.set_seed(run_config.seed)
-
-    val_data = val_dataset.take(run_config.val_take_count)
-    train_history = model.fit(
-        train_dataset.take(run_config.take_count),
-        epochs=run_config.epoch,
-        validation_data=val_data,
-        callbacks=lr_callbacks + training_callbacks,
-        verbose=run_config.fit_verbose,  # type: ignore[arg-type]
+    experiment_config = config.ArrowExperimentConfig(
+        dataset=dataset_config, model=model_config, run=run_config
+    )
+    training_callbacks = _build_experiment_callbacks(
+        run_config=run_config,
+        experiment_name=experiment_name,
+        monitor_metric="val_main_loss",
+        monitor_mode="min",
+        experiment_config=experiment_config,
     )
 
-    _write_model(model, run_config.model_output_dir)
+    train_history = _fit_and_save_model(
+        model=model,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        run_config=run_config,
+        callbacks=lr_callbacks + training_callbacks,
+    )
 
     return model, train_history
 
