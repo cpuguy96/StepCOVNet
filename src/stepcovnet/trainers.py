@@ -150,7 +150,7 @@ def _get_onset_experiment_name(
     # 'N_A' instead of joining over characters of the default string.
     if dilation_rates is None:
         dilation_str = "N_A"
-    elif isinstance(dilation_rates, (list, tuple)):
+    elif isinstance(dilation_rates, list | tuple):
         dilation_str = "_".join(map(str, dilation_rates))
     else:
         # Fall back to simple string conversion for any other type.
