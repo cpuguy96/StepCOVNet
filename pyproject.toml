@@ -25,22 +25,23 @@ classifiers = [
 ]
 keywords = ["stepmania", "rhythm-game", "music", "neural-network", "deep-learning"]
 
-# Runtime dependencies
+# Core: library, scripts, and notebooks (run + execute)
 dependencies = [
     "tensorflow",
     "librosa",
     "scipy",
+    "matplotlib",
+    "gdown",
+    "notebook",
 ]
 
 [project.optional-dependencies]
+# Testing, coverage, linting, notebook tests
 dev = [
     "pytest",
     "pytest-cov",
     "ruff",
-    "notebook",
-    "gdown",
     "nbmake",
-    "matplotlib",
     "psutil",
 ]
 gpu = ["tensorflow[and-cuda]"]
