@@ -24,7 +24,13 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          pytest .
+          pytest . --cov-report=xml
+
+      - name: Send coverage to Codacy
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: |
+          bash <(curl -Ls https://coverage.codacy.com/get.sh) report -r coverage.xml
 
       - name: Test Jupyter Notebooks
         run: |
