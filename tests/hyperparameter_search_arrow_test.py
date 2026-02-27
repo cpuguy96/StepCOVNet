@@ -217,7 +217,14 @@ class GridExpansionTest(unittest.TestCase):
 class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
     """Apply overrides and enforce fixed val_take_count, batch_size; epoch/take_count from base or overrides."""
 
+    def setUp(self):
+        self._tmp_dir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmp_dir.cleanup()
+
     def _minimal_base_config(self) -> config.ArrowExperimentConfig:
+        tmp_dir = self._tmp_dir.name
         return config.ArrowExperimentConfig(
             dataset=config.ArrowDatasetConfig(
                 data_dir=TEST_DATA_DIR,
@@ -233,8 +240,8 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
             run=config.ArrowRunConfig(
                 epoch=10,
                 take_count=100,
-                model_output_dir="/tmp/models",
-                callback_root_dir="",
+                model_output_dir=tmp_dir,
+                callback_root_dir=tmp_dir,
                 val_take_count=5,
             ),
         )
@@ -446,7 +453,6 @@ class RandomSearchTest(unittest.TestCase):
         )
         if not os.path.isfile(base_config_path):
             self.skipTest("configs/arrow_baseline.json not found")
-        full_grid_size = 4  # 2 x 2
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
             with open(sweep_path, "w") as f:
