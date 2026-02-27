@@ -22,16 +22,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
+      - name: Ruff check
+        run: ruff check .
+
       - name: Run Unit Tests
         run: |
           pytest . --cov-report=xml
+
+      - name: Test Jupyter Notebooks
+        run: |
+          pytest --nbmake notebooks
 
       - name: Send coverage to Codacy
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: |
           bash <(curl -Ls https://coverage.codacy.com/get.sh) report -r coverage.xml
-
-      - name: Test Jupyter Notebooks
-        run: |
-          pytest --nbmake notebooks
