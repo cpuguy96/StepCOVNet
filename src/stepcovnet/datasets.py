@@ -383,6 +383,158 @@ def _create_target_gaussian(
     return target
 
 
+def _load_and_preprocess_paths(
+    audio_path: str,
+    chart_path: str,
+    use_gaussian_target: bool,
+    gaussian_sigma: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Load audio and chart, build features and target (pure Python, no TF)."""
+    spec = audio_to_spectrogram(audio_path)
+    spec_length = spec.shape[1]
+    times, cols = _parse_step_chart(chart_path, binary_timings=True)
+    target = (
+        _create_target_gaussian(times, cols, spec_length, gaussian_sigma)
+        if use_gaussian_target
+        else _create_target(times, cols, spec_length)
+    )
+    features = np.transpose(spec)
+    return features.astype(np.float32), target.astype(np.float32)
+
+
+def _load_and_preprocess_py_callback(
+    audio_path_t: tf.Tensor,
+    chart_path_t: tf.Tensor,
+    use_gaussian_target: bool,
+    gaussian_sigma: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decode paths and delegate to _load_and_preprocess_paths (for tf.py_function)."""
+    audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
+    chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
+    return _load_and_preprocess_paths(
+        audio_path, chart_path, use_gaussian_target, gaussian_sigma
+    )
+
+
+def _load_and_preprocess_tf_map(
+    audio_path_t: tf.Tensor,
+    chart_path_t: tf.Tensor,
+    use_gaussian_target: bool,
+    gaussian_sigma: float,
+) -> tuple[tf.Tensor, tf.Tensor]:
+    """Map one (audio_path, chart_path) to (features, target) tensors."""
+    features, target = tf.py_function(  # type: ignore[misc]
+        lambda ap, cp: _load_and_preprocess_py_callback(
+            ap, cp, use_gaussian_target, gaussian_sigma
+        ),
+        [audio_path_t, chart_path_t],
+        (tf.float32, tf.float32),
+    )
+    features.set_shape([None, _N_MELS])
+    target.set_shape([None, _N_TARGET])
+    return features, target
+
+
+def _augment_features_numpy(
+    features: np.ndarray,
+    target: np.ndarray,
+    apply_temporal_augment: bool,
+    should_apply_spec_augment: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply optional temporal/spec augmentation and normalize (pure Python)."""
+    spec_py = np.transpose(features[:, :_N_MELS])
+    combined_labels = target
+    if apply_temporal_augment:
+        spec_py, combined_labels = _temporal_augment_scipy(spec_py, combined_labels)
+    spec_py = normalize_onset_spectrogram(spec_py.T).T
+    if should_apply_spec_augment:
+        spec_py = _apply_spec_augment(spec_py, F=int(0.2 * _N_MELS))
+    final_target = combined_labels[:, :_N_TARGET]
+    final_features = np.transpose(spec_py)
+    return final_features.astype(np.float32), final_target.astype(np.float32)
+
+
+def _augment_py_callback(
+    features_t: tf.Tensor,
+    target_t: tf.Tensor,
+    temp_aug: bool,
+    spec_aug: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert tensors to numpy and delegate to _augment_features_numpy."""
+    features = features_t.numpy()  # type: ignore[union-attr]
+    target = target_t.numpy()  # type: ignore[union-attr]
+    return _augment_features_numpy(features, target, temp_aug, spec_aug)
+
+
+def _apply_augmentations_tf_map(
+    features: tf.Tensor,
+    target: tf.Tensor,
+    apply_temporal_augment: bool,
+    should_apply_spec_augment: bool,
+) -> tuple[tf.Tensor, tf.Tensor]:
+    """Map (features, target) to augmented (features, target) tensors."""
+    aug_features, aug_target = tf.py_function(  # type: ignore[misc]
+        _augment_py_callback,
+        [features, target, apply_temporal_augment, should_apply_spec_augment],
+        (tf.float32, tf.float32),
+    )
+    aug_features.set_shape([None, _N_MELS])
+    aug_target.set_shape([None, _N_TARGET])
+    return aug_features, aug_target
+
+
+def _arrow_snippets_py_callback(
+    audio_path_t: tf.Tensor,
+    chart_path_t: tf.Tensor,
+    half_frames: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Decode paths and call extract_arrow_snippets (for tf.py_function)."""
+    audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
+    chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
+    return extract_arrow_snippets(audio_path, chart_path, half_frames)
+
+
+def _process_pair_with_snippets_tf_map(
+    audio_path_t: tf.Tensor,
+    chart_path_t: tf.Tensor,
+    snippet_half_frames: int,
+) -> tuple[dict[str, tf.Tensor], tf.Tensor]:
+    """Map (audio_path, chart_path) to ({timing_input, snippet_input}, cols)."""
+    n_frames_window = 2 * snippet_half_frames + 1
+    times, snippets, cols = tf.py_function(  # type: ignore[misc]
+        lambda ap, cp: _arrow_snippets_py_callback(ap, cp, snippet_half_frames),
+        [audio_path_t, chart_path_t],
+        (tf.float32, tf.float32, tf.int32),
+    )
+    times = tf.ensure_shape(times, [None])
+    times = tf.expand_dims(times, axis=-1)
+    snippets = tf.ensure_shape(snippets, [None, n_frames_window, _N_MELS])
+    cols = tf.ensure_shape(cols, [None])
+    return {"timing_input": times, "snippet_input": snippets}, cols
+
+
+def _parse_step_chart_py_callback(
+    chart_path_t: tf.Tensor,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decode path and call _parse_step_chart (for tf.py_function)."""
+    chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
+    return _parse_step_chart(chart_path)
+
+
+def _process_pair_tf_map(chart_path_t: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
+    """Map chart_path to (times, cols) with normalized times."""
+    times, cols = tf.py_function(  # type: ignore[misc]
+        _parse_step_chart_py_callback,
+        [chart_path_t],
+        (tf.float32, tf.int32),
+    )
+    times = times / tf.reduce_max(times)
+    times = tf.ensure_shape(times, [None])
+    times = tf.expand_dims(times, axis=-1)
+    cols = tf.ensure_shape(cols, [None])
+    return times, cols
+
+
 def create_dataset(
     data_dir: str,
     batch_size: int = 1,
@@ -400,81 +552,16 @@ def create_dataset(
     if not pairs:
         raise ValueError("No audio-chart pairs found.")
 
-    # --- Step 1: Define the deterministic preprocessing function ---
-    def _load_and_preprocess(audio_path_t, chart_path_t):
-
-        def _py_func(audio_path_py_t, chart_path_py_t):
-            audio_path = audio_path_py_t.numpy().decode()
-            chart_path = chart_path_py_t.numpy().decode()
-
-            spec = audio_to_spectrogram(audio_path)
-            spec_length = spec.shape[1]
-            times, cols = _parse_step_chart(chart_path, binary_timings=True)
-
-            _target = (
-                _create_target_gaussian(times, cols, spec_length, gaussian_sigma)
-                if use_gaussian_target
-                else _create_target(times, cols, spec_length)
-            )
-
-            _features = np.transpose(spec)
-
-            return _features.astype(np.float32), _target.astype(np.float32)
-
-        features, target = tf.py_function(
-            _py_func, [audio_path_t, chart_path_t], (tf.float32, tf.float32)
-        )  # type: ignore
-        features.set_shape([None, _N_MELS])
-        target.set_shape([None, _N_TARGET])
-        return features, target
-
-    # --- Step 2: Define the random augmentation and normalization function ---
-    def _apply_augmentations(features, target, temp_aug, spec_aug):
-        def _py_aug_func(features_py, target_py, temp_aug_py, spec_aug_py):
-            features_py = features_py.numpy()
-            target_py = target_py.numpy()
-
-            spec_py = np.transpose(features_py[:, :_N_MELS])
-            combined_labels = target_py
-
-            if temp_aug_py:
-                spec_py, combined_labels = _temporal_augment_scipy(
-                    spec_py, combined_labels
-                )
-
-            # Always normalize (critical for training and inference consistency).
-            spec_py = normalize_onset_spectrogram(spec_py.T).T
-
-            if spec_aug_py:
-                spec_py = _apply_spec_augment(spec_py, F=int(0.2 * _N_MELS))
-
-            final_target = combined_labels[:, :_N_TARGET]
-            final_features = np.transpose(spec_py)
-
-            return final_features.astype(np.float32), final_target.astype(np.float32)
-
-        aug_features, aug_target = tf.py_function(
-            _py_aug_func,
-            [features, target, temp_aug, spec_aug],
-            (tf.float32, tf.float32),
-        )  # type: ignore
-        aug_features.set_shape([None, _N_MELS])
-        aug_target.set_shape([None, _N_TARGET])
-        return aug_features, aug_target
-
-    # --- Step 3: Build the tf.data pipeline ---
     ds = tf.data.Dataset.from_tensor_slices(pairs)
-
     ds = ds.map(
-        lambda p: _load_and_preprocess(audio_path_t=p[0], chart_path_t=p[1]),
+        lambda p: _load_and_preprocess_tf_map(
+            p[0], p[1], use_gaussian_target, gaussian_sigma
+        ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
-
     ds = ds.cache()
-
-    # Apply random augmentations after caching
     ds = ds.map(
-        lambda features, target: _apply_augmentations(
+        lambda features, target: _apply_augmentations_tf_map(
             features,
             target,
             apply_temporal_augment,
@@ -533,43 +620,15 @@ def create_arrow_dataset(
     n_frames_window = 2 * snippet_half_frames + 1
 
     if snippet_half_frames > 0:
-
-        def _process_pair_with_snippets(audio_path: tf.Tensor, chart_path: tf.Tensor):
-            times, snippets, cols = tf.py_function(
-                lambda ap, cp: extract_arrow_snippets(
-                    ap.numpy().decode(),
-                    cp.numpy().decode(),
-                    snippet_half_frames,
-                ),
-                [audio_path, chart_path],
-                (tf.float32, tf.float32, tf.int32),
-            )  # type: ignore
-            times = tf.ensure_shape(times, [None])
-            times = tf.expand_dims(times, axis=-1)
-            snippets = tf.ensure_shape(snippets, [None, n_frames_window, _N_MELS])
-            cols = tf.ensure_shape(cols, [None])
-            return {"timing_input": times, "snippet_input": snippets}, cols
-
         ds = ds.map(
-            lambda pair: _process_pair_with_snippets(pair[0], pair[1]),
+            lambda pair: _process_pair_with_snippets_tf_map(
+                pair[0], pair[1], snippet_half_frames
+            ),
             num_parallel_calls=tf.data.AUTOTUNE,
         )
     else:
-
-        def _process_pair(chart_path: tf.Tensor):
-            times, cols = tf.py_function(
-                lambda p: _parse_step_chart(p.numpy().decode()),
-                [chart_path],
-                (tf.float32, tf.int32),
-            )  # type: ignore
-            times = times / tf.reduce_max(times)
-            times = tf.ensure_shape(times, [None])
-            times = tf.expand_dims(times, axis=-1)
-            cols = tf.ensure_shape(cols, [None])
-            return times, cols
-
         ds = ds.map(
-            lambda pair: _process_pair(pair[1]),
+            lambda pair: _process_pair_tf_map(pair[1]),
             num_parallel_calls=tf.data.AUTOTUNE,
         )
 
