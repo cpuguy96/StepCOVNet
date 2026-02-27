@@ -11,15 +11,7 @@ import os
 import sys
 
 import numpy as np
-
-try:
-    import matplotlib.pyplot as plt
-except ImportError as e:
-    print(
-        "matplotlib is required for this script. Install with: pip install matplotlib",
-        file=sys.stderr,
-    )
-    raise SystemExit(1) from e
+import matplotlib.pyplot as plt
 
 from stepcovnet import constants
 from stepcovnet import datasets
@@ -43,6 +35,33 @@ TIME_BIN_EDGES = np.linspace(0.0, 1.0, N_TIME_BINS + 1)
 # Inter-step interval bins (seconds): 0-0.1, 0.1-0.2, ..., 0.9-1.0, 1.0+
 INTERVAL_BIN_EDGES = np.concatenate([np.arange(0.0, 1.05, 0.1), [np.inf]])
 N_INTERVAL_BINS = len(INTERVAL_BIN_EDGES) - 1
+
+PARSER = argparse.ArgumentParser(
+    description="Visualize arrow training data: stats and plots for a training data directory."
+)
+PARSER.add_argument(
+    "--data_dir",
+    type=str,
+    required=True,
+    help="Directory containing chart (.txt) and audio files (same layout as arrow training data).",
+)
+PARSER.add_argument(
+    "--output_dir",
+    type=str,
+    default=None,
+    help="Directory to save summary.txt and PNG figures. If not set, figures are only shown.",
+)
+PARSER.add_argument(
+    "--no_show",
+    action="store_true",
+    help="Do not call plt.show(); only save files when --output_dir is set.",
+)
+PARSER.add_argument(
+    "--top_arrows",
+    type=int,
+    default=25,
+    help="Number of top arrow types to show in bar chart (default 25).",
+)
 
 
 def _build_note_kind_lookup() -> np.ndarray:
@@ -756,7 +775,6 @@ def plot_time_bin_vs_chord_size(agg: dict, output_dir: str | None, show: bool) -
         tb = int(time_bin_idx[i])
         counts[sz, tb] += 1
     fig, ax = plt.subplots()
-    bin_centers = (TIME_BIN_EDGES[:-1] + TIME_BIN_EDGES[1:]) / 2
     x = np.arange(N_TIME_BINS)
     width = 0.2
     for sz in range(4):
@@ -859,33 +877,7 @@ def plot_time_vs_note_kind_strip(agg: dict, output_dir: str | None, show: bool) 
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Visualize arrow training data: stats and plots for a training data directory."
-    )
-    parser.add_argument(
-        "--data_dir",
-        type=str,
-        required=True,
-        help="Directory containing chart (.txt) and audio files (same layout as arrow training data).",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default=None,
-        help="Directory to save summary.txt and PNG figures. If not set, figures are only shown.",
-    )
-    parser.add_argument(
-        "--no_show",
-        action="store_true",
-        help="Do not call plt.show(); only save files when --output_dir is set.",
-    )
-    parser.add_argument(
-        "--top_arrows",
-        type=int,
-        default=25,
-        help="Number of top arrow types to show in bar chart (default 25).",
-    )
-    args = parser.parse_args()
+    args = PARSER.parse_args()
 
     agg = collect_aggregates(args.data_dir)
     if agg is None:
