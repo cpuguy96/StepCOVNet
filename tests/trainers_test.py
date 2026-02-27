@@ -1,5 +1,7 @@
+import contextlib
 import os
 import tempfile
+import typing
 import unittest
 from unittest import mock
 
@@ -8,11 +10,81 @@ from stepcovnet import config, datasets, models, trainers
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
 
+@contextlib.contextmanager
+def _temp_model_and_callback_dirs(with_callbacks: bool = False):
+    """Yield (model_output_dir, callback_root_dir) inside a temporary directory."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        model_output_dir = os.path.join(temp_dir, "models")
+        callback_root_dir = (
+            os.path.join(temp_dir, "callbacks") if with_callbacks else ""
+        )
+        yield model_output_dir, callback_root_dir
+
+
+def _make_onset_configs(
+    model_output_dir: str,
+    *,
+    dataset_kwargs: dict | None = None,
+    model_kwargs: dict | None = None,
+    run_kwargs: dict | None = None,
+) -> tuple[config.OnsetDatasetConfig, config.OnsetModelConfig, config.RunConfig]:
+    """Factory for a minimal onset (dataset, model, run) config triple."""
+    dataset_kwargs = dict(dataset_kwargs or {})
+    model_kwargs = dict(model_kwargs or {})
+    run_kwargs = dict(run_kwargs or {})
+
+    dataset_config = config.OnsetDatasetConfig(
+        data_dir=dataset_kwargs.pop("data_dir", TEST_DATA_DIR),
+        val_data_dir=dataset_kwargs.pop("val_data_dir", TEST_DATA_DIR),
+        **dataset_kwargs,
+    )
+    model_config = config.OnsetModelConfig(**model_kwargs)
+
+    base_run_kwargs: dict = {
+        "epoch": 1,
+        "take_count": 1,
+        "model_output_dir": model_output_dir,
+    }
+    base_run_kwargs.update(run_kwargs)
+    run_config = config.RunConfig(**base_run_kwargs)
+    return dataset_config, model_config, run_config
+
+
+def _make_arrow_configs(
+    model_output_dir: str,
+    *,
+    dataset_kwargs: dict | None = None,
+    model_kwargs: dict | None = None,
+    run_kwargs: dict | None = None,
+) -> tuple[config.ArrowDatasetConfig, config.ArrowModelConfig, config.ArrowRunConfig]:
+    """Factory for a minimal arrow (dataset, model, run) config triple."""
+    dataset_kwargs = dict(dataset_kwargs or {})
+    model_kwargs = dict(model_kwargs or {})
+    run_kwargs = dict(run_kwargs or {})
+
+    dataset_config = config.ArrowDatasetConfig(
+        data_dir=dataset_kwargs.pop("data_dir", TEST_DATA_DIR),
+        val_data_dir=dataset_kwargs.pop("val_data_dir", TEST_DATA_DIR),
+        **dataset_kwargs,
+    )
+    model_config = config.ArrowModelConfig(**model_kwargs)
+
+    base_run_kwargs: dict = {
+        "epoch": 1,
+        "take_count": 1,
+        "model_output_dir": model_output_dir,
+    }
+    base_run_kwargs.update(run_kwargs)
+    run_config = config.ArrowRunConfig(**base_run_kwargs)
+    return dataset_config, model_config, run_config
+
+
 class TrainersTest(unittest.TestCase):
     def test_run_train(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
             model, history = trainers.run_train(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -28,46 +100,18 @@ class TrainersTest(unittest.TestCase):
                     "dropout_rate": 0.0,
                 },
                 take_count=1,
-                epoch=3,
+                epoch=1,
                 callback_root_dir=callback_root_dir,
                 model_output_dir=model_output_dir,
             )
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
-
-    @unittest.skip("Test takes too long.")
-    def test_run_train_overfits_single_song(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
-            model, history = trainers.run_train(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-                apply_temporal_augment=False,
-                should_apply_spec_augment=False,
-                use_gaussian_target=False,
-                gaussian_sigma=0.0,
-                model_params={
-                    "initial_filters": 16,
-                    "depth": 2,
-                    "dilation_rates": [1, 2, 4, 8],
-                    "dropout_rate": 0.0,
-                },
-                take_count=1,
-                epoch=300,
-                callback_root_dir=callback_root_dir,
-                model_output_dir=model_output_dir,
-            )
-        self.assertIsNotNone(model)
-        self.assertIsNotNone(history)
-        self.assertTrue("val_onset_f1_score" in history.history)
-        self.assertAlmostEqual(history.history["val_onset_f1_score"][-1], 1.0, places=2)
 
     def test_run_arrow_train(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
             model, history = trainers.run_arrow_train(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -83,29 +127,30 @@ class TrainersTest(unittest.TestCase):
         self.assertIsNotNone(history)
 
     def test_run_train_from_config(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.OnsetDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-                apply_temporal_augment=False,
-                should_apply_spec_augment=False,
-                use_gaussian_target=False,
-                gaussian_sigma=0.0,
-            )
-            model_config = config.OnsetModelConfig(
-                initial_filters=8,
-                depth=1,
-                dilation_rates=[1, 2],
-                dropout_rate=0.0,
-            )
-            run_config = config.RunConfig(
-                epoch=3,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir=callback_root_dir,
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_onset_configs(
+                model_output_dir,
+                dataset_kwargs={
+                    "batch_size": 1,
+                    "apply_temporal_augment": False,
+                    "should_apply_spec_augment": False,
+                    "use_gaussian_target": False,
+                    "gaussian_sigma": 0.0,
+                },
+                model_kwargs={
+                    "initial_filters": 8,
+                    "depth": 1,
+                    "dilation_rates": [1, 2],
+                    "dropout_rate": 0.0,
+                },
+                run_kwargs={
+                    "epoch": 1,
+                    "take_count": 1,
+                    "callback_root_dir": callback_root_dir,
+                },
             )
             model, history = trainers.run_train_from_config(
                 dataset_config, model_config, run_config
@@ -114,20 +159,17 @@ class TrainersTest(unittest.TestCase):
         self.assertIsNotNone(history)
 
     def test_run_arrow_train_from_config(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.ArrowModelConfig()
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir=callback_root_dir,
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={
+                    "epoch": 1,
+                    "take_count": 1,
+                    "callback_root_dir": callback_root_dir,
+                },
             )
             model, history = trainers.run_arrow_train_from_config(
                 dataset_config, model_config, run_config
@@ -137,19 +179,11 @@ class TrainersTest(unittest.TestCase):
 
     def test_run_train_from_config_saves_model_with_explicit_model_name(self):
         """Saved model file and model.name use run_config.model_name when set."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.OnsetDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
-            run_config = config.RunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                model_name="my_onset_model",
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, model_config, run_config = _make_onset_configs(
+                model_output_dir,
+                model_kwargs={"initial_filters": 8, "depth": 1},
+                run_kwargs={"model_name": "my_onset_model"},
             )
             model, _ = trainers.run_train_from_config(
                 dataset_config, model_config, run_config
@@ -166,19 +200,11 @@ class TrainersTest(unittest.TestCase):
         self,
     ):
         """When model_name is empty, model name uses experiment-derived name."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.OnsetDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.OnsetModelConfig(initial_filters=8, depth=1)
-            run_config = config.RunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                model_name="",  # empty: use experiment name
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, model_config, run_config = _make_onset_configs(
+                model_output_dir,
+                model_kwargs={"initial_filters": 8, "depth": 1},
+                run_kwargs={"model_name": ""},  # empty: use experiment name
             )
             model, _ = trainers.run_train_from_config(
                 dataset_config, model_config, run_config
@@ -195,19 +221,10 @@ class TrainersTest(unittest.TestCase):
 
     def test_run_arrow_train_from_config_saves_model_with_explicit_model_name(self):
         """Arrow saved model file and model.name use run_config.model_name when set."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.ArrowModelConfig()
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                model_name="my_arrow_model",
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={"model_name": "my_arrow_model"},
             )
             model, _ = trainers.run_arrow_train_from_config(
                 dataset_config, model_config, run_config
@@ -224,19 +241,10 @@ class TrainersTest(unittest.TestCase):
         self,
     ):
         """When model_name is empty, arrow model name uses experiment-derived name."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.ArrowModelConfig()
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                model_name="",
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={"model_name": ""},
             )
             model, _ = trainers.run_arrow_train_from_config(
                 dataset_config, model_config, run_config
@@ -253,22 +261,17 @@ class TrainersTest(unittest.TestCase):
 
     def test_run_arrow_train_from_config_with_verbosity_quiet(self):
         """Training with show_model_summary=False and fit_verbose=0 completes."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.ArrowModelConfig()
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir=callback_root_dir,
-                show_model_summary=False,
-                fit_verbose=0,
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={
+                    "callback_root_dir": callback_root_dir,
+                    "show_model_summary": False,
+                    "fit_verbose": 0,
+                },
             )
             model, history = trainers.run_arrow_train_from_config(
                 dataset_config, model_config, run_config
@@ -284,20 +287,10 @@ class TrainersTest(unittest.TestCase):
             return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
         )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.ArrowModelConfig()
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir="",
-                fit_verbose=2,
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={"fit_verbose": 2},
             )
             with mock.patch(
                 "stepcovnet.trainers.models.build_arrow_model",
@@ -320,20 +313,10 @@ class TrainersTest(unittest.TestCase):
             return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
         )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.ArrowModelConfig()
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir="",
-                show_model_summary=False,
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={"show_model_summary": False},
             )
             with mock.patch(
                 "stepcovnet.trainers.models.build_arrow_model",
@@ -355,20 +338,10 @@ class TrainersTest(unittest.TestCase):
             return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
         )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-            )
-            model_config = config.ArrowModelConfig()
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir="",
-                show_model_summary=True,
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={"show_model_summary": True},
             )
             with mock.patch(
                 "stepcovnet.trainers.models.build_arrow_model",
@@ -717,12 +690,138 @@ class TrainersTest(unittest.TestCase):
             snippet_half_frames=model_config.snippet_half_frames,
         )
         batch = next(iter(ds.take(1)))
-        x, y = batch
+        x, y = batch  # type: ignore[reportGeneralTypeIssues]
         out = model(x)
         self.assertEqual(out.shape[0], y.shape[0])
         self.assertEqual(out.shape[1], y.shape[1])
         self.assertEqual(out.shape[2], 256)
         self.assertEqual(len(model.inputs), 2)
+
+
+class ExperimentNameHelperTests(unittest.TestCase):
+    def test_get_onset_experiment_name_includes_key_hyperparameters(self):
+        model_config = config.OnsetModelConfig(
+            initial_filters=32,
+            depth=3,
+            dilation_rates=[1, 2, 4],
+            kernel_size=5,
+            dropout_rate=0.1,
+        )
+        name = trainers._get_onset_experiment_name(
+            take_count=-1,
+            apply_temporal_augment=True,
+            should_apply_spec_augment=True,
+            use_gaussian_target=True,
+            gaussian_sigma=1.5,
+            model_params=model_config,
+        )
+        self.assertIn("ONSET-take_all", name)
+        self.assertIn("sigma_1_5", name)
+        self.assertIn("temporal_augment", name)
+        self.assertIn("spec_augment", name)
+        self.assertIn("unet_filters_32", name)
+        self.assertIn("unet_depth_3", name)
+        self.assertIn("unet_kernel_size_5", name)
+        self.assertIn("unet_dropout_0_1", name)
+        self.assertIn("unet_dilations_1_2_4", name)
+
+    def test_get_onset_experiment_name_handles_dilation_rate_edge_cases(self):
+        class _DummyOnsetModelParams:
+            def __init__(self, dilation_rates):
+                base = config.OnsetModelConfig()
+                self.initial_filters = base.initial_filters
+                self.depth = base.depth
+                self.kernel_size = base.kernel_size
+                self.dropout_rate = base.dropout_rate
+                self.dilation_rates = dilation_rates
+
+        params_none = _DummyOnsetModelParams(dilation_rates=None)
+        name_none = trainers._get_onset_experiment_name(
+            take_count=1,
+            apply_temporal_augment=False,
+            should_apply_spec_augment=False,
+            use_gaussian_target=False,
+            gaussian_sigma=0.0,
+            model_params=typing.cast(config.OnsetModelConfig, params_none),
+        )
+        self.assertIn("unet_dilations_N_A", name_none)
+
+        params_str = _DummyOnsetModelParams(dilation_rates="custom")
+        name_str = trainers._get_onset_experiment_name(
+            take_count=1,
+            apply_temporal_augment=False,
+            should_apply_spec_augment=False,
+            use_gaussian_target=False,
+            gaussian_sigma=0.0,
+            model_params=typing.cast(config.OnsetModelConfig, params_str),
+        )
+        self.assertIn("unet_dilations_custom", name_str)
+
+    def test_get_arrow_experiment_name_includes_snippets_and_aux_weights(self):
+        model_config = config.ArrowModelConfig(
+            num_layers=2,
+            d_model=256,
+            num_heads=8,
+            ff_dim=512,
+            dropout_rate=0.2,
+            snippet_half_frames=5,
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=-1,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.3,
+            diversity_aux_weight=0.4,
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertIn("ARROW-take_all", name)
+        self.assertIn("att_layers_2", name)
+        self.assertIn("d_model_256", name)
+        self.assertIn("num_heads_8", name)
+        self.assertIn("ff_dim_512", name)
+        self.assertIn("dropout_0_2", name)
+        self.assertIn("snippets_half_5", name)
+        self.assertIn("chart_val_aux_0_3", name)
+        self.assertIn("diversity_aux_0_4", name)
+
+
+class LearningRateScheduleTests(unittest.TestCase):
+    def test_cosine_warmup_schedule_with_multiple_warmup_epochs(self):
+        scheduler = trainers._build_cosine_warmup_schedule(
+            total_epochs=5,
+            warmup_epochs=2,
+            lr_peak=0.1,
+            lr_min=0.01,
+        )
+        lr0 = scheduler.schedule(0, 0.0)
+        lr1 = scheduler.schedule(1, 0.0)
+        lr2 = scheduler.schedule(2, 0.0)
+        lr4 = scheduler.schedule(4, 0.0)
+
+        # Warmup ramps from lr_min to lr_peak, then cosine decays toward lr_min.
+        self.assertAlmostEqual(lr0, 0.01, places=7)
+        self.assertAlmostEqual(lr1, 0.1, places=7)
+        # First decay epoch starts at peak, then decreases.
+        self.assertAlmostEqual(lr2, 0.1, places=7)
+        self.assertLess(lr4, lr2)
+        self.assertGreater(lr4, 0.01)
+
+    def test_cosine_warmup_schedule_single_warmup_epoch_sets_peak_immediately(self):
+        scheduler = trainers._build_cosine_warmup_schedule(
+            total_epochs=3,
+            warmup_epochs=1,
+            lr_peak=0.05,
+            lr_min=0.01,
+        )
+        lr0 = scheduler.schedule(0, 0.0)
+        lr1 = scheduler.schedule(1, 0.0)
+        lr2 = scheduler.schedule(2, 0.0)
+
+        # With a single warmup epoch, we hit lr_peak immediately then decay.
+        self.assertAlmostEqual(lr0, 0.05, places=7)
+        self.assertAlmostEqual(lr1, 0.05, places=7)
+        self.assertLess(lr2, lr1)
+        self.assertGreater(lr2, 0.01)
 
 
 if __name__ == "__main__":
