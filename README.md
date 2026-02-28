@@ -92,6 +92,16 @@ python scripts/generate.py \
 | `--output_file`         | Path where the generated chart text file will be saved                  |
 | `--use_post_processing` | Refine onset timings with peak-picking (recommended for cleaner charts) |
 
+#### Generator UI
+
+A simple desktop UI is available to run the generator without the command line: select an input audio file, choose your trained onset and arrow models (`.keras`), enter the song title and BPM, pick an output path, and run. Launch it with:
+
+```bash
+python scripts/generate_ui.py
+```
+
+You need trained onset and arrow models (same as for the CLI above). The UI uses the project venv when run from the repo.
+
 ### Training Models
 
 Train your own models using the provided scripts.
