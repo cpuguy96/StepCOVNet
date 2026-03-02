@@ -161,6 +161,10 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         run_mock.assert_called_once()
         self.assertEqual(model_config.model_type, "mlp")
         self.assertIsNotNone(model_config.mlp)
+        self.assertIsNone(
+            model_config.transformer,
+            "inactive transformer block must be cleared when overriding to mlp",
+        )
         self.assertEqual(model_config.mlp.dropout_rate, 0.2)
 
     def test_all_transformer_cli_overrides_applied(self):

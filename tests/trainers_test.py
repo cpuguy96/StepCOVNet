@@ -810,6 +810,31 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("mlp_256_128", name)
         self.assertIn("dropout_0_1", name)
 
+    def test_get_arrow_experiment_name_uses_only_active_model_type(self):
+        """When both transformer and mlp blocks are set, name uses only active model_type (no duplicate/conflicting params)."""
+        # Simulate e.g. loading transformer config then overriding --model_type mlp without clearing transformer
+        model_config = config.ArrowModelConfig(
+            model_type="mlp",
+            snippet_half_frames=0,
+            transformer=config.TransformerArrowParams(
+                num_layers=2, d_model=128, num_heads=4, ff_dim=512, dropout_rate=0.0
+            ),
+            mlp=config.MLPArrowParams(hidden_dims=[64, 32], dropout_rate=0.1),
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=5,
+            model_output_dir="out",
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertIn("ARROW-mlp", name)
+        self.assertIn("mlp_64_32", name)
+        self.assertIn("dropout_0_1", name)
+        self.assertNotIn("att_layers", name)
+        self.assertNotIn("d_model", name)
+        self.assertNotIn("num_heads", name)
+        self.assertNotIn("ff_dim", name)
+
     def test_run_arrow_train_from_config_unknown_model_type_raises(self):
         """run_arrow_train_from_config raises ValueError for unsupported model_type."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):

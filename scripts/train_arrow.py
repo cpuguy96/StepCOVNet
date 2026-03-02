@@ -252,8 +252,14 @@ def main():
         model_config.snippet_half_frames = ARGS.snippet_half_frames
 
     # Apply model_type first so the active params block is known before architecture-specific args.
+    # When overriding via CLI, clear the inactive params block so only the active one is used
+    # (e.g. avoid keeping transformer params when --model_type mlp is set).
     if ARGS.model_type is not None:
         model_config.model_type = ARGS.model_type
+        if model_config.model_type == "transformer":
+            model_config.mlp = None
+        else:
+            model_config.transformer = None
     if model_config.model_type == "transformer" and model_config.transformer is None:
         model_config.transformer = config.TransformerArrowParams()
     if model_config.model_type == "mlp" and model_config.mlp is None:
