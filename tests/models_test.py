@@ -3,7 +3,7 @@ import unittest
 import keras
 import numpy as np
 
-from stepcovnet import models
+from stepcovnet import config, models
 
 
 class ModelTest(unittest.TestCase):
@@ -64,6 +64,66 @@ class ModelTest(unittest.TestCase):
         snippet_input = np.random.random((1, 100, 11, 128)).astype(np.float32)
         out = model.predict([timing_input, snippet_input])
         self.assertEqual(out.shape, (1, 100, 256))
+
+    def test_build_arrow_model_from_config_transformer(self):
+        """build_arrow_model_from_config with model_type transformer matches build_arrow_model."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "transformer": {"num_layers": 1, "d_model": 128},
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="")
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(model.input_shape, (None, None, 1))
+        self.assertEqual(model.output_shape, (None, None, 256))
+        dummy_input = np.random.random((1, 100, 1)).astype(np.float32)
+        prediction = model.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 100, 256))
+        self.assertEqual(model.name, "stepcovnet_ARROW")
+
+    def test_build_arrow_model_from_config_mlp(self):
+        """build_arrow_model_from_config with model_type mlp produces valid model."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "mlp",
+                "mlp": {"hidden_dims": [256, 128], "dropout_rate": 0.0},
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="mlp_run")
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(len(model.inputs), 1)
+        self.assertEqual(model.output_shape, (None, None, 256))
+        dummy_input = np.random.random((1, 100, 1)).astype(np.float32)
+        prediction = model.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 100, 256))
+        self.assertIn("mlp_run", model.name)
+
+    def test_build_arrow_model_from_config_mlp_with_snippets(self):
+        """build_arrow_model_from_config mlp with snippet_half_frames has two inputs."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "mlp",
+                "snippet_half_frames": 5,
+                "mlp": {"hidden_dims": [128], "dropout_rate": 0.0},
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="")
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(len(model.inputs), 2)
+        timing_input = np.random.random((1, 100, 1)).astype(np.float32)
+        snippet_input = np.random.random((1, 100, 11, 128)).astype(np.float32)
+        out = model.predict([timing_input, snippet_input])
+        self.assertEqual(out.shape, (1, 100, 256))
+
+    def test_build_arrow_model_from_config_unknown_model_type_raises(self):
+        """build_arrow_model_from_config raises ValueError for unknown model_type."""
+        model_config = config.ArrowModelConfig.from_dict({"model_type": "unknown_arch"})
+        with self.assertRaises(ValueError) as ctx:
+            models.build_arrow_model_from_config(model_config, model_name="")
+        self.assertIn("unknown_arch", str(ctx.exception))
+        self.assertIn("transformer", str(ctx.exception))
+        self.assertIn("mlp", str(ctx.exception))
 
 
 class PositionalEncodingTest(unittest.TestCase):

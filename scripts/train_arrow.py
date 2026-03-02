@@ -170,6 +170,13 @@ PARSER.add_argument(
     default=None,
     required=False,
 )
+PARSER.add_argument(
+    "--model_type",
+    type=str,
+    help="Arrow model architecture: 'transformer' or 'mlp'. Overrides config file.",
+    default=None,
+    required=False,
+)
 ARGS = PARSER.parse_args()
 
 
@@ -214,10 +221,14 @@ def main():
                 ARGS.snippet_half_frames if ARGS.snippet_half_frames is not None else 0
             ),
         )
-        model_config = config.ArrowModelConfig(
-            snippet_half_frames=(
-                ARGS.snippet_half_frames if ARGS.snippet_half_frames is not None else 0
-            ),
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "snippet_half_frames": (
+                    ARGS.snippet_half_frames
+                    if ARGS.snippet_half_frames is not None
+                    else 0
+                ),
+            }
         )
         # Default to a single batch for quick, backward-compatible testing.
         # Users can still override this via --take_count or in the config file.
@@ -241,15 +252,27 @@ def main():
         model_config.snippet_half_frames = ARGS.snippet_half_frames
 
     if ARGS.num_layers is not None:
-        model_config.num_layers = ARGS.num_layers
+        if model_config.transformer is None:
+            model_config.transformer = config.TransformerArrowParams()
+        model_config.transformer.num_layers = ARGS.num_layers
     if ARGS.d_model is not None:
-        model_config.d_model = ARGS.d_model
+        if model_config.transformer is None:
+            model_config.transformer = config.TransformerArrowParams()
+        model_config.transformer.d_model = ARGS.d_model
     if ARGS.num_heads is not None:
-        model_config.num_heads = ARGS.num_heads
+        if model_config.transformer is None:
+            model_config.transformer = config.TransformerArrowParams()
+        model_config.transformer.num_heads = ARGS.num_heads
     if ARGS.ff_dim is not None:
-        model_config.ff_dim = ARGS.ff_dim
+        if model_config.transformer is None:
+            model_config.transformer = config.TransformerArrowParams()
+        model_config.transformer.ff_dim = ARGS.ff_dim
     if ARGS.dropout_rate is not None:
-        model_config.dropout_rate = ARGS.dropout_rate
+        if model_config.transformer is None:
+            model_config.transformer = config.TransformerArrowParams()
+        model_config.transformer.dropout_rate = ARGS.dropout_rate
+        if model_config.mlp is not None:
+            model_config.mlp.dropout_rate = ARGS.dropout_rate
 
     if ARGS.epochs is not None:
         run_config.epoch = ARGS.epochs
@@ -273,6 +296,8 @@ def main():
         run_config.lr_peak = ARGS.lr_peak
     if ARGS.lr_min is not None:
         run_config.lr_min = ARGS.lr_min
+    if ARGS.model_type is not None:
+        model_config.model_type = ARGS.model_type
 
     # Validate required fields
     if not dataset_config.data_dir or not dataset_config.val_data_dir:

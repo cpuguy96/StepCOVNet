@@ -139,36 +139,60 @@ class OnsetModelConfigTest(unittest.TestCase):
 
 class ArrowModelConfigTest(unittest.TestCase):
     def test_create_with_defaults(self):
-        """Test creating config with default values."""
-        cfg = config.ArrowModelConfig()
-        self.assertEqual(cfg.num_layers, 1)
-        self.assertEqual(cfg.d_model, 128)
-        self.assertEqual(cfg.num_heads, 4)
-        self.assertEqual(cfg.ff_dim, 512)
-        self.assertEqual(cfg.dropout_rate, 0.0)
-        self.assertEqual(cfg.snippet_half_frames, 0)  # default: no snippets
+        """Test creating config with default values (via from_dict for full defaults)."""
+        cfg = config.ArrowModelConfig.from_dict({})
+        self.assertEqual(cfg.model_type, "transformer")
+        self.assertEqual(cfg.snippet_half_frames, 0)
+        self.assertIsNotNone(cfg.transformer)
+        assert cfg.transformer is not None
+        self.assertEqual(cfg.transformer.num_layers, 1)
+        self.assertEqual(cfg.transformer.d_model, 128)
+        self.assertEqual(cfg.transformer.num_heads, 4)
+        self.assertEqual(cfg.transformer.ff_dim, 512)
+        self.assertEqual(cfg.transformer.dropout_rate, 0.0)
 
     def test_as_dict(self):
-        """Test converting config to dictionary."""
-        cfg = config.ArrowModelConfig(num_layers=2, d_model=256)
+        """Test converting config to dictionary (nested shape)."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "transformer": {"num_layers": 2, "d_model": 256},
+            }
+        )
         d = cfg.as_dict()
-        self.assertEqual(d["num_layers"], 2)
-        self.assertEqual(d["d_model"], 256)
+        self.assertEqual(d["model_type"], "transformer")
+        self.assertEqual(d["transformer"]["num_layers"], 2)
+        self.assertEqual(d["transformer"]["d_model"], 256)
 
     def test_from_dict(self):
-        """Test creating config from dictionary."""
+        """Test creating config from dictionary (flat backward compat)."""
         data = {"num_layers": 3, "dropout_rate": 0.2}
         cfg = config.ArrowModelConfig.from_dict(data)
-        self.assertEqual(cfg.num_layers, 3)
-        self.assertEqual(cfg.dropout_rate, 0.2)
-        # Should use defaults
-        self.assertEqual(cfg.d_model, 128)
+        self.assertEqual(cfg.model_type, "transformer")
+        self.assertIsNotNone(cfg.transformer)
+        assert cfg.transformer is not None
+        self.assertEqual(cfg.transformer.num_layers, 3)
+        self.assertEqual(cfg.transformer.dropout_rate, 0.2)
+        self.assertEqual(cfg.transformer.d_model, 128)
 
     def test_from_dict_with_snippet_half_frames(self):
         """Test creating config with snippet_half_frames."""
         data = {"snippet_half_frames": 5}
         cfg = config.ArrowModelConfig.from_dict(data)
         self.assertEqual(cfg.snippet_half_frames, 5)
+
+    def test_from_dict_nested_mlp(self):
+        """Test creating config with model_type mlp and mlp block."""
+        data = {
+            "model_type": "mlp",
+            "mlp": {"hidden_dims": [128, 64], "dropout_rate": 0.1},
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.model_type, "mlp")
+        self.assertIsNotNone(cfg.mlp)
+        assert cfg.mlp is not None
+        self.assertEqual(cfg.mlp.hidden_dims, [128, 64])
+        self.assertEqual(cfg.mlp.dropout_rate, 0.1)
 
 
 class RunConfigTest(unittest.TestCase):
@@ -566,21 +590,25 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         dataset_cfg = config.ArrowDatasetConfig(
             data_dir="data/train", val_data_dir="data/val", batch_size=2
         )
-        model_cfg = config.ArrowModelConfig(num_layers=2)
+        model_cfg = config.ArrowModelConfig.from_dict(
+            {"transformer": {"num_layers": 2}}
+        )
         run_cfg = config.ArrowRunConfig(epoch=10, take_count=-1, model_output_dir="out")
         exp_cfg = config.ArrowExperimentConfig(
             dataset=dataset_cfg, model=model_cfg, run=run_cfg
         )
         d = exp_cfg.as_dict()
         self.assertEqual(d["dataset"]["batch_size"], 2)
-        self.assertEqual(d["model"]["num_layers"], 2)
+        self.assertEqual(d["model"]["transformer"]["num_layers"], 2)
 
     def test_to_json_and_from_json(self):
         """Test saving and loading config from JSON file."""
         dataset_cfg = config.ArrowDatasetConfig(
             data_dir="data/train", val_data_dir="data/val"
         )
-        model_cfg = config.ArrowModelConfig(num_layers=3, d_model=256)
+        model_cfg = config.ArrowModelConfig.from_dict(
+            {"transformer": {"num_layers": 3, "d_model": 256}}
+        )
         run_cfg = config.ArrowRunConfig(
             epoch=15, take_count=-1, model_output_dir="out", seed=99
         )
@@ -594,7 +622,9 @@ class ArrowExperimentConfigTest(unittest.TestCase):
 
             loaded_cfg = config.ArrowExperimentConfig.from_json(config_path)
             self.assertEqual(loaded_cfg.dataset.data_dir, "data/train")
-            self.assertEqual(loaded_cfg.model.num_layers, 3)
+            assert loaded_cfg.model.transformer is not None
+            self.assertEqual(loaded_cfg.model.transformer.num_layers, 3)
+            self.assertEqual(loaded_cfg.model.transformer.d_model, 256)
             self.assertEqual(loaded_cfg.run.seed, 99)
 
     def test_run_is_arrow_run_config_round_trip_includes_aux_weights(self):

@@ -67,7 +67,7 @@ def _make_arrow_configs(
         val_data_dir=dataset_kwargs.pop("val_data_dir", TEST_DATA_DIR),
         **dataset_kwargs,
     )
-    model_config = config.ArrowModelConfig(**model_kwargs)
+    model_config = config.ArrowModelConfig.from_dict(model_kwargs or {})
 
     base_run_kwargs: dict = {
         "epoch": 1,
@@ -293,7 +293,7 @@ class TrainersTest(unittest.TestCase):
                 run_kwargs={"fit_verbose": 2},
             )
             with mock.patch(
-                "stepcovnet.trainers.models.build_arrow_model",
+                "stepcovnet.trainers.models.build_arrow_model_from_config",
                 return_value=mock_model,
             ):
                 with mock.patch("stepcovnet.trainers._write_model"):
@@ -319,7 +319,7 @@ class TrainersTest(unittest.TestCase):
                 run_kwargs={"show_model_summary": False},
             )
             with mock.patch(
-                "stepcovnet.trainers.models.build_arrow_model",
+                "stepcovnet.trainers.models.build_arrow_model_from_config",
                 return_value=mock_model,
             ):
                 with mock.patch("stepcovnet.trainers._write_model"):
@@ -344,7 +344,7 @@ class TrainersTest(unittest.TestCase):
                 run_kwargs={"show_model_summary": True},
             )
             with mock.patch(
-                "stepcovnet.trainers.models.build_arrow_model",
+                "stepcovnet.trainers.models.build_arrow_model_from_config",
                 return_value=mock_model,
             ):
                 with mock.patch("stepcovnet.trainers._write_model"):
@@ -540,7 +540,7 @@ class TrainersTest(unittest.TestCase):
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
             )
-            model_config = config.ArrowModelConfig()
+            model_config = config.ArrowModelConfig.from_dict({})
             run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=-1,  # Entire dataset
@@ -562,7 +562,9 @@ class TrainersTest(unittest.TestCase):
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
             )
-            model_config = config.ArrowModelConfig(num_layers=2)
+            model_config = config.ArrowModelConfig.from_dict(
+                {"transformer": {"num_layers": 2}}
+            )
             run_config = config.ArrowRunConfig(
                 epoch=1,
                 take_count=1,
@@ -585,9 +587,9 @@ class TrainersTest(unittest.TestCase):
             )
             self.assertTrue(os.path.exists(config_path))
 
-            # Verify config can be loaded
+            # Verify config can be loaded (nested model config)
             loaded_config = config.ArrowExperimentConfig.from_json(config_path)
-            self.assertEqual(loaded_config.model.num_layers, 2)
+            self.assertEqual(loaded_config.model.transformer.num_layers, 2)
 
     def test_backward_compatibility_run_train(self):
         """Test that old run_train API still works (backward compatibility)."""
@@ -673,22 +675,15 @@ class TrainersTest(unittest.TestCase):
             batch_size=1,
             snippet_half_frames=5,
         )
-        model_config = config.ArrowModelConfig(
-            snippet_half_frames=5,
+        model_config = config.ArrowModelConfig.from_dict(
+            {"snippet_half_frames": 5},
         )
         ds = datasets.create_arrow_dataset(
             data_dir=dataset_config.data_dir,
             batch_size=dataset_config.batch_size,
             snippet_half_frames=dataset_config.snippet_half_frames,
         )
-        model = models.build_arrow_model(
-            num_layers=model_config.num_layers,
-            d_model=model_config.d_model,
-            num_heads=model_config.num_heads,
-            ff_dim=model_config.ff_dim,
-            dropout_rate=model_config.dropout_rate,
-            snippet_half_frames=model_config.snippet_half_frames,
-        )
+        model = models.build_arrow_model_from_config(model_config, model_name="")
         batch = next(iter(ds.take(1)))
         x, y = batch  # type: ignore[reportGeneralTypeIssues]
         out = model(x)
@@ -758,13 +753,18 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("unet_dilations_custom", name_str)
 
     def test_get_arrow_experiment_name_includes_snippets_and_aux_weights(self):
-        model_config = config.ArrowModelConfig(
-            num_layers=2,
-            d_model=256,
-            num_heads=8,
-            ff_dim=512,
-            dropout_rate=0.2,
-            snippet_half_frames=5,
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "snippet_half_frames": 5,
+                "transformer": {
+                    "num_layers": 2,
+                    "d_model": 256,
+                    "num_heads": 8,
+                    "ff_dim": 512,
+                    "dropout_rate": 0.2,
+                },
+            }
         )
         run_config = config.ArrowRunConfig(
             epoch=1,
@@ -774,7 +774,9 @@ class ExperimentNameHelperTests(unittest.TestCase):
             diversity_aux_weight=0.4,
         )
         name = trainers._get_arrow_experiment_name(model_config, run_config)
-        self.assertIn("ARROW-take_all", name)
+        self.assertIn("ARROW", name)
+        self.assertIn("transformer", name)
+        self.assertIn("take_all", name)
         self.assertIn("att_layers_2", name)
         self.assertIn("d_model_256", name)
         self.assertIn("num_heads_8", name)
@@ -783,6 +785,19 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("snippets_half_5", name)
         self.assertIn("chart_val_aux_0_3", name)
         self.assertIn("diversity_aux_0_4", name)
+
+    def test_run_arrow_train_from_config_unknown_model_type_raises(self):
+        """run_arrow_train_from_config raises ValueError for unsupported model_type."""
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
+            model_config = config.ArrowModelConfig.from_dict(
+                {"model_type": "unknown_arch"}
+            )
+            with self.assertRaises(ValueError) as ctx:
+                trainers.run_arrow_train_from_config(
+                    dataset_config, model_config, run_config
+                )
+            self.assertIn("unknown_arch", str(ctx.exception))
 
 
 class LearningRateScheduleTests(unittest.TestCase):

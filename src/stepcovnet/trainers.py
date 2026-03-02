@@ -179,24 +179,24 @@ def _get_arrow_experiment_name(
     Returns:
         String experiment name with format: "ARROW-take_{N}-att_layers_{N}".
     """
-    parts = ["ARROW"]
+    parts = ["ARROW", model_config.model_type]
 
     if run_config.take_count == -1:
         parts.append("take_all")
     else:
         parts.append(f"take_{run_config.take_count}")
 
-    num_layers = model_config.num_layers
-    d_model = model_config.d_model
-    num_heads = model_config.num_heads
-    ff_dim = model_config.ff_dim
-    dropout_rate = model_config.dropout_rate
-
-    parts.append(f"att_layers_{num_layers}")
-    parts.append(f"d_model_{d_model}")
-    parts.append(f"num_heads_{num_heads}")
-    parts.append(f"ff_dim_{ff_dim}")
-    parts.append(f"dropout_{str(dropout_rate).replace('.', '_')}")
+    if model_config.transformer is not None:
+        p = model_config.transformer
+        parts.append(f"att_layers_{p.num_layers}")
+        parts.append(f"d_model_{p.d_model}")
+        parts.append(f"num_heads_{p.num_heads}")
+        parts.append(f"ff_dim_{p.ff_dim}")
+        parts.append(f"dropout_{str(p.dropout_rate).replace('.', '_')}")
+    if model_config.mlp is not None:
+        p = model_config.mlp
+        parts.append("mlp_" + "_".join(str(d) for d in p.hidden_dims))
+        parts.append(f"dropout_{str(p.dropout_rate).replace('.', '_')}")
 
     if model_config.snippet_half_frames > 0:
         parts.append(f"snippets_half_{model_config.snippet_half_frames}")
@@ -566,14 +566,9 @@ def run_arrow_train_from_config(
         run_config=run_config,
     )
 
-    model = models.build_arrow_model(
+    model = models.build_arrow_model_from_config(
+        model_config,
         model_name=run_config.model_name or experiment_name,
-        num_layers=model_config.num_layers,
-        d_model=model_config.d_model,
-        num_heads=model_config.num_heads,
-        ff_dim=model_config.ff_dim,
-        dropout_rate=model_config.dropout_rate,
-        snippet_half_frames=model_config.snippet_half_frames,
     )
 
     if run_config.show_model_summary:
@@ -703,7 +698,7 @@ def run_arrow_train(
         val_data_dir=val_data_dir,
         batch_size=batch_size,
     )
-    model_config = config.ArrowModelConfig(**(model_params or {}))
+    model_config = config.ArrowModelConfig.from_dict(model_params or {})
     run_config = config.ArrowRunConfig(
         epoch=epoch,
         take_count=take_count,

@@ -136,46 +136,123 @@ class OnsetModelConfig:
 
 
 @dataclasses.dataclass
-class ArrowModelConfig:
-    """Configuration for arrow classification model architecture.
-
-    Attributes:
-        num_layers: Number of stacked Transformer encoder layers.
-        d_model: Dimensionality of model embeddings and layers.
-        num_heads: Number of attention heads.
-        ff_dim: Inner dimension of feed-forward networks.
-        dropout_rate: Dropout rate used in sublayers.
-        snippet_half_frames: Half-window of frames per snippet (must match dataset).
-            When > 0, model accepts a second input (mel snippets per step); when 0, timing only.
-    """
+class TransformerArrowParams:
+    """Parameters for the transformer-based arrow model. Used when model_type is 'transformer'."""
 
     num_layers: int = 1
     d_model: int = 128
     num_heads: int = 4
     ff_dim: int = 512
     dropout_rate: float = 0.0
-    snippet_half_frames: int = 0
 
     def as_dict(self) -> dict:
-        """Convert config to dictionary for JSON serialization.
-
-        Returns:
-            Dictionary representation of the config with all fields.
-        """
         return dataclasses.asdict(self)
 
     @classmethod
+    def from_dict(cls, data: dict) -> TransformerArrowParams:
+        return cls(
+            **{
+                k: v
+                for k, v in data.items()
+                if k in {f.name for f in dataclasses.fields(cls)}
+            }
+        )
+
+
+@dataclasses.dataclass
+class MLPArrowParams:
+    """Parameters for the MLP-based arrow model. Used when model_type is 'mlp'."""
+
+    hidden_dims: list[int] = dataclasses.field(default_factory=lambda: [256, 128])
+    dropout_rate: float = 0.0
+
+    def as_dict(self) -> dict:
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> MLPArrowParams:
+        return cls(
+            **{
+                k: v
+                for k, v in data.items()
+                if k in {f.name for f in dataclasses.fields(cls)}
+            }
+        )
+
+
+# Flat transformer keys used for backward compatibility when parsing old configs.
+_TRANSFORMER_FLAT_KEYS = frozenset(
+    {"num_layers", "d_model", "num_heads", "ff_dim", "dropout_rate"}
+)
+
+
+@dataclasses.dataclass
+class ArrowModelConfig:
+    """Configuration for arrow classification model architecture.
+
+    Supports multiple model types via nested architecture-specific params.
+    Shared: model_type (which architecture), snippet_half_frames (input option).
+    Per-architecture blocks: transformer (TransformerArrowParams), mlp (MLPArrowParams).
+    Only the block matching model_type is required when building; others can be None.
+    """
+
+    model_type: str = "transformer"
+    snippet_half_frames: int = 0
+    transformer: TransformerArrowParams | None = None
+    mlp: MLPArrowParams | None = None
+
+    def as_dict(self) -> dict:
+        """Convert config to dictionary for JSON serialization (nested shape)."""
+        out: dict = {
+            "model_type": self.model_type,
+            "snippet_half_frames": self.snippet_half_frames,
+        }
+        if self.transformer is not None:
+            out["transformer"] = self.transformer.as_dict()
+        if self.mlp is not None:
+            out["mlp"] = self.mlp.as_dict()
+        return out
+
+    @classmethod
     def from_dict(cls, data: dict) -> ArrowModelConfig:
-        """Create config from dictionary.
+        """Create config from dictionary. Supports nested format and flat (legacy) format."""
+        model_type = data.get("model_type", "transformer")
+        snippet_half_frames = data.get("snippet_half_frames", 0)
 
-        Args:
-            data: Dictionary containing config fields. All fields are optional
-                and will use defaults if not provided.
+        # Nested: explicit "transformer" or "mlp" blocks
+        if "transformer" in data:
+            transformer = TransformerArrowParams.from_dict(data["transformer"])
+        elif _TRANSFORMER_FLAT_KEYS.intersection(data):
+            # Backward compat: flat transformer keys at top level
+            flat = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
+            transformer = TransformerArrowParams.from_dict(flat)
+        else:
+            transformer = (
+                TransformerArrowParams() if model_type == "transformer" else None
+            )
 
-        Returns:
-            ArrowModelConfig instance created from the dictionary.
-        """
-        return cls(**data)
+        # Overlay flat keys at top level (e.g. from apply_overrides with model.dropout_rate)
+        flat_overlay = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
+        if flat_overlay and transformer is not None:
+            merged = {**transformer.as_dict(), **flat_overlay}
+            transformer = TransformerArrowParams.from_dict(merged)
+
+        if "mlp" in data:
+            mlp = MLPArrowParams.from_dict(data["mlp"])
+        else:
+            mlp = MLPArrowParams() if model_type == "mlp" else None
+
+        if model_type == "transformer" and transformer is None:
+            transformer = TransformerArrowParams()
+        if model_type == "mlp" and mlp is None:
+            mlp = MLPArrowParams()
+
+        return cls(
+            model_type=model_type,
+            snippet_half_frames=snippet_half_frames,
+            transformer=transformer,
+            mlp=mlp,
+        )
 
 
 @dataclasses.dataclass
