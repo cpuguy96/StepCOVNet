@@ -181,6 +181,20 @@ class ArrowModelConfigTest(unittest.TestCase):
         cfg = config.ArrowModelConfig.from_dict(data)
         self.assertEqual(cfg.snippet_half_frames, 5)
 
+    def test_from_dict_nested_transformer_takes_precedence_over_flat_keys(self):
+        """When both nested 'transformer' and flat transformer keys exist, nested wins."""
+        data = {
+            "transformer": {"num_layers": 2, "d_model": 128},
+            "d_model": 64,
+            "num_layers": 5,
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.model_type, "transformer")
+        self.assertIsNotNone(cfg.transformer)
+        assert cfg.transformer is not None
+        self.assertEqual(cfg.transformer.num_layers, 2)
+        self.assertEqual(cfg.transformer.d_model, 128)
+
     def test_from_dict_nested_mlp(self):
         """Test creating config with model_type mlp and mlp block."""
         data = {

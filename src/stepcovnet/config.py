@@ -304,10 +304,12 @@ class ArrowModelConfig:
                 transformer = TransformerArrowParams.from_dict(flat)
             else:
                 transformer = TransformerArrowParams()
-            flat_overlay = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
-            if flat_overlay:
-                merged = {**transformer.as_dict(), **flat_overlay}
-                transformer = TransformerArrowParams.from_dict(merged)
+            # Flat keys only when no nested block (nested format takes precedence).
+            if "transformer" not in data:
+                flat_overlay = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
+                if flat_overlay:
+                    merged = {**transformer.as_dict(), **flat_overlay}
+                    transformer = TransformerArrowParams.from_dict(merged)
         elif model_type == "mlp":
             mlp = (
                 MLPArrowParams.from_dict(data["mlp"])
