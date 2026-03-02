@@ -17,6 +17,8 @@ a = Analysis(
         "stepcovnet.models",
         "stepcovnet.datasets",
         "stepcovnet.constants",
+        "tkinter.filedialog",
+        "tkinter.messagebox",
     ],
     excludes=[],
     noarchive=False,
