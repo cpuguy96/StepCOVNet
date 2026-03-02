@@ -6,8 +6,10 @@ Launch with:
 Requires trained onset and arrow models (.keras).
 """
 
+import multiprocessing
 import os
 import queue
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -299,4 +301,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if getattr(sys, "frozen", False) and sys.platform == "win32":
+        multiprocessing.freeze_support()
     main()

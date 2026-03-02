@@ -36,6 +36,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Building the standalone Generator UI executable (PyInstaller)
+build = ["pyinstaller"]
 # Testing, coverage, linting, notebook tests
 dev = [
     "pytest",

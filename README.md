@@ -102,6 +102,25 @@ python scripts/generate_ui.py
 
 You need trained onset and arrow models (same as for the CLI above). The UI uses the project venv when run from the repo.
 
+#### Building the standalone app
+
+You can build a single executable (e.g. `generate_ui.exe` on Windows) so others can run the Generator UI without installing Python or stepcovnet:
+
+1. Install the project (editable or from wheel) and the build optional dependency:
+   ```bash
+   pip install -e .
+   pip install .[build]
+   ```
+2. From the **project root**, run PyInstaller with the provided spec:
+   ```bash
+   pyinstaller scripts/generate_ui.spec
+   ```
+   Or run the helper script (from project root or anywhere):
+   ```bash
+   python scripts/build_generate_ui_binary.py
+   ```
+3. The executable will be created under `dist/` (e.g. `dist/generate_ui.exe`). The bundle includes TensorFlow/Keras, so the file is large and startup may take a few seconds.
+
 ### Training Models
 
 Train your own models using the provided scripts.
