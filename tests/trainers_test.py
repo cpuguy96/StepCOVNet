@@ -589,6 +589,7 @@ class TrainersTest(unittest.TestCase):
 
             # Verify config can be loaded (nested model config)
             loaded_config = config.ArrowExperimentConfig.from_json(config_path)
+            assert loaded_config.model.transformer is not None
             self.assertEqual(loaded_config.model.transformer.num_layers, 2)
 
     def test_backward_compatibility_run_train(self):
@@ -785,6 +786,29 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("snippets_half_5", name)
         self.assertIn("chart_val_aux_0_3", name)
         self.assertIn("diversity_aux_0_4", name)
+
+    def test_get_arrow_experiment_name_mlp_includes_hidden_dims_and_dropout(self):
+        """_get_arrow_experiment_name with model_type=mlp includes mlp_* and dropout (mlp branch)."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "mlp",
+                "mlp": {
+                    "hidden_dims": [256, 128],
+                    "dropout_rate": 0.1,
+                },
+            }
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=10,
+            model_output_dir="out",
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertIn("ARROW", name)
+        self.assertIn("mlp", name)
+        self.assertIn("take_10", name)
+        self.assertIn("mlp_256_128", name)
+        self.assertIn("dropout_0_1", name)
 
     def test_run_arrow_train_from_config_unknown_model_type_raises(self):
         """run_arrow_train_from_config raises ValueError for unsupported model_type."""

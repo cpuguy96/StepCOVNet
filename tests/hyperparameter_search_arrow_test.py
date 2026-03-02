@@ -250,6 +250,7 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
             "run.chart_validity_aux_weight": 0.3,
         }
         out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        assert out.model.transformer is not None
         self.assertEqual(out.model.transformer.dropout_rate, 0.2)
         self.assertEqual(out.model.transformer.num_layers, 2)
         self.assertEqual(out.run.chart_validity_aux_weight, 0.3)
@@ -259,7 +260,18 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         base = self._minimal_base_config()
         overrides = {"model.transformer.num_layers": 3}
         out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        assert out.model.transformer is not None
         self.assertEqual(out.model.transformer.num_layers, 3)
+
+    def test_apply_overrides_creates_missing_intermediate_dict(self):
+        """Override targeting a nested key on a non-existent intermediate dict creates it (_set_nested branch)."""
+        base = self._minimal_base_config()
+        # Base has only transformer; no mlp. Setting model.mlp.hidden_dims must create model.mlp.
+        overrides = {"model.mlp.hidden_dims": [128, 64]}
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        self.assertIsNotNone(out.model.mlp)
+        assert out.model.mlp is not None
+        self.assertEqual(out.model.mlp.hidden_dims, [128, 64])
 
     def test_apply_overrides_model_type_can_be_set(self):
         """Sweep can set model.model_type (e.g. transformer vs mlp) in overrides."""
