@@ -597,11 +597,16 @@ class MainEntryTest(unittest.TestCase):
     """Tests for main() entry point."""
 
     def test_main_creates_app_and_runs_mainloop(self):
-        with mock.patch("tkinter.Tk.mainloop"):
-            generate_ui.main()
-        if tk._default_root is not None:
-            tk._default_root.destroy()
-            tk._default_root = None
+        try:
+            with mock.patch("tkinter.Tk.mainloop"):
+                generate_ui.main()
+            if tk._default_root is not None:
+                tk._default_root.destroy()
+                tk._default_root = None
+        except tk.TclError as e:
+            if "no display" in str(e).lower() or "DISPLAY" in str(e):
+                raise unittest.SkipTest(f"Tk requires a display: {e}") from e
+            raise
 
 
 class MainBlockTest(unittest.TestCase):
