@@ -93,6 +93,13 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 
+# Type checkers: resolve script imports from tests (e.g. import generate_ui → scripts/generate_ui.py)
+[tool.pyright]
+extraPaths = ["scripts"]
+
+[tool.mypy]
+mypy_path = "scripts"
+
 # Ruff (lint + format)
 [tool.ruff]
 target-version = "py312"
