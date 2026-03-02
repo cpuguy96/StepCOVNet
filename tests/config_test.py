@@ -210,6 +210,21 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(cfg.mlp.hidden_dims, [256, 128])
         self.assertEqual(cfg.mlp.dropout_rate, 0.0)
 
+    def test_from_dict_mlp_ignores_nested_transformer_block(self):
+        """With model_type=mlp, a nested 'transformer' key must not create a transformer block."""
+        data = {
+            "model_type": "mlp",
+            "transformer": {"num_layers": 2, "d_model": 64},
+            "mlp": {"hidden_dims": [128, 64], "dropout_rate": 0.1},
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.model_type, "mlp")
+        self.assertIsNone(cfg.transformer)
+        self.assertIsNotNone(cfg.mlp)
+        assert cfg.mlp is not None
+        self.assertEqual(cfg.mlp.hidden_dims, [128, 64])
+        self.assertEqual(cfg.mlp.dropout_rate, 0.1)
+
     def test_as_dict_includes_mlp_when_present(self):
         """as_dict includes mlp key when model has mlp params (for JSON round-trip)."""
         cfg = config.ArrowModelConfig.from_dict(

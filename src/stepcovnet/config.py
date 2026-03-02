@@ -219,28 +219,32 @@ class ArrowModelConfig:
         model_type = data.get("model_type", "transformer")
         snippet_half_frames = data.get("snippet_half_frames", 0)
 
-        # Nested: explicit "transformer" or "mlp" blocks
-        if "transformer" in data:
-            transformer = TransformerArrowParams.from_dict(data["transformer"])
-        elif model_type == "transformer" and _TRANSFORMER_FLAT_KEYS.intersection(data):
-            # Backward compat: flat transformer keys at top level (only when transformer is active)
-            flat = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
-            transformer = TransformerArrowParams.from_dict(flat)
+        # Nested: explicit "transformer" or "mlp" blocks (only for active model_type)
+        if model_type == "transformer":
+            if "transformer" in data:
+                transformer = TransformerArrowParams.from_dict(data["transformer"])
+            elif _TRANSFORMER_FLAT_KEYS.intersection(data):
+                # Backward compat: flat transformer keys at top level
+                flat = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
+                transformer = TransformerArrowParams.from_dict(flat)
+            else:
+                transformer = TransformerArrowParams()
+            # Overlay flat keys at top level (e.g. from apply_overrides with model.dropout_rate)
+            flat_overlay = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
+            if flat_overlay:
+                merged = {**transformer.as_dict(), **flat_overlay}
+                transformer = TransformerArrowParams.from_dict(merged)
         else:
-            transformer = (
-                TransformerArrowParams() if model_type == "transformer" else None
+            transformer = None
+
+        if model_type == "mlp":
+            mlp = (
+                MLPArrowParams.from_dict(data["mlp"])
+                if "mlp" in data
+                else MLPArrowParams()
             )
-
-        # Overlay flat keys at top level (e.g. from apply_overrides with model.dropout_rate)
-        flat_overlay = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
-        if flat_overlay and transformer is not None:
-            merged = {**transformer.as_dict(), **flat_overlay}
-            transformer = TransformerArrowParams.from_dict(merged)
-
-        if "mlp" in data:
-            mlp = MLPArrowParams.from_dict(data["mlp"])
         else:
-            mlp = MLPArrowParams() if model_type == "mlp" else None
+            mlp = None
 
         return cls(
             model_type=model_type,
