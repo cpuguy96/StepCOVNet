@@ -104,120 +104,151 @@ def _run_generation(
         result_queue.put((False, str(e)))
 
 
-def main() -> None:
-    root = tk.Tk()
-    root.title("StepCOVNet Generator")
-    root.minsize(400, 320)
-    root.geometry("480x540")
-    root.resizable(True, True)
+class _GeneratorApp:
+    """Application UI and callbacks for the generator window. Built for testability."""
 
-    result_queue = queue.Queue()
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        root.title("StepCOVNet Generator")
+        root.minsize(400, 320)
+        root.geometry("480x540")
+        root.resizable(True, True)
 
-    # Variables
-    audio_path_var = tk.StringVar()
-    song_title_var = tk.StringVar()
-    bpm_var = tk.StringVar()
-    onset_model_var = tk.StringVar()
-    arrow_model_var = tk.StringVar()
-    output_path_var = tk.StringVar()
-    use_post_processing_var = tk.BooleanVar(value=False)
-    status_var = tk.StringVar(value="")
+        self.result_queue = queue.Queue()
 
-    outer = tk.Frame(root, padx=12, pady=12)
-    outer.pack(fill=tk.BOTH, expand=True)
+        self.audio_path_var = tk.StringVar()
+        self.song_title_var = tk.StringVar()
+        self.bpm_var = tk.StringVar()
+        self.onset_model_var = tk.StringVar()
+        self.arrow_model_var = tk.StringVar()
+        self.output_path_var = tk.StringVar()
+        self.use_post_processing_var = tk.BooleanVar(value=False)
+        self.status_var = tk.StringVar(value="")
 
-    # Bottom bar (button + status) stays fixed so it is never cut off
-    bottom_frame = tk.Frame(outer)
-    bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(12, 0))
+        outer = tk.Frame(root, padx=12, pady=12)
+        outer.pack(fill=tk.BOTH, expand=True)
 
-    # Scrollable form area above the bottom bar (grid so scrollbar keeps fixed width when narrow)
-    scroll_area = tk.Frame(outer)
-    scroll_area.pack(fill=tk.BOTH, expand=True)
-    scroll_area.rowconfigure(0, weight=1)
-    scroll_area.columnconfigure(0, weight=1, minsize=80)
-    scroll_area.columnconfigure(1, weight=0, minsize=16)
+        bottom_frame = tk.Frame(outer)
+        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(12, 0))
 
-    canvas = tk.Canvas(scroll_area, highlightthickness=0)
-    scrollbar = tk.Scrollbar(
-        scroll_area, orient=tk.VERTICAL, command=canvas.yview, width=16
-    )
-    scrollable_frame = tk.Frame(canvas)
-    scrollable_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
-    )
-    canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor=tk.NW)
-    canvas.configure(yscrollcommand=scrollbar.set)
+        scroll_area = tk.Frame(outer)
+        scroll_area.pack(fill=tk.BOTH, expand=True)
+        scroll_area.rowconfigure(0, weight=1)
+        scroll_area.columnconfigure(0, weight=1, minsize=80)
+        scroll_area.columnconfigure(1, weight=0, minsize=16)
 
-    def _on_canvas_configure(event):
-        canvas.itemconfig(canvas_window, width=event.width)
-        canvas.configure(scrollregion=canvas.bbox("all"))
+        self.canvas = tk.Canvas(scroll_area, highlightthickness=0)
+        scrollbar = tk.Scrollbar(
+            scroll_area, orient=tk.VERTICAL, command=self.canvas.yview, width=16
+        )
+        scrollable_frame = tk.Frame(self.canvas)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
+        )
+        self._canvas_window = self.canvas.create_window(
+            (0, 0), window=scrollable_frame, anchor=tk.NW
+        )
+        self.canvas.configure(yscrollcommand=scrollbar.set)
 
-    def _on_mousewheel(event):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
 
-    canvas.bind("<Configure>", _on_canvas_configure)
-    canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.canvas.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 12))
+        scrollbar.grid(row=0, column=1, sticky=tk.NS)
 
-    canvas.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 12))
-    scrollbar.grid(row=0, column=1, sticky=tk.NS)
+        main_frame = scrollable_frame
+        self._main_frame = main_frame
+        self._bottom_frame = bottom_frame
+        self._row = 0
 
-    main_frame = scrollable_frame
+        self.run_btn = tk.Button(
+            bottom_frame, text="Generate chart", command=self.run_clicked
+        )
+        self.status_label = tk.Label(
+            bottom_frame, textvariable=self.status_var, anchor=tk.W, fg="gray"
+        )
 
-    def browse_audio() -> None:
+        self._add_row("Audio file:", self.audio_path_var, self.browse_audio)
+        self._add_row("Song title:", self.song_title_var)
+        self._add_row("BPM:", self.bpm_var)
+        self._add_row("Onset model (.keras):", self.onset_model_var, self.browse_onset)
+        self._add_row("Arrow model (.keras):", self.arrow_model_var, self.browse_arrow)
+        self._add_row("Output file (.txt):", self.output_path_var, self.browse_output)
+
+        cb_frame = tk.Frame(main_frame)
+        cb_frame.grid(row=self._row, column=0, sticky=tk.W, pady=(4, 12))
+        self._row += 1
+        tk.Checkbutton(
+            cb_frame,
+            text="Use post-processing (peak-picking for onset timings)",
+            variable=self.use_post_processing_var,
+        ).pack(anchor=tk.W)
+
+        self.run_btn.pack(side=tk.LEFT)
+        self.status_label.pack(side=tk.LEFT, padx=(16, 0), fill=tk.X, expand=True)
+
+    def _on_canvas_configure(self, event: tk.Event) -> None:
+        self.canvas.itemconfig(self._canvas_window, width=event.width)
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_mousewheel(self, event: tk.Event) -> None:
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def browse_audio(self) -> None:
         path = filedialog.askopenfilename(
             filetypes=AUDIO_TYPES, title="Select audio file"
         )
         if path:
-            audio_path_var.set(path)
-            if not output_path_var.get().strip():
+            self.audio_path_var.set(path)
+            if not self.output_path_var.get().strip():
                 base = os.path.splitext(os.path.basename(path))[0]
                 out_dir = os.path.dirname(path)
-                output_path_var.set(os.path.join(out_dir, base + ".txt"))
+                self.output_path_var.set(os.path.join(out_dir, base + ".txt"))
 
-    def browse_onset() -> None:
+    def browse_onset(self) -> None:
         path = filedialog.askopenfilename(
             filetypes=MODEL_TYPES, title="Select onset model"
         )
         if path:
-            onset_model_var.set(path)
+            self.onset_model_var.set(path)
 
-    def browse_arrow() -> None:
+    def browse_arrow(self) -> None:
         path = filedialog.askopenfilename(
             filetypes=MODEL_TYPES, title="Select arrow model"
         )
         if path:
-            arrow_model_var.set(path)
+            self.arrow_model_var.set(path)
 
-    def browse_output() -> None:
+    def browse_output(self) -> None:
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=TXT_TYPES,
             title="Save chart as",
         )
         if path:
-            output_path_var.set(path)
+            self.output_path_var.set(path)
 
-    def set_status(msg: str) -> None:
-        status_var.set(msg)
-        status_label.update_idletasks()
+    def set_status(self, msg: str) -> None:
+        self.status_var.set(msg)
+        self.status_label.update_idletasks()
 
-    def run_clicked() -> None:
+    def run_clicked(self) -> None:
         ok, result = _validate_inputs(
-            audio_path_var.get(),
-            song_title_var.get(),
-            bpm_var.get(),
-            onset_model_var.get(),
-            arrow_model_var.get(),
-            output_path_var.get(),
+            self.audio_path_var.get(),
+            self.song_title_var.get(),
+            self.bpm_var.get(),
+            self.onset_model_var.get(),
+            self.arrow_model_var.get(),
+            self.output_path_var.get(),
         )
         if not ok:
             messagebox.showerror("Validation", result)
             return
         audio_path, song_title, bpm_val, onset_path, arrow_path, output_path = result
 
-        run_btn.config(state=tk.DISABLED)
-        set_status("Processing…")
+        self.run_btn.config(state=tk.DISABLED)
+        self.set_status("Processing…")
 
         def worker() -> None:
             _run_generation(
@@ -227,41 +258,40 @@ def main() -> None:
                 onset_model_path=onset_path,
                 arrow_model_path=arrow_path,
                 output_path=output_path,
-                use_post_processing=use_post_processing_var.get(),
-                result_queue=result_queue,
+                use_post_processing=self.use_post_processing_var.get(),
+                result_queue=self.result_queue,
             )
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
-        root.after(100, _poll_result)
+        self.root.after(100, self._poll_result)
 
-    def _poll_result() -> None:
+    def _poll_result(self) -> None:
         try:
-            success, value = result_queue.get_nowait()
+            success, value = self.result_queue.get_nowait()
         except queue.Empty:
-            root.after(100, _poll_result)
+            self.root.after(100, self._poll_result)
             return
-        run_btn.config(state=tk.NORMAL)
+        self.run_btn.config(state=tk.NORMAL)
         if success:
-            set_status(f"Saved to {value}")
+            self.set_status(f"Saved to {value}")
             messagebox.showinfo("Success", f"Chart saved to:\n{value}")
         else:
-            set_status("Error")
+            self.set_status("Error")
             messagebox.showerror("Generation failed", value)
 
-    # Layout
-    row = 0
-
-    def add_row(
-        label_text: str, entry_var: tk.StringVar, browse_callback=None
+    def _add_row(
+        self,
+        label_text: str,
+        entry_var: tk.StringVar,
+        browse_callback: object = None,
     ) -> tk.Entry:
-        nonlocal row
-        lbl = tk.Label(main_frame, text=label_text, anchor=tk.W)
-        lbl.grid(row=row, column=0, sticky=tk.W, pady=(6, 0))
-        row += 1
-        fr = tk.Frame(main_frame)
-        fr.grid(row=row, column=0, sticky=tk.EW, pady=(0, 8))
-        main_frame.columnconfigure(0, weight=1)
+        lbl = tk.Label(self._main_frame, text=label_text, anchor=tk.W)
+        lbl.grid(row=self._row, column=0, sticky=tk.W, pady=(6, 0))
+        self._row += 1
+        fr = tk.Frame(self._main_frame)
+        fr.grid(row=self._row, column=0, sticky=tk.EW, pady=(0, 8))
+        self._main_frame.columnconfigure(0, weight=1)
         ent = tk.Entry(
             fr,
             textvariable=entry_var,
@@ -270,33 +300,13 @@ def main() -> None:
         ent.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         if browse_callback:
             tk.Button(fr, text="Browse…", command=browse_callback).pack(side=tk.RIGHT)
-        row += 1
+        self._row += 1
         return ent
 
-    add_row("Audio file:", audio_path_var, browse_audio)
-    add_row("Song title:", song_title_var)
-    add_row("BPM:", bpm_var)
-    add_row("Onset model (.keras):", onset_model_var, browse_onset)
-    add_row("Arrow model (.keras):", arrow_model_var, browse_arrow)
-    add_row("Output file (.txt):", output_path_var, browse_output)
 
-    cb_frame = tk.Frame(main_frame)
-    cb_frame.grid(row=row, column=0, sticky=tk.W, pady=(4, 12))
-    row += 1
-    tk.Checkbutton(
-        cb_frame,
-        text="Use post-processing (peak-picking for onset timings)",
-        variable=use_post_processing_var,
-    ).pack(anchor=tk.W)
-
-    # Generate button and status live in bottom bar so they are never cut off
-    run_btn = tk.Button(bottom_frame, text="Generate chart", command=run_clicked)
-    run_btn.pack(side=tk.LEFT)
-    status_label = tk.Label(
-        bottom_frame, textvariable=status_var, anchor=tk.W, fg="gray"
-    )
-    status_label.pack(side=tk.LEFT, padx=(16, 0), fill=tk.X, expand=True)
-
+def main() -> None:
+    root = tk.Tk()
+    _GeneratorApp(root)
     root.mainloop()
 
 
