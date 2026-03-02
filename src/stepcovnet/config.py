@@ -222,8 +222,8 @@ class ArrowModelConfig:
         # Nested: explicit "transformer" or "mlp" blocks
         if "transformer" in data:
             transformer = TransformerArrowParams.from_dict(data["transformer"])
-        elif _TRANSFORMER_FLAT_KEYS.intersection(data):
-            # Backward compat: flat transformer keys at top level
+        elif model_type == "transformer" and _TRANSFORMER_FLAT_KEYS.intersection(data):
+            # Backward compat: flat transformer keys at top level (only when transformer is active)
             flat = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
             transformer = TransformerArrowParams.from_dict(flat)
         else:
