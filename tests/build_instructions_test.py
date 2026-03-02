@@ -1,11 +1,11 @@
 """Tests that verify the standalone binary build instructions are correct."""
 
+import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
-from io import StringIO
 from unittest import mock
 
 import pytest
@@ -62,7 +62,7 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
         with mock.patch(
             "build_generate_ui_binary.os.path.isfile", return_value=False
         ) as isfile_mock:
-            stderr = StringIO()
+            stderr = io.StringIO()
             with mock.patch.object(sys, "stderr", stderr):
                 with self.assertRaises(SystemExit) as cm:
                     build_generate_ui_binary.main()
