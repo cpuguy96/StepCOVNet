@@ -251,28 +251,31 @@ def main():
         dataset_config.snippet_half_frames = ARGS.snippet_half_frames
         model_config.snippet_half_frames = ARGS.snippet_half_frames
 
-    if ARGS.num_layers is not None:
-        if model_config.transformer is None:
-            model_config.transformer = config.TransformerArrowParams()
-        model_config.transformer.num_layers = ARGS.num_layers
-    if ARGS.d_model is not None:
-        if model_config.transformer is None:
-            model_config.transformer = config.TransformerArrowParams()
-        model_config.transformer.d_model = ARGS.d_model
-    if ARGS.num_heads is not None:
-        if model_config.transformer is None:
-            model_config.transformer = config.TransformerArrowParams()
-        model_config.transformer.num_heads = ARGS.num_heads
-    if ARGS.ff_dim is not None:
-        if model_config.transformer is None:
-            model_config.transformer = config.TransformerArrowParams()
-        model_config.transformer.ff_dim = ARGS.ff_dim
-    if ARGS.dropout_rate is not None:
-        if model_config.transformer is None:
-            model_config.transformer = config.TransformerArrowParams()
-        model_config.transformer.dropout_rate = ARGS.dropout_rate
-        if model_config.mlp is not None:
-            model_config.mlp.dropout_rate = ARGS.dropout_rate
+    # Apply model_type first so the active params block is known before architecture-specific args.
+    if ARGS.model_type is not None:
+        model_config.model_type = ARGS.model_type
+    if model_config.model_type == "transformer" and model_config.transformer is None:
+        model_config.transformer = config.TransformerArrowParams()
+    if model_config.model_type == "mlp" and model_config.mlp is None:
+        model_config.mlp = config.MLPArrowParams()
+
+    if model_config.model_type == "transformer":
+        transformer = model_config.transformer
+        if transformer is not None:
+            if ARGS.num_layers is not None:
+                transformer.num_layers = ARGS.num_layers
+            if ARGS.d_model is not None:
+                transformer.d_model = ARGS.d_model
+            if ARGS.num_heads is not None:
+                transformer.num_heads = ARGS.num_heads
+            if ARGS.ff_dim is not None:
+                transformer.ff_dim = ARGS.ff_dim
+            if ARGS.dropout_rate is not None:
+                transformer.dropout_rate = ARGS.dropout_rate
+    elif model_config.model_type == "mlp" and ARGS.dropout_rate is not None:
+        mlp = model_config.mlp
+        if mlp is not None:
+            mlp.dropout_rate = ARGS.dropout_rate
 
     if ARGS.epochs is not None:
         run_config.epoch = ARGS.epochs
@@ -296,8 +299,6 @@ def main():
         run_config.lr_peak = ARGS.lr_peak
     if ARGS.lr_min is not None:
         run_config.lr_min = ARGS.lr_min
-    if ARGS.model_type is not None:
-        model_config.model_type = ARGS.model_type
 
     # Validate required fields
     if not dataset_config.data_dir or not dataset_config.val_data_dir:

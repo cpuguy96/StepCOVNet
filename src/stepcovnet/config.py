@@ -242,11 +242,6 @@ class ArrowModelConfig:
         else:
             mlp = MLPArrowParams() if model_type == "mlp" else None
 
-        if model_type == "transformer" and transformer is None:
-            transformer = TransformerArrowParams()
-        if model_type == "mlp" and mlp is None:
-            mlp = MLPArrowParams()
-
         return cls(
             model_type=model_type,
             snippet_half_frames=snippet_half_frames,

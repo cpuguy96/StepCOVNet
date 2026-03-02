@@ -194,6 +194,24 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(cfg.mlp.hidden_dims, [128, 64])
         self.assertEqual(cfg.mlp.dropout_rate, 0.1)
 
+    def test_as_dict_includes_mlp_when_present(self):
+        """as_dict includes mlp key when model has mlp params (for JSON round-trip)."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {"model_type": "mlp", "mlp": {"hidden_dims": [64], "dropout_rate": 0.0}}
+        )
+        d = cfg.as_dict()
+        self.assertIn("mlp", d)
+        self.assertEqual(d["mlp"]["hidden_dims"], [64])
+        self.assertEqual(d["mlp"]["dropout_rate"], 0.0)
+
+    def test_mlp_params_from_dict_filters_unknown_keys(self):
+        """MLPArrowParams.from_dict ignores unknown keys (only known fields passed to constructor)."""
+        params = config.MLPArrowParams.from_dict(
+            {"hidden_dims": [32], "dropout_rate": 0.1, "unknown_key": 99}
+        )
+        self.assertEqual(params.hidden_dims, [32])
+        self.assertEqual(params.dropout_rate, 0.1)
+
 
 class RunConfigTest(unittest.TestCase):
     def test_create_with_required_fields(self):
@@ -451,6 +469,62 @@ class ArrowRunConfigTest(unittest.TestCase):
         with self.assertRaises(TypeError) as ctx:
             config.ArrowRunConfig.from_dict(data)
         self.assertIn("unknown_param", str(ctx.exception))
+
+    def test_negative_warmup_epochs_raises(self):
+        """warmup_epochs < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=5,
+                take_count=1,
+                model_output_dir="out",
+                warmup_epochs=-1,
+            )
+        self.assertIn("warmup_epochs", str(ctx.exception))
+
+    def test_warmup_epochs_ge_epoch_raises(self):
+        """warmup_epochs >= epoch raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=5,
+                take_count=1,
+                model_output_dir="out",
+                warmup_epochs=5,
+            )
+        self.assertIn("warmup_epochs", str(ctx.exception))
+
+    def test_lr_peak_non_positive_raises(self):
+        """lr_peak <= 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=5,
+                take_count=1,
+                model_output_dir="out",
+                lr_peak=0.0,
+            )
+        self.assertIn("lr_peak", str(ctx.exception))
+
+    def test_negative_lr_min_raises(self):
+        """lr_min < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=5,
+                take_count=1,
+                model_output_dir="out",
+                lr_min=-0.1,
+            )
+        self.assertIn("lr_min", str(ctx.exception))
+
+    def test_lr_min_ge_lr_peak_raises(self):
+        """lr_min >= lr_peak raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=5,
+                take_count=1,
+                model_output_dir="out",
+                lr_peak=1e-3,
+                lr_min=1e-3,
+            )
+        self.assertIn("lr_min", str(ctx.exception))
 
 
 class OnsetExperimentConfigTest(unittest.TestCase):
