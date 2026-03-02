@@ -79,6 +79,25 @@ def _run_train_arrow_main(args):
 class TrainArrowModelTypeMlpTest(unittest.TestCase):
     """Test that --model_type mlp with transformer-style args initializes mlp correctly."""
 
+    def test_model_type_mlp_without_dropout_rate_uses_defaults(self):
+        """With --model_type mlp and no --dropout_rate, MLP block is still applied and uses default dropout."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = _make_args(
+                train_data_dir=tmpdir,
+                val_data_dir=tmpdir,
+                model_output_dir=tmpdir,
+                model_type="mlp",
+                dropout_rate=None,
+            )
+            run_mock, model_config = _run_train_arrow_main(args)
+        run_mock.assert_called_once()
+        self.assertEqual(model_config.model_type, "mlp")
+        self.assertIsNotNone(model_config.mlp)
+        self.assertEqual(model_config.mlp.dropout_rate, 0.0)  # MLP default
+        from stepcovnet import models
+
+        models.build_arrow_model_from_config(model_config)
+
     def test_model_type_mlp_with_dropout_rate_produces_valid_config(self):
         """With --model_type mlp and --dropout_rate, model_config has mlp set and buildable."""
         with tempfile.TemporaryDirectory() as tmpdir:

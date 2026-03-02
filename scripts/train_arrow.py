@@ -298,10 +298,11 @@ def main():
                 transformer.ff_dim = ARGS.ff_dim
             if ARGS.dropout_rate is not None:
                 transformer.dropout_rate = ARGS.dropout_rate
-    elif model_config.model_type == "mlp" and ARGS.dropout_rate is not None:
+    elif model_config.model_type == "mlp":
         mlp = model_config.mlp
         if mlp is not None:
-            mlp.dropout_rate = ARGS.dropout_rate
+            if ARGS.dropout_rate is not None:
+                mlp.dropout_rate = ARGS.dropout_rate
     elif model_config.model_type == "lstm":
         lstm = model_config.lstm
         if lstm is not None:
