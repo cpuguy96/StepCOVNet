@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import keras
 import tensorflow as tf
 
@@ -532,7 +534,111 @@ def _build_arrow_mlp(
     return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
 
 
-_SUPPORTED_ARROW_MODEL_TYPES = ("transformer", "mlp")
+def _build_arrow_lstm(
+    snippet_half_frames: int,
+    params: config.LSTMArrowParams,
+    model_name: str = "",
+) -> keras.Model:
+    """Build LSTM-based arrow model. Same I/O contract as build_arrow_model."""
+    units = params.units
+    num_layers = params.num_layers
+    dropout_rate = params.dropout_rate
+
+    timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
+    timing_embed = keras.layers.Dense(units, name="input_projection")(timing_input)
+
+    if snippet_half_frames > 0:
+        snippet_n_frames = 2 * snippet_half_frames + 1
+        snippet_n_mels = constants.N_MELS
+        snippet_input = keras.layers.Input(
+            shape=(None, snippet_n_frames, snippet_n_mels),
+            name="snippet_input",
+        )
+        s = SnippetCNN(
+            n_frames=snippet_n_frames,
+            n_mels=snippet_n_mels,
+            filters=32,
+            name="snippet_cnn",
+        )(snippet_input)
+        s = keras.layers.Dense(units, name="snippet_projection")(s)
+        x = keras.layers.Add(name="fuse_timing_snippet")([timing_embed, s])
+        inputs = [timing_input, snippet_input]
+    else:
+        x = timing_embed
+        inputs = timing_input
+
+    for i in range(num_layers):
+        x = keras.layers.LSTM(
+            units,
+            return_sequences=True,
+            dropout=dropout_rate,
+            name=f"lstm_{i}",
+        )(x)
+
+    outputs = keras.layers.Dense(
+        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
+    )(x)
+
+    _model_name = "stepcovnet_ARROW"
+    if model_name:
+        _model_name += f"-{model_name}"
+    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
+
+
+def _build_arrow_transformer_from_config(
+    model_config: config.ArrowModelConfig,
+    model_name: str = "",
+) -> keras.Model:
+    if model_config.transformer is None:
+        raise ValueError(
+            "model_type is 'transformer' but transformer params are missing"
+        )
+    p = model_config.transformer
+    return build_arrow_model(
+        num_layers=p.num_layers,
+        d_model=p.d_model,
+        num_heads=p.num_heads,
+        ff_dim=p.ff_dim,
+        dropout_rate=p.dropout_rate,
+        model_name=model_name,
+        snippet_half_frames=model_config.snippet_half_frames,
+    )
+
+
+def _build_arrow_mlp_from_config(
+    model_config: config.ArrowModelConfig,
+    model_name: str = "",
+) -> keras.Model:
+    if model_config.mlp is None:
+        raise ValueError("model_type is 'mlp' but mlp params are missing")
+    return _build_arrow_mlp(
+        snippet_half_frames=model_config.snippet_half_frames,
+        params=model_config.mlp,
+        model_name=model_name,
+    )
+
+
+def _build_arrow_lstm_from_config(
+    model_config: config.ArrowModelConfig,
+    model_name: str = "",
+) -> keras.Model:
+    if model_config.lstm is None:
+        raise ValueError("model_type is 'lstm' but lstm params are missing")
+    return _build_arrow_lstm(
+        snippet_half_frames=model_config.snippet_half_frames,
+        params=model_config.lstm,
+        model_name=model_name,
+    )
+
+
+_ARROW_MODEL_BUILDERS: dict[
+    str,
+    Callable[[config.ArrowModelConfig, str], keras.Model],
+] = {
+    "transformer": _build_arrow_transformer_from_config,
+    "mlp": _build_arrow_mlp_from_config,
+    "lstm": _build_arrow_lstm_from_config,
+}
 
 
 def build_arrow_model_from_config(
@@ -540,35 +646,11 @@ def build_arrow_model_from_config(
     model_name: str = "",
 ) -> keras.Model:
     """Build an arrow model from ArrowModelConfig. Dispatches on model_type."""
-    if model_config.model_type not in _SUPPORTED_ARROW_MODEL_TYPES:
+    builder = _ARROW_MODEL_BUILDERS.get(model_config.model_type)
+    if builder is None:
+        supported = tuple(_ARROW_MODEL_BUILDERS.keys())
         raise ValueError(
             f"Unsupported arrow model_type {model_config.model_type!r}. "
-            f"Supported: {_SUPPORTED_ARROW_MODEL_TYPES}"
+            f"Supported: {supported}"
         )
-    if model_config.model_type == "transformer":
-        if model_config.transformer is None:
-            raise ValueError(
-                "model_type is 'transformer' but transformer params are missing"
-            )
-        p = model_config.transformer
-        return build_arrow_model(
-            num_layers=p.num_layers,
-            d_model=p.d_model,
-            num_heads=p.num_heads,
-            ff_dim=p.ff_dim,
-            dropout_rate=p.dropout_rate,
-            model_name=model_name,
-            snippet_half_frames=model_config.snippet_half_frames,
-        )
-    if model_config.model_type == "mlp":
-        if model_config.mlp is None:
-            raise ValueError("model_type is 'mlp' but mlp params are missing")
-        return _build_arrow_mlp(
-            snippet_half_frames=model_config.snippet_half_frames,
-            params=model_config.mlp,
-            model_name=model_name,
-        )
-    raise ValueError(
-        f"Unsupported arrow model_type {model_config.model_type!r}. "
-        f"Supported: {_SUPPORTED_ARROW_MODEL_TYPES}"
-    )
+    return builder(model_config, model_name)

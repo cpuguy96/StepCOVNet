@@ -116,6 +116,25 @@ class ModelTest(unittest.TestCase):
         out = model.predict([timing_input, snippet_input])
         self.assertEqual(out.shape, (1, 100, 256))
 
+    def test_build_arrow_model_from_config_lstm(self):
+        """build_arrow_model_from_config with model_type lstm produces valid model."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "lstm",
+                "lstm": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
+            }
+        )
+        model = models.build_arrow_model_from_config(
+            model_config, model_name="lstm_run"
+        )
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(len(model.inputs), 1)
+        self.assertEqual(model.output_shape, (None, None, 256))
+        dummy_input = np.random.random((1, 100, 1)).astype(np.float32)
+        prediction = model.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 100, 256))
+        self.assertIn("lstm_run", model.name)
+
     def test_build_arrow_model_from_config_unknown_model_type_raises(self):
         """build_arrow_model_from_config raises ValueError for unknown model_type."""
         model_config = config.ArrowModelConfig.from_dict({"model_type": "unknown_arch"})
@@ -124,6 +143,7 @@ class ModelTest(unittest.TestCase):
         self.assertIn("unknown_arch", str(ctx.exception))
         self.assertIn("transformer", str(ctx.exception))
         self.assertIn("mlp", str(ctx.exception))
+        self.assertIn("lstm", str(ctx.exception))
 
 
 class PositionalEncodingTest(unittest.TestCase):

@@ -49,6 +49,8 @@ def _make_args(
         "lr_peak": None,
         "lr_min": None,
         "model_type": None,
+        "lstm_units": None,
+        "lstm_num_layers": None,
     }
     defaults.update(
         config=config,
@@ -189,6 +191,29 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.transformer.num_heads, 2)
         self.assertEqual(model_config.transformer.ff_dim, 256)
         self.assertEqual(model_config.transformer.dropout_rate, 0.1)
+
+    def test_model_type_lstm_with_overrides_produces_valid_config(self):
+        """With --model_type lstm and --lstm_units/--lstm_num_layers, model_config is buildable."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = _make_args(
+                train_data_dir=tmpdir,
+                val_data_dir=tmpdir,
+                model_output_dir=tmpdir,
+                model_type="lstm",
+                lstm_units=64,
+                lstm_num_layers=2,
+                dropout_rate=0.1,
+            )
+            run_mock, model_config = _run_train_arrow_main(args)
+        run_mock.assert_called_once()
+        self.assertEqual(model_config.model_type, "lstm")
+        self.assertIsNotNone(model_config.lstm)
+        self.assertEqual(model_config.lstm.units, 64)
+        self.assertEqual(model_config.lstm.num_layers, 2)
+        self.assertEqual(model_config.lstm.dropout_rate, 0.1)
+        from stepcovnet import models
+
+        models.build_arrow_model_from_config(model_config)
 
     def test_snippet_half_frames_override(self):
         """snippet_half_frames CLI override updates dataset and model config (no-config path)."""

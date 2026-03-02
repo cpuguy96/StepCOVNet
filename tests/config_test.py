@@ -243,6 +243,85 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(params.hidden_dims, [32])
         self.assertEqual(params.dropout_rate, 0.1)
 
+    def test_from_dict_nested_lstm(self):
+        """Test creating config with model_type lstm and lstm block."""
+        data = {
+            "model_type": "lstm",
+            "lstm": {"units": 64, "num_layers": 2, "dropout_rate": 0.1},
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.model_type, "lstm")
+        self.assertIsNotNone(cfg.lstm)
+        assert cfg.lstm is not None
+        self.assertEqual(cfg.lstm.units, 64)
+        self.assertEqual(cfg.lstm.num_layers, 2)
+        self.assertEqual(cfg.lstm.dropout_rate, 0.1)
+
+    def test_as_dict_includes_lstm_when_present(self):
+        """as_dict includes lstm key when model has lstm params (for JSON round-trip)."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "lstm",
+                "lstm": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
+            }
+        )
+        d = cfg.as_dict()
+        self.assertIn("lstm", d)
+        self.assertEqual(d["lstm"]["units"], 64)
+        self.assertEqual(d["lstm"]["num_layers"], 1)
+        self.assertEqual(d["lstm"]["dropout_rate"], 0.0)
+
+    def test_get_experiment_name_parts_transformer(self):
+        """get_experiment_name_parts returns transformer param fragments when model_type is transformer."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "transformer": {"num_layers": 2, "d_model": 64},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("att_layers_2", parts)
+        self.assertIn("d_model_64", parts)
+
+    def test_get_experiment_name_parts_mlp(self):
+        """get_experiment_name_parts returns mlp param fragments when model_type is mlp."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "mlp",
+                "mlp": {"hidden_dims": [128, 64], "dropout_rate": 0.1},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("mlp_128_64", parts)
+        self.assertIn("dropout_0_1", parts)
+
+    def test_get_experiment_name_parts_lstm(self):
+        """get_experiment_name_parts returns lstm param fragments when model_type is lstm."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "lstm",
+                "lstm": {"units": 64, "num_layers": 2, "dropout_rate": 0.2},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("lstm_units_64", parts)
+        self.assertIn("lstm_layers_2", parts)
+        self.assertIn("dropout_0_2", parts)
+
+    def test_get_experiment_name_parts_uses_only_active_block(self):
+        """When both transformer and lstm are set, get_experiment_name_parts uses only active model_type."""
+        cfg = config.ArrowModelConfig(
+            model_type="lstm",
+            snippet_half_frames=0,
+            transformer=config.TransformerArrowParams(num_layers=2, d_model=128),
+            mlp=None,
+            lstm=config.LSTMArrowParams(units=32, num_layers=1, dropout_rate=0.0),
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("lstm_units_32", parts)
+        self.assertNotIn("att_layers", parts)
+        self.assertNotIn("d_model", parts)
+
 
 class RunConfigTest(unittest.TestCase):
     def test_create_with_required_fields(self):

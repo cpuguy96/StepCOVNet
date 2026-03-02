@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+from typing import Protocol
 
 
 @dataclasses.dataclass
@@ -135,6 +136,13 @@ class OnsetModelConfig:
         return cls(**data)
 
 
+class ArrowParamsProtocol(Protocol):
+    """Protocol for arrow model params. All arrow param classes must implement this."""
+
+    def as_dict(self) -> dict: ...
+    def experiment_name_parts(self) -> list[str]: ...
+
+
 @dataclasses.dataclass
 class TransformerArrowParams:
     """Parameters for the transformer-based arrow model. Used when model_type is 'transformer'."""
@@ -147,6 +155,15 @@ class TransformerArrowParams:
 
     def as_dict(self) -> dict:
         return dataclasses.asdict(self)
+
+    def experiment_name_parts(self) -> list[str]:
+        return [
+            f"att_layers_{self.num_layers}",
+            f"d_model_{self.d_model}",
+            f"num_heads_{self.num_heads}",
+            f"ff_dim_{self.ff_dim}",
+            f"dropout_{str(self.dropout_rate).replace('.', '_')}",
+        ]
 
     @classmethod
     def from_dict(cls, data: dict) -> TransformerArrowParams:
@@ -169,8 +186,43 @@ class MLPArrowParams:
     def as_dict(self) -> dict:
         return dataclasses.asdict(self)
 
+    def experiment_name_parts(self) -> list[str]:
+        return [
+            "mlp_" + "_".join(str(d) for d in self.hidden_dims),
+            f"dropout_{str(self.dropout_rate).replace('.', '_')}",
+        ]
+
     @classmethod
     def from_dict(cls, data: dict) -> MLPArrowParams:
+        return cls(
+            **{
+                k: v
+                for k, v in data.items()
+                if k in {f.name for f in dataclasses.fields(cls)}
+            }
+        )
+
+
+@dataclasses.dataclass
+class LSTMArrowParams:
+    """Parameters for the LSTM-based arrow model. Used when model_type is 'lstm'."""
+
+    units: int = 128
+    num_layers: int = 1
+    dropout_rate: float = 0.0
+
+    def as_dict(self) -> dict:
+        return dataclasses.asdict(self)
+
+    def experiment_name_parts(self) -> list[str]:
+        return [
+            f"lstm_units_{self.units}",
+            f"lstm_layers_{self.num_layers}",
+            f"dropout_{str(self.dropout_rate).replace('.', '_')}",
+        ]
+
+    @classmethod
+    def from_dict(cls, data: dict) -> LSTMArrowParams:
         return cls(
             **{
                 k: v
@@ -185,6 +237,13 @@ _TRANSFORMER_FLAT_KEYS = frozenset(
     {"num_layers", "d_model", "num_heads", "ff_dim", "dropout_rate"}
 )
 
+# Registry: model_type -> attribute name on ArrowModelConfig. Used for serialization and active block lookup.
+_ARROW_MODEL_TYPE_ATTR: dict[str, str] = {
+    "transformer": "transformer",
+    "mlp": "mlp",
+    "lstm": "lstm",
+}
+
 
 @dataclasses.dataclass
 class ArrowModelConfig:
@@ -192,14 +251,27 @@ class ArrowModelConfig:
 
     Supports multiple model types via nested architecture-specific params.
     Shared: model_type (which architecture), snippet_half_frames (input option).
-    Per-architecture blocks: transformer (TransformerArrowParams), mlp (MLPArrowParams).
-    Only the block matching model_type is required when building; others can be None.
+    Per-architecture blocks: transformer, mlp, lstm. Only the block matching
+    model_type is required when building; others can be None.
     """
 
     model_type: str = "transformer"
     snippet_half_frames: int = 0
     transformer: TransformerArrowParams | None = None
     mlp: MLPArrowParams | None = None
+    lstm: LSTMArrowParams | None = None
+
+    def get_active_params_block(self) -> ArrowParamsProtocol | None:
+        """Return the params block for the current model_type, or None if not set."""
+        attr = _ARROW_MODEL_TYPE_ATTR.get(self.model_type)
+        if attr is None:
+            return None
+        return getattr(self, attr, None)  # type: ignore[return-value]
+
+    def get_experiment_name_parts(self) -> list[str]:
+        """Return experiment name fragments from the active params block."""
+        block = self.get_active_params_block()
+        return block.experiment_name_parts() if block is not None else []
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization (nested shape)."""
@@ -207,10 +279,10 @@ class ArrowModelConfig:
             "model_type": self.model_type,
             "snippet_half_frames": self.snippet_half_frames,
         }
-        if self.transformer is not None:
-            out["transformer"] = self.transformer.as_dict()
-        if self.mlp is not None:
-            out["mlp"] = self.mlp.as_dict()
+        for _model_type, attr in _ARROW_MODEL_TYPE_ATTR.items():
+            block = getattr(self, attr, None)
+            if block is not None:
+                out[attr] = block.as_dict()
         return out
 
     @classmethod
@@ -219,38 +291,42 @@ class ArrowModelConfig:
         model_type = data.get("model_type", "transformer")
         snippet_half_frames = data.get("snippet_half_frames", 0)
 
-        # Nested: explicit "transformer" or "mlp" blocks (only for active model_type)
+        # Parse active block; transformer has flat-key backward compat.
+        transformer: TransformerArrowParams | None = None
+        mlp: MLPArrowParams | None = None
+        lstm: LSTMArrowParams | None = None
+
         if model_type == "transformer":
             if "transformer" in data:
                 transformer = TransformerArrowParams.from_dict(data["transformer"])
             elif _TRANSFORMER_FLAT_KEYS.intersection(data):
-                # Backward compat: flat transformer keys at top level
                 flat = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
                 transformer = TransformerArrowParams.from_dict(flat)
             else:
                 transformer = TransformerArrowParams()
-            # Overlay flat keys at top level (e.g. from apply_overrides with model.dropout_rate)
             flat_overlay = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
             if flat_overlay:
                 merged = {**transformer.as_dict(), **flat_overlay}
                 transformer = TransformerArrowParams.from_dict(merged)
-        else:
-            transformer = None
-
-        if model_type == "mlp":
+        elif model_type == "mlp":
             mlp = (
                 MLPArrowParams.from_dict(data["mlp"])
                 if "mlp" in data
                 else MLPArrowParams()
             )
-        else:
-            mlp = None
+        elif model_type == "lstm":
+            lstm = (
+                LSTMArrowParams.from_dict(data["lstm"])
+                if "lstm" in data
+                else LSTMArrowParams()
+            )
 
         return cls(
             model_type=model_type,
             snippet_half_frames=snippet_half_frames,
             transformer=transformer,
             mlp=mlp,
+            lstm=lstm,
         )
 
 

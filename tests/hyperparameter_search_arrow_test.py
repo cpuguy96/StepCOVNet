@@ -266,8 +266,8 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
     def test_apply_overrides_creates_missing_intermediate_dict(self):
         """Override targeting a nested key on a non-existent intermediate dict creates it (_set_nested branch)."""
         base = self._minimal_base_config()
-        # Base has only transformer; no mlp. Setting model.mlp.hidden_dims must create model.mlp.
-        overrides = {"model.mlp.hidden_dims": [128, 64]}
+        # Base has only transformer. Set model_type to mlp and model.mlp.hidden_dims so mlp block is created and used.
+        overrides = {"model.model_type": "mlp", "model.mlp.hidden_dims": [128, 64]}
         out = hyperparameter_search_arrow.apply_overrides(base, overrides)
         self.assertIsNotNone(out.model.mlp)
         assert out.model.mlp is not None
@@ -280,6 +280,23 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         out = hyperparameter_search_arrow.apply_overrides(base, overrides)
         self.assertEqual(out.model.model_type, "mlp")
         self.assertIsNotNone(out.model.mlp)
+
+    def test_apply_overrides_model_lstm_keys(self):
+        """Overrides like model.model_type=lstm and model.lstm.units apply correctly."""
+        base = self._minimal_base_config()
+        overrides = {
+            "model.model_type": "lstm",
+            "model.lstm.units": 64,
+            "model.lstm.num_layers": 2,
+            "model.lstm.dropout_rate": 0.1,
+        }
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        self.assertEqual(out.model.model_type, "lstm")
+        self.assertIsNotNone(out.model.lstm)
+        assert out.model.lstm is not None
+        self.assertEqual(out.model.lstm.units, 64)
+        self.assertEqual(out.model.lstm.num_layers, 2)
+        self.assertEqual(out.model.lstm.dropout_rate, 0.1)
 
     def test_apply_overrides_forces_val_take_count_minus_one_batch_size_one(self):
         """Epoch comes from base; val_take_count and batch_size are forced."""

@@ -173,7 +173,21 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--model_type",
     type=str,
-    help="Arrow model architecture: 'transformer' or 'mlp'. Overrides config file.",
+    help="Arrow model architecture: 'transformer', 'mlp', or 'lstm'. Overrides config file.",
+    default=None,
+    required=False,
+)
+PARSER.add_argument(
+    "--lstm_units",
+    type=int,
+    help="LSTM units (when model_type is 'lstm').",
+    default=None,
+    required=False,
+)
+PARSER.add_argument(
+    "--lstm_num_layers",
+    type=int,
+    help="Number of LSTM layers (when model_type is 'lstm').",
     default=None,
     required=False,
 )
@@ -252,18 +266,24 @@ def main():
         model_config.snippet_half_frames = ARGS.snippet_half_frames
 
     # Apply model_type first so the active params block is known before architecture-specific args.
-    # When overriding via CLI, clear the inactive params block so only the active one is used
-    # (e.g. avoid keeping transformer params when --model_type mlp is set).
+    # Clear inactive params blocks (registry-driven); then ensure active block has a default.
     if ARGS.model_type is not None:
         model_config.model_type = ARGS.model_type
-        if model_config.model_type == "transformer":
-            model_config.mlp = None
-        else:
-            model_config.transformer = None
-    if model_config.model_type == "transformer" and model_config.transformer is None:
-        model_config.transformer = config.TransformerArrowParams()
-    if model_config.model_type == "mlp" and model_config.mlp is None:
-        model_config.mlp = config.MLPArrowParams()
+        for mt, attr in config._ARROW_MODEL_TYPE_ATTR.items():
+            if mt != model_config.model_type:
+                setattr(model_config, attr, None)
+    _arrow_defaults = {
+        "transformer": config.TransformerArrowParams,
+        "mlp": config.MLPArrowParams,
+        "lstm": config.LSTMArrowParams,
+    }
+    active_attr = config._ARROW_MODEL_TYPE_ATTR.get(model_config.model_type)
+    if active_attr is not None and getattr(model_config, active_attr) is None:
+        setattr(
+            model_config,
+            active_attr,
+            _arrow_defaults[model_config.model_type](),
+        )
 
     if model_config.model_type == "transformer":
         transformer = model_config.transformer
@@ -282,6 +302,15 @@ def main():
         mlp = model_config.mlp
         if mlp is not None:
             mlp.dropout_rate = ARGS.dropout_rate
+    elif model_config.model_type == "lstm":
+        lstm = model_config.lstm
+        if lstm is not None:
+            if ARGS.lstm_units is not None:
+                lstm.units = ARGS.lstm_units
+            if ARGS.lstm_num_layers is not None:
+                lstm.num_layers = ARGS.lstm_num_layers
+            if ARGS.dropout_rate is not None:
+                lstm.dropout_rate = ARGS.dropout_rate
 
     if ARGS.epochs is not None:
         run_config.epoch = ARGS.epochs

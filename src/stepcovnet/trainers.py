@@ -186,21 +186,7 @@ def _get_arrow_experiment_name(
     else:
         parts.append(f"take_{run_config.take_count}")
 
-    # Include only the active model_type's params so the name matches the architecture trained.
-    if (
-        model_config.model_type == "transformer"
-        and model_config.transformer is not None
-    ):
-        p = model_config.transformer
-        parts.append(f"att_layers_{p.num_layers}")
-        parts.append(f"d_model_{p.d_model}")
-        parts.append(f"num_heads_{p.num_heads}")
-        parts.append(f"ff_dim_{p.ff_dim}")
-        parts.append(f"dropout_{str(p.dropout_rate).replace('.', '_')}")
-    elif model_config.model_type == "mlp" and model_config.mlp is not None:
-        p = model_config.mlp
-        parts.append("mlp_" + "_".join(str(d) for d in p.hidden_dims))
-        parts.append(f"dropout_{str(p.dropout_rate).replace('.', '_')}")
+    parts.extend(model_config.get_experiment_name_parts())
 
     if model_config.snippet_half_frames > 0:
         parts.append(f"snippets_half_{model_config.snippet_half_frames}")
