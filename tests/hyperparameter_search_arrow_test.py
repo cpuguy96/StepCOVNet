@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 import subprocess
@@ -11,12 +10,18 @@ import pytest
 
 from stepcovnet import config, trainers
 
-# Load the script as a module so we can test its functions without running main()
-_SCRIPT_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "scripts", "hyperparameter_search_arrow.py"
-)
-_SCRIPT_PATH = os.path.normpath(os.path.abspath(_SCRIPT_PATH))
-_PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.dirname(_SCRIPT_PATH)))
+# Allow importing the script module (scripts/hyperparameter_search_arrow.py)
+_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
+_SCRIPT_DIR = os.path.abspath(_SCRIPT_DIR)
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
+import hyperparameter_search_arrow  # noqa: E402
+
+_SCRIPT_PATH = os.path.join(_SCRIPT_DIR, "hyperparameter_search_arrow.py")
+_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+
+TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
 
 def _run_sweep_script(*args):
@@ -27,18 +32,6 @@ def _run_sweep_script(*args):
         capture_output=True,
         text=True,
     )
-
-
-_spec = importlib.util.spec_from_file_location(
-    "hyperparameter_search_arrow",
-    _SCRIPT_PATH,
-    submodule_search_locations=[os.path.join(os.path.dirname(__file__), "..")],
-)
-assert _spec is not None and _spec.loader is not None
-sweep_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(sweep_module)
-
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
 
 class SweepConfigLoadingTest(unittest.TestCase):
@@ -59,7 +52,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             )
             path = f.name
         try:
-            data = sweep_module.load_sweep_config(path)
+            data = hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIsInstance(data, dict)
             self.assertEqual(data["base_config"], "configs/arrow_baseline.json")
             self.assertEqual(data["search_space"]["model.dropout_rate"], [0.0, 0.1])
@@ -83,7 +76,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = f.name
         try:
             with self.assertRaises(ValueError) as ctx:
-                sweep_module.load_sweep_config(path)
+                hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("base_config", str(ctx.exception))
         finally:
             os.unlink(path)
@@ -100,7 +93,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = f.name
         try:
             with self.assertRaises(ValueError) as ctx:
-                sweep_module.load_sweep_config(path)
+                hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("optimize", str(ctx.exception))
         finally:
             os.unlink(path)
@@ -118,7 +111,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = f.name
         try:
             with self.assertRaises(ValueError) as ctx:
-                sweep_module.load_sweep_config(path)
+                hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("mode", str(ctx.exception))
         finally:
             os.unlink(path)
@@ -137,7 +130,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = f.name
         try:
             with self.assertRaises(ValueError) as ctx:
-                sweep_module.load_sweep_config(path)
+                hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("forbidden", str(ctx.exception).lower())
         finally:
             os.unlink(path)
@@ -159,7 +152,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
                 )
                 path = f.name
             try:
-                data = sweep_module.load_sweep_config(path)
+                data = hyperparameter_search_arrow.load_sweep_config(path)
                 self.assertEqual(data["search"], search_val)
             finally:
                 os.unlink(path)
@@ -179,7 +172,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = f.name
         try:
             with self.assertRaises(ValueError) as ctx:
-                sweep_module.load_sweep_config(path)
+                hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("search", str(ctx.exception))
         finally:
             os.unlink(path)
@@ -194,7 +187,7 @@ class GridExpansionTest(unittest.TestCase):
             "model.num_layers": [1, 2, 3],
             "run.chart_validity_aux_weight": [0.0, 0.3],
         }
-        combinations = sweep_module.expand_grid(search_space)
+        combinations = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertEqual(len(combinations), 2 * 3 * 2)
         for combo in combinations:
             self.assertIsInstance(combo, dict)
@@ -207,7 +200,7 @@ class GridExpansionTest(unittest.TestCase):
 
     def test_expand_grid_single_param(self):
         search_space = {"model.num_layers": [1, 2]}
-        combinations = sweep_module.expand_grid(search_space)
+        combinations = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertEqual(len(combinations), 2)
         self.assertEqual(combinations[0], {"model.num_layers": 1})
         self.assertEqual(combinations[1], {"model.num_layers": 2})
@@ -231,10 +224,14 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
                 batch_size=4,
                 snippet_half_frames=0,
             ),
-            model=config.ArrowModelConfig(
-                num_layers=1,
-                d_model=128,
-                dropout_rate=0.5,
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "transformer": {
+                        "num_layers": 1,
+                        "d_model": 128,
+                        "dropout_rate": 0.5,
+                    },
+                }
             ),
             run=config.ArrowRunConfig(
                 epoch=10,
@@ -248,14 +245,29 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
     def test_apply_overrides_updates_model_and_run(self):
         base = self._minimal_base_config()
         overrides = {
-            "model.dropout_rate": 0.2,
-            "model.num_layers": 2,
+            "model.transformer.dropout_rate": 0.2,
+            "model.transformer.num_layers": 2,
             "run.chart_validity_aux_weight": 0.3,
         }
-        out = sweep_module.apply_overrides(base, overrides)
-        self.assertEqual(out.model.dropout_rate, 0.2)
-        self.assertEqual(out.model.num_layers, 2)
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        self.assertEqual(out.model.transformer.dropout_rate, 0.2)
+        self.assertEqual(out.model.transformer.num_layers, 2)
         self.assertEqual(out.run.chart_validity_aux_weight, 0.3)
+
+    def test_apply_overrides_nested_model_keys(self):
+        """Multi-level keys (model.transformer.num_layers) apply to nested config."""
+        base = self._minimal_base_config()
+        overrides = {"model.transformer.num_layers": 3}
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        self.assertEqual(out.model.transformer.num_layers, 3)
+
+    def test_apply_overrides_model_type_can_be_set(self):
+        """Sweep can set model.model_type (e.g. transformer vs mlp) in overrides."""
+        base = self._minimal_base_config()
+        overrides = {"model.model_type": "mlp"}
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        self.assertEqual(out.model.model_type, "mlp")
+        self.assertIsNotNone(out.model.mlp)
 
     def test_apply_overrides_forces_val_take_count_minus_one_batch_size_one(self):
         """Epoch comes from base; val_take_count and batch_size are forced."""
@@ -264,7 +276,7 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         self.assertEqual(base.run.val_take_count, 5)
         self.assertEqual(base.dataset.batch_size, 4)
         overrides = {}
-        out = sweep_module.apply_overrides(base, overrides)
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
         self.assertEqual(out.run.epoch, 10)
         self.assertEqual(out.run.val_take_count, -1)
         self.assertEqual(out.dataset.batch_size, 1)
@@ -273,7 +285,7 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         """epoch and take_count come from base when not in overrides."""
         base = self._minimal_base_config()
         base.run.take_count = 25
-        out = sweep_module.apply_overrides(base, {})
+        out = hyperparameter_search_arrow.apply_overrides(base, {})
         self.assertEqual(out.run.take_count, 25)
         self.assertEqual(out.run.epoch, 10)
         self.assertEqual(out.run.val_take_count, -1)
@@ -282,7 +294,9 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         """run.epoch and run.take_count in overrides are applied."""
         base = self._minimal_base_config()
         base.run.take_count = 10
-        out = sweep_module.apply_overrides(base, {"run.epoch": 50, "run.take_count": 5})
+        out = hyperparameter_search_arrow.apply_overrides(
+            base, {"run.epoch": 50, "run.take_count": 5}
+        )
         self.assertEqual(out.run.epoch, 50)
         self.assertEqual(out.run.take_count, 5)
 
@@ -303,7 +317,7 @@ class ForbiddenKeysValidationTest(unittest.TestCase):
             path = f.name
         try:
             with self.assertRaises(ValueError) as ctx:
-                sweep_module.load_sweep_config(path)
+                hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("forbidden", str(ctx.exception).lower())
         finally:
             os.unlink(path)
@@ -318,7 +332,7 @@ class BestRunSelectionTest(unittest.TestCase):
             {"best_val_loss": 0.3, "best_val_acc": 0.9},
             {"best_val_loss": 0.4, "best_val_acc": 0.85},
         ]
-        idx = sweep_module.select_best_run(results, "val_loss", "min")
+        idx = hyperparameter_search_arrow.select_best_run(results, "val_loss", "min")
         self.assertEqual(idx, 1)
 
     def test_select_best_run_max_val_acc(self):
@@ -327,17 +341,17 @@ class BestRunSelectionTest(unittest.TestCase):
             {"best_val_loss": 0.3, "best_val_acc": 0.9},
             {"best_val_loss": 0.4, "best_val_acc": 0.95},
         ]
-        idx = sweep_module.select_best_run(results, "val_acc", "max")
+        idx = hyperparameter_search_arrow.select_best_run(results, "val_acc", "max")
         self.assertEqual(idx, 2)
 
     def test_select_best_run_single_result(self):
         results = [{"best_val_loss": 0.5}]
-        idx = sweep_module.select_best_run(results, "val_loss", "min")
+        idx = hyperparameter_search_arrow.select_best_run(results, "val_loss", "min")
         self.assertEqual(idx, 0)
 
     def test_select_best_run_empty_raises(self):
         with self.assertRaises(ValueError) as ctx:
-            sweep_module.select_best_run([], "val_loss", "min")
+            hyperparameter_search_arrow.select_best_run([], "val_loss", "min")
         self.assertIn("empty", str(ctx.exception))
 
 
@@ -345,16 +359,16 @@ class IsBetterThanTest(unittest.TestCase):
     """_is_better_than for best-so-far comparison (min/max, None)."""
 
     def test_min_mode_lower_is_better(self):
-        self.assertTrue(sweep_module._is_better_than(0.3, None, "min"))
-        self.assertTrue(sweep_module._is_better_than(0.3, 0.5, "min"))
-        self.assertFalse(sweep_module._is_better_than(0.5, 0.3, "min"))
-        self.assertFalse(sweep_module._is_better_than(0.3, 0.3, "min"))
+        self.assertTrue(hyperparameter_search_arrow._is_better_than(0.3, None, "min"))
+        self.assertTrue(hyperparameter_search_arrow._is_better_than(0.3, 0.5, "min"))
+        self.assertFalse(hyperparameter_search_arrow._is_better_than(0.5, 0.3, "min"))
+        self.assertFalse(hyperparameter_search_arrow._is_better_than(0.3, 0.3, "min"))
 
     def test_max_mode_higher_is_better(self):
-        self.assertTrue(sweep_module._is_better_than(0.9, None, "max"))
-        self.assertTrue(sweep_module._is_better_than(0.9, 0.5, "max"))
-        self.assertFalse(sweep_module._is_better_than(0.3, 0.5, "max"))
-        self.assertFalse(sweep_module._is_better_than(0.5, 0.5, "max"))
+        self.assertTrue(hyperparameter_search_arrow._is_better_than(0.9, None, "max"))
+        self.assertTrue(hyperparameter_search_arrow._is_better_than(0.9, 0.5, "max"))
+        self.assertFalse(hyperparameter_search_arrow._is_better_than(0.3, 0.5, "max"))
+        self.assertFalse(hyperparameter_search_arrow._is_better_than(0.5, 0.5, "max"))
 
 
 class ExtractMetricsTest(unittest.TestCase):
@@ -366,7 +380,7 @@ class ExtractMetricsTest(unittest.TestCase):
             "val_loss": [0.8, 0.5, 0.4],
             "val_acc": [0.6, 0.7, 0.85],
         }
-        metrics = sweep_module.extract_metrics(history)
+        metrics = hyperparameter_search_arrow.extract_metrics(history)
         self.assertEqual(metrics["final_val_loss"], 0.4)
         self.assertEqual(metrics["best_val_loss"], 0.4)
         self.assertEqual(metrics["best_epoch_val_loss"], 3)
@@ -382,7 +396,7 @@ class ExtractMetricsTest(unittest.TestCase):
             "val_chart_validity_aux_loss": [0.2, 0.1, 0.15],
             "val_acc": [0.6, 0.8, 0.7],
         }
-        metrics = sweep_module.extract_metrics(history)
+        metrics = hyperparameter_search_arrow.extract_metrics(history)
         self.assertEqual(metrics["best_val_main_loss"], 0.5)
         self.assertEqual(metrics["best_epoch_val_main_loss"], 2)
         self.assertEqual(metrics["best_val_chart_validity_aux_loss"], 0.1)
@@ -497,7 +511,7 @@ class RandomSearchTest(unittest.TestCase):
             self.assertEqual(
                 len(results), 2, "random search should run exactly 2 trials"
             )
-            full_combinations = sweep_module.expand_grid(
+            full_combinations = hyperparameter_search_arrow.expand_grid(
                 {
                     "model.dropout_rate": [0.0, 0.1],
                     "run.chart_validity_aux_weight": [0.0, 0.3],
@@ -566,7 +580,7 @@ class RandomSearchTest(unittest.TestCase):
     def test_random_search_same_seed_same_order(self):
         """Same seed produces the same sampled overrides (reproducibility)."""
         search_space = {"model.dropout_rate": [0.0, 0.1, 0.2], "run.epoch": [1, 2]}
-        full = sweep_module.expand_grid(search_space)
+        full = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertEqual(len(full), 6)
         import random
 
@@ -628,7 +642,7 @@ class ResumeSweepTest(unittest.TestCase):
             os.makedirs(os.path.join(resume_dir, "callbacks"), exist_ok=True)
 
             search_space = {"model.dropout_rate": [0.0, 0.1]}
-            combinations = sweep_module.expand_grid(search_space)
+            combinations = hyperparameter_search_arrow.expand_grid(search_space)
             sweep_config = {
                 "base_config": os.path.abspath(base_config_override),
                 "search_space": search_space,
@@ -683,10 +697,10 @@ class WorkersOptionTest(unittest.TestCase):
             ],
         ):
             with mock.patch.object(
-                sweep_module.PARSER, "error", side_effect=SystemExit(2)
+                hyperparameter_search_arrow.PARSER, "error", side_effect=SystemExit(2)
             ):
                 with self.assertRaises(SystemExit):
-                    sweep_module.main()
+                    hyperparameter_search_arrow.main()
 
     def test_workers_two_uses_parallel_path(self):
         """With --workers=2 and 2 grid points, executor receives 2 submit() calls and results are collected."""
@@ -744,7 +758,9 @@ class WorkersOptionTest(unittest.TestCase):
                 json.dump(sweep_data, f)
 
             with mock.patch.object(
-                sweep_module.futures, "ProcessPoolExecutor", return_value=FakeExecutor()
+                hyperparameter_search_arrow.futures,
+                "ProcessPoolExecutor",
+                return_value=FakeExecutor(),
             ):
                 with mock.patch(
                     "sys.argv",
@@ -756,7 +772,7 @@ class WorkersOptionTest(unittest.TestCase):
                         "2",
                     ],
                 ):
-                    exit_code = sweep_module.main()
+                    exit_code = hyperparameter_search_arrow.main()
             self.assertEqual(exit_code, 0)
             self.assertEqual(
                 len(submitted_futures), 2, "should submit 2 runs (2 grid points)"
@@ -848,10 +864,12 @@ class WorkersOptionTest(unittest.TestCase):
                 print_calls.append(" ".join(str(a) for a in args))
 
             with mock.patch.object(
-                sweep_module.futures, "ProcessPoolExecutor", return_value=FakeExecutor()
+                hyperparameter_search_arrow.futures,
+                "ProcessPoolExecutor",
+                return_value=FakeExecutor(),
             ):
                 with mock.patch.object(
-                    sweep_module.futures,
+                    hyperparameter_search_arrow.futures,
                     "as_completed",
                     side_effect=ordered_as_completed,
                 ):
@@ -866,7 +884,7 @@ class WorkersOptionTest(unittest.TestCase):
                                 "1",
                             ],
                         ):
-                            exit_code = sweep_module.main()
+                            exit_code = hyperparameter_search_arrow.main()
             self.assertEqual(exit_code, 0)
             out = "\n".join(print_calls)
             self.assertIn("NEW BEST", out, "Expected at least one 'NEW BEST' message")
@@ -910,14 +928,16 @@ class MemoryBoundedSweepTest(unittest.TestCase):
         base_config.run.take_count = 2
         base_config.run.epoch = 1
         search_space = {"model.dropout_rate": [0.0, 0.1, 0.2, 0.25]}
-        combinations = sweep_module.expand_grid(search_space)
+        combinations = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertGreaterEqual(len(combinations), 4)
         combinations = combinations[:4]
         process = psutil.Process(os.getpid())
         rss_after_run = []
         with tempfile.TemporaryDirectory() as temp_dir:
             for i, overrides in enumerate(combinations):
-                run_config = sweep_module.apply_overrides(base_config, overrides)
+                run_config = hyperparameter_search_arrow.apply_overrides(
+                    base_config, overrides
+                )
                 run_config.run.model_output_dir = os.path.join(
                     temp_dir, "models", f"run_{i}"
                 )
@@ -931,9 +951,9 @@ class MemoryBoundedSweepTest(unittest.TestCase):
                     run_config.model,
                     run_config.run,
                 )
-                sweep_module.extract_metrics(history)
+                hyperparameter_search_arrow.extract_metrics(history)
                 del model, history
-                sweep_module._clear_tf_memory()
+                hyperparameter_search_arrow._clear_tf_memory()
                 rss_after_run.append(process.memory_info().rss)
         self.assertEqual(len(rss_after_run), 4)
         rss_min, rss_max = min(rss_after_run), max(rss_after_run)

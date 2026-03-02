@@ -196,6 +196,17 @@ def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
     return combinations
 
 
+def _set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
+    """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed."""
+    parts = key_path.split(".")
+    current = d
+    for part in parts[:-1]:
+        if part not in current:
+            current[part] = {}
+        current = current[part]
+    current[parts[-1]] = value
+
+
 def apply_overrides(
     base: config.ArrowExperimentConfig,
     overrides: dict[str, Any],
@@ -205,6 +216,7 @@ def apply_overrides(
     Does not apply forbidden keys. After overrides, forces run.val_take_count=-1,
     dataset.batch_size=1, and sweep-time verbosity (show_model_summary=False,
     fit_verbose=0). run.epoch and run.take_count come from base config or overrides.
+    Supports multi-level keys (e.g. model.transformer.num_layers, model.mlp.hidden_dims).
     """
     # Work with dict so we can mutate nested fields.
     d = base.as_dict()
@@ -215,11 +227,11 @@ def apply_overrides(
             continue
         prefix, rest = key.split(".", 1)
         if prefix == "dataset":
-            d["dataset"][rest] = value
+            _set_nested(d["dataset"], rest, value)
         elif prefix == "model":
-            d["model"][rest] = value
+            _set_nested(d["model"], rest, value)
         elif prefix == "run":
-            d["run"][rest] = value
+            _set_nested(d["run"], rest, value)
     # Force fixed values
     d["run"]["val_take_count"] = _VAL_TAKE_COUNT_FIXED
     d["dataset"]["batch_size"] = _BATCH_SIZE_FIXED
