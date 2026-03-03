@@ -377,7 +377,8 @@ class BrowseCallbacksTest(unittest.TestCase):
         self.root, self.app = _make_app()
         self.addCleanup(self.root.destroy)
 
-    def test_browse_audio_sets_path_and_default_output(self):
+    def test_browse_audio_sets_path_and_default_output_not_same_as_audio(self):
+        """Default output is basename_chart.txt (not basename.txt) when output was empty."""
         with mock.patch(
             "tkinter.filedialog.askopenfilename",
             return_value="C:/music/song.mp3",
@@ -386,7 +387,29 @@ class BrowseCallbacksTest(unittest.TestCase):
         self.assertEqual(self.app.audio_path_var.get(), "C:/music/song.mp3")
         self.assertEqual(
             os.path.normpath(self.app.output_path_var.get()),
-            os.path.normpath("C:/music/song.txt"),
+            os.path.normpath("C:/music/song_chart.txt"),
+        )
+
+    def test_browse_audio_default_output_uses_song_title_when_set(self):
+        """When song title is set, default output filename is song title + .txt (sanitized)."""
+        self.app.song_title_var.set("My Song")
+        with mock.patch(
+            "tkinter.filedialog.askopenfilename",
+            return_value="C:/music/anything.ogg",
+        ):
+            self.app.browse_audio()
+        self.assertEqual(
+            os.path.normpath(self.app.output_path_var.get()),
+            os.path.normpath("C:/music/My Song.txt"),
+        )
+
+    def test_default_output_path_for_audio_sanitizes_unsafe_chars(self):
+        """Song title with path-unsafe chars is sanitized to underscores."""
+        self.app.song_title_var.set("Title/with:bad*chars?")
+        result = self.app._default_output_path_for_audio("C:/dir/file.ogg")
+        self.assertEqual(
+            os.path.normpath(result),
+            os.path.normpath("C:/dir/Title_with_bad_chars_.txt"),
         )
 
     def test_browse_audio_does_not_overwrite_output_when_set(self):

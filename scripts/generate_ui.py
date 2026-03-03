@@ -196,6 +196,19 @@ class _GeneratorApp:
     def _on_mousewheel(self, event: tk.Event) -> None:
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
+    def _default_output_path_for_audio(self, audio_path: str) -> str:
+        """Suggested output path when user selects an audio file: song title or basename_chart.txt, not basename.txt."""
+        out_dir = os.path.dirname(audio_path)
+        base = os.path.splitext(os.path.basename(audio_path))[0]
+        title = self.song_title_var.get().strip()
+        if title:
+            # Sanitize for filesystem: replace path separators and other unsafe chars
+            safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in title).strip()
+            name = safe if safe else base + "_chart"
+        else:
+            name = base + "_chart"
+        return os.path.join(out_dir, name + ".txt")
+
     def browse_audio(self) -> None:
         path = filedialog.askopenfilename(
             filetypes=AUDIO_TYPES, title="Select audio file"
@@ -203,9 +216,7 @@ class _GeneratorApp:
         if path:
             self.audio_path_var.set(path)
             if not self.output_path_var.get().strip():
-                base = os.path.splitext(os.path.basename(path))[0]
-                out_dir = os.path.dirname(path)
-                self.output_path_var.set(os.path.join(out_dir, base + ".txt"))
+                self.output_path_var.set(self._default_output_path_for_audio(path))
 
     def browse_onset(self) -> None:
         path = filedialog.askopenfilename(
