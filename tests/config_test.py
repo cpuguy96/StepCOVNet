@@ -261,7 +261,12 @@ class ArrowModelConfigTest(unittest.TestCase):
         """Test creating config with model_type lstm and lstm block."""
         data = {
             "model_type": "lstm",
-            "lstm": {"units": 64, "num_layers": 2, "dropout_rate": 0.1},
+            "lstm": {
+                "units": 64,
+                "num_layers": 2,
+                "dropout_rate": 0.1,
+                "bidirectional": True,
+            },
         }
         cfg = config.ArrowModelConfig.from_dict(data)
         self.assertEqual(cfg.model_type, "lstm")
@@ -270,13 +275,19 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(cfg.lstm.units, 64)
         self.assertEqual(cfg.lstm.num_layers, 2)
         self.assertEqual(cfg.lstm.dropout_rate, 0.1)
+        self.assertTrue(cfg.lstm.bidirectional)
 
     def test_as_dict_includes_lstm_when_present(self):
         """as_dict includes lstm key when model has lstm params (for JSON round-trip)."""
         cfg = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "lstm",
-                "lstm": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
+                "lstm": {
+                    "units": 64,
+                    "num_layers": 1,
+                    "dropout_rate": 0.0,
+                    "bidirectional": True,
+                },
             }
         )
         d = cfg.as_dict()
@@ -284,6 +295,12 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(d["lstm"]["units"], 64)
         self.assertEqual(d["lstm"]["num_layers"], 1)
         self.assertEqual(d["lstm"]["dropout_rate"], 0.0)
+        self.assertEqual(d["lstm"]["bidirectional"], True)
+        # Round-trip: from_dict(as_dict()) preserves bidirectional
+        cfg2 = config.ArrowModelConfig.from_dict(d)
+        self.assertIsNotNone(cfg2.lstm)
+        assert cfg2.lstm is not None
+        self.assertTrue(cfg2.lstm.bidirectional)
 
     def test_get_experiment_name_parts_transformer(self):
         """get_experiment_name_parts returns transformer param fragments when model_type is transformer."""
@@ -321,6 +338,24 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertIn("lstm_units_64", parts)
         self.assertIn("lstm_layers_2", parts)
         self.assertIn("dropout_0_2", parts)
+        self.assertNotIn("lstm_bidir", parts)
+
+    def test_get_experiment_name_parts_lstm_bidirectional(self):
+        """When lstm.bidirectional is True, experiment name parts include lstm_bidir."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "lstm",
+                "lstm": {
+                    "units": 64,
+                    "num_layers": 2,
+                    "dropout_rate": 0.2,
+                    "bidirectional": True,
+                },
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("lstm_bidir", parts)
+        self.assertIn("lstm_units_64", parts)
 
     def test_get_experiment_name_parts_uses_only_active_block(self):
         """When both transformer and lstm are set, get_experiment_name_parts uses only active model_type."""

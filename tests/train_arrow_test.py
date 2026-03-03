@@ -185,6 +185,24 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         self.assertFalse(result.run.show_model_summary)
         self.assertEqual(result.run.epoch, 2)
 
+    def test_coercion_bool_true(self):
+        """Bool override run.show_model_summary=true coerces to True (covers _coerce_value true branch)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            result = train_arrow.apply_overrides_from_cli(
+                base,
+                ["run.show_model_summary=true"],
+            )
+        self.assertTrue(result.run.show_model_summary)
+
     def test_empty_key_path_components_skipped(self):
         """Overrides with empty path components (e.g. dataset.=value) are skipped; no TypeError on from_dict."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -381,6 +399,27 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.lstm.units, 64)
         self.assertEqual(model_config.lstm.num_layers, 2)
         self.assertEqual(model_config.lstm.dropout_rate, 0.1)
+        models.build_arrow_model_from_config(model_config)
+
+    def test_lstm_bidirectional_override_builds(self):
+        """--set model.lstm.bidirectional=true results in bidirectional True and model builds."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(
+                path,
+                [
+                    "model.model_type=lstm",
+                    "model.lstm.units=64",
+                    "model.lstm.num_layers=1",
+                    "model.lstm.bidirectional=true",
+                ],
+            )
+            run_mock, model_config = _run_train_arrow_main(args)
+        run_mock.assert_called_once()
+        self.assertEqual(model_config.model_type, "lstm")
+        self.assertIsNotNone(model_config.lstm)
+        assert model_config.lstm is not None
+        self.assertTrue(model_config.lstm.bidirectional)
         models.build_arrow_model_from_config(model_config)
 
     def test_snippet_half_frames_override(self):

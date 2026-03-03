@@ -568,12 +568,16 @@ def _build_arrow_lstm(
         inputs = timing_input
 
     for i in range(num_layers):
-        x = keras.layers.LSTM(
+        lstm_layer = keras.layers.LSTM(
             units,
             return_sequences=True,
             dropout=dropout_rate,
             name=f"lstm_{i}",
-        )(x)
+        )
+        if params.bidirectional:
+            x = keras.layers.Bidirectional(lstm_layer, name=f"bidirectional_{i}")(x)
+        else:
+            x = lstm_layer(x)
 
     # Classification head: dense + dropout before softmax (adds capacity and regularization)
     x = keras.layers.Dense(

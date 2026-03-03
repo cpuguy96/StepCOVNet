@@ -210,16 +210,20 @@ class LSTMArrowParams:
     units: int = 128
     num_layers: int = 1
     dropout_rate: float = 0.0
+    bidirectional: bool = False
 
     def as_dict(self) -> dict:
         return dataclasses.asdict(self)
 
     def experiment_name_parts(self) -> list[str]:
-        return [
+        parts = [
             f"lstm_units_{self.units}",
             f"lstm_layers_{self.num_layers}",
             f"dropout_{str(self.dropout_rate).replace('.', '_')}",
         ]
+        if self.bidirectional:
+            parts.append("lstm_bidir")
+        return parts
 
     @classmethod
     def from_dict(cls, data: dict) -> LSTMArrowParams:

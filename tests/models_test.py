@@ -135,6 +135,37 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(prediction.shape, (1, 100, 256))
         self.assertIn("lstm_run", model.name)
 
+    def test_build_arrow_model_from_config_lstm_bidirectional(self):
+        """build_arrow_model_from_config with lstm and bidirectional=True builds and contains Bidirectional layer."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "lstm",
+                "lstm": {
+                    "units": 64,
+                    "num_layers": 1,
+                    "dropout_rate": 0.0,
+                    "bidirectional": True,
+                },
+            }
+        )
+        model = models.build_arrow_model_from_config(
+            model_config, model_name="lstm_bidir_run"
+        )
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(len(model.inputs), 1)
+        self.assertEqual(model.output_shape, (None, None, 256))
+        bidirectional_layers = [
+            l for l in model.layers if isinstance(l, keras.layers.Bidirectional)
+        ]
+        self.assertGreater(
+            len(bidirectional_layers),
+            0,
+            "model should contain at least one Bidirectional layer",
+        )
+        dummy_input = np.random.random((1, 100, 1)).astype(np.float32)
+        prediction = model.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 100, 256))
+
     def test_build_arrow_model_from_config_unknown_model_type_raises(self):
         """build_arrow_model_from_config raises ValueError for unknown model_type."""
         model_config = config.ArrowModelConfig.from_dict({"model_type": "unknown_arch"})
