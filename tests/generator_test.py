@@ -195,44 +195,42 @@ class GeneratorTest(unittest.TestCase):
 
     def test_estimate_bpm_from_audio_success_returns_bpm(self):
         """_estimate_bpm_from_audio returns integer BPM when librosa returns valid tempo."""
-        with mock.patch("stepcovnet.generator.librosa.load") as mock_load:
+        with (
+            mock.patch("stepcovnet.generator.librosa.load") as mock_load,
+            mock.patch("stepcovnet.generator.librosa.beat.beat_track") as mock_beat,
+        ):
             mock_load.return_value = (np.zeros(44100), 44100)
-            with mock.patch(
-                "stepcovnet.generator.librosa.beat.beat_track"
-            ) as mock_beat:
-                mock_beat.return_value = (120.0, np.array([0, 1, 2]))
-                result = generator._estimate_bpm_from_audio("/fake/path.ogg")
+            mock_beat.return_value = (120.0, np.array([0, 1, 2]))
+            result = generator._estimate_bpm_from_audio("/fake/path.ogg")
         self.assertEqual(result, 120)
         mock_load.assert_called_once_with("/fake/path.ogg", sr=44100)
         mock_beat.assert_called_once()
 
     def test_estimate_bpm_from_audio_success_clamps_to_valid_range(self):
         """_estimate_bpm_from_audio clamps BPM to [1, 9999]."""
-        with mock.patch("stepcovnet.generator.librosa.load") as mock_load:
+        with (
+            mock.patch("stepcovnet.generator.librosa.load") as mock_load,
+            mock.patch(
+                "stepcovnet.generator.librosa.beat.beat_track",
+                side_effect=[(20000.0, np.array([])), (0.4, np.array([]))],
+            ),
+        ):
             mock_load.return_value = (np.zeros(44100), 44100)
-            with mock.patch(
-                "stepcovnet.generator.librosa.beat.beat_track"
-            ) as mock_beat:
-                mock_beat.return_value = (20000.0, np.array([]))
-                high = generator._estimate_bpm_from_audio("/fake.ogg")
-            with mock.patch(
-                "stepcovnet.generator.librosa.beat.beat_track"
-            ) as mock_beat2:
-                mock_beat2.return_value = (0.4, np.array([]))
-                low = generator._estimate_bpm_from_audio("/fake2.ogg")
+            high = generator._estimate_bpm_from_audio("/fake.ogg")
+            low = generator._estimate_bpm_from_audio("/fake2.ogg")
         self.assertEqual(high, 9999)
         self.assertEqual(low, 1)
 
     def test_estimate_bpm_from_audio_failure_raises(self):
         """_estimate_bpm_from_audio raises ValueError when tempo is 0 or invalid."""
-        with mock.patch("stepcovnet.generator.librosa.load") as mock_load:
+        with (
+            mock.patch("stepcovnet.generator.librosa.load") as mock_load,
+            mock.patch("stepcovnet.generator.librosa.beat.beat_track") as mock_beat,
+        ):
             mock_load.return_value = (np.zeros(44100), 44100)
-            with mock.patch(
-                "stepcovnet.generator.librosa.beat.beat_track"
-            ) as mock_beat:
-                mock_beat.return_value = (0.0, np.array([]))
-                with self.assertRaises(ValueError) as ctx:
-                    generator._estimate_bpm_from_audio("/fake/path.ogg")
+            mock_beat.return_value = (0.0, np.array([]))
+            with self.assertRaises(ValueError) as ctx:
+                generator._estimate_bpm_from_audio("/fake/path.ogg")
         self.assertIn("Could not estimate BPM", str(ctx.exception))
         self.assertIn("--bpm", str(ctx.exception))
 

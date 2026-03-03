@@ -107,9 +107,9 @@ def _run_generation(
         )
         with open(output_path, "w") as f:
             f.write(output_data.generate_txt_output())
-        result_queue.put((True, output_path))
+        result_queue.put(("generation", True, output_path))
     except Exception as e:  # noqa: BLE001
-        result_queue.put((False, str(e)))
+        result_queue.put(("generation", False, str(e)))
 
 
 class _GeneratorApp:
@@ -186,6 +186,27 @@ class _GeneratorApp:
         self._add_row(
             "Arrow model (.keras, optional):", self.arrow_model_var, self.browse_arrow
         )
+        cache_row = tk.Frame(main_frame)
+        cache_row.grid(row=self._row, column=0, sticky=tk.W, pady=(6, 8))
+        self._row += 1
+        tk.Label(cache_row, text="Model cache (for default models):", anchor=tk.W).grid(
+            row=0, column=0, sticky=tk.W
+        )
+        cache_btns_frame = tk.Frame(cache_row)
+        cache_btns_frame.grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        self.refresh_cache_btn = tk.Button(
+            cache_btns_frame,
+            text="Refresh cache",
+            command=self.refresh_cache_clicked,
+        )
+        self.refresh_cache_btn.pack(side=tk.LEFT, padx=(0, 8))
+        self.clear_cache_btn = tk.Button(
+            cache_btns_frame,
+            text="Clear cache",
+            command=self.clear_cache_clicked,
+        )
+        self.clear_cache_btn.pack(side=tk.LEFT)
+        self._row += 1
         self._add_row("Output file (.txt):", self.output_path_var, self.browse_output)
 
         cb_frame = tk.Frame(main_frame)
@@ -208,16 +229,17 @@ class _GeneratorApp:
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def _default_output_path_for_audio(self, audio_path: str) -> str:
-        """Suggested output path when user selects an audio file: song title or basename_chart.txt, not basename.txt."""
+        """Suggested output path when user selects an audio file: stepcovnet_chart_ + song title or basename."""
         out_dir = os.path.dirname(audio_path)
         base = os.path.splitext(os.path.basename(audio_path))[0]
+        prefix = "stepcovnet_chart_"
         title = self.song_title_var.get().strip()
         if title:
             # Sanitize for filesystem: replace path separators and other unsafe chars
             safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in title).strip()
-            name = safe if safe else base + "_chart"
+            name = prefix + (safe if safe else base)
         else:
-            name = base + "_chart"
+            name = prefix + base
         return os.path.join(out_dir, name + ".txt")
 
     def browse_audio(self) -> None:
@@ -247,7 +269,7 @@ class _GeneratorApp:
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=TXT_TYPES,
-            title="Save chart as",
+            title="Save stepcovnet chart as",
         )
         if path:
             self.output_path_var.set(path)
@@ -293,17 +315,63 @@ class _GeneratorApp:
 
     def _poll_result(self) -> None:
         try:
-            success, value = self.result_queue.get_nowait()
+            item = self.result_queue.get_nowait()
         except queue.Empty:
             self.root.after(100, self._poll_result)
             return
-        self.run_btn.config(state=tk.NORMAL)
-        if success:
-            self.set_status(f"Saved to {value}")
-            messagebox.showinfo("Success", f"Chart saved to:\n{value}")
+        source, success, value = item
+        if source == "generation":
+            self.run_btn.config(state=tk.NORMAL)
+            if success:
+                self.set_status(f"Saved to {value}")
+                messagebox.showinfo("Success", f"Chart saved to:\n{value}")
+            else:
+                self.set_status("Error")
+                messagebox.showerror("Generation failed", value)
         else:
-            self.set_status("Error")
-            messagebox.showerror("Generation failed", value)
+            assert source == "cache"
+            self.refresh_cache_btn.config(state=tk.NORMAL)
+            self.clear_cache_btn.config(state=tk.NORMAL)
+            if success:
+                self.set_status(value)
+                messagebox.showinfo("Model cache", value)
+            else:
+                self.set_status("Cache operation failed")
+                messagebox.showerror("Model cache", value)
+
+    def refresh_cache_clicked(self) -> None:
+        """Re-download default models into the cache (runs in background thread)."""
+        self.refresh_cache_btn.config(state=tk.DISABLED)
+        self.clear_cache_btn.config(state=tk.DISABLED)
+        self.set_status("Refreshing model cache…")
+
+        def worker() -> None:
+            try:
+                pretrained.refresh_model_cache()
+                self.result_queue.put(("cache", True, "Models refreshed."))
+            except Exception as e:  # noqa: BLE001
+                self.result_queue.put(("cache", False, str(e)))
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        self.root.after(100, self._poll_result)
+
+    def clear_cache_clicked(self) -> None:
+        """Remove cached default models (runs in background thread)."""
+        self.refresh_cache_btn.config(state=tk.DISABLED)
+        self.clear_cache_btn.config(state=tk.DISABLED)
+        self.set_status("Clearing cache…")
+
+        def worker() -> None:
+            try:
+                pretrained.clear_model_cache()
+                self.result_queue.put(("cache", True, "Cache cleared."))
+            except Exception as e:  # noqa: BLE001
+                self.result_queue.put(("cache", False, str(e)))
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        self.root.after(100, self._poll_result)
 
     def _add_row(
         self,

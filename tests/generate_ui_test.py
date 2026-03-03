@@ -193,7 +193,8 @@ class RunGenerationTest(unittest.TestCase):
                     result_queue=result_queue,
                 )
 
-            success, value = result_queue.get_nowait()
+            source, success, value = result_queue.get_nowait()
+            self.assertEqual(source, "generation")
             self.assertTrue(success)
             self.assertEqual(value, output_path)
             with open(output_path) as f:
@@ -238,7 +239,8 @@ class RunGenerationTest(unittest.TestCase):
             mock_gen.assert_called_once()
             call_kwargs = mock_gen.call_args[1]
             self.assertIsNone(call_kwargs["bpm"])
-            success, _ = result_queue.get_nowait()
+            source, success, _ = result_queue.get_nowait()
+            self.assertEqual(source, "generation")
             self.assertTrue(success)
 
     def test_run_generation_writes_txt_format(self):
@@ -279,7 +281,8 @@ class RunGenerationTest(unittest.TestCase):
                     result_queue=result_queue,
                 )
 
-            success, _ = result_queue.get_nowait()
+            source, success, _ = result_queue.get_nowait()
+            self.assertEqual(source, "generation")
             self.assertTrue(success)
             with open(output_path) as f:
                 content = f.read()
@@ -316,7 +319,8 @@ class RunGenerationTest(unittest.TestCase):
                 result_queue=result_queue,
             )
 
-        success, value = result_queue.get_nowait()
+        source, success, value = result_queue.get_nowait()
+        self.assertEqual(source, "generation")
         self.assertFalse(success)
         self.assertIn("No such file", value)
 
@@ -351,7 +355,8 @@ class RunGenerationTest(unittest.TestCase):
                 result_queue=result_queue,
             )
 
-        success, value = result_queue.get_nowait()
+        source, success, value = result_queue.get_nowait()
+        self.assertEqual(source, "generation")
         self.assertFalse(success)
         self.assertIn("Failed to predict any onsets", value)
 
@@ -396,7 +401,8 @@ class RunGenerationTest(unittest.TestCase):
 
             m_resolve_onset.assert_called_once_with(None)
             m_resolve_arrow.assert_called_once_with(None)
-            success, _ = result_queue.get_nowait()
+            source, success, _ = result_queue.get_nowait()
+            self.assertEqual(source, "generation")
             self.assertTrue(success)
 
 
@@ -466,7 +472,7 @@ class BrowseCallbacksTest(unittest.TestCase):
         self.addCleanup(self.root.destroy)
 
     def test_browse_audio_sets_path_and_default_output_not_same_as_audio(self):
-        """Default output is basename_chart.txt (not basename.txt) when output was empty."""
+        """Default output is stepcovnet_chart_basename.txt when output was empty (prefix so stemming won't match)."""
         with mock.patch(
             "tkinter.filedialog.askopenfilename",
             return_value="C:/music/song.mp3",
@@ -475,11 +481,11 @@ class BrowseCallbacksTest(unittest.TestCase):
         self.assertEqual(self.app.audio_path_var.get(), "C:/music/song.mp3")
         self.assertEqual(
             os.path.normpath(self.app.output_path_var.get()),
-            os.path.normpath("C:/music/song_chart.txt"),
+            os.path.normpath("C:/music/stepcovnet_chart_song.txt"),
         )
 
     def test_browse_audio_default_output_uses_song_title_when_set(self):
-        """When song title is set, default output filename is song title + .txt (sanitized)."""
+        """When song title is set, default output filename is stepcovnet_chart_ + song title (sanitized)."""
         self.app.song_title_var.set("My Song")
         with mock.patch(
             "tkinter.filedialog.askopenfilename",
@@ -488,16 +494,16 @@ class BrowseCallbacksTest(unittest.TestCase):
             self.app.browse_audio()
         self.assertEqual(
             os.path.normpath(self.app.output_path_var.get()),
-            os.path.normpath("C:/music/My Song.txt"),
+            os.path.normpath("C:/music/stepcovnet_chart_My Song.txt"),
         )
 
     def test_default_output_path_for_audio_sanitizes_unsafe_chars(self):
-        """Song title with path-unsafe chars is sanitized to underscores."""
+        """Song title with path-unsafe chars is sanitized to underscores; filename uses stepcovnet_chart_ prefix."""
         self.app.song_title_var.set("Title/with:bad*chars?")
         result = self.app._default_output_path_for_audio("C:/dir/file.ogg")
         self.assertEqual(
             os.path.normpath(result),
-            os.path.normpath("C:/dir/Title_with_bad_chars_.txt"),
+            os.path.normpath("C:/dir/stepcovnet_chart_Title_with_bad_chars_.txt"),
         )
 
     def test_browse_audio_does_not_overwrite_output_when_set(self):
@@ -610,7 +616,9 @@ class RunClickedTest(unittest.TestCase):
             mock.patch.object(self.root, "after", side_effect=capture_after),
             mock.patch(
                 "generate_ui._run_generation",
-                side_effect=lambda **kw: kw["result_queue"].put((True, "/out.txt")),
+                side_effect=lambda **kw: kw["result_queue"].put(
+                    ("generation", True, "/out.txt")
+                ),
             ),
         ):
             self.app.run_clicked()
@@ -635,8 +643,8 @@ class PollResultTest(unittest.TestCase):
             self.app._poll_result()
         m_after.assert_called_once_with(100, self.app._poll_result)
 
-    def test_poll_result_success_enables_btn_sets_status_shows_info(self):
-        self.app.result_queue.put((True, "C:/out/chart.txt"))
+    def test_poll_result_generation_success_enables_btn_sets_status_shows_info(self):
+        self.app.result_queue.put(("generation", True, "C:/out/chart.txt"))
         with mock.patch("tkinter.messagebox.showinfo") as m_showinfo:
             self.app._poll_result()
         self.assertEqual(self.app.run_btn["state"], tk.NORMAL)
@@ -644,14 +652,38 @@ class PollResultTest(unittest.TestCase):
         m_showinfo.assert_called_once()
         self.assertIn("chart.txt", m_showinfo.call_args[0][1])
 
-    def test_poll_result_failure_sets_error_status_shows_showerror(self):
-        self.app.result_queue.put((False, "Load error"))
+    def test_poll_result_generation_failure_sets_error_status_shows_showerror(self):
+        self.app.result_queue.put(("generation", False, "Load error"))
         with mock.patch("tkinter.messagebox.showerror") as m_showerror:
             self.app._poll_result()
         self.assertEqual(self.app.run_btn["state"], tk.NORMAL)
         self.assertEqual(self.app.status_var.get(), "Error")
         m_showerror.assert_called_once()
         self.assertEqual(m_showerror.call_args[0], ("Generation failed", "Load error"))
+
+    def test_poll_result_cache_success_enables_cache_buttons_shows_info(self):
+        self.app.refresh_cache_btn.config(state=tk.DISABLED)
+        self.app.clear_cache_btn.config(state=tk.DISABLED)
+        self.app.result_queue.put(("cache", True, "Cache cleared."))
+        with mock.patch("tkinter.messagebox.showinfo") as m_showinfo:
+            self.app._poll_result()
+        self.assertEqual(self.app.refresh_cache_btn["state"], tk.NORMAL)
+        self.assertEqual(self.app.clear_cache_btn["state"], tk.NORMAL)
+        self.assertEqual(self.app.status_var.get(), "Cache cleared.")
+        m_showinfo.assert_called_once()
+        self.assertEqual(m_showinfo.call_args[0], ("Model cache", "Cache cleared."))
+
+    def test_poll_result_cache_failure_enables_cache_buttons_shows_showerror(self):
+        self.app.refresh_cache_btn.config(state=tk.DISABLED)
+        self.app.clear_cache_btn.config(state=tk.DISABLED)
+        self.app.result_queue.put(("cache", False, "Network error"))
+        with mock.patch("tkinter.messagebox.showerror") as m_showerror:
+            self.app._poll_result()
+        self.assertEqual(self.app.refresh_cache_btn["state"], tk.NORMAL)
+        self.assertEqual(self.app.clear_cache_btn["state"], tk.NORMAL)
+        self.assertEqual(self.app.status_var.get(), "Cache operation failed")
+        m_showerror.assert_called_once()
+        self.assertEqual(m_showerror.call_args[0], ("Model cache", "Network error"))
 
 
 class AddRowTest(unittest.TestCase):
@@ -688,6 +720,79 @@ class AddRowTest(unittest.TestCase):
                 if c.winfo_class() == "Button":
                     buttons.append(c)
         self.assertGreater(len(buttons), 0)
+
+    def test_app_has_refresh_and_clear_cache_buttons(self):
+        """App has Refresh cache and Clear cache buttons for model cache."""
+        self.assertIsNotNone(getattr(self.app, "refresh_cache_btn", None))
+        self.assertIsNotNone(getattr(self.app, "clear_cache_btn", None))
+        self.assertEqual(self.app.refresh_cache_btn["text"], "Refresh cache")
+        self.assertEqual(self.app.clear_cache_btn["text"], "Clear cache")
+
+
+class CacheButtonsTest(unittest.TestCase):
+    """Tests for refresh_cache_clicked and clear_cache_clicked."""
+
+    def setUp(self):
+        self.root, self.app = _make_app()
+        self.addCleanup(self.root.destroy)
+
+    def test_refresh_cache_clicked_disables_buttons_schedules_poll(self):
+        after_cbs = []
+
+        def capture_after(ms, cb):
+            after_cbs.append((ms, cb))
+
+        with (
+            mock.patch("generate_ui.pretrained.refresh_model_cache") as m_refresh,
+            mock.patch.object(self.root, "after", side_effect=capture_after),
+        ):
+            self.app.refresh_cache_clicked()
+        self.assertEqual(self.app.refresh_cache_btn["state"], tk.DISABLED)
+        self.assertEqual(self.app.clear_cache_btn["state"], tk.DISABLED)
+        self.assertEqual(self.app.status_var.get(), "Refreshing model cache…")
+        self.assertEqual(len(after_cbs), 1)
+        self.assertEqual(after_cbs[0][0], 100)
+        self.assertEqual(after_cbs[0][1].__name__, "_poll_result")
+        m_refresh.assert_called_once()
+
+    def test_clear_cache_clicked_disables_buttons_schedules_poll(self):
+        after_cbs = []
+
+        def capture_after(ms, cb):
+            after_cbs.append((ms, cb))
+
+        with (
+            mock.patch("generate_ui.pretrained.clear_model_cache") as m_clear,
+            mock.patch.object(self.root, "after", side_effect=capture_after),
+        ):
+            self.app.clear_cache_clicked()
+        self.assertEqual(self.app.refresh_cache_btn["state"], tk.DISABLED)
+        self.assertEqual(self.app.clear_cache_btn["state"], tk.DISABLED)
+        self.assertEqual(self.app.status_var.get(), "Clearing cache…")
+        self.assertEqual(len(after_cbs), 1)
+        m_clear.assert_called_once()
+
+    def test_refresh_cache_worker_puts_success_on_queue(self):
+        with (
+            mock.patch("generate_ui.pretrained.refresh_model_cache"),
+            mock.patch("tkinter.messagebox.showinfo") as m_showinfo,
+        ):
+            self.app.refresh_cache_clicked()
+            self.app.result_queue.put(("cache", True, "Models refreshed."))
+            self.app._poll_result()
+        m_showinfo.assert_called_once()
+        self.assertIn("Models refreshed", m_showinfo.call_args[0][1])
+
+    def test_clear_cache_worker_puts_success_on_queue(self):
+        with (
+            mock.patch("generate_ui.pretrained.clear_model_cache"),
+            mock.patch("tkinter.messagebox.showinfo") as m_showinfo,
+        ):
+            self.app.clear_cache_clicked()
+            self.app.result_queue.put(("cache", True, "Cache cleared."))
+            self.app._poll_result()
+        m_showinfo.assert_called_once()
+        self.assertIn("Cache cleared", m_showinfo.call_args[0][1])
 
 
 class CanvasHandlersTest(unittest.TestCase):

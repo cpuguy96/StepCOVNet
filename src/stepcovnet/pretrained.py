@@ -157,3 +157,28 @@ def resolve_arrow_model_path(provided_path: str | None) -> str:
     if not cached.is_file():
         raise RuntimeError(f"Download from Drive did not produce file: {cached}")
     return str(cached)
+
+
+def clear_model_cache() -> None:
+    """Remove cached onset and arrow model files from the default models directory.
+
+    Does nothing if the cache directory or files do not exist. Only deletes the
+    known .keras files, not other contents of the directory.
+    """
+    default_dir = get_default_models_dir()
+    for name in (_ONSET_FILENAME, _ARROW_FILENAME):
+        path = default_dir / name
+        if path.is_file():
+            path.unlink(missing_ok=True)
+
+
+def refresh_model_cache() -> None:
+    """Re-download onset and arrow models into the cache, replacing any existing files.
+
+    Clears the cache then downloads both models from Google Drive using the default
+    Drive IDs. Raises ValueError if either default Drive ID is not set. Raises
+    RuntimeError if a download fails.
+    """
+    clear_model_cache()
+    resolve_onset_model_path(None)
+    resolve_arrow_model_path(None)

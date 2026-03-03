@@ -292,14 +292,16 @@ class TrainersTest(unittest.TestCase):
                 model_output_dir,
                 run_kwargs={"fit_verbose": 2},
             )
-            with mock.patch(
-                "stepcovnet.trainers.models.build_arrow_model_from_config",
-                return_value=mock_model,
+            with (
+                mock.patch(
+                    "stepcovnet.trainers.models.build_arrow_model_from_config",
+                    return_value=mock_model,
+                ),
+                mock.patch("stepcovnet.trainers._write_model"),
             ):
-                with mock.patch("stepcovnet.trainers._write_model"):
-                    trainers.run_arrow_train_from_config(
-                        dataset_config, model_config, run_config
-                    )
+                trainers.run_arrow_train_from_config(
+                    dataset_config, model_config, run_config
+                )
         mock_model.fit.assert_called_once()
         self.assertEqual(mock_model.fit.call_args.kwargs["verbose"], 2)
 
@@ -318,14 +320,16 @@ class TrainersTest(unittest.TestCase):
                 model_output_dir,
                 run_kwargs={"show_model_summary": False},
             )
-            with mock.patch(
-                "stepcovnet.trainers.models.build_arrow_model_from_config",
-                return_value=mock_model,
+            with (
+                mock.patch(
+                    "stepcovnet.trainers.models.build_arrow_model_from_config",
+                    return_value=mock_model,
+                ),
+                mock.patch("stepcovnet.trainers._write_model"),
             ):
-                with mock.patch("stepcovnet.trainers._write_model"):
-                    trainers.run_arrow_train_from_config(
-                        dataset_config, model_config, run_config
-                    )
+                trainers.run_arrow_train_from_config(
+                    dataset_config, model_config, run_config
+                )
         mock_model.summary.assert_not_called()
 
     def test_run_arrow_train_from_config_show_model_summary_true_calls_summary(
@@ -343,14 +347,16 @@ class TrainersTest(unittest.TestCase):
                 model_output_dir,
                 run_kwargs={"show_model_summary": True},
             )
-            with mock.patch(
-                "stepcovnet.trainers.models.build_arrow_model_from_config",
-                return_value=mock_model,
+            with (
+                mock.patch(
+                    "stepcovnet.trainers.models.build_arrow_model_from_config",
+                    return_value=mock_model,
+                ),
+                mock.patch("stepcovnet.trainers._write_model"),
             ):
-                with mock.patch("stepcovnet.trainers._write_model"):
-                    trainers.run_arrow_train_from_config(
-                        dataset_config, model_config, run_config
-                    )
+                trainers.run_arrow_train_from_config(
+                    dataset_config, model_config, run_config
+                )
         mock_model.summary.assert_called_once()
 
     def test_config_serialization(self):

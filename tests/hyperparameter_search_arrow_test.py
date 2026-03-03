@@ -715,21 +715,23 @@ class WorkersOptionTest(unittest.TestCase):
 
     def test_workers_zero_exits_with_error(self):
         """--workers=0 causes main to call parser.error and exit."""
-        with mock.patch(
-            "sys.argv",
-            [
-                "hyperparameter_search_arrow",
-                "--sweep_config",
-                "x.json",
-                "--workers",
-                "0",
-            ],
-        ):
-            with mock.patch.object(
+        with (
+            mock.patch(
+                "sys.argv",
+                [
+                    "hyperparameter_search_arrow",
+                    "--sweep_config",
+                    "x.json",
+                    "--workers",
+                    "0",
+                ],
+            ),
+            mock.patch.object(
                 hyperparameter_search_arrow.PARSER, "error", side_effect=SystemExit(2)
-            ):
-                with self.assertRaises(SystemExit):
-                    hyperparameter_search_arrow.main()
+            ),
+        ):
+            with self.assertRaises(SystemExit):
+                hyperparameter_search_arrow.main()
 
     def test_workers_two_uses_parallel_path(self):
         """With --workers=2 and 2 grid points, executor receives 2 submit() calls and results are collected."""
@@ -786,12 +788,13 @@ class WorkersOptionTest(unittest.TestCase):
             with open(sweep_path, "w") as f:
                 json.dump(sweep_data, f)
 
-            with mock.patch.object(
-                hyperparameter_search_arrow.futures,
-                "ProcessPoolExecutor",
-                return_value=FakeExecutor(),
-            ):
-                with mock.patch(
+            with (
+                mock.patch.object(
+                    hyperparameter_search_arrow.futures,
+                    "ProcessPoolExecutor",
+                    return_value=FakeExecutor(),
+                ),
+                mock.patch(
                     "sys.argv",
                     [
                         "hyperparameter_search_arrow",
@@ -800,8 +803,9 @@ class WorkersOptionTest(unittest.TestCase):
                         "--workers",
                         "2",
                     ],
-                ):
-                    exit_code = hyperparameter_search_arrow.main()
+                ),
+            ):
+                exit_code = hyperparameter_search_arrow.main()
             self.assertEqual(exit_code, 0)
             self.assertEqual(
                 len(submitted_futures), 2, "should submit 2 runs (2 grid points)"
@@ -892,28 +896,30 @@ class WorkersOptionTest(unittest.TestCase):
             def capture_print(*args, **kwargs):
                 print_calls.append(" ".join(str(a) for a in args))
 
-            with mock.patch.object(
-                hyperparameter_search_arrow.futures,
-                "ProcessPoolExecutor",
-                return_value=FakeExecutor(),
-            ):
-                with mock.patch.object(
+            with (
+                mock.patch.object(
+                    hyperparameter_search_arrow.futures,
+                    "ProcessPoolExecutor",
+                    return_value=FakeExecutor(),
+                ),
+                mock.patch.object(
                     hyperparameter_search_arrow.futures,
                     "as_completed",
                     side_effect=ordered_as_completed,
-                ):
-                    with mock.patch("builtins.print", side_effect=capture_print):
-                        with mock.patch(
-                            "sys.argv",
-                            [
-                                "hyperparameter_search_arrow",
-                                "--sweep_config",
-                                sweep_path,
-                                "--workers",
-                                "1",
-                            ],
-                        ):
-                            exit_code = hyperparameter_search_arrow.main()
+                ),
+                mock.patch("builtins.print", side_effect=capture_print),
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--sweep_config",
+                        sweep_path,
+                        "--workers",
+                        "1",
+                    ],
+                ),
+            ):
+                exit_code = hyperparameter_search_arrow.main()
             self.assertEqual(exit_code, 0)
             out = "\n".join(print_calls)
             self.assertIn("NEW BEST", out, "Expected at least one 'NEW BEST' message")
