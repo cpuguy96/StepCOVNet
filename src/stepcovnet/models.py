@@ -575,6 +575,13 @@ def _build_arrow_lstm(
             name=f"lstm_{i}",
         )(x)
 
+    # Classification head: dense + dropout before softmax (adds capacity and regularization)
+    x = keras.layers.Dense(
+        max(units // 2, constants.N_ARROW_TYPES),
+        activation="relu",
+        name="head_dense",
+    )(x)
+    x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
     outputs = keras.layers.Dense(
         constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
     )(x)
