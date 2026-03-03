@@ -298,6 +298,23 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         self.assertEqual(out.model.lstm.num_layers, 2)
         self.assertEqual(out.model.lstm.dropout_rate, 0.1)
 
+    def test_apply_overrides_model_gru_keys(self):
+        """Overrides like model.model_type=gru and model.gru.units apply correctly."""
+        base = self._minimal_base_config()
+        overrides = {
+            "model.model_type": "gru",
+            "model.gru.units": 64,
+            "model.gru.num_layers": 2,
+            "model.gru.dropout_rate": 0.1,
+        }
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        self.assertEqual(out.model.model_type, "gru")
+        self.assertIsNotNone(out.model.gru)
+        assert out.model.gru is not None
+        self.assertEqual(out.model.gru.units, 64)
+        self.assertEqual(out.model.gru.num_layers, 2)
+        self.assertEqual(out.model.gru.dropout_rate, 0.1)
+
     def test_apply_overrides_forces_val_take_count_minus_one_batch_size_one(self):
         """Epoch comes from base; val_take_count and batch_size are forced."""
         base = self._minimal_base_config()

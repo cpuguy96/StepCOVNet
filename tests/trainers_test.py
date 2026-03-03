@@ -860,6 +860,50 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("lstm_bidir", name)
         self.assertIn("lstm_units_64", name)
 
+    def test_get_arrow_experiment_name_gru_includes_units_and_dropout(self):
+        """_get_arrow_experiment_name with model_type=gru includes gru_* and dropout."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {"units": 64, "num_layers": 2, "dropout_rate": 0.1},
+            }
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=10,
+            model_output_dir="out",
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertIn("ARROW", name)
+        self.assertIn("gru", name)
+        self.assertIn("take_10", name)
+        self.assertIn("gru_units_64", name)
+        self.assertIn("gru_layers_2", name)
+        self.assertIn("dropout_0_1", name)
+        self.assertNotIn("gru_bidir", name)
+
+    def test_get_arrow_experiment_name_gru_bidirectional_includes_bidir(self):
+        """_get_arrow_experiment_name with gru.bidirectional=True includes gru_bidir."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {
+                    "units": 64,
+                    "num_layers": 2,
+                    "dropout_rate": 0.1,
+                    "bidirectional": True,
+                },
+            }
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=10,
+            model_output_dir="out",
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertIn("gru_bidir", name)
+        self.assertIn("gru_units_64", name)
+
     def test_get_arrow_experiment_name_uses_only_active_model_type(self):
         """When both transformer and mlp blocks are set, name uses only active model_type (no duplicate/conflicting params)."""
         # Simulate e.g. loading transformer config then overriding --model_type mlp without clearing transformer
@@ -921,6 +965,67 @@ class ExperimentNameHelperTests(unittest.TestCase):
                 {
                     "model_type": "lstm",
                     "lstm": {
+                        "units": 32,
+                        "num_layers": 1,
+                        "dropout_rate": 0.0,
+                        "bidirectional": True,
+                    },
+                }
+            )
+            run_config = config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                val_take_count=1,
+                model_output_dir=model_output_dir,
+                callback_root_dir=model_output_dir,
+                model_name="",
+            )
+            trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+            keras_files = [
+                f for f in os.listdir(model_output_dir) if f.endswith(".keras")
+            ]
+            self.assertGreater(
+                len(keras_files), 0, "Expected at least one .keras file in output dir"
+            )
+
+    def test_run_arrow_train_from_config_gru_succeeds(self):
+        """run_arrow_train_from_config with model_type gru builds and runs (minimal step)."""
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
+            model_config = config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "gru",
+                    "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
+                }
+            )
+            run_config = config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                val_take_count=1,
+                model_output_dir=model_output_dir,
+                callback_root_dir=model_output_dir,
+                model_name="",
+            )
+            trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+            keras_files = [
+                f for f in os.listdir(model_output_dir) if f.endswith(".keras")
+            ]
+            self.assertGreater(
+                len(keras_files), 0, "Expected at least one .keras file in output dir"
+            )
+
+    def test_run_arrow_train_from_config_gru_bidirectional_succeeds(self):
+        """run_arrow_train_from_config with model_type gru and bidirectional=True runs."""
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
+            model_config = config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "gru",
+                    "gru": {
                         "units": 32,
                         "num_layers": 1,
                         "dropout_rate": 0.0,

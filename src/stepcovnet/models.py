@@ -596,6 +596,68 @@ def _build_arrow_lstm(
     return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
 
 
+def _build_arrow_gru(
+    snippet_half_frames: int,
+    params: config.GRUArrowParams,
+    model_name: str = "",
+) -> keras.Model:
+    """Build GRU-based arrow model. Same I/O contract as build_arrow_model."""
+    units = params.units
+    num_layers = params.num_layers
+    dropout_rate = params.dropout_rate
+
+    timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
+    timing_embed = keras.layers.Dense(units, name="input_projection")(timing_input)
+
+    if snippet_half_frames > 0:
+        snippet_n_frames = 2 * snippet_half_frames + 1
+        snippet_n_mels = constants.N_MELS
+        snippet_input = keras.layers.Input(
+            shape=(None, snippet_n_frames, snippet_n_mels),
+            name="snippet_input",
+        )
+        s = SnippetCNN(
+            n_frames=snippet_n_frames,
+            n_mels=snippet_n_mels,
+            filters=32,
+            name="snippet_cnn",
+        )(snippet_input)
+        s = keras.layers.Dense(units, name="snippet_projection")(s)
+        x = keras.layers.Add(name="fuse_timing_snippet")([timing_embed, s])
+        inputs = [timing_input, snippet_input]
+    else:
+        x = timing_embed
+        inputs = timing_input
+
+    for i in range(num_layers):
+        gru_layer = keras.layers.GRU(
+            units,
+            return_sequences=True,
+            dropout=dropout_rate,
+            name=f"gru_{i}",
+        )
+        if params.bidirectional:
+            x = keras.layers.Bidirectional(gru_layer, name=f"bidirectional_{i}")(x)
+        else:
+            x = gru_layer(x)
+
+    # Classification head: dense + dropout before softmax (adds capacity and regularization)
+    x = keras.layers.Dense(
+        max(units // 2, constants.N_ARROW_TYPES),
+        activation="relu",
+        name="head_dense",
+    )(x)
+    x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
+    outputs = keras.layers.Dense(
+        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
+    )(x)
+
+    _model_name = "stepcovnet_ARROW"
+    if model_name:
+        _model_name += f"-{model_name}"
+    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
+
+
 def _build_arrow_transformer_from_config(
     model_config: config.ArrowModelConfig,
     model_name: str = "",
@@ -642,6 +704,19 @@ def _build_arrow_lstm_from_config(
     )
 
 
+def _build_arrow_gru_from_config(
+    model_config: config.ArrowModelConfig,
+    model_name: str = "",
+) -> keras.Model:
+    if model_config.gru is None:
+        raise ValueError("model_type is 'gru' but gru params are missing")
+    return _build_arrow_gru(
+        snippet_half_frames=model_config.snippet_half_frames,
+        params=model_config.gru,
+        model_name=model_name,
+    )
+
+
 _ARROW_MODEL_BUILDERS: dict[
     str,
     Callable[[config.ArrowModelConfig, str], keras.Model],
@@ -649,6 +724,7 @@ _ARROW_MODEL_BUILDERS: dict[
     "transformer": _build_arrow_transformer_from_config,
     "mlp": _build_arrow_mlp_from_config,
     "lstm": _build_arrow_lstm_from_config,
+    "gru": _build_arrow_gru_from_config,
 }
 
 

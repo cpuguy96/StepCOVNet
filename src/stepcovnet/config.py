@@ -236,6 +236,39 @@ class LSTMArrowParams:
         )
 
 
+@dataclasses.dataclass
+class GRUArrowParams:
+    """Parameters for the GRU-based arrow model. Used when model_type is 'gru'."""
+
+    units: int = 128
+    num_layers: int = 1
+    dropout_rate: float = 0.0
+    bidirectional: bool = False
+
+    def as_dict(self) -> dict:
+        return dataclasses.asdict(self)
+
+    def experiment_name_parts(self) -> list[str]:
+        parts = [
+            f"gru_units_{self.units}",
+            f"gru_layers_{self.num_layers}",
+            f"dropout_{str(self.dropout_rate).replace('.', '_')}",
+        ]
+        if self.bidirectional:
+            parts.append("gru_bidir")
+        return parts
+
+    @classmethod
+    def from_dict(cls, data: dict) -> GRUArrowParams:
+        return cls(
+            **{
+                k: v
+                for k, v in data.items()
+                if k in {f.name for f in dataclasses.fields(cls)}
+            }
+        )
+
+
 # Flat transformer keys used for backward compatibility when parsing old configs.
 _TRANSFORMER_FLAT_KEYS = frozenset(
     {"num_layers", "d_model", "num_heads", "ff_dim", "dropout_rate"}
@@ -246,6 +279,7 @@ _ARROW_MODEL_TYPE_ATTR: dict[str, str] = {
     "transformer": "transformer",
     "mlp": "mlp",
     "lstm": "lstm",
+    "gru": "gru",
 }
 
 
@@ -255,7 +289,7 @@ class ArrowModelConfig:
 
     Supports multiple model types via nested architecture-specific params.
     Shared: model_type (which architecture), snippet_half_frames (input option).
-    Per-architecture blocks: transformer, mlp, lstm. Only the block matching
+    Per-architecture blocks: transformer, mlp, lstm, gru. Only the block matching
     model_type is required when building; others can be None.
     """
 
@@ -264,6 +298,7 @@ class ArrowModelConfig:
     transformer: TransformerArrowParams | None = None
     mlp: MLPArrowParams | None = None
     lstm: LSTMArrowParams | None = None
+    gru: GRUArrowParams | None = None
 
     def get_active_params_block(self) -> ArrowParamsProtocol | None:
         """Return the params block for the current model_type, or None if not set."""
@@ -299,6 +334,7 @@ class ArrowModelConfig:
         transformer: TransformerArrowParams | None = None
         mlp: MLPArrowParams | None = None
         lstm: LSTMArrowParams | None = None
+        gru: GRUArrowParams | None = None
 
         if model_type == "transformer":
             if "transformer" in data:
@@ -326,6 +362,12 @@ class ArrowModelConfig:
                 if "lstm" in data
                 else LSTMArrowParams()
             )
+        elif model_type == "gru":
+            gru = (
+                GRUArrowParams.from_dict(data["gru"])
+                if "gru" in data
+                else GRUArrowParams()
+            )
 
         return cls(
             model_type=model_type,
@@ -333,6 +375,7 @@ class ArrowModelConfig:
             transformer=transformer,
             mlp=mlp,
             lstm=lstm,
+            gru=gru,
         )
 
 

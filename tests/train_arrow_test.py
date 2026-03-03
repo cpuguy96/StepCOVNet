@@ -422,6 +422,49 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertTrue(model_config.lstm.bidirectional)
         models.build_arrow_model_from_config(model_config)
 
+    def test_model_type_gru_with_overrides_produces_valid_config(self):
+        """--set model.model_type=gru and model.gru.* produces buildable config."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(
+                path,
+                [
+                    "model.model_type=gru",
+                    "model.gru.units=64",
+                    "model.gru.num_layers=2",
+                    "model.gru.dropout_rate=0.1",
+                ],
+            )
+            run_mock, model_config = _run_train_arrow_main(args)
+        run_mock.assert_called_once()
+        self.assertEqual(model_config.model_type, "gru")
+        self.assertIsNotNone(model_config.gru)
+        self.assertEqual(model_config.gru.units, 64)
+        self.assertEqual(model_config.gru.num_layers, 2)
+        self.assertEqual(model_config.gru.dropout_rate, 0.1)
+        models.build_arrow_model_from_config(model_config)
+
+    def test_gru_bidirectional_override_builds(self):
+        """--set model.gru.bidirectional=true results in bidirectional True and model builds."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(
+                path,
+                [
+                    "model.model_type=gru",
+                    "model.gru.units=64",
+                    "model.gru.num_layers=1",
+                    "model.gru.bidirectional=true",
+                ],
+            )
+            run_mock, model_config = _run_train_arrow_main(args)
+        run_mock.assert_called_once()
+        self.assertEqual(model_config.model_type, "gru")
+        self.assertIsNotNone(model_config.gru)
+        assert model_config.gru is not None
+        self.assertTrue(model_config.gru.bidirectional)
+        models.build_arrow_model_from_config(model_config)
+
     def test_snippet_half_frames_override(self):
         """--set dataset.snippet_half_frames and model.snippet_half_frames update both (via single key)."""
         with tempfile.TemporaryDirectory() as tmpdir:

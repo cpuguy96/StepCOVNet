@@ -277,6 +277,26 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(cfg.lstm.dropout_rate, 0.1)
         self.assertTrue(cfg.lstm.bidirectional)
 
+    def test_from_dict_nested_gru(self):
+        """Test creating config with model_type gru and gru block."""
+        data = {
+            "model_type": "gru",
+            "gru": {
+                "units": 64,
+                "num_layers": 2,
+                "dropout_rate": 0.1,
+                "bidirectional": True,
+            },
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.model_type, "gru")
+        self.assertIsNotNone(cfg.gru)
+        assert cfg.gru is not None
+        self.assertEqual(cfg.gru.units, 64)
+        self.assertEqual(cfg.gru.num_layers, 2)
+        self.assertEqual(cfg.gru.dropout_rate, 0.1)
+        self.assertTrue(cfg.gru.bidirectional)
+
     def test_as_dict_includes_lstm_when_present(self):
         """as_dict includes lstm key when model has lstm params (for JSON round-trip)."""
         cfg = config.ArrowModelConfig.from_dict(
@@ -301,6 +321,30 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertIsNotNone(cfg2.lstm)
         assert cfg2.lstm is not None
         self.assertTrue(cfg2.lstm.bidirectional)
+
+    def test_as_dict_includes_gru_when_present(self):
+        """as_dict includes gru key when model has gru params (for JSON round-trip)."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {
+                    "units": 64,
+                    "num_layers": 1,
+                    "dropout_rate": 0.0,
+                    "bidirectional": True,
+                },
+            }
+        )
+        d = cfg.as_dict()
+        self.assertIn("gru", d)
+        self.assertEqual(d["gru"]["units"], 64)
+        self.assertEqual(d["gru"]["num_layers"], 1)
+        self.assertEqual(d["gru"]["dropout_rate"], 0.0)
+        self.assertEqual(d["gru"]["bidirectional"], True)
+        cfg2 = config.ArrowModelConfig.from_dict(d)
+        self.assertIsNotNone(cfg2.gru)
+        assert cfg2.gru is not None
+        self.assertTrue(cfg2.gru.bidirectional)
 
     def test_get_experiment_name_parts_transformer(self):
         """get_experiment_name_parts returns transformer param fragments when model_type is transformer."""
@@ -357,6 +401,37 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertIn("lstm_bidir", parts)
         self.assertIn("lstm_units_64", parts)
 
+    def test_get_experiment_name_parts_gru(self):
+        """get_experiment_name_parts returns gru param fragments when model_type is gru."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {"units": 64, "num_layers": 2, "dropout_rate": 0.2},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("gru_units_64", parts)
+        self.assertIn("gru_layers_2", parts)
+        self.assertIn("dropout_0_2", parts)
+        self.assertNotIn("gru_bidir", parts)
+
+    def test_get_experiment_name_parts_gru_bidirectional(self):
+        """When gru.bidirectional is True, experiment name parts include gru_bidir."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {
+                    "units": 64,
+                    "num_layers": 2,
+                    "dropout_rate": 0.2,
+                    "bidirectional": True,
+                },
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("gru_bidir", parts)
+        self.assertIn("gru_units_64", parts)
+
     def test_get_experiment_name_parts_uses_only_active_block(self):
         """When both transformer and lstm are set, get_experiment_name_parts uses only active model_type."""
         cfg = config.ArrowModelConfig(
@@ -370,6 +445,21 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertIn("lstm_units_32", parts)
         self.assertNotIn("att_layers", parts)
         self.assertNotIn("d_model", parts)
+
+    def test_get_experiment_name_parts_gru_uses_only_active_block(self):
+        """When both lstm and gru are set, get_experiment_name_parts uses only active model_type (gru)."""
+        cfg = config.ArrowModelConfig(
+            model_type="gru",
+            snippet_half_frames=0,
+            transformer=None,
+            mlp=None,
+            lstm=config.LSTMArrowParams(units=64, num_layers=2, dropout_rate=0.0),
+            gru=config.GRUArrowParams(units=32, num_layers=1, dropout_rate=0.0),
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("gru_units_32", parts)
+        self.assertNotIn("lstm_units", parts)
+        self.assertNotIn("lstm_layers", parts)
 
 
 class RunConfigTest(unittest.TestCase):
