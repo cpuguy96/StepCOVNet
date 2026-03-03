@@ -18,7 +18,11 @@ class GetDefaultModelsDirTest(unittest.TestCase):
         path = pretrained.get_default_models_dir()
         self.assertIsInstance(path, pathlib.Path)
         self.assertEqual(path.name, "models")
-        self.assertIn("stepcovnet", path.parts)
+        # Posix uses .stepcovnet, Windows uses stepcovnet under LOCALAPPDATA/home
+        self.assertTrue(
+            any("stepcovnet" in p for p in path.parts),
+            msg=f"path.parts={path.parts}",
+        )
 
     def test_on_posix_uses_home(self):
         """When os.name is not nt, path is under Path.home() / .stepcovnet."""
