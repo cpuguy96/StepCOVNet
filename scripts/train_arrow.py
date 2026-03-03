@@ -49,8 +49,13 @@ def _coerce_value(s: str):
 
 
 def _set_nested(d: dict, key_path: str, value) -> None:
-    """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed."""
+    """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed.
+    Key path components must be non-empty; otherwise no-op (avoids empty string keys that
+    break config reconstruction).
+    """
     parts = key_path.split(".")
+    if not parts or any(not p for p in parts):
+        return
     current = d
     for part in parts[:-1]:
         if part not in current:
@@ -77,6 +82,8 @@ def apply_overrides_from_cli(
             continue
         prefix, rest = key.split(".", 1)
         if prefix not in ("dataset", "model", "run"):
+            continue
+        if not rest or any(not part for part in rest.split(".")):
             continue
         value = _coerce_value(value_str)
         _set_nested(d[prefix], rest, value)

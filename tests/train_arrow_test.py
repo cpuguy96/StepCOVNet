@@ -195,6 +195,46 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         self.assertFalse(result.run.show_model_summary)
         self.assertEqual(result.run.epoch, 2)
 
+    def test_empty_key_path_components_skipped(self):
+        """Overrides with empty path components (e.g. dataset.=value) are skipped; no TypeError on from_dict."""
+        from stepcovnet import config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            result = train_arrow.apply_overrides_from_cli(
+                base,
+                [
+                    "run.epoch=3",
+                    "dataset.=value",
+                    "run..epoch=99",
+                    "model.lstm.=0",
+                ],
+            )
+        self.assertEqual(result.run.epoch, 3)
+
+    def test_set_nested_rejects_empty_path_components(self):
+        """_set_nested does not set keys when path has empty components (no empty string key)."""
+        if "train_arrow" in sys.modules:
+            del sys.modules["train_arrow"]
+        with mock.patch.object(
+            argparse.ArgumentParser, "parse_args", return_value=_make_args(None)
+        ):
+            import train_arrow  # noqa: E402
+        d = {}
+        train_arrow._set_nested(d, "", "x")
+        self.assertNotIn("", d)
+        d2 = {"a": {}}
+        train_arrow._set_nested(d2["a"], "..b", "y")
+        self.assertNotIn("", d2["a"])
+
 
 class TrainArrowModelTypeMlpTest(unittest.TestCase):
     """Test model_type=mlp via --set and MLP block initialization."""
