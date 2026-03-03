@@ -155,7 +155,9 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(len(model.inputs), 1)
         self.assertEqual(model.output_shape, (None, None, 256))
         bidirectional_layers = [
-            l for l in model.layers if isinstance(l, keras.layers.Bidirectional)
+            layer
+            for layer in model.layers
+            if isinstance(layer, keras.layers.Bidirectional)
         ]
         self.assertGreater(
             len(bidirectional_layers),
