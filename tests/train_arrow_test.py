@@ -223,6 +223,38 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         train_arrow._set_nested(d2["a"], "..b", "y")
         self.assertNotIn("", d2["a"])
 
+    def test_set_nested_raises_when_intermediate_is_leaf(self):
+        """_set_nested raises ValueError when path goes through a leaf (e.g. run.epoch.foo=bar)."""
+        if "train_arrow" in sys.modules:
+            del sys.modules["train_arrow"]
+        with mock.patch.object(
+            argparse.ArgumentParser, "parse_args", return_value=_make_args(None)
+        ):
+            import train_arrow  # noqa: E402
+        d = {"run": {"epoch": 10}}
+        with self.assertRaises(ValueError) as ctx:
+            train_arrow._set_nested(d["run"], "epoch.foo", "bar")
+        self.assertIn("epoch.foo", str(ctx.exception))
+        self.assertIn("epoch", str(ctx.exception))
+        self.assertIn("not a nested object", str(ctx.exception))
+
+    def test_apply_overrides_raises_when_nested_path_targets_leaf(self):
+        """apply_overrides_from_cli raises ValueError for run.epoch.foo=bar (epoch is int)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            with self.assertRaises(ValueError) as ctx:
+                train_arrow.apply_overrides_from_cli(base, ["run.epoch.foo=bar"])
+            self.assertIn("epoch", str(ctx.exception))
+            self.assertIn("not a nested object", str(ctx.exception))
+
 
 class TrainArrowModelTypeMlpTest(unittest.TestCase):
     """Test model_type=mlp via --set and MLP block initialization."""

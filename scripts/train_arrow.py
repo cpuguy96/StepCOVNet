@@ -52,14 +52,23 @@ def _set_nested(d: dict, key_path: str, value) -> None:
     """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed.
     Key path components must be non-empty; otherwise no-op (avoids empty string keys that
     break config reconstruction).
+    Raises ValueError if an intermediate segment already exists and is not a dict (e.g.
+    run.epoch.foo=bar when epoch is an integer).
     """
     parts = key_path.split(".")
     if not parts or any(not p for p in parts):
         return
     current = d
-    for part in parts[:-1]:
+    for i, part in enumerate(parts[:-1]):
         if part not in current:
             current[part] = {}
+        else:
+            if not isinstance(current[part], dict):
+                segment = ".".join(parts[: i + 1])
+                raise ValueError(
+                    f"Cannot set nested key '{key_path}': segment '{segment}' is not a "
+                    "nested object (leaf value); use a path without extra segments."
+                )
         current = current[part]
     current[parts[-1]] = value
 
