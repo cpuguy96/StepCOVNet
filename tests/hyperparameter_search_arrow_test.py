@@ -432,6 +432,7 @@ class ExtractMetricsTest(unittest.TestCase):
         self.assertEqual(metrics["best_val_acc"], 0.8)
 
 
+@pytest.mark.slow
 class EndToEndMinimalTest(unittest.TestCase):
     """One combination, real test data dir; results and best_config written."""
 
@@ -485,6 +486,7 @@ class EndToEndMinimalTest(unittest.TestCase):
             self.assertIn("best_val_loss", results[0])
 
 
+@pytest.mark.slow
 class RandomSearchTest(unittest.TestCase):
     """Random search samples a subset of combinations; seed gives reproducibility."""
 
@@ -620,6 +622,7 @@ class RandomSearchTest(unittest.TestCase):
         self.assertEqual(first, second)
 
 
+@pytest.mark.slow
 class ResumeSweepTest(unittest.TestCase):
     """--resume_from loads partial results and runs only missing runs."""
 
@@ -1002,6 +1005,7 @@ class MemoryBoundedSweepTest(unittest.TestCase):
         )
 
 
+@pytest.mark.slow
 class SweepVerbosityTest(unittest.TestCase):
     """Sweep sets show_model_summary=False and fit_verbose=0 for each run."""
 
