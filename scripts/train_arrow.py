@@ -1,20 +1,12 @@
 r"""Script for training the arrow detection model.
 
 Usage:
-    # Using config file:
+    # Required: config file. Optional: overrides via --set key=value (repeatable).
     python scripts/train_arrow.py --config=configs/arrow_baseline.json
+    python scripts/train_arrow.py --config=configs/arrow_baseline.json --set run.epoch=30 --set dataset.batch_size=4
+    python scripts/train_arrow.py --config=configs/arrow_baseline.json --set model.lstm.units=256 --set model.model_type=lstm
 
-    # Using command-line arguments (backward compatible):
-    python scripts/train_arrow.py --train_data_dir=/path/to/train/data --val_data_dir=/path/to/val/data --epochs=20 --callback_root_dir=/path/to/callbacks --model_output_dir=/path/to/save/model
-
-    # Override config file values:
-    python scripts/train_arrow.py --config=configs/arrow_baseline.json --epochs=30 --batch_size=4
-
-    # With audio snippets (snippet_half_frames > 0; mel windows around each onset as second input):
-    python scripts/train_arrow.py --config=configs/arrow_baseline.json --snippet_half_frames=5
-
-    # Balance validity vs diversity: punish invalid charts but avoid boring all-tap collapse
-    python scripts/train_arrow.py --config=configs/arrow_baseline.json --chart_validity_aux_weight=0.5 --diversity_aux_weight=0.2
+    Dotted paths: dataset.*, model.*, run.* (e.g. run.epoch, dataset.data_dir, model.transformer.num_layers).
 """
 
 import argparse
@@ -27,171 +19,68 @@ PARSER = argparse.ArgumentParser(description="Train arrow detection model.")
 PARSER.add_argument(
     "--config",
     type=str,
-    help="Path to JSON config file. If provided, other arguments override config values.",
-    default=None,
-    required=False,
+    required=True,
+    help="Path to JSON config file.",
 )
 PARSER.add_argument(
-    "--train_data_dir",
+    "--set",
     type=str,
-    help="Directory containing training data.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--val_data_dir",
-    type=str,
-    help="Directory containing validation data.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--epochs",
-    type=int,
-    help="Number of epochs to train for.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--batch_size",
-    type=int,
-    help="Batch size for training.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--num_layers",
-    type=int,
-    help="Number of Transformer encoder layers.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--d_model",
-    type=int,
-    help="Model dimensionality.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--num_heads",
-    type=int,
-    help="Number of attention heads.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--ff_dim",
-    type=int,
-    help="Feed-forward network dimension.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--dropout_rate",
-    type=float,
-    help="Dropout rate.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--callback_root_dir",
-    type=str,
-    help="Root directory for storing training callbacks (checkpoints, logs).",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--model_output_dir",
-    type=str,
-    help="Directory where the trained model will be saved.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--take_count",
-    type=int,
-    help="Number of batches to use from the training dataset (-1 for entire dataset).",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--val_take_count",
-    type=int,
-    help="Number of batches to use from the validation dataset (-1 for entire dataset).",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--model_name",
-    type=str,
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--snippet_half_frames",
-    type=int,
-    help="Half-window of frames around each onset (total = 2*snippet_half_frames+1). When > 0, mel snippets are used as second input.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--chart_validity_aux_weight",
-    type=float,
-    help="Weight for chart-validity auxiliary loss. Higher values punish invalid charts more; use with --diversity_aux_weight to avoid collapse to boring charts.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--diversity_aux_weight",
-    type=float,
-    help="Weight for note-kind balance auxiliary loss. Encourages predicted hold/tap mix to match labels; balances chart validity.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--warmup_epochs",
-    type=int,
-    help="Number of epochs for linear LR warmup before cosine decay. 0 disables the schedule (fixed LR).",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--lr_peak",
-    type=float,
-    help="Peak learning rate reached at end of warmup (also the fixed LR when warmup is disabled).",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--lr_min",
-    type=float,
-    help="Minimum learning rate at start of warmup and end of cosine decay.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--model_type",
-    type=str,
-    help="Arrow model architecture: 'transformer', 'mlp', or 'lstm'. Overrides config file.",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--lstm_units",
-    type=int,
-    help="LSTM units (when model_type is 'lstm').",
-    default=None,
-    required=False,
-)
-PARSER.add_argument(
-    "--lstm_num_layers",
-    type=int,
-    help="Number of LSTM layers (when model_type is 'lstm').",
-    default=None,
-    required=False,
+    action="append",
+    default=[],
+    metavar="KEY=VALUE",
+    help="Override config (repeatable). Example: --set run.epoch=30 --set model.lstm.units=256",
 )
 ARGS = PARSER.parse_args()
+
+
+def _coerce_value(s: str):
+    """Coerce string to int, float, bool, or leave as str."""
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    if s.lower() in ("true", "false"):
+        return s.lower() == "true"
+    return s
+
+
+def _set_nested(d: dict, key_path: str, value) -> None:
+    """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed."""
+    parts = key_path.split(".")
+    current = d
+    for part in parts[:-1]:
+        if part not in current:
+            current[part] = {}
+        current = current[part]
+    current[parts[-1]] = value
+
+
+def apply_overrides_from_cli(
+    base: config.ArrowExperimentConfig,
+    overrides: list[str],
+) -> config.ArrowExperimentConfig:
+    """Apply CLI overrides (key=value strings) to base config with string coercion."""
+    if not overrides:
+        return base
+    d = base.as_dict()
+    for item in overrides:
+        if "=" not in item:
+            continue
+        key, _, value_str = item.partition("=")
+        key = key.strip()
+        value_str = value_str.strip()
+        if "." not in key:
+            continue
+        prefix, rest = key.split(".", 1)
+        if prefix not in ("dataset", "model", "run"):
+            continue
+        value = _coerce_value(value_str)
+        _set_nested(d[prefix], rest, value)
+    return config.ArrowExperimentConfig.from_dict(d)
 
 
 if tf.config.list_physical_devices("GPU"):
@@ -210,137 +99,18 @@ if tf.config.list_physical_devices("GPU"):
 
 
 def main():
-    # Load config from file if provided
-    if ARGS.config:
-        experiment_config = config.ArrowExperimentConfig.from_json(ARGS.config)
-        dataset_config = experiment_config.dataset
-        model_config = experiment_config.model
-        run_config = experiment_config.run
-    else:
-        # Use defaults if no config file
-        if (
-            not ARGS.train_data_dir
-            or not ARGS.val_data_dir
-            or not ARGS.model_output_dir
-        ):
-            PARSER.error(
-                "Either --config must be provided, or --train_data_dir, --val_data_dir, "
-                "and --model_output_dir must be provided."
-            )
-        dataset_config = config.ArrowDatasetConfig(
-            data_dir=ARGS.train_data_dir,
-            val_data_dir=ARGS.val_data_dir,
-            batch_size=1,
-            snippet_half_frames=(
-                ARGS.snippet_half_frames if ARGS.snippet_half_frames is not None else 0
-            ),
-        )
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "snippet_half_frames": (
-                    ARGS.snippet_half_frames
-                    if ARGS.snippet_half_frames is not None
-                    else 0
-                ),
-            }
-        )
-        # Default to a single batch for quick, backward-compatible testing.
-        # Users can still override this via --take_count or in the config file.
-        run_config = config.ArrowRunConfig(
-            epoch=10,
-            take_count=1,
-            model_output_dir=ARGS.model_output_dir,
-            callback_root_dir="",
-            model_name="",
-        )
+    if not ARGS.config:
+        PARSER.error("--config is required")
+    experiment_config = config.ArrowExperimentConfig.from_json(ARGS.config)
+    experiment_config = apply_overrides_from_cli(experiment_config, ARGS.set or [])
+    dataset_config = experiment_config.dataset
+    model_config = experiment_config.model
+    run_config = experiment_config.run
 
-    # Override with command-line arguments
-    if ARGS.train_data_dir:
-        dataset_config.data_dir = ARGS.train_data_dir
-    if ARGS.val_data_dir:
-        dataset_config.val_data_dir = ARGS.val_data_dir
-    if ARGS.batch_size is not None:
-        dataset_config.batch_size = ARGS.batch_size
-    if ARGS.snippet_half_frames is not None:
-        dataset_config.snippet_half_frames = ARGS.snippet_half_frames
-        model_config.snippet_half_frames = ARGS.snippet_half_frames
-
-    # Apply model_type first so the active params block is known before architecture-specific args.
-    # Clear inactive params blocks (registry-driven); then ensure active block has a default.
-    if ARGS.model_type is not None:
-        model_config.model_type = ARGS.model_type
-        for mt, attr in config._ARROW_MODEL_TYPE_ATTR.items():
-            if mt != model_config.model_type:
-                setattr(model_config, attr, None)
-    _arrow_defaults = {
-        "transformer": config.TransformerArrowParams,
-        "mlp": config.MLPArrowParams,
-        "lstm": config.LSTMArrowParams,
-    }
-    active_attr = config._ARROW_MODEL_TYPE_ATTR.get(model_config.model_type)
-    if active_attr is not None and getattr(model_config, active_attr) is None:
-        setattr(
-            model_config,
-            active_attr,
-            _arrow_defaults[model_config.model_type](),
-        )
-
-    if model_config.model_type == "transformer":
-        transformer = model_config.transformer
-        if transformer is not None:
-            if ARGS.num_layers is not None:
-                transformer.num_layers = ARGS.num_layers
-            if ARGS.d_model is not None:
-                transformer.d_model = ARGS.d_model
-            if ARGS.num_heads is not None:
-                transformer.num_heads = ARGS.num_heads
-            if ARGS.ff_dim is not None:
-                transformer.ff_dim = ARGS.ff_dim
-            if ARGS.dropout_rate is not None:
-                transformer.dropout_rate = ARGS.dropout_rate
-    elif model_config.model_type == "mlp":
-        mlp = model_config.mlp
-        if mlp is not None:
-            if ARGS.dropout_rate is not None:
-                mlp.dropout_rate = ARGS.dropout_rate
-    elif model_config.model_type == "lstm":
-        lstm = model_config.lstm
-        if lstm is not None:
-            if ARGS.lstm_units is not None:
-                lstm.units = ARGS.lstm_units
-            if ARGS.lstm_num_layers is not None:
-                lstm.num_layers = ARGS.lstm_num_layers
-            if ARGS.dropout_rate is not None:
-                lstm.dropout_rate = ARGS.dropout_rate
-
-    if ARGS.epochs is not None:
-        run_config.epoch = ARGS.epochs
-    if ARGS.take_count is not None:
-        run_config.take_count = ARGS.take_count
-    if ARGS.val_take_count is not None:
-        run_config.val_take_count = ARGS.val_take_count
-    if ARGS.model_output_dir:
-        run_config.model_output_dir = ARGS.model_output_dir
-    if ARGS.callback_root_dir is not None:
-        run_config.callback_root_dir = ARGS.callback_root_dir
-    if ARGS.model_name is not None:
-        run_config.model_name = ARGS.model_name
-    if ARGS.chart_validity_aux_weight is not None:
-        run_config.chart_validity_aux_weight = ARGS.chart_validity_aux_weight
-    if ARGS.diversity_aux_weight is not None:
-        run_config.diversity_aux_weight = ARGS.diversity_aux_weight
-    if ARGS.warmup_epochs is not None:
-        run_config.warmup_epochs = ARGS.warmup_epochs
-    if ARGS.lr_peak is not None:
-        run_config.lr_peak = ARGS.lr_peak
-    if ARGS.lr_min is not None:
-        run_config.lr_min = ARGS.lr_min
-
-    # Validate required fields
     if not dataset_config.data_dir or not dataset_config.val_data_dir:
-        PARSER.error("--train_data_dir and --val_data_dir are required")
+        PARSER.error("dataset.data_dir and dataset.val_data_dir are required")
     if not run_config.model_output_dir:
-        PARSER.error("--model_output_dir is required")
+        PARSER.error("run.model_output_dir is required")
 
     trainers.run_arrow_train_from_config(dataset_config, model_config, run_config)
 

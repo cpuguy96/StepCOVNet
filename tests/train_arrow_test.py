@@ -16,52 +16,40 @@ if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
 
-def _make_args(
-    config=None,
-    train_data_dir=None,
-    val_data_dir=None,
-    model_output_dir=None,
-    model_type=None,
-    dropout_rate=None,
-    **kwargs,
+def _make_args(config, set_overrides=None):
+    """Build an argparse.Namespace with --config and optional --set overrides."""
+    return argparse.Namespace(config=config, set=set_overrides or [])
+
+
+def _minimal_config_path(
+    tmpdir, data_dir=None, val_data_dir=None, model_output_dir=None, **run_overrides
 ):
-    """Build an argparse.Namespace with defaults; override with given kwargs."""
-    defaults = {
-        "config": None,
-        "train_data_dir": None,
-        "val_data_dir": None,
-        "model_output_dir": None,
-        "batch_size": None,
-        "num_layers": None,
-        "d_model": None,
-        "num_heads": None,
-        "ff_dim": None,
-        "dropout_rate": None,
-        "epochs": None,
-        "take_count": None,
-        "val_take_count": None,
-        "callback_root_dir": None,
-        "model_name": None,
-        "snippet_half_frames": None,
-        "chart_validity_aux_weight": None,
-        "diversity_aux_weight": None,
-        "warmup_epochs": None,
-        "lr_peak": None,
-        "lr_min": None,
-        "model_type": None,
-        "lstm_units": None,
-        "lstm_num_layers": None,
-    }
-    defaults.update(
-        config=config,
-        train_data_dir=train_data_dir,
-        val_data_dir=val_data_dir,
-        model_output_dir=model_output_dir,
-        model_type=model_type,
-        dropout_rate=dropout_rate,
-        **kwargs,
+    """Write a minimal ArrowExperimentConfig to tmpdir and return its path."""
+    from stepcovnet import config
+
+    data_dir = data_dir or tmpdir
+    val_data_dir = val_data_dir or tmpdir
+    model_output_dir = model_output_dir or tmpdir
+    path = os.path.join(tmpdir, "arrow.json")
+    cfg = config.ArrowExperimentConfig(
+        dataset=config.ArrowDatasetConfig(
+            data_dir=data_dir,
+            val_data_dir=val_data_dir,
+            batch_size=1,
+            snippet_half_frames=0,
+        ),
+        model=config.ArrowModelConfig.from_dict(
+            {"model_type": "transformer", "transformer": {}}
+        ),
+        run=config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir=model_output_dir,
+            **run_overrides,
+        ),
     )
-    return argparse.Namespace(**defaults)
+    cfg.to_json(path)
+    return path
 
 
 def _run_train_arrow_main(args):
@@ -76,64 +64,6 @@ def _run_train_arrow_main(args):
     return run_mock, model_config
 
 
-class TrainArrowModelTypeMlpTest(unittest.TestCase):
-    """Test that --model_type mlp with transformer-style args initializes mlp correctly."""
-
-    def test_model_type_mlp_without_dropout_rate_uses_defaults(self):
-        """With --model_type mlp and no --dropout_rate, MLP block is still applied and uses default dropout."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=tmpdir,
-                model_type="mlp",
-                dropout_rate=None,
-            )
-            run_mock, model_config = _run_train_arrow_main(args)
-        run_mock.assert_called_once()
-        self.assertEqual(model_config.model_type, "mlp")
-        self.assertIsNotNone(model_config.mlp)
-        self.assertEqual(model_config.mlp.dropout_rate, 0.0)  # MLP default
-        from stepcovnet import models
-
-        models.build_arrow_model_from_config(model_config)
-
-    def test_model_type_mlp_with_dropout_rate_produces_valid_config(self):
-        """With --model_type mlp and --dropout_rate, model_config has mlp set and buildable."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=tmpdir,
-                model_type="mlp",
-                dropout_rate=0.25,
-            )
-            run_mock, model_config = _run_train_arrow_main(args)
-        run_mock.assert_called_once()
-        self.assertEqual(model_config.model_type, "mlp")
-        self.assertIsNotNone(model_config.mlp)
-        self.assertEqual(model_config.mlp.dropout_rate, 0.25)
-        # build_arrow_model_from_config should not raise
-        from stepcovnet import models
-
-        models.build_arrow_model_from_config(model_config)
-
-    def test_model_type_transformer_with_dropout_rate_unchanged(self):
-        """With --model_type transformer and --dropout_rate, transformer gets dropout."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=tmpdir,
-                model_type="transformer",
-                dropout_rate=0.3,
-            )
-            run_mock, model_config = _run_train_arrow_main(args)
-        self.assertEqual(model_config.model_type, "transformer")
-        self.assertIsNotNone(model_config.transformer)
-        self.assertEqual(model_config.transformer.dropout_rate, 0.3)
-
-
 def _run_train_arrow_main_with_run_config(args):
     """Run main() and return (run_mock, dataset_config, model_config, run_config)."""
     if "train_arrow" in sys.modules:
@@ -146,11 +76,178 @@ def _run_train_arrow_main_with_run_config(args):
     return run_mock, dataset_config, model_config, run_config
 
 
+class ApplyOverridesFromCliTest(unittest.TestCase):
+    """Test apply_overrides_from_cli helper (coercion and dotted paths)."""
+
+    def test_coercion_int_float_bool_str(self):
+        """String overrides are coerced to int, float, bool, or left as str."""
+        from stepcovnet import config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            result = train_arrow.apply_overrides_from_cli(
+                base,
+                ["run.epoch=5", "run.lr_peak=0.002", "run.seed=42"],
+            )
+        self.assertEqual(result.run.epoch, 5)
+        self.assertEqual(result.run.lr_peak, 0.002)
+        self.assertEqual(result.run.seed, 42)
+
+    def test_coercion_float_and_bool(self):
+        """Float and bool overrides are applied."""
+        from stepcovnet import config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            result = train_arrow.apply_overrides_from_cli(
+                base,
+                ["run.chart_validity_aux_weight=0.4", "run.diversity_aux_weight=0.2"],
+            )
+        self.assertEqual(result.run.chart_validity_aux_weight, 0.4)
+        self.assertEqual(result.run.diversity_aux_weight, 0.2)
+
+    def test_nested_model_path(self):
+        """Nested keys like model.lstm.units are set correctly."""
+        from stepcovnet import config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            result = train_arrow.apply_overrides_from_cli(
+                base,
+                [
+                    "model.model_type=lstm",
+                    "model.lstm.units=64",
+                    "model.lstm.num_layers=2",
+                ],
+            )
+        self.assertEqual(result.model.model_type, "lstm")
+        self.assertIsNotNone(result.model.lstm)
+        self.assertEqual(result.model.lstm.units, 64)
+        self.assertEqual(result.model.lstm.num_layers, 2)
+
+    def test_empty_overrides_returns_base(self):
+        """Empty overrides list returns same config."""
+        from stepcovnet import config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            result = train_arrow.apply_overrides_from_cli(base, [])
+        self.assertIs(result, base)
+
+    def test_coercion_bool_and_skip_malformed_overrides(self):
+        """Bool coercion (true/false) and malformed entries are skipped without error."""
+        from stepcovnet import config
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            # Valid: run.show_model_summary=false (bool); run.epoch=2 (int).
+            # Skipped: no "=", no ".", or prefix not dataset/model/run.
+            result = train_arrow.apply_overrides_from_cli(
+                base,
+                [
+                    "run.show_model_summary=false",
+                    "run.epoch=2",
+                    "noequals",
+                    "run_nodot=3",
+                    "other.foo=1",
+                ],
+            )
+        self.assertFalse(result.run.show_model_summary)
+        self.assertEqual(result.run.epoch, 2)
+
+
+class TrainArrowModelTypeMlpTest(unittest.TestCase):
+    """Test model_type=mlp via --set and MLP block initialization."""
+
+    def test_model_type_mlp_without_dropout_rate_uses_defaults(self):
+        """With --set model.model_type=mlp, MLP block uses default dropout."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, ["model.model_type=mlp"])
+            run_mock, model_config = _run_train_arrow_main(args)
+        run_mock.assert_called_once()
+        self.assertEqual(model_config.model_type, "mlp")
+        self.assertIsNotNone(model_config.mlp)
+        self.assertEqual(model_config.mlp.dropout_rate, 0.0)
+        from stepcovnet import models
+
+        models.build_arrow_model_from_config(model_config)
+
+    def test_model_type_mlp_with_dropout_rate_produces_valid_config(self):
+        """With --set model.model_type=mlp and model.mlp.dropout_rate=0.25, model is buildable."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(
+                path, ["model.model_type=mlp", "model.mlp.dropout_rate=0.25"]
+            )
+            run_mock, model_config = _run_train_arrow_main(args)
+        run_mock.assert_called_once()
+        self.assertEqual(model_config.model_type, "mlp")
+        self.assertIsNotNone(model_config.mlp)
+        self.assertEqual(model_config.mlp.dropout_rate, 0.25)
+        from stepcovnet import models
+
+        models.build_arrow_model_from_config(model_config)
+
+    def test_model_type_transformer_with_dropout_rate_unchanged(self):
+        """With model_type=transformer and model.transformer.dropout_rate=0.3, transformer gets dropout."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(
+                path,
+                ["model.model_type=transformer", "model.transformer.dropout_rate=0.3"],
+            )
+            run_mock, model_config = _run_train_arrow_main(args)
+        self.assertEqual(model_config.model_type, "transformer")
+        self.assertIsNotNone(model_config.transformer)
+        self.assertEqual(model_config.transformer.dropout_rate, 0.3)
+
+
 class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
-    """Test --config path and CLI overrides applied on top of config."""
+    """Test --config and --set overrides applied on top of config."""
 
     def test_config_file_with_model_type_override(self):
-        """With --config, model_config comes from file; --model_type and --dropout_rate override."""
+        """Config has transformer; --set model.model_type=mlp and model.mlp.dropout_rate=0.2 override."""
         from stepcovnet import config
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -172,9 +269,7 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
             )
             experiment.to_json(config_path)
             args = _make_args(
-                config=config_path,
-                model_type="mlp",
-                dropout_rate=0.2,
+                config_path, ["model.model_type=mlp", "model.mlp.dropout_rate=0.2"]
             )
             run_mock, _dataset_config, model_config, _run_config = (
                 _run_train_arrow_main_with_run_config(args)
@@ -189,18 +284,19 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.mlp.dropout_rate, 0.2)
 
     def test_all_transformer_cli_overrides_applied(self):
-        """num_layers, d_model, num_heads, ff_dim, dropout_rate all applied when model_type is transformer."""
+        """--set model.transformer.* applies num_layers, d_model, num_heads, ff_dim, dropout_rate."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
             args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=tmpdir,
-                model_type="transformer",
-                num_layers=2,
-                d_model=64,
-                num_heads=2,
-                ff_dim=256,
-                dropout_rate=0.1,
+                path,
+                [
+                    "model.model_type=transformer",
+                    "model.transformer.num_layers=2",
+                    "model.transformer.d_model=64",
+                    "model.transformer.num_heads=2",
+                    "model.transformer.ff_dim=256",
+                    "model.transformer.dropout_rate=0.1",
+                ],
             )
             _run_mock, _dc, model_config, _rc = _run_train_arrow_main_with_run_config(
                 args
@@ -212,16 +308,17 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.transformer.dropout_rate, 0.1)
 
     def test_model_type_lstm_with_overrides_produces_valid_config(self):
-        """With --model_type lstm and --lstm_units/--lstm_num_layers, model_config is buildable."""
+        """--set model.model_type=lstm and model.lstm.* produces buildable config."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            path = _minimal_config_path(tmpdir)
             args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=tmpdir,
-                model_type="lstm",
-                lstm_units=64,
-                lstm_num_layers=2,
-                dropout_rate=0.1,
+                path,
+                [
+                    "model.model_type=lstm",
+                    "model.lstm.units=64",
+                    "model.lstm.num_layers=2",
+                    "model.lstm.dropout_rate=0.1",
+                ],
             )
             run_mock, model_config = _run_train_arrow_main(args)
         run_mock.assert_called_once()
@@ -235,22 +332,28 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         models.build_arrow_model_from_config(model_config)
 
     def test_snippet_half_frames_override(self):
-        """snippet_half_frames CLI override updates dataset and model config (no-config path)."""
+        """--set dataset.snippet_half_frames and model.snippet_half_frames update both (via single key)."""
+        from stepcovnet import config
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=tmpdir,
-                snippet_half_frames=5,
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path, [])
+            if "train_arrow" in sys.modules:
+                del sys.modules["train_arrow"]
+            with mock.patch.object(
+                argparse.ArgumentParser, "parse_args", return_value=args
+            ):
+                import train_arrow  # noqa: E402
+            base = config.ArrowExperimentConfig.from_json(path)
+            result = train_arrow.apply_overrides_from_cli(
+                base,
+                ["dataset.snippet_half_frames=5", "model.snippet_half_frames=5"],
             )
-            _run_mock, dataset_config, model_config, _rc = (
-                _run_train_arrow_main_with_run_config(args)
-            )
-        self.assertEqual(dataset_config.snippet_half_frames, 5)
-        self.assertEqual(model_config.snippet_half_frames, 5)
+        self.assertEqual(result.dataset.snippet_half_frames, 5)
+        self.assertEqual(result.model.snippet_half_frames, 5)
 
     def test_config_file_with_snippet_half_frames_override(self):
-        """With --config, snippet_half_frames CLI override still updates dataset and model config."""
+        """With --config, --set dataset.snippet_half_frames and model.snippet_half_frames update both."""
         from stepcovnet import config
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -265,7 +368,10 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
                 ),
             )
             cfg.to_json(json_path)
-            args = _make_args(config=json_path, snippet_half_frames=3)
+            args = _make_args(
+                json_path,
+                ["dataset.snippet_half_frames=3", "model.snippet_half_frames=3"],
+            )
             _run_mock, dataset_config, model_config, _rc = (
                 _run_train_arrow_main_with_run_config(args)
             )
@@ -273,23 +379,25 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.snippet_half_frames, 3)
 
     def test_run_config_cli_overrides(self):
-        """epochs, take_count, val_take_count, model_output_dir, callback_root_dir, model_name, aux weights, lr applied."""
+        """--set run.* applies epoch, take_count, val_take_count, paths, aux weights, lr."""
         with tempfile.TemporaryDirectory() as tmpdir:
             out_dir = os.path.join(tmpdir, "out")
+            path = _minimal_config_path(tmpdir, model_output_dir=out_dir)
             args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=out_dir,
-                epochs=3,
-                take_count=2,
-                val_take_count=1,
-                callback_root_dir=os.path.join(tmpdir, "callbacks"),
-                model_name="my_model",
-                chart_validity_aux_weight=0.4,
-                diversity_aux_weight=0.2,
-                warmup_epochs=1,
-                lr_peak=2e-3,
-                lr_min=1e-6,
+                path,
+                [
+                    "run.epoch=3",
+                    "run.take_count=2",
+                    "run.val_take_count=1",
+                    "run.model_output_dir=" + out_dir,
+                    "run.callback_root_dir=" + os.path.join(tmpdir, "callbacks"),
+                    "run.model_name=my_model",
+                    "run.chart_validity_aux_weight=0.4",
+                    "run.diversity_aux_weight=0.2",
+                    "run.warmup_epochs=1",
+                    "run.lr_peak=0.002",
+                    "run.lr_min=0.000001",
+                ],
             )
             _run_mock, _dc, _mc, run_config = _run_train_arrow_main_with_run_config(
                 args
@@ -305,18 +413,16 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(run_config.chart_validity_aux_weight, 0.4)
         self.assertEqual(run_config.diversity_aux_weight, 0.2)
         self.assertEqual(run_config.warmup_epochs, 1)
-        self.assertEqual(run_config.lr_peak, 2e-3)
+        self.assertEqual(run_config.lr_peak, 0.002)
         self.assertEqual(run_config.lr_min, 1e-6)
 
 
 class TrainArrowValidationTest(unittest.TestCase):
     """Test validation and error paths in main()."""
 
-    def test_main_errors_when_missing_dirs_without_config(self):
-        """Without --config, missing train_data_dir/val_data_dir/model_output_dir causes PARSER.error."""
-        args = _make_args(
-            config=None, train_data_dir=None, val_data_dir=None, model_output_dir=None
-        )
+    def test_main_errors_when_config_missing(self):
+        """Missing --config causes PARSER.error."""
+        args = _make_args(None)
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with mock.patch.object(
@@ -327,7 +433,7 @@ class TrainArrowValidationTest(unittest.TestCase):
             train_arrow.main()
 
     def test_main_errors_when_config_has_empty_model_output_dir_and_no_override(self):
-        """Config file with run.model_output_dir empty and no --model_output_dir override triggers PARSER.error."""
+        """Config with run.model_output_dir empty and no --set override triggers PARSER.error."""
         from stepcovnet import config
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -340,8 +446,7 @@ class TrainArrowValidationTest(unittest.TestCase):
                 run=config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir=""),
             )
             cfg.to_json(json_path)
-            args = _make_args(config=json_path)
-            args.model_output_dir = None
+            args = _make_args(json_path)
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
@@ -352,7 +457,7 @@ class TrainArrowValidationTest(unittest.TestCase):
                 train_arrow.main()
 
     def test_main_errors_when_config_has_empty_data_dir_and_no_override(self):
-        """Config file with dataset.data_dir empty and no --train_data_dir override triggers PARSER.error."""
+        """Config with dataset.data_dir empty and no --set override triggers PARSER.error."""
         from stepcovnet import config
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -367,8 +472,7 @@ class TrainArrowValidationTest(unittest.TestCase):
                 ),
             )
             cfg.to_json(json_path)
-            args = _make_args(config=json_path)
-            args.train_data_dir = None
+            args = _make_args(json_path)
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
@@ -387,11 +491,8 @@ class TrainArrowGpuBlockTest(unittest.TestCase):
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with tempfile.TemporaryDirectory() as tmpdir:
-            args = _make_args(
-                train_data_dir=tmpdir,
-                val_data_dir=tmpdir,
-                model_output_dir=tmpdir,
-            )
+            path = _minimal_config_path(tmpdir)
+            args = _make_args(path)
             with (
                 mock.patch.object(
                     argparse.ArgumentParser, "parse_args", return_value=args
