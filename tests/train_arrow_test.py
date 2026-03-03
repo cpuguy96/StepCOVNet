@@ -9,6 +9,8 @@ from unittest import mock
 
 import tensorflow as tf
 
+from stepcovnet import config, models
+
 # Allow importing the script module (defer import so parse_args can be patched)
 _SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
 _SCRIPT_DIR = os.path.abspath(_SCRIPT_DIR)
@@ -25,8 +27,6 @@ def _minimal_config_path(
     tmpdir, data_dir=None, val_data_dir=None, model_output_dir=None, **run_overrides
 ):
     """Write a minimal ArrowExperimentConfig to tmpdir and return its path."""
-    from stepcovnet import config
-
     data_dir = data_dir or tmpdir
     val_data_dir = val_data_dir or tmpdir
     model_output_dir = model_output_dir or tmpdir
@@ -81,8 +81,6 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
 
     def test_coercion_int_float_bool_str(self):
         """String overrides are coerced to int, float, bool, or left as str."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -103,8 +101,6 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
 
     def test_coercion_float_and_bool(self):
         """Float and bool overrides are applied."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -124,8 +120,6 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
 
     def test_nested_model_path(self):
         """Nested keys like model.lstm.units are set correctly."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -151,8 +145,6 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
 
     def test_empty_overrides_returns_base(self):
         """Empty overrides list returns same config."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -168,8 +160,6 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
 
     def test_coercion_bool_and_skip_malformed_overrides(self):
         """Bool coercion (true/false) and malformed entries are skipped without error."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -197,8 +187,6 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
 
     def test_empty_key_path_components_skipped(self):
         """Overrides with empty path components (e.g. dataset.=value) are skipped; no TypeError on from_dict."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -249,8 +237,6 @@ class TrainArrowModelTypeMlpTest(unittest.TestCase):
         self.assertEqual(model_config.model_type, "mlp")
         self.assertIsNotNone(model_config.mlp)
         self.assertEqual(model_config.mlp.dropout_rate, 0.0)
-        from stepcovnet import models
-
         models.build_arrow_model_from_config(model_config)
 
     def test_model_type_mlp_with_dropout_rate_produces_valid_config(self):
@@ -265,8 +251,6 @@ class TrainArrowModelTypeMlpTest(unittest.TestCase):
         self.assertEqual(model_config.model_type, "mlp")
         self.assertIsNotNone(model_config.mlp)
         self.assertEqual(model_config.mlp.dropout_rate, 0.25)
-        from stepcovnet import models
-
         models.build_arrow_model_from_config(model_config)
 
     def test_model_type_transformer_with_dropout_rate_unchanged(self):
@@ -288,8 +272,6 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
 
     def test_config_file_with_model_type_override(self):
         """Config has transformer; --set model.model_type=mlp and model.mlp.dropout_rate=0.2 override."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = os.path.join(tmpdir, "arrow.json")
             experiment = config.ArrowExperimentConfig(
@@ -367,14 +349,10 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.lstm.units, 64)
         self.assertEqual(model_config.lstm.num_layers, 2)
         self.assertEqual(model_config.lstm.dropout_rate, 0.1)
-        from stepcovnet import models
-
         models.build_arrow_model_from_config(model_config)
 
     def test_snippet_half_frames_override(self):
         """--set dataset.snippet_half_frames and model.snippet_half_frames update both (via single key)."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -394,8 +372,6 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
 
     def test_config_file_with_snippet_half_frames_override(self):
         """With --config, --set dataset.snippet_half_frames and model.snippet_half_frames update both."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             json_path = os.path.join(tmpdir, "c.json")
             cfg = config.ArrowExperimentConfig(
@@ -474,8 +450,6 @@ class TrainArrowValidationTest(unittest.TestCase):
 
     def test_main_errors_when_config_has_empty_model_output_dir_and_no_override(self):
         """Config with run.model_output_dir empty and no --set override triggers PARSER.error."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             json_path = os.path.join(tmpdir, "c.json")
             cfg = config.ArrowExperimentConfig(
@@ -498,8 +472,6 @@ class TrainArrowValidationTest(unittest.TestCase):
 
     def test_main_errors_when_config_has_empty_data_dir_and_no_override(self):
         """Config with dataset.data_dir empty and no --set override triggers PARSER.error."""
-        from stepcovnet import config
-
         with tempfile.TemporaryDirectory() as tmpdir:
             json_path = os.path.join(tmpdir, "c.json")
             cfg = config.ArrowExperimentConfig(
