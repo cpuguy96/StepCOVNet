@@ -162,6 +162,50 @@ class GeneratorTest(unittest.TestCase):
         )
         self.assertEqual(output_data.generate_txt_output(), expected_output)
 
+    def test_generate_output_data_bpm_none_estimates_from_audio(self):
+        """When bpm is None, BPM is estimated from audio and used in output."""
+
+        def _onset_pred_mock(x):
+            return np.random.random((1, x.shape[1], 1)).astype(np.float32)
+
+        mock_onset = mock.MagicMock()
+        mock_onset.predict.side_effect = _onset_pred_mock
+
+        def _arrow_pred_mock(x):
+            x_in = x[0] if isinstance(x, list) else x
+            return np.random.random((1, x_in.shape[1], 256)).astype(np.float32)
+
+        mock_arrow = mock.MagicMock()
+        mock_arrow.predict.side_effect = _arrow_pred_mock
+        mock_arrow.inputs = [None]
+
+        audio_path = os.path.join(TEST_DATA_DIR, "mayu.ogg")
+        with mock.patch(
+            "stepcovnet.generator._estimate_bpm_from_audio", return_value=120
+        ) as mock_estimate:
+            output_data = generator.generate_output_data(
+                audio_path=audio_path,
+                song_title="Test",
+                bpm=None,
+                onset_model=mock_onset,
+                arrow_model=mock_arrow,
+            )
+        self.assertEqual(output_data.bpm, 120)
+        mock_estimate.assert_called_once_with(audio_path)
+
+    def test_estimate_bpm_from_audio_failure_raises(self):
+        """_estimate_bpm_from_audio raises ValueError when tempo is 0 or invalid."""
+        with mock.patch("stepcovnet.generator.librosa.load") as mock_load:
+            mock_load.return_value = (np.zeros(44100), 44100)
+            with mock.patch(
+                "stepcovnet.generator.librosa.beat.beat_track"
+            ) as mock_beat:
+                mock_beat.return_value = (0.0, np.array([]))
+                with self.assertRaises(ValueError) as ctx:
+                    generator._estimate_bpm_from_audio("/fake/path.ogg")
+        self.assertIn("Could not estimate BPM", str(ctx.exception))
+        self.assertIn("--bpm", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

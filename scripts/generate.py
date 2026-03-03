@@ -1,7 +1,10 @@
 r"""Script for generating a StepMania chart from an audio file.
 
 Usage:
-    python scripts/generate.py --audio_path=/path/to/song.mp3 --song_title="My Song" --bpm=120 --onset_model_path=/path/to/onset.keras --arrow_model_path=/path/to/arrow.keras --output_file=/path/to/output.txt
+    python scripts/generate.py --audio_path=/path/to/song.mp3 --song_title="My Song" --onset_model_path=/path/to/onset.keras --arrow_model_path=/path/to/arrow.keras --output_file=/path/to/output.txt
+
+    BPM is optional; if omitted, it is estimated from the audio file.
+    python scripts/generate.py ... --bpm=120 ...
 """
 
 import argparse
@@ -29,8 +32,8 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--bpm",
     type=int,
-    help="BPM of the song.",
-    required=True,
+    default=None,
+    help="BPM of the song. Optional; if omitted, estimated from the audio.",
 )
 PARSER.add_argument(
     "--onset_model_path",

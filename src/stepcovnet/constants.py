@@ -1,5 +1,8 @@
 """Constants used throughout the stepcovnet project."""
 
+# Target sample rate (Hz) for audio loading and processing (e.g. spectrogram, BPM estimation)
+TARGET_SR = 44100
+
 # Number of Mel bands to generate
 N_MELS = 128
 

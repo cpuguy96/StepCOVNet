@@ -83,12 +83,13 @@ class ValidateInputsTest(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(msg, "Please enter a song title.")
 
-    def test_validate_inputs_missing_bpm(self):
+    def test_validate_inputs_missing_bpm_valid_returns_none(self):
+        """Empty BPM is valid; result[2] is None (BPM will be estimated from audio)."""
         args = list(self._valid_args())
         args[2] = ""
-        ok, msg = generate_ui._validate_inputs(*args)
-        self.assertFalse(ok)
-        self.assertEqual(msg, "Please enter BPM.")
+        ok, result = generate_ui._validate_inputs(*args)
+        self.assertTrue(ok)
+        self.assertIsNone(result[2])
 
     def test_validate_inputs_bpm_not_integer(self):
         args = list(self._valid_args())
@@ -158,39 +159,69 @@ class RunGenerationTest(unittest.TestCase):
         mock_output_data = mock.MagicMock()
         mock_output_data.generate_txt_output.return_value = mock_output
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
-            output_path = f.name
-        self.addCleanup(lambda: os.path.exists(output_path) and os.unlink(output_path))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "output.txt")
+            result_queue = queue.Queue()
+            with (
+                mock.patch(
+                    "generate_ui.keras.models.load_model",
+                    return_value=mock.MagicMock(),
+                ),
+                mock.patch(
+                    "generate_ui.generator.generate_output_data",
+                    return_value=mock_output_data,
+                ),
+            ):
+                generate_ui._run_generation(
+                    audio_path="/nonexistent/audio.mp3",
+                    song_title="Test",
+                    bpm=120,
+                    onset_model_path="/p/onset.keras",
+                    arrow_model_path="/p/arrow.keras",
+                    output_path=output_path,
+                    use_post_processing=False,
+                    result_queue=result_queue,
+                )
 
-        result_queue = queue.Queue()
-        with (
-            mock.patch(
-                "generate_ui.keras.models.load_model",
-                return_value=mock.MagicMock(),
-            ),
-            mock.patch(
-                "generate_ui.generator.generate_output_data",
-                return_value=mock_output_data,
-            ),
-        ):
-            generate_ui._run_generation(
-                audio_path="/nonexistent/audio.mp3",
-                song_title="Test",
-                bpm=120,
-                onset_model_path="/p/onset.keras",
-                arrow_model_path="/p/arrow.keras",
-                output_path=output_path,
-                use_post_processing=False,
-                result_queue=result_queue,
-            )
+            success, value = result_queue.get_nowait()
+            self.assertTrue(success)
+            self.assertEqual(value, output_path)
+            with open(output_path) as f:
+                self.assertEqual(f.read(), mock_output)
 
-        success, value = result_queue.get_nowait()
-        self.assertTrue(success)
-        self.assertEqual(value, output_path)
-        with open(output_path) as f:
-            self.assertEqual(f.read(), mock_output)
+    def test_run_generation_with_none_bpm_calls_generator_with_none(self):
+        """_run_generation with bpm=None calls generate_output_data with bpm=None."""
+        mock_output_data = mock.MagicMock()
+        mock_output_data.generate_txt_output.return_value = "TITLE X\nBPM 100\nNOTES\n"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "output.txt")
+            result_queue = queue.Queue()
+            with (
+                mock.patch(
+                    "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
+                ),
+                mock.patch(
+                    "generate_ui.generator.generate_output_data",
+                    return_value=mock_output_data,
+                ) as mock_gen,
+            ):
+                generate_ui._run_generation(
+                    audio_path="/a.mp3",
+                    song_title="Song",
+                    bpm=None,
+                    onset_model_path="/o.keras",
+                    arrow_model_path="/ar.keras",
+                    output_path=output_path,
+                    use_post_processing=False,
+                    result_queue=result_queue,
+                )
+
+            mock_gen.assert_called_once()
+            call_kwargs = mock_gen.call_args[1]
+            self.assertIsNone(call_kwargs["bpm"])
+            success, _ = result_queue.get_nowait()
+            self.assertTrue(success)
 
     def test_run_generation_writes_txt_format(self):
         """Written file contains TITLE, BPM, NOTES, DIFFICULTY."""
@@ -199,39 +230,37 @@ class RunGenerationTest(unittest.TestCase):
             "TITLE My Song\nBPM 128\nNOTES\nDIFFICULTY Challenge\n0.5 1000\n"
         )
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
-            output_path = f.name
-        self.addCleanup(lambda: os.path.exists(output_path) and os.unlink(output_path))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "output.txt")
+            result_queue = queue.Queue()
+            with (
+                mock.patch(
+                    "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
+                ),
+                mock.patch(
+                    "generate_ui.generator.generate_output_data",
+                    return_value=mock_output_data,
+                ),
+            ):
+                generate_ui._run_generation(
+                    audio_path="/a.mp3",
+                    song_title="My Song",
+                    bpm=128,
+                    onset_model_path="/o.keras",
+                    arrow_model_path="/ar.keras",
+                    output_path=output_path,
+                    use_post_processing=True,
+                    result_queue=result_queue,
+                )
 
-        result_queue = queue.Queue()
-        with (
-            mock.patch("generate_ui.keras.models.load_model", return_value=mock.MagicMock()),
-            mock.patch(
-                "generate_ui.generator.generate_output_data",
-                return_value=mock_output_data,
-            ),
-        ):
-            generate_ui._run_generation(
-                audio_path="/a.mp3",
-                song_title="My Song",
-                bpm=128,
-                onset_model_path="/o.keras",
-                arrow_model_path="/ar.keras",
-                output_path=output_path,
-                use_post_processing=True,
-                result_queue=result_queue,
-            )
-
-        success, _ = result_queue.get_nowait()
-        self.assertTrue(success)
-        with open(output_path) as f:
-            content = f.read()
-        self.assertIn("TITLE My Song", content)
-        self.assertIn("BPM 128", content)
-        self.assertIn("NOTES", content)
-        self.assertIn("DIFFICULTY Challenge", content)
+            success, _ = result_queue.get_nowait()
+            self.assertTrue(success)
+            with open(output_path) as f:
+                content = f.read()
+            self.assertIn("TITLE My Song", content)
+            self.assertIn("BPM 128", content)
+            self.assertIn("NOTES", content)
+            self.assertIn("DIFFICULTY Challenge", content)
 
     def test_run_generation_load_model_raises(self):
         """When load_model raises, queue receives (False, error_message)."""
@@ -259,7 +288,9 @@ class RunGenerationTest(unittest.TestCase):
         """When generate_output_data raises, queue receives (False, error_message)."""
         result_queue = queue.Queue()
         with (
-            mock.patch("generate_ui.keras.models.load_model", return_value=mock.MagicMock()),
+            mock.patch(
+                "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
+            ),
             mock.patch(
                 "generate_ui.generator.generate_output_data",
                 side_effect=ValueError("Failed to predict any onsets"),

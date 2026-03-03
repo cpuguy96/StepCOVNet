@@ -42,8 +42,8 @@ def _validate_inputs(
     onset_path: str,
     arrow_path: str,
     output_path: str,
-) -> tuple[bool, str | tuple[str, str, int, str, str, str]]:
-    """Validate UI inputs. Returns (False, error_message) or (True, (audio_path, song_title, bpm, onset_path, arrow_path, output_path))."""
+) -> tuple[bool, str | tuple[str, str, int | None, str, str, str]]:
+    """Validate UI inputs. Returns (False, error_message) or (True, (audio_path, song_title, bpm, onset_path, arrow_path, output_path)). bpm is None when left blank (estimated from audio)."""
     audio_path = audio_path.strip()
     song_title = song_title.strip()
     bpm_str = bpm_str.strip()
@@ -56,13 +56,14 @@ def _validate_inputs(
     if not song_title:
         return (False, "Please enter a song title.")
     if not bpm_str:
-        return (False, "Please enter BPM.")
-    try:
-        bpm_val = int(bpm_str)
-    except ValueError:
-        return (False, "BPM must be an integer.")
-    if bpm_val < 1 or bpm_val > 9999:
-        return (False, "BPM must be between 1 and 9999.")
+        bpm_val = None
+    else:
+        try:
+            bpm_val = int(bpm_str)
+        except ValueError:
+            return (False, "BPM must be an integer.")
+        if bpm_val < 1 or bpm_val > 9999:
+            return (False, "BPM must be between 1 and 9999.")
     if not onset_path:
         return (False, "Please select the onset model.")
     if not arrow_path:
@@ -78,7 +79,7 @@ def _validate_inputs(
 def _run_generation(
     audio_path: str,
     song_title: str,
-    bpm: int,
+    bpm: int | None,
     onset_model_path: str,
     arrow_model_path: str,
     output_path: str,
@@ -171,7 +172,7 @@ class _GeneratorApp:
 
         self._add_row("Audio file:", self.audio_path_var, self.browse_audio)
         self._add_row("Song title:", self.song_title_var)
-        self._add_row("BPM:", self.bpm_var)
+        self._add_row("BPM (optional; leave blank to detect from audio):", self.bpm_var)
         self._add_row("Onset model (.keras):", self.onset_model_var, self.browse_onset)
         self._add_row("Arrow model (.keras):", self.arrow_model_var, self.browse_arrow)
         self._add_row("Output file (.txt):", self.output_path_var, self.browse_output)

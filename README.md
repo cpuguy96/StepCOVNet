@@ -76,17 +76,18 @@ Generate a StepMania chart (`.txt` format) from an audio file using pre-trained 
 python scripts/generate.py \
   --audio_path "path/to/song.mp3" \
   --song_title "My Song" \
-  --bpm 120 \
   --onset_model_path "models/onset.keras" \
   --arrow_model_path "models/arrow.keras" \
   --output_file "output/chart.txt"
 ```
 
+BPM is optional; omit `--bpm` to estimate it from the audio. To set it explicitly: `--bpm 120`.
+
 | Argument                | Description                                                             |
 | :---------------------- | :---------------------------------------------------------------------- |
 | `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, etc.)                     |
 | `--song_title`          | Title of the song                                                       |
-| `--bpm`                 | Beats Per Minute of the song                                            |
+| `--bpm`                 | Beats per minute (optional; estimated from audio when omitted)           |
 | `--onset_model_path`    | Path to the trained onset detection model (`.keras`)                    |
 | `--arrow_model_path`    | Path to the trained arrow prediction model (`.keras`)                   |
 | `--output_file`         | Path where the generated chart text file will be saved                  |
@@ -94,7 +95,7 @@ python scripts/generate.py \
 
 #### Generator UI
 
-A simple desktop UI is available to run the generator without the command line: select an input audio file, choose your trained onset and arrow models (`.keras`), enter the song title and BPM, pick an output path, and run. Launch it with:
+A simple desktop UI is available to run the generator without the command line: select an input audio file, choose your trained onset and arrow models (`.keras`), enter the song title and optionally BPM (leave BPM blank to detect it from the audio), pick an output path, and run. Launch it with:
 
 ```bash
 python scripts/generate_ui.py

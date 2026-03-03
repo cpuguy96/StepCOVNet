@@ -23,7 +23,7 @@ _N_TARGET = 1
 _F_MIN = 27.5
 _F_MAX = 12000
 _WIN_COEFF = 0.025
-_TARGET_SR = 44100
+_TARGET_SR = constants.TARGET_SR
 
 
 def normalize_onset_spectrogram(spec: np.ndarray) -> np.ndarray:

@@ -2,11 +2,12 @@
 
 import dataclasses
 
+import librosa
 import numpy as np
 import scipy
 from keras import models
 
-from stepcovnet import datasets
+from stepcovnet import constants, datasets
 
 
 @dataclasses.dataclass(frozen=True)
@@ -131,11 +132,32 @@ def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
     return note_data
 
 
+def _estimate_bpm_from_audio(audio_path: str) -> int:
+    """Estimate BPM from an audio file using librosa beat tracking.
+
+    Args:
+        audio_path: Path to the input audio file.
+
+    Returns:
+        Estimated BPM as an integer in [1, 9999].
+
+    Raises:
+        ValueError: If tempo could not be estimated (e.g. 0 or invalid).
+    """
+    y, sr = librosa.load(audio_path, sr=constants.TARGET_SR)
+    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    tempo_f = float(np.atleast_1d(tempo)[0])
+    if not (tempo_f > 0 and np.isfinite(tempo_f)):
+        raise ValueError("Could not estimate BPM from audio; please provide --bpm.")
+    bpm = int(round(tempo_f))
+    return max(1, min(9999, bpm))
+
+
 def generate_output_data(
     *,
     audio_path: str,
     song_title: str,
-    bpm: int,
+    bpm: int | None = None,
     onset_model: models.Model,
     arrow_model: models.Model,
     use_post_processing: bool = False,
@@ -151,7 +173,7 @@ def generate_output_data(
     Args:
         audio_path: Path to the input audio file.
         song_title: The title of the song.
-        bpm: The beats per minute of the song.
+        bpm: The beats per minute of the song. If None, estimated from the audio.
         onset_model: A Keras model used to predict note onsets.
         arrow_model: A Keras model used to predict arrow types for given onsets.
         use_post_processing: Whether to use peak picking to refine onset timings.
@@ -160,8 +182,11 @@ def generate_output_data(
         An OutputData object containing the song metadata and generated notes.
 
     Raises:
-        ValueError: If failed to predict any onsets for the audio file.
+        ValueError: If failed to predict any onsets for the audio file, or
+            if bpm is None and BPM could not be estimated from the audio.
     """
+    if bpm is None:
+        bpm = _estimate_bpm_from_audio(audio_path)
     spec = datasets.audio_to_spectrogram(audio_path).T
     normalized_spec = datasets.normalize_onset_spectrogram(spec)
     onset_pred = onset_model.predict(np.expand_dims(normalized_spec, axis=0))
