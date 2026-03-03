@@ -3,7 +3,7 @@ r"""Simple UI for generating a StepMania chart from an audio file.
 Launch with:
     python scripts/generate_ui.py
 
-Requires trained onset and arrow models (.keras).
+Onset and arrow models (.keras) are optional; leave blank to download from Google Drive and cache.
 """
 
 import multiprocessing
@@ -12,6 +12,7 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import typing
 from tkinter import filedialog, messagebox
 
 import keras
@@ -19,6 +20,7 @@ import keras
 from stepcovnet import (
     generator,
     models,  # noqa: F401 - required for custom Keras layer registration
+    pretrained,
 )
 
 AUDIO_TYPES = [
@@ -42,8 +44,8 @@ def _validate_inputs(
     onset_path: str,
     arrow_path: str,
     output_path: str,
-) -> tuple[bool, str | tuple[str, str, int | None, str, str, str]]:
-    """Validate UI inputs. Returns (False, error_message) or (True, (audio_path, song_title, bpm, onset_path, arrow_path, output_path)). bpm is None when left blank (estimated from audio)."""
+) -> tuple[bool, str | tuple[str, str, int | None, str | None, str | None, str]]:
+    """Validate UI inputs. Returns (False, error_message) or (True, (audio_path, song_title, bpm, onset_path, arrow_path, output_path)). bpm/onset_path/arrow_path are None when left blank."""
     audio_path = audio_path.strip()
     song_title = song_title.strip()
     bpm_str = bpm_str.strip()
@@ -64,15 +66,18 @@ def _validate_inputs(
             return (False, "BPM must be an integer.")
         if bpm_val < 1 or bpm_val > 9999:
             return (False, "BPM must be between 1 and 9999.")
-    if not onset_path:
-        return (False, "Please select the onset model.")
-    if not arrow_path:
-        return (False, "Please select the arrow model.")
     if not output_path:
         return (False, "Please choose an output file.")
     return (
         True,
-        (audio_path, song_title, bpm_val, onset_path, arrow_path, output_path),
+        (
+            audio_path,
+            song_title,
+            bpm_val,
+            onset_path if onset_path else None,
+            arrow_path if arrow_path else None,
+            output_path,
+        ),
     )
 
 
@@ -80,16 +85,18 @@ def _run_generation(
     audio_path: str,
     song_title: str,
     bpm: int | None,
-    onset_model_path: str,
-    arrow_model_path: str,
+    onset_model_path: str | None,
+    arrow_model_path: str | None,
     output_path: str,
     use_post_processing: bool,
     result_queue: queue.Queue,
 ) -> None:
     """Load models, run generator, write output. Puts (True, output_path) or (False, error_msg) into result_queue."""
     try:
-        onset_model = keras.models.load_model(filepath=onset_model_path, compile=False)
-        arrow_model = keras.models.load_model(filepath=arrow_model_path, compile=False)
+        onset_path = pretrained.resolve_onset_model_path(onset_model_path)
+        arrow_path = pretrained.resolve_arrow_model_path(arrow_model_path)
+        onset_model = keras.models.load_model(filepath=onset_path, compile=False)
+        arrow_model = keras.models.load_model(filepath=arrow_path, compile=False)
         output_data = generator.generate_output_data(
             audio_path=audio_path,
             song_title=song_title,
@@ -173,8 +180,12 @@ class _GeneratorApp:
         self._add_row("Audio file:", self.audio_path_var, self.browse_audio)
         self._add_row("Song title:", self.song_title_var)
         self._add_row("BPM (optional; leave blank to detect from audio):", self.bpm_var)
-        self._add_row("Onset model (.keras):", self.onset_model_var, self.browse_onset)
-        self._add_row("Arrow model (.keras):", self.arrow_model_var, self.browse_arrow)
+        self._add_row(
+            "Onset model (.keras, optional):", self.onset_model_var, self.browse_onset
+        )
+        self._add_row(
+            "Arrow model (.keras, optional):", self.arrow_model_var, self.browse_arrow
+        )
         self._add_row("Output file (.txt):", self.output_path_var, self.browse_output)
 
         cb_frame = tk.Frame(main_frame)
@@ -255,8 +266,10 @@ class _GeneratorApp:
             self.output_path_var.get(),
         )
         if not ok:
+            assert isinstance(result, str)
             messagebox.showerror("Validation", result)
             return
+        assert isinstance(result, tuple)
         audio_path, song_title, bpm_val, onset_path, arrow_path, output_path = result
 
         self.run_btn.config(state=tk.DISABLED)
@@ -296,7 +309,7 @@ class _GeneratorApp:
         self,
         label_text: str,
         entry_var: tk.StringVar,
-        browse_callback: object = None,
+        browse_callback: typing.Callable[[], None] | None = None,
     ) -> tk.Entry:
         lbl = tk.Label(self._main_frame, text=label_text, anchor=tk.W)
         lbl.grid(row=self._row, column=0, sticky=tk.W, pady=(6, 0))

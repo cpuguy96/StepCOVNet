@@ -128,19 +128,21 @@ class ValidateInputsTest(unittest.TestCase):
                 self.assertTrue(ok)
                 self.assertEqual(result[2], int(bpm_str))
 
-    def test_validate_inputs_missing_onset_path(self):
+    def test_validate_inputs_empty_onset_path_valid_returns_none(self):
+        """Empty onset path is valid; result[3] is None (will resolve/download in worker)."""
         args = list(self._valid_args())
         args[3] = ""
-        ok, msg = generate_ui._validate_inputs(*args)
-        self.assertFalse(ok)
-        self.assertEqual(msg, "Please select the onset model.")
+        ok, result = generate_ui._validate_inputs(*args)
+        self.assertTrue(ok)
+        self.assertIsNone(result[3])
 
-    def test_validate_inputs_missing_arrow_path(self):
+    def test_validate_inputs_empty_arrow_path_valid_returns_none(self):
+        """Empty arrow path is valid; result[4] is None (will resolve/download in worker)."""
         args = list(self._valid_args())
         args[4] = ""
-        ok, msg = generate_ui._validate_inputs(*args)
-        self.assertFalse(ok)
-        self.assertEqual(msg, "Please select the arrow model.")
+        ok, result = generate_ui._validate_inputs(*args)
+        self.assertTrue(ok)
+        self.assertIsNone(result[4])
 
     def test_validate_inputs_missing_output_path(self):
         args = list(self._valid_args())
@@ -163,6 +165,14 @@ class RunGenerationTest(unittest.TestCase):
             output_path = os.path.join(tmpdir, "output.txt")
             result_queue = queue.Queue()
             with (
+                mock.patch(
+                    "generate_ui.pretrained.resolve_onset_model_path",
+                    side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                ),
+                mock.patch(
+                    "generate_ui.pretrained.resolve_arrow_model_path",
+                    side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                ),
                 mock.patch(
                     "generate_ui.keras.models.load_model",
                     return_value=mock.MagicMock(),
@@ -198,6 +208,14 @@ class RunGenerationTest(unittest.TestCase):
             output_path = os.path.join(tmpdir, "output.txt")
             result_queue = queue.Queue()
             with (
+                mock.patch(
+                    "generate_ui.pretrained.resolve_onset_model_path",
+                    side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                ),
+                mock.patch(
+                    "generate_ui.pretrained.resolve_arrow_model_path",
+                    side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                ),
                 mock.patch(
                     "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
                 ),
@@ -235,6 +253,14 @@ class RunGenerationTest(unittest.TestCase):
             result_queue = queue.Queue()
             with (
                 mock.patch(
+                    "generate_ui.pretrained.resolve_onset_model_path",
+                    side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                ),
+                mock.patch(
+                    "generate_ui.pretrained.resolve_arrow_model_path",
+                    side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                ),
+                mock.patch(
                     "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
                 ),
                 mock.patch(
@@ -265,9 +291,19 @@ class RunGenerationTest(unittest.TestCase):
     def test_run_generation_load_model_raises(self):
         """When load_model raises, queue receives (False, error_message)."""
         result_queue = queue.Queue()
-        with mock.patch(
-            "generate_ui.keras.models.load_model",
-            side_effect=OSError("No such file"),
+        with (
+            mock.patch(
+                "generate_ui.pretrained.resolve_onset_model_path",
+                side_effect=lambda p: p or "/resolved/onset.keras",
+            ),
+            mock.patch(
+                "generate_ui.pretrained.resolve_arrow_model_path",
+                side_effect=lambda p: p or "/resolved/arrow.keras",
+            ),
+            mock.patch(
+                "generate_ui.keras.models.load_model",
+                side_effect=OSError("No such file"),
+            ),
         ):
             generate_ui._run_generation(
                 audio_path="/a.mp3",
@@ -288,6 +324,14 @@ class RunGenerationTest(unittest.TestCase):
         """When generate_output_data raises, queue receives (False, error_message)."""
         result_queue = queue.Queue()
         with (
+            mock.patch(
+                "generate_ui.pretrained.resolve_onset_model_path",
+                side_effect=lambda p: p or "/resolved/onset.keras",
+            ),
+            mock.patch(
+                "generate_ui.pretrained.resolve_arrow_model_path",
+                side_effect=lambda p: p or "/resolved/arrow.keras",
+            ),
             mock.patch(
                 "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
             ),
@@ -310,6 +354,50 @@ class RunGenerationTest(unittest.TestCase):
         success, value = result_queue.get_nowait()
         self.assertFalse(success)
         self.assertIn("Failed to predict any onsets", value)
+
+    def test_run_generation_with_none_model_paths_calls_resolve(self):
+        """When onset/arrow paths are None, resolve_onset_model_path and resolve_arrow_model_path are called."""
+        mock_output_data = mock.MagicMock()
+        mock_output_data.generate_txt_output.return_value = "TITLE X\nBPM 100\nNOTES\n"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "output.txt")
+            onset_resolved = os.path.join(tmpdir, "onset.keras")
+            arrow_resolved = os.path.join(tmpdir, "arrow.keras")
+            result_queue = queue.Queue()
+            with (
+                mock.patch(
+                    "generate_ui.pretrained.resolve_onset_model_path",
+                    return_value=onset_resolved,
+                ) as m_resolve_onset,
+                mock.patch(
+                    "generate_ui.pretrained.resolve_arrow_model_path",
+                    return_value=arrow_resolved,
+                ) as m_resolve_arrow,
+                mock.patch(
+                    "generate_ui.keras.models.load_model",
+                    return_value=mock.MagicMock(),
+                ),
+                mock.patch(
+                    "generate_ui.generator.generate_output_data",
+                    return_value=mock_output_data,
+                ),
+            ):
+                generate_ui._run_generation(
+                    audio_path="/a.mp3",
+                    song_title="Song",
+                    bpm=100,
+                    onset_model_path=None,
+                    arrow_model_path=None,
+                    output_path=output_path,
+                    use_post_processing=False,
+                    result_queue=result_queue,
+                )
+
+            m_resolve_onset.assert_called_once_with(None)
+            m_resolve_arrow.assert_called_once_with(None)
+            success, _ = result_queue.get_nowait()
+            self.assertTrue(success)
 
 
 class ConstantsTest(unittest.TestCase):

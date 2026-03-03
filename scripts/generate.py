@@ -1,10 +1,11 @@
 r"""Script for generating a StepMania chart from an audio file.
 
 Usage:
-    python scripts/generate.py --audio_path=/path/to/song.mp3 --song_title="My Song" --onset_model_path=/path/to/onset.keras --arrow_model_path=/path/to/arrow.keras --output_file=/path/to/output.txt
+    python scripts/generate.py --audio_path=/path/to/song.mp3 --song_title="My Song" --output_file=/path/to/output.txt
 
-    BPM is optional; if omitted, it is estimated from the audio file.
-    python scripts/generate.py ... --bpm=120 ...
+    If onset/arrow model paths are omitted, the latest models are downloaded from Google Drive
+    (see stepcovnet.pretrained) and cached locally. BPM is optional (estimated from audio when omitted).
+    python scripts/generate.py ... --onset_model_path=/path/to/onset.keras --arrow_model_path=/path/to/arrow.keras --bpm=120 ...
 """
 
 import argparse
@@ -14,6 +15,7 @@ import keras
 from stepcovnet import (
     generator,
     models,  # noqa: F401 (required to ensure registration of custom Keras layers/functions for model loading)
+    pretrained,
 )
 
 PARSER = argparse.ArgumentParser(description="Generate step chart from audio.")
@@ -38,14 +40,14 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--onset_model_path",
     type=str,
-    help="Path to the trained onset detection model (.keras).",
-    required=True,
+    default=None,
+    help="Path to the trained onset detection model (.keras). Optional; if omitted, downloaded from Google Drive and cached.",
 )
 PARSER.add_argument(
     "--arrow_model_path",
     type=str,
-    help="Path to the trained arrow prediction model (.keras).",
-    required=True,
+    default=None,
+    help="Path to the trained arrow prediction model (.keras). Optional; if omitted, downloaded from Google Drive and cached.",
 )
 PARSER.add_argument(
     "--output_file",
@@ -64,9 +66,11 @@ PARSER.add_argument(
 ARGS = PARSER.parse_args()
 
 
-def main():
-    onset_model = keras.models.load_model(filepath=ARGS.onset_model_path, compile=False)
-    arrow_model = keras.models.load_model(filepath=ARGS.arrow_model_path, compile=False)
+def main() -> None:
+    onset_path = pretrained.resolve_onset_model_path(ARGS.onset_model_path)
+    arrow_path = pretrained.resolve_arrow_model_path(ARGS.arrow_model_path)
+    onset_model = keras.models.load_model(filepath=onset_path, compile=False)
+    arrow_model = keras.models.load_model(filepath=arrow_path, compile=False)
 
     output_data = generator.generate_output_data(
         audio_path=ARGS.audio_path,
