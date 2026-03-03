@@ -81,13 +81,11 @@ python scripts/generate.py \
   --output_file "output/chart.txt"
 ```
 
-BPM is optional; omit `--bpm` to estimate it from the audio. To set it explicitly: `--bpm 120`.
-
 | Argument                | Description                                                             |
 | :---------------------- | :---------------------------------------------------------------------- |
 | `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, etc.)                     |
 | `--song_title`          | Title of the song                                                       |
-| `--bpm`                 | Beats per minute (optional; estimated from audio when omitted)           |
+| `--bpm`                 | Beats per minute (optional; estimated from audio when omitted)          |
 | `--onset_model_path`    | Path to the trained onset detection model (`.keras`)                    |
 | `--arrow_model_path`    | Path to the trained arrow prediction model (`.keras`)                   |
 | `--output_file`         | Path where the generated chart text file will be saved                  |
