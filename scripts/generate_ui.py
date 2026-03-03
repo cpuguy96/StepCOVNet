@@ -6,6 +6,8 @@ Launch with:
 Onset and arrow models (.keras) are optional; leave blank to download from Google Drive and cache.
 """
 
+import atexit
+import ctypes
 import multiprocessing
 import os
 import queue
@@ -121,7 +123,10 @@ class _GeneratorApp:
         root.minsize(400, 320)
         root.geometry("480x540")
         root.resizable(True, True)
+        root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self._closing = False
+        self._poll_after_id = None
         self.result_queue = queue.Queue()
 
         self.audio_path_var = tk.StringVar()
@@ -228,6 +233,20 @@ class _GeneratorApp:
     def _on_mousewheel(self, event: tk.Event) -> None:
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
+    def _on_close(self) -> None:
+        """Handle WM_DELETE_WINDOW: stop polling, quit mainloop, destroy root so process exits."""
+        if self._closing:
+            return
+        self._closing = True
+        if self._poll_after_id is not None:
+            try:
+                self.root.after_cancel(self._poll_after_id)
+            except tk.TclError:
+                pass
+            self._poll_after_id = None
+        self.root.quit()
+        self.root.destroy()
+
     def _default_output_path_for_audio(self, audio_path: str) -> str:
         """Suggested output path when user selects an audio file: stepcovnet_chart_ + song title or basename."""
         out_dir = os.path.dirname(audio_path)
@@ -311,13 +330,17 @@ class _GeneratorApp:
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
-        self.root.after(100, self._poll_result)
+        self._poll_after_id = self.root.after(100, self._poll_result)
 
     def _poll_result(self) -> None:
+        self._poll_after_id = None
+        if self._closing:
+            return
         try:
             item = self.result_queue.get_nowait()
         except queue.Empty:
-            self.root.after(100, self._poll_result)
+            if not self._closing:
+                self._poll_after_id = self.root.after(100, self._poll_result)
             return
         source, success, value = item
         if source == "generation":
@@ -354,7 +377,7 @@ class _GeneratorApp:
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
-        self.root.after(100, self._poll_result)
+        self._poll_after_id = self.root.after(100, self._poll_result)
 
     def clear_cache_clicked(self) -> None:
         """Remove cached default models (runs in background thread)."""
@@ -371,7 +394,7 @@ class _GeneratorApp:
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
-        self.root.after(100, self._poll_result)
+        self._poll_after_id = self.root.after(100, self._poll_result)
 
     def _add_row(
         self,
@@ -397,6 +420,70 @@ class _GeneratorApp:
         return ent
 
 
+# File objects we open for stdout/stderr when frozen; closed at process exit to avoid handle leak.
+_stdout_stderr_fallbacks: list = []
+
+
+def _close_stdout_stderr_fallbacks() -> None:
+    """Close file handles opened by _ensure_stdout_stderr_for_frozen (called at exit)."""
+    for f in _stdout_stderr_fallbacks:
+        try:
+            f.close()
+        except OSError:
+            pass
+    _stdout_stderr_fallbacks.clear()
+
+
+def _ensure_stdout_stderr_for_frozen() -> None:
+    """When running as a frozen Windows exe without console, sys.stdout/stderr can be None.
+
+    Replace them with a safe fallback so code in the app (e.g. gdown during refresh cache)
+    does not crash with 'NoneType' object has no attribute 'write'. Opened handles are
+    closed at process exit via atexit to avoid leaking file descriptors.
+    """
+    if sys.stdout is None:
+        f = open(os.devnull, "w")
+        _stdout_stderr_fallbacks.append(f)
+        sys.stdout = f
+    if sys.stderr is None:
+        f = open(os.devnull, "w")
+        _stdout_stderr_fallbacks.append(f)
+        sys.stderr = f
+    if _stdout_stderr_fallbacks:
+        atexit.register(_close_stdout_stderr_fallbacks)
+
+
+def _try_single_instance_win32() -> bool:
+    """When running as a frozen exe on Windows, ensure only one instance runs.
+
+    Uses a named mutex; if another instance already holds it, shows a message and exits.
+    Returns True if this is the only instance (or not frozen/win32), False never returned
+    (second instance exits the process).
+    """
+    if not (getattr(sys, "frozen", False) and sys.platform == "win32"):
+        return True
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    ERROR_ALREADY_EXISTS = 183
+    MB_OK = 0x00
+    MB_ICONWARNING = 0x30
+    mutex_name = "StepCOVNet_GenerateUI_SingleInstance"
+    handle = kernel32.CreateMutexW(None, True, mutex_name)
+    if handle is None:
+        return True
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        if handle:
+            kernel32.CloseHandle(handle)
+        user32.MessageBoxW(
+            None,
+            "Another instance of StepCOVNet Generator is already running.",
+            "Already running",
+            MB_OK | MB_ICONWARNING,
+        )
+        sys.exit(0)
+    return True
+
+
 def main() -> None:
     root = tk.Tk()
     _GeneratorApp(root)
@@ -406,4 +493,6 @@ def main() -> None:
 if __name__ == "__main__":
     if getattr(sys, "frozen", False) and sys.platform == "win32":
         multiprocessing.freeze_support()
+        _ensure_stdout_stderr_for_frozen()
+        _try_single_instance_win32()
     main()

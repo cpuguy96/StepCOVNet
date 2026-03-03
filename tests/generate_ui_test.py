@@ -1,5 +1,6 @@
 """Unit tests for the generator UI script (scripts/generate_ui.py)."""
 
+import io
 import os
 import queue
 import sys
@@ -463,6 +464,84 @@ class MainWindowTest(unittest.TestCase):
         self.assertIsNotNone(self.app.status_label)
         self.assertEqual(self.app.run_btn["text"], "Generate chart")
 
+    def test_wm_delete_window_protocol_set(self):
+        """WM_DELETE_WINDOW is handled so clicking X cleanly shuts down the app."""
+        handler = self.root.protocol("WM_DELETE_WINDOW")
+        self.assertIsNotNone(handler)
+        # Tk may return the callable or an internal name; ensure we have a handler
+        if callable(handler):
+            handler_name = getattr(handler, "__name__", None)
+            if handler_name is not None:
+                self.assertEqual(handler_name, "_on_close")
+
+
+class CloseBehaviorTest(unittest.TestCase):
+    """Tests for _on_close and clean shutdown (WM_DELETE_WINDOW)."""
+
+    def setUp(self):
+        self.root, self.app = _make_app()
+        self.addCleanup(self.root.destroy)
+
+    def test_on_close_calls_quit_and_destroy(self):
+        """_on_close sets _closing, calls root.quit() and root.destroy()."""
+        with (
+            mock.patch.object(self.root, "quit") as m_quit,
+            mock.patch.object(self.root, "destroy") as m_destroy,
+        ):
+            self.app._on_close()
+        self.assertTrue(self.app._closing)
+        m_quit.assert_called_once()
+        m_destroy.assert_called_once()
+
+    def test_on_close_cancels_poll_after_id(self):
+        """_on_close cancels pending after() callback so mainloop can exit."""
+        self.app._poll_after_id = "fake_after_id"
+        with (
+            mock.patch.object(self.root, "after_cancel") as m_cancel,
+            mock.patch.object(self.root, "quit"),
+            mock.patch.object(self.root, "destroy"),
+        ):
+            self.app._on_close()
+        m_cancel.assert_called_once_with("fake_after_id")
+        self.assertIsNone(self.app._poll_after_id)
+
+    def test_on_close_handles_tcl_error_from_after_cancel(self):
+        """_on_close catches tk.TclError from after_cancel and still clears _poll_after_id and quits."""
+        self.app._poll_after_id = "stale_after_id"
+        with (
+            mock.patch.object(
+                self.root,
+                "after_cancel",
+                side_effect=tk.TclError("invalid command name"),
+            ),
+            mock.patch.object(self.root, "quit") as m_quit,
+            mock.patch.object(self.root, "destroy") as m_destroy,
+        ):
+            self.app._on_close()
+        self.assertIsNone(self.app._poll_after_id)
+        m_quit.assert_called_once()
+        m_destroy.assert_called_once()
+
+    def test_on_close_idempotent(self):
+        """_on_close does nothing if already closing (avoids double destroy)."""
+        with (
+            mock.patch.object(self.root, "quit") as m_quit,
+            mock.patch.object(self.root, "destroy") as m_destroy,
+        ):
+            self.app._on_close()
+            m_quit.reset_mock()
+            m_destroy.reset_mock()
+            self.app._on_close()
+        m_quit.assert_not_called()
+        m_destroy.assert_not_called()
+
+    def test_poll_result_does_not_reschedule_when_closing(self):
+        """_poll_result does not schedule another poll when _closing is True."""
+        self.app._closing = True
+        with mock.patch.object(self.root, "after") as m_after:
+            self.app._poll_result()
+        m_after.assert_not_called()
+
 
 class BrowseCallbacksTest(unittest.TestCase):
     """Tests for browse_audio, browse_onset, browse_arrow, browse_output."""
@@ -856,28 +935,205 @@ class MainEntryTest(unittest.TestCase):
             raise
 
 
+class EnsureStderrStdoutForFrozenTest(unittest.TestCase):
+    """Tests for _ensure_stdout_stderr_for_frozen (avoids NoneType.write in frozen exe)."""
+
+    def test_replaces_none_stdout_and_stderr_with_writeable_streams(self):
+        """When stdout/stderr are None, they are replaced so .write() does not crash."""
+        saved_stdout = sys.stdout
+        saved_stderr = sys.stderr
+        try:
+            sys.stdout = None
+            sys.stderr = None
+            generate_ui._ensure_stdout_stderr_for_frozen()
+            self.assertIsNotNone(sys.stdout)
+            self.assertIsNotNone(sys.stderr)
+            assert sys.stdout is not None
+            assert sys.stderr is not None
+            sys.stdout.write("out")
+            sys.stderr.write("err")
+        finally:
+            sys.stdout = saved_stdout
+            sys.stderr = saved_stderr
+            generate_ui._close_stdout_stderr_fallbacks()
+
+    def test_leaves_non_none_stdout_and_stderr_unchanged(self):
+        """When stdout/stderr are already set, they are not replaced."""
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        try:
+            sys.stdout = out_buf
+            sys.stderr = err_buf
+            generate_ui._ensure_stdout_stderr_for_frozen()
+            self.assertIs(sys.stdout, out_buf)
+            self.assertIs(sys.stderr, err_buf)
+        finally:
+            sys.stdout = sys.__stdout__
+            sys.stderr = sys.__stderr__
+
+    def test_replaces_only_stdout_when_stderr_is_set(self):
+        """When only stdout is None, only stdout is replaced."""
+        err_buf = io.StringIO()
+        try:
+            sys.stdout = None
+            sys.stderr = err_buf
+            generate_ui._ensure_stdout_stderr_for_frozen()
+            self.assertIsNotNone(sys.stdout)
+            self.assertIs(sys.stderr, err_buf)
+            assert sys.stdout is not None
+            sys.stdout.write("x")
+        finally:
+            sys.stdout = sys.__stdout__
+            sys.stderr = sys.__stderr__
+            generate_ui._close_stdout_stderr_fallbacks()
+
+    def test_replaces_only_stderr_when_stdout_is_set(self):
+        """When only stderr is None, only stderr is replaced."""
+        out_buf = io.StringIO()
+        try:
+            sys.stdout = out_buf
+            sys.stderr = None
+            generate_ui._ensure_stdout_stderr_for_frozen()
+            self.assertIs(sys.stdout, out_buf)
+            self.assertIsNotNone(sys.stderr)
+            assert sys.stderr is not None
+            sys.stderr.write("x")
+        finally:
+            sys.stdout = sys.__stdout__
+            sys.stderr = sys.__stderr__
+            generate_ui._close_stdout_stderr_fallbacks()
+
+    def test_registers_atexit_when_fallbacks_opened(self):
+        """When stdout/stderr are replaced, atexit is registered to close the handles."""
+        saved_stdout = sys.stdout
+        saved_stderr = sys.stderr
+        try:
+            sys.stdout = None
+            sys.stderr = None
+            with mock.patch("generate_ui.atexit.register") as m_register:
+                generate_ui._ensure_stdout_stderr_for_frozen()
+            m_register.assert_called_once_with(
+                generate_ui._close_stdout_stderr_fallbacks
+            )
+        finally:
+            sys.stdout = saved_stdout
+            sys.stderr = saved_stderr
+            generate_ui._close_stdout_stderr_fallbacks()
+
+    def test_close_stdout_stderr_fallbacks_closes_files_and_clears_list(self):
+        """_close_stdout_stderr_fallbacks closes opened devnull handles and clears the list."""
+        saved_stdout = sys.stdout
+        saved_stderr = sys.stderr
+        try:
+            sys.stdout = None
+            sys.stderr = None
+            generate_ui._ensure_stdout_stderr_for_frozen()
+            fallbacks = list(generate_ui._stdout_stderr_fallbacks)
+            self.assertEqual(len(fallbacks), 2)
+            generate_ui._close_stdout_stderr_fallbacks()
+            self.assertEqual(generate_ui._stdout_stderr_fallbacks, [])
+            for f in fallbacks:
+                self.assertTrue(f.closed)
+        finally:
+            sys.stdout = saved_stdout
+            sys.stderr = saved_stderr
+
+
+class SingleInstanceTest(unittest.TestCase):
+    """Tests for _try_single_instance_win32 (frozen Windows exe single-instance)."""
+
+    def test_returns_true_when_not_frozen(self):
+        """When not frozen, _try_single_instance_win32 returns True without using mutex."""
+        with mock.patch.object(sys, "frozen", False, create=True):
+            result = generate_ui._try_single_instance_win32()
+        self.assertTrue(result)
+
+    def test_returns_true_when_frozen_win32_first_instance(self):
+        """When frozen on win32 and mutex is new (first instance), returns True and does not exit."""
+        mock_kernel = mock.MagicMock()
+        mock_kernel.CreateMutexW.return_value = 12345
+        mock_kernel.GetLastError.return_value = 0
+        with (
+            mock.patch.object(sys, "frozen", True, create=True),
+            mock.patch.object(sys, "platform", "win32"),
+            mock.patch("generate_ui.ctypes.windll", create=True) as m_windll,
+        ):
+            m_windll.kernel32 = mock_kernel
+            result = generate_ui._try_single_instance_win32()
+        self.assertTrue(result)
+        mock_kernel.CreateMutexW.assert_called_once()
+        mock_kernel.GetLastError.assert_called_once()
+
+    def test_exits_when_frozen_win32_second_instance(self):
+        """When frozen on win32 and mutex already exists, shows message and sys.exit(0)."""
+        mock_kernel = mock.MagicMock()
+        mock_kernel.CreateMutexW.return_value = 12345
+        mock_kernel.GetLastError.return_value = 183  # ERROR_ALREADY_EXISTS
+        mock_user = mock.MagicMock()
+        with (
+            mock.patch.object(sys, "frozen", True, create=True),
+            mock.patch.object(sys, "platform", "win32"),
+            mock.patch("generate_ui.ctypes.windll", create=True) as m_windll,
+        ):
+            m_windll.kernel32 = mock_kernel
+            m_windll.user32 = mock_user
+            with self.assertRaises(SystemExit) as cm:
+                generate_ui._try_single_instance_win32()
+        self.assertEqual(cm.exception.code, 0)
+        mock_kernel.CloseHandle.assert_called_once_with(12345)
+        mock_user.MessageBoxW.assert_called_once()
+        call_args = mock_user.MessageBoxW.call_args[0]
+        self.assertIn("already running", call_args[1].lower())
+        self.assertEqual(call_args[2], "Already running")
+
+    def test_returns_true_when_create_mutex_returns_none(self):
+        """When frozen on win32 and CreateMutexW fails (returns None), returns True and does not exit."""
+        mock_kernel = mock.MagicMock()
+        mock_kernel.CreateMutexW.return_value = None
+        mock_user = mock.MagicMock()
+        with (
+            mock.patch.object(sys, "frozen", True, create=True),
+            mock.patch.object(sys, "platform", "win32"),
+            mock.patch("generate_ui.ctypes.windll", create=True) as m_windll,
+        ):
+            m_windll.kernel32 = mock_kernel
+            m_windll.user32 = mock_user
+            result = generate_ui._try_single_instance_win32()
+        self.assertTrue(result)
+        mock_kernel.CreateMutexW.assert_called_once()
+        mock_kernel.GetLastError.assert_not_called()
+        mock_kernel.CloseHandle.assert_not_called()
+        mock_user.MessageBoxW.assert_not_called()
+
+
 class MainBlockTest(unittest.TestCase):
     """Tests for the if __name__ == '__main__' block (frozen exe and main entry)."""
 
-    def test_main_block_calls_freeze_support_when_frozen_on_win32(self):
-        """When run as frozen exe on Windows, freeze_support() is called before main()."""
+    def test_main_block_calls_freeze_support_and_single_instance_when_frozen_on_win32(
+        self,
+    ):
+        """When run as frozen exe on Windows, freeze_support(), _ensure_stdout_stderr_for_frozen(), and _try_single_instance_win32() are called before main()."""
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
             mock.patch("generate_ui.multiprocessing.freeze_support") as m_freeze,
+            mock.patch("generate_ui._ensure_stdout_stderr_for_frozen") as m_ensure_io,
+            mock.patch("generate_ui._try_single_instance_win32") as m_single,
             mock.patch("generate_ui.main") as m_main,
         ):
-            # Simulate the __main__ block
             if getattr(sys, "frozen", False) and sys.platform == "win32":
                 generate_ui.multiprocessing.freeze_support()
+                generate_ui._ensure_stdout_stderr_for_frozen()
+                generate_ui._try_single_instance_win32()
             generate_ui.main()
         m_freeze.assert_called_once()
+        m_ensure_io.assert_called_once()
+        m_single.assert_called_once()
         m_main.assert_called_once()
 
     def test_main_block_does_not_call_freeze_support_when_not_frozen(self):
         """When not frozen, freeze_support() is not called."""
         with mock.patch("generate_ui.multiprocessing.freeze_support") as m_freeze:
-            # Simulate the __main__ block when not frozen (normal interpreter)
             if getattr(sys, "frozen", False) and sys.platform == "win32":
                 generate_ui.multiprocessing.freeze_support()
         m_freeze.assert_not_called()
