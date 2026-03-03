@@ -30,7 +30,8 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          pytest . --cov-report=xml
+          # Run full test suite including slow tests (no -m "not slow")
+          pytest tests/ --cov-report=xml
 
       - name: Test Jupyter Notebooks
         run: |
