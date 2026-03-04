@@ -137,7 +137,10 @@ class OnsetModelConfig:
 
 
 class ArrowParamsProtocol(Protocol):
-    """Protocol for arrow model params. All arrow param classes must implement this."""
+    """Protocol for arrow model params. All arrow param classes must implement this.
+
+    Implementors must provide as_dict() and experiment_name_parts().
+    """
 
     def as_dict(self) -> dict: ...
     def experiment_name_parts(self) -> list[str]: ...
@@ -145,7 +148,15 @@ class ArrowParamsProtocol(Protocol):
 
 @dataclasses.dataclass
 class TransformerArrowParams:
-    """Parameters for the transformer-based arrow model. Used when model_type is 'transformer'."""
+    """Parameters for the transformer-based arrow model. Used when model_type is 'transformer'.
+
+    Attributes:
+        num_layers: Number of transformer encoder layers.
+        d_model: Model dimension (embedding and hidden size).
+        num_heads: Number of attention heads.
+        ff_dim: Feed-forward inner dimension.
+        dropout_rate: Dropout rate applied in sublayers.
+    """
 
     num_layers: int = 1
     d_model: int = 128
@@ -178,7 +189,12 @@ class TransformerArrowParams:
 
 @dataclasses.dataclass
 class MLPArrowParams:
-    """Parameters for the MLP-based arrow model. Used when model_type is 'mlp'."""
+    """Parameters for the MLP-based arrow model. Used when model_type is 'mlp'.
+
+    Attributes:
+        hidden_dims: List of hidden layer dimensions (e.g. [256, 128]).
+        dropout_rate: Dropout rate between dense layers.
+    """
 
     hidden_dims: list[int] = dataclasses.field(default_factory=lambda: [256, 128])
     dropout_rate: float = 0.0
@@ -205,7 +221,14 @@ class MLPArrowParams:
 
 @dataclasses.dataclass
 class LSTMArrowParams:
-    """Parameters for the LSTM-based arrow model. Used when model_type is 'lstm'."""
+    """Parameters for the LSTM-based arrow model. Used when model_type is 'lstm'.
+
+    Attributes:
+        units: Number of LSTM units per layer.
+        num_layers: Number of stacked LSTM layers.
+        dropout_rate: Dropout rate for the LSTM layers.
+        bidirectional: If True, use bidirectional LSTM.
+    """
 
     units: int = 128
     num_layers: int = 1
@@ -238,7 +261,14 @@ class LSTMArrowParams:
 
 @dataclasses.dataclass
 class GRUArrowParams:
-    """Parameters for the GRU-based arrow model. Used when model_type is 'gru'."""
+    """Parameters for the GRU-based arrow model. Used when model_type is 'gru'.
+
+    Attributes:
+        units: Number of GRU units per layer.
+        num_layers: Number of stacked GRU layers.
+        dropout_rate: Dropout rate for the GRU layers.
+        bidirectional: If True, use bidirectional GRU.
+    """
 
     units: int = 128
     num_layers: int = 1
@@ -288,9 +318,15 @@ class ArrowModelConfig:
     """Configuration for arrow classification model architecture.
 
     Supports multiple model types via nested architecture-specific params.
-    Shared: model_type (which architecture), snippet_half_frames (input option).
-    Per-architecture blocks: transformer, mlp, lstm, gru. Only the block matching
-    model_type is required when building; others can be None.
+    Only the block matching model_type is required when building; others can be None.
+
+    Attributes:
+        model_type: One of 'transformer', 'mlp', 'lstm', 'gru'.
+        snippet_half_frames: Half-window of frames per step (0 = timing only).
+        transformer: Params for transformer model; used when model_type is 'transformer'.
+        mlp: Params for MLP model; used when model_type is 'mlp'.
+        lstm: Params for LSTM model; used when model_type is 'lstm'.
+        gru: Params for GRU model; used when model_type is 'gru'.
     """
 
     model_type: str = "transformer"

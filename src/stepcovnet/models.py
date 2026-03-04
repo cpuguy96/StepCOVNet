@@ -17,6 +17,11 @@ class SnippetCNN(keras.layers.Layer):
     Reshapes (batch, steps, n_frames, n_mels) to (batch*steps, n_frames, n_mels),
     applies Conv2D layers and global average pooling, then reshapes back to
     (batch, steps, filters). Avoids TimeDistributed for XLA compatibility.
+
+    Attributes:
+        n_frames: Time dimension of each snippet.
+        n_mels: Mel dimension of each snippet.
+        filters: Number of output filters from the Conv2D stack.
     """
 
     def __init__(self, n_frames, n_mels, filters=32, **kwargs):
@@ -57,6 +62,17 @@ class SnippetCNN(keras.layers.Layer):
 
 @keras.saving.register_keras_serializable()
 class PositionalEncoding(keras.layers.Layer):
+    """Adds sinusoidal positional encoding to the input sequence.
+
+    Precomputes a (1, position, d_model) encoding matrix and adds it to
+    inputs of shape (batch_size, seq_len, d_model). d_model must be even.
+
+    Attributes:
+        position: Maximum sequence length for the precomputed encoding.
+        d_model: Embedding dimension (must be even).
+        pos_encoding: Precomputed encoding tensor, shape (1, position, d_model).
+    """
+
     def __init__(self, position, d_model, **kwargs):
         # Add **kwargs to accept base Layer arguments like 'name'
         super().__init__(**kwargs)

@@ -466,6 +466,18 @@ class _SweepContext:
     """State for a sweep (fresh or resumed): config, combinations, output dir, and results.
 
     Plain class (no dataclass) so the script can be loaded via importlib in tests.
+
+    Attributes:
+        base_config: Loaded ArrowExperimentConfig used as the base for overrides.
+        base_path: Path to the base config file.
+        combinations: List of override dicts (one per run).
+        sweep_output_dir: Directory where sweep results are written.
+        sweep_save: Dict of sweep metadata for resume (saved to disk).
+        effective_search: Search strategy in use (e.g. 'grid', 'random').
+        effective_seed: Random seed for reproducible sweeps (or None).
+        full_combinations: Full list of all combination dicts.
+        results_by_index: Map from run index to result dict (or None if pending).
+        pending: List of (index, overrides) for runs not yet completed.
     """
 
     __slots__ = (

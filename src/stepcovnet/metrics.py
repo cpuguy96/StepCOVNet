@@ -13,27 +13,21 @@ _N_NOTE_KINDS = 6
 
 @keras.saving.register_keras_serializable()
 class OnsetF1Metric(keras.metrics.Metric):
-    """
-    Custom Keras metric to calculate the F1-score for onset detection
-    with a tolerance window.
+    """F1-score for onset detection with a tolerance window.
 
     Onsets are considered correctly predicted (True Positive) if a predicted
     onset falls within a specified tolerance window around a true onset.
+    Handles y_true/y_pred shapes (batch_size, time_steps) or with trailing
+    dimensions (e.g. ..., 1) or (..., 1, 1).
 
-    Handles inputs `y_true` and `y_pred` with shapes:
-    - (batch_size, time_steps)
-    - (batch_size, time_steps, 1)
-    - (batch_size, time_steps, 1, 1) # Attempts to handle potential extra dim
-
-    Args:
-        tolerance (int): The number of time steps allowed on either side of a
-                         true onset for a prediction to be considered correct.
-                         Defaults to 1 (meaning +/- 1 time step).
-        threshold (float): The probability threshold to convert model outputs
-                           (probabilities) into binary predictions (0 or 1).
-                           Defaults to 0.5.
-        name (str): Name of the metric instance. Defaults to 'onset_f1_score'.
-        **kwargs: Additional keyword arguments.
+    Attributes:
+        tolerance: Time steps allowed on either side of a true onset for a
+            prediction to count as correct (default 1).
+        threshold: Probability threshold for binary predictions (default 0.5).
+        window_size: Full window size used internally (2 * tolerance + 1).
+        true_positives: Accumulated true positive count (Keras weight).
+        false_positives: Accumulated false positive count (Keras weight).
+        false_negatives: Accumulated false negative count (Keras weight).
     """
 
     def __init__(self, tolerance=1, threshold=0.5, name="onset_f1_score", **kwargs):
@@ -230,16 +224,18 @@ class OnsetF1Metric(keras.metrics.Metric):
 
 @keras.saving.register_keras_serializable()
 class ArrowDistributionMatchMetric(keras.metrics.Metric):
-    """
-    Metric that measures how closely the predicted arrow-type distribution
-    matches the ground-truth distribution via 1 - Jensen-Shannon divergence.
+    """Measures match between predicted and ground-truth arrow-type distribution.
 
-    Higher values (closer to 1) mean the model's pattern of arrow choices
-    matches the chart; lower values mean the distributions differ. Uses the
-    same ignore_class=0 convention as the arrow loss (padding positions are
-    excluded).
+    Uses 1 - Jensen-Shannon divergence. Higher values (closer to 1) mean the
+    model's pattern of arrow choices matches the chart. Uses ignore_class=0
+    for padding (same as arrow loss). Expects y_true (batch, seq_len) and
+    y_pred (batch, seq_len, N_ARROW_TYPES).
 
-    Expects y_true shape (batch, seq_len) and y_pred shape (batch, seq_len, N_ARROW_TYPES).
+    Attributes:
+        num_classes: Number of arrow types (default N_ARROW_TYPES).
+        ignore_class: Label value treated as padding (default 0).
+        pred_counts: Accumulated predicted class counts (Keras weight).
+        true_counts: Accumulated true class counts (Keras weight).
     """
 
     def __init__(
@@ -347,13 +343,17 @@ _ARROW_NOTE_KIND_TABLE = _build_arrow_note_kind_table()
 
 @keras.saving.register_keras_serializable()
 class ArrowNoteKindDistributionMetric(keras.metrics.Metric):
-    """
-    Metric that measures how well the predicted distribution over note kinds
-    (single, chord, hold_start, hold_end, hold_both) matches the ground truth,
-    via 1 - JSD over the 6 note-kind categories.
+    """Measures match between predicted and true note-kind distribution.
 
-    Uses the same ignore_class=0 convention as the arrow loss.
-    Expects y_true shape (batch, seq_len) and y_pred shape (batch, seq_len, N_ARROW_TYPES).
+    Compares distribution over note kinds (single, chord, hold_start, hold_end,
+    hold_both) via 1 - JSD over 6 note-kind categories. Uses ignore_class=0 for
+    padding. Expects y_true (batch, seq_len) and y_pred (batch, seq_len, N_ARROW_TYPES).
+
+    Attributes:
+        num_note_kinds: Number of note-kind categories (default 6).
+        ignore_class: Label value treated as padding (default 0).
+        pred_counts: Accumulated predicted note-kind counts (Keras weight).
+        true_counts: Accumulated true note-kind counts (Keras weight).
     """
 
     def __init__(
@@ -699,7 +699,13 @@ def note_kind_balance_auxiliary_loss(
 
 @keras.saving.register_keras_serializable()
 class ChartValidityAuxiliaryLossMetric(keras.metrics.Metric):
-    """Metric that reports the chart_validity_auxiliary_loss (same as in the combined loss)."""
+    """Reports the chart_validity_auxiliary_loss (same as in the combined loss).
+
+    Tracks the mean chart-validity auxiliary loss over batches for monitoring.
+
+    Attributes:
+        ignore_class: Label value treated as padding (default 0).
+    """
 
     def __init__(
         self,
@@ -731,7 +737,13 @@ class ChartValidityAuxiliaryLossMetric(keras.metrics.Metric):
 
 @keras.saving.register_keras_serializable()
 class NoteKindBalanceAuxiliaryLossMetric(keras.metrics.Metric):
-    """Metric that reports the note_kind_balance_auxiliary_loss (same as in the combined loss)."""
+    """Reports the note_kind_balance_auxiliary_loss (same as in the combined loss).
+
+    Tracks the mean note-kind balance auxiliary loss over batches for monitoring.
+
+    Attributes:
+        ignore_class: Label value treated as padding (default 0).
+    """
 
     def __init__(
         self,
@@ -763,17 +775,19 @@ class NoteKindBalanceAuxiliaryLossMetric(keras.metrics.Metric):
 
 @keras.saving.register_keras_serializable()
 class ChartValidityMetric(keras.metrics.Metric):
-    """
-    Metric that measures full sequence validity of StepMania chart predictions
-    per the 2-state (FREE / HOLDING) rules per column.
+    """Measures full-sequence validity of StepMania chart predictions per column.
 
-    Vocabulary: 0=Empty, 1=Tap, 2=Hold Head, 3=Hold Tail. Evaluated per column.
-    Violations: (1) Orphaned tail (3 in FREE). (2) Tap during hold (1 in HOLDING).
-    (3) Nested hold (2 in HOLDING). (4) Unterminated hold (sequence ends in HOLDING).
+    Uses 2-state (FREE / HOLDING) rules per column. Vocabulary: 0=Empty, 1=Tap,
+    2=Hold Head, 3=Hold Tail. Violations: (1) Orphaned tail (3 in FREE).
+    (2) Tap during hold (1 in HOLDING). (3) Nested hold (2 in HOLDING).
+    (4) Unterminated hold (sequence ends in HOLDING). Returns value in [0, 1]:
+    1 - (total_violations / max(1, total_valid_step_columns)). Uses ignore_class=0
+    for padding.
 
-    Returns value in [0, 1]: 1 - (total_violations / max(1, total_valid_step_columns)),
-    i.e. fraction of step-column slots that do not participate in any violation.
-    Uses ignore_class=0 for padding (positions and columns are masked out).
+    Attributes:
+        ignore_class: Label value treated as padding (default 0).
+        total_violations: Accumulated violation count (Keras weight).
+        total_valid_step_columns: Accumulated valid step-column count (Keras weight).
     """
 
     def __init__(

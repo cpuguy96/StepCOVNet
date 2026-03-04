@@ -115,7 +115,23 @@ def _run_generation(
 
 
 class _GeneratorApp:
-    """Application UI and callbacks for the generator window. Built for testability."""
+    """Application UI and callbacks for the generator window. Built for testability.
+
+    Attributes:
+        root: The root Tk window.
+        result_queue: Queue for passing generation results back (e.g. to tests).
+        audio_path_var: StringVar for the audio file path.
+        song_title_var: StringVar for the song title.
+        bpm_var: StringVar for BPM (optional).
+        onset_model_var: StringVar for onset model path.
+        arrow_model_var: StringVar for arrow model path.
+        output_path_var: StringVar for output .txt path.
+        use_post_processing_var: BooleanVar for post-processing toggle.
+        status_var: StringVar for status text.
+        canvas: Canvas used for the scrollable form area.
+        run_btn: Generate chart button.
+        status_label: Label showing status_var.
+    """
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
