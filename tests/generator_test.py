@@ -205,6 +205,84 @@ class GeneratorTest(unittest.TestCase):
         self.assertGreaterEqual(interval_batch.min(), 0.0)
         self.assertLessEqual(interval_batch.max(), 1.0)
 
+    def _run_generate_with_extra_input_and_capture(
+        self, extra_input_name: str, bpm: int = 120
+    ):
+        """Run generate_output_data with timing_input + one extra input; return predict args."""
+
+        def _onset_pred_mock(x):
+            return np.random.random((1, x.shape[1], 1)).astype(np.float32)
+
+        mock_onset = mock.MagicMock()
+        mock_onset.predict.side_effect = _onset_pred_mock
+
+        call_args = []
+
+        def _arrow_pred_mock(x):
+            call_args.append(x)
+            num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
+            return np.random.random((1, num_steps, 256)).astype(np.float32)
+
+        mock_arrow = mock.MagicMock()
+        mock_arrow.predict.side_effect = _arrow_pred_mock
+        mock_arrow.inputs = [
+            _mock_arrow_input("timing_input"),
+            _mock_arrow_input(extra_input_name),
+        ]
+
+        generator.generate_output_data(
+            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            song_title="Extra input test",
+            bpm=bpm,
+            onset_model=mock_onset,
+            arrow_model=mock_arrow,
+        )
+        self.assertEqual(len(call_args), 1)
+        args = call_args[0]
+        self.assertIsInstance(args, list)
+        self.assertEqual(len(args), 2)
+        return args[0], args[1]
+
+    def test_generate_output_data_with_interval_log_input(self):
+        """When arrow model has interval_log_input, generator passes log-normalized intervals."""
+        timing_batch, interval_log_batch = (
+            self._run_generate_with_extra_input_and_capture("interval_log_input")
+        )
+        self.assertEqual(timing_batch.shape[2], 1)
+        self.assertEqual(interval_log_batch.shape, timing_batch.shape)
+        self.assertGreaterEqual(interval_log_batch.min(), 0.0)
+        self.assertLessEqual(interval_log_batch.max(), 1.0)
+
+    def test_generate_output_data_with_interval_next_input(self):
+        """When arrow model has interval_next_input, generator passes next-interval normalized."""
+        timing_batch, interval_next_batch = (
+            self._run_generate_with_extra_input_and_capture("interval_next_input")
+        )
+        self.assertEqual(timing_batch.shape[2], 1)
+        self.assertEqual(interval_next_batch.shape, timing_batch.shape)
+        self.assertGreaterEqual(interval_next_batch.min(), 0.0)
+        self.assertLessEqual(interval_next_batch.max(), 1.0)
+
+    def test_generate_output_data_with_step_index_input(self):
+        """When arrow model has step_index_input, generator passes normalized step indices."""
+        timing_batch, step_index_batch = (
+            self._run_generate_with_extra_input_and_capture("step_index_input")
+        )
+        self.assertEqual(timing_batch.shape[2], 1)
+        self.assertEqual(step_index_batch.shape, timing_batch.shape)
+        self.assertGreaterEqual(step_index_batch.min(), 0.0)
+        self.assertLessEqual(step_index_batch.max(), 1.0)
+
+    def test_generate_output_data_with_beat_phase_input(self):
+        """When arrow model has beat_phase_input, generator passes beat phase using bpm."""
+        timing_batch, beat_phase_batch = (
+            self._run_generate_with_extra_input_and_capture("beat_phase_input", bpm=128)
+        )
+        self.assertEqual(timing_batch.shape[2], 1)
+        self.assertEqual(beat_phase_batch.shape, timing_batch.shape)
+        self.assertGreaterEqual(beat_phase_batch.min(), 0.0)
+        self.assertLess(beat_phase_batch.max(), 1.0)
+
     def test_generate_output_data(self):
         onset_model = keras.models.load_model(
             os.path.join(TEST_DATA_DIR, "stepcovnet_ONSET-mayu_overfit.keras"),

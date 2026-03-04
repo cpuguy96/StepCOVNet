@@ -213,6 +213,18 @@ def generate_output_data(
         elif base == "interval_input":
             intervals_norm = datasets.normalized_intervals_from_times(onsets)
             arrow_inputs.append(np.expand_dims(intervals_norm, axis=(0, -1)))
+        elif base == "interval_log_input":
+            interval_log = datasets.log_normalized_intervals_from_times(onsets)
+            arrow_inputs.append(np.expand_dims(interval_log, axis=(0, -1)))
+        elif base == "interval_next_input":
+            interval_next = datasets.next_interval_normalized_from_times(onsets)
+            arrow_inputs.append(np.expand_dims(interval_next, axis=(0, -1)))
+        elif base == "step_index_input":
+            step_idx = datasets.step_index_normalized(len(onsets))
+            arrow_inputs.append(np.expand_dims(step_idx, axis=(0, -1)))
+        elif base == "beat_phase_input":
+            beat_ph = datasets.beat_phase_from_times_bpm(onsets, float(bpm))
+            arrow_inputs.append(np.expand_dims(beat_ph, axis=(0, -1)))
         elif base == "snippet_input":
             snippet_shape = inp.shape
             snippet_n_frames = snippet_shape[2]

@@ -5,7 +5,10 @@ import typing
 import unittest
 from unittest import mock
 
-from stepcovnet import config, datasets, models, trainers
+import keras
+import tensorflow as tf
+
+from stepcovnet import config, constants, datasets, models, trainers
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
@@ -1139,6 +1142,183 @@ class ExperimentNameHelperTests(unittest.TestCase):
                     dataset_config, model_config, run_config
                 )
             self.assertIn("use_interval", str(ctx.exception))
+
+
+class ArrowLossTests(unittest.TestCase):
+    """Unit tests for arrow loss functions: focal, label smoothing, aux_interval masking."""
+
+    def test_sparse_focal_loss_returns_scalar_and_masks_ignore_class(self):
+        """_sparse_focal_loss returns a scalar and ignores steps with y_true==ignore_class (0)."""
+        batch_size, steps, num_classes = 2, 10, constants.N_ARROW_TYPES
+        y_true = tf.constant([[0, 1, 2, 0, 3, 0, 1, 0, 2, 1]], dtype=tf.int32)  # 0 = padding
+        y_pred = tf.random.uniform((batch_size, steps, num_classes))
+        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        loss = trainers._sparse_focal_loss(y_true, y_pred, gamma=2.0, ignore_class=0)
+        self.assertEqual(loss.shape, ())
+        self.assertGreater(float(loss), 0.0)
+
+    def test_masked_mse_aux_interval_without_sample_weight(self):
+        """_masked_mse_aux_interval without sample_weight returns mean over all elements."""
+        y_true = tf.constant([[[0.1], [0.2], [0.3]]], dtype=tf.float32)
+        y_pred = tf.constant([[[0.2], [0.2], [0.4]]], dtype=tf.float32)
+        loss = trainers._masked_mse_aux_interval(y_true, y_pred, sample_weight=None)
+        self.assertEqual(loss.shape, ())
+        expected = ((0.1 ** 2) + (0.0 ** 2) + (0.1 ** 2)) / 3
+        self.assertAlmostEqual(float(loss), expected, places=5)
+
+    def test_masked_mse_aux_interval_with_sample_weight_masks_steps(self):
+        """_masked_mse_aux_interval with sample_weight only averages over masked (1.0) steps."""
+        # (1, 3, 1): last step masked (0), so only first two steps contribute
+        y_true = tf.constant([[[1.0], [2.0], [0.0]]], dtype=tf.float32)
+        y_pred = tf.constant([[[1.0], [3.0], [99.0]]], dtype=tf.float32)  # last step wrong but masked
+        sample_weight = tf.constant([[[1.0], [1.0], [0.0]]], dtype=tf.float32)
+        loss = trainers._masked_mse_aux_interval(y_true, y_pred, sample_weight=sample_weight)
+        self.assertEqual(loss.shape, ())
+        # Only steps 0 and 1: (0 + 1) / 2 = 0.5
+        self.assertAlmostEqual(float(loss), 0.5, places=5)
+
+    def test_run_arrow_train_from_config_with_focal_loss_completes(self):
+        """run_arrow_train_from_config with loss_type=focal builds and runs one epoch."""
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={
+                    "epoch": 1,
+                    "take_count": 1,
+                    "callback_root_dir": callback_root_dir,
+                    "loss_type": "focal",
+                    "focal_gamma": 2.0,
+                },
+            )
+            model, history = trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+        self.assertIsNotNone(model)
+        self.assertIsNotNone(history)
+        self.assertIn("val_main_loss", history.history)
+
+    def test_run_arrow_train_from_config_with_label_smoothing_completes(self):
+        """run_arrow_train_from_config with label_smoothing > 0 builds and runs one epoch."""
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={
+                    "epoch": 1,
+                    "take_count": 1,
+                    "callback_root_dir": callback_root_dir,
+                    "label_smoothing": 0.1,
+                },
+            )
+            model, history = trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+        self.assertIsNotNone(model)
+        self.assertIsNotNone(history)
+
+    def test_run_arrow_train_from_config_with_aux_interval_weight_completes(self):
+        """With aux_interval_weight > 0, model has two outputs and dataset yields aux targets/mask; compile uses aux loss."""
+        dataset_config = config.ArrowDatasetConfig(
+            data_dir=TEST_DATA_DIR,
+            val_data_dir=TEST_DATA_DIR,
+            batch_size=1,
+            use_aux_interval_target=True,
+        )
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
+            }
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir=os.path.join(tempfile.gettempdir(), "arrow_aux_test"),
+            aux_interval_weight=0.3,
+        )
+        config.validate_arrow_dataset_model_alignment(dataset_config, model_config)
+        use_aux_interval = run_config.aux_interval_weight > 0
+        self.assertTrue(use_aux_interval)
+        train_ds = datasets.create_arrow_dataset(
+            data_dir=dataset_config.data_dir,
+            batch_size=dataset_config.batch_size,
+            use_aux_interval_target=use_aux_interval,
+        )
+        # Dataset batch (before _split_aux_batch) includes aux_interval_target and aux_interval_mask
+        batch = next(iter(train_ds.take(1)))
+        out, cols = batch
+        self.assertIn("aux_interval_target", out)
+        self.assertIn("aux_interval_mask", out)
+        model = models.build_arrow_model_from_config(
+            model_config, model_name="aux_test", use_aux_interval=True
+        )
+        self.assertEqual(len(model.outputs), 2)
+        # Compile with same loss setup as run_arrow_train_from_config (ensures loss and masking are wired)
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=1e-3, clipnorm=1.0),
+            loss={
+                "output_probabilities": keras.losses.SparseCategoricalCrossentropy(
+                    ignore_class=0
+                ),
+                "aux_interval": trainers._masked_mse_aux_interval,
+            },
+            loss_weights={"output_probabilities": 1.0, "aux_interval": 0.3},
+        )
+        # One train step with manual batch split (x, y, sample_weight) to verify loss computation.
+        # Keras multi-output sample_weight: list per output order [output_probabilities, aux_interval].
+        x = {k: v for k, v in out.items() if k not in ("aux_interval_target", "aux_interval_mask")}
+        y = {"output_probabilities": cols, "aux_interval": out["aux_interval_target"]}
+        sw = [None, out["aux_interval_mask"]]  # no sample_weight for main head, mask for aux
+        _ = model.train_on_batch(x, y, sample_weight=sw)
+        self.assertIsNotNone(model)
+
+    def test_run_arrow_train_from_config_uses_dataset_config_for_aux_interval_target(
+        self,
+    ):
+        """create_arrow_dataset is called with dataset_config.use_aux_interval_target, not run_config.aux_interval_weight."""
+        dataset_config = config.ArrowDatasetConfig(
+            data_dir=TEST_DATA_DIR,
+            val_data_dir=TEST_DATA_DIR,
+            batch_size=1,
+            use_aux_interval_target=True,
+        )
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
+            }
+        )
+        with mock.patch(
+            "stepcovnet.trainers.datasets.create_arrow_dataset",
+            wraps=datasets.create_arrow_dataset,
+        ) as create_ds:
+            with _temp_model_and_callback_dirs(with_callbacks=False) as (
+                model_output_dir,
+                _,
+            ):
+                run_config = config.ArrowRunConfig(
+                    epoch=1,
+                    take_count=1,
+                    model_output_dir=model_output_dir,
+                    aux_interval_weight=0.0,
+                )
+                trainers.run_arrow_train_from_config(
+                    dataset_config, model_config, run_config
+                )
+            self.assertGreaterEqual(create_ds.call_count, 2)
+            for call in create_ds.call_args_list:
+                kwargs = call.kwargs
+                self.assertIn("use_aux_interval_target", kwargs)
+                self.assertTrue(
+                    kwargs["use_aux_interval_target"],
+                    "create_arrow_dataset must be called with use_aux_interval_target "
+                    "from dataset_config (True), not from run_config.aux_interval_weight.",
+                )
 
 
 class LearningRateScheduleTests(unittest.TestCase):

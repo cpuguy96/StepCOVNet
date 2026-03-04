@@ -92,6 +92,32 @@ class ArrowDatasetConfigTest(unittest.TestCase):
         cfg = config.ArrowDatasetConfig.from_dict(data)
         self.assertEqual(cfg.snippet_half_frames, 5)
 
+    def test_round_trip_new_params_interval_encoding_step_index_beat_phase_aux(self):
+        """Round-trip and validation for interval_encoding, use_step_index, use_beat_phase, use_aux_interval_target."""
+        data = {
+            "data_dir": "d",
+            "val_data_dir": "v",
+            "interval_encoding": "log",
+            "use_step_index": True,
+            "use_beat_phase": True,
+            "use_aux_interval_target": True,
+        }
+        cfg = config.ArrowDatasetConfig.from_dict(data)
+        self.assertEqual(cfg.interval_encoding, "log")
+        self.assertTrue(cfg.use_step_index)
+        self.assertTrue(cfg.use_beat_phase)
+        self.assertTrue(cfg.use_aux_interval_target)
+        d = cfg.as_dict()
+        self.assertEqual(d["interval_encoding"], "log")
+        self.assertEqual(d["use_step_index"], True)
+        self.assertEqual(d["use_beat_phase"], True)
+        self.assertEqual(d["use_aux_interval_target"], True)
+        cfg2 = config.ArrowDatasetConfig.from_dict(d)
+        self.assertEqual(cfg2.interval_encoding, cfg.interval_encoding)
+        self.assertEqual(cfg2.use_step_index, cfg.use_step_index)
+        self.assertEqual(cfg2.use_beat_phase, cfg.use_beat_phase)
+        self.assertEqual(cfg2.use_aux_interval_target, cfg.use_aux_interval_target)
+
 
 class OnsetModelConfigTest(unittest.TestCase):
     def test_create_with_defaults(self):
@@ -358,6 +384,22 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertIn("att_layers_2", parts)
         self.assertIn("d_model_64", parts)
 
+    def test_get_experiment_name_parts_transformer_with_timing_position(self):
+        """When transformer.use_timing_position is True, experiment name parts include timing_pos."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "transformer": {
+                    "num_layers": 1,
+                    "d_model": 64,
+                    "use_timing_position": True,
+                },
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("timing_pos", parts)
+        self.assertIn("att_layers_1", parts)
+
     def test_get_experiment_name_parts_mlp(self):
         """get_experiment_name_parts returns mlp param fragments when model_type is mlp."""
         cfg = config.ArrowModelConfig.from_dict(
@@ -432,6 +474,33 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertIn("gru_bidir", parts)
         self.assertIn("gru_units_64", parts)
 
+    def test_get_experiment_name_parts_gru_with_attention(self):
+        """When gru.add_attention_layer is True, experiment name parts include attn, attn_heads, attn_dim."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {
+                    "units": 64,
+                    "num_layers": 1,
+                    "dropout_rate": 0.0,
+                    "add_attention_layer": True,
+                    "attention_heads": 8,
+                    "attention_dim": 32,
+                },
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("attn", parts)
+        self.assertIn("attn_heads_8", parts)
+        self.assertIn("attn_dim_32", parts)
+        self.assertIn("gru_units_64", parts)
+
+    def test_get_active_params_block_returns_none_for_unknown_model_type(self):
+        """get_active_params_block returns None when model_type is not in the registry."""
+        cfg = config.ArrowModelConfig(model_type="unknown_arch")
+        self.assertIsNone(cfg.get_active_params_block())
+        self.assertEqual(cfg.get_experiment_name_parts(), [])
+
     def test_get_experiment_name_parts_uses_only_active_block(self):
         """When both transformer and lstm are set, get_experiment_name_parts uses only active model_type."""
         cfg = config.ArrowModelConfig(
@@ -460,6 +529,101 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertIn("gru_units_32", parts)
         self.assertNotIn("lstm_units", parts)
         self.assertNotIn("lstm_layers", parts)
+
+    def test_from_dict_nested_tcn(self):
+        """Test creating config with model_type tcn and tcn block; round-trip."""
+        data = {
+            "model_type": "tcn",
+            "tcn": {
+                "filters": 32,
+                "kernel_size": 3,
+                "num_layers": 4,
+                "dilation_base": 2,
+                "dropout_rate": 0.1,
+            },
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.model_type, "tcn")
+        self.assertIsNotNone(cfg.tcn)
+        assert cfg.tcn is not None
+        self.assertEqual(cfg.tcn.filters, 32)
+        self.assertEqual(cfg.tcn.kernel_size, 3)
+        self.assertEqual(cfg.tcn.num_layers, 4)
+        self.assertEqual(cfg.tcn.dilation_base, 2)
+        self.assertEqual(cfg.tcn.dropout_rate, 0.1)
+        d = cfg.as_dict()
+        self.assertIn("tcn", d)
+        cfg2 = config.ArrowModelConfig.from_dict(d)
+        self.assertEqual(cfg2.model_type, "tcn")
+        assert cfg2.tcn is not None
+        self.assertEqual(cfg2.tcn.filters, 32)
+
+    def test_from_dict_nested_cnn1d(self):
+        """Test creating config with model_type cnn1d and cnn1d block; round-trip."""
+        data = {
+            "model_type": "cnn1d",
+            "cnn1d": {
+                "filters": 64,
+                "kernel_sizes": [3, 5, 3],
+                "dropout_rate": 0.2,
+            },
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.model_type, "cnn1d")
+        self.assertIsNotNone(cfg.cnn1d)
+        assert cfg.cnn1d is not None
+        self.assertEqual(cfg.cnn1d.filters, 64)
+        self.assertEqual(cfg.cnn1d.kernel_sizes, [3, 5, 3])
+        self.assertEqual(cfg.cnn1d.dropout_rate, 0.2)
+        d = cfg.as_dict()
+        self.assertIn("cnn1d", d)
+        cfg2 = config.ArrowModelConfig.from_dict(d)
+        self.assertEqual(cfg2.model_type, "cnn1d")
+        assert cfg2.cnn1d is not None
+        self.assertEqual(cfg2.cnn1d.kernel_sizes, [3, 5, 3])
+
+    def test_from_dict_interval_encoding_use_step_index_use_beat_phase(self):
+        """Round-trip for interval_encoding, use_step_index, use_beat_phase on ArrowModelConfig."""
+        data = {
+            "model_type": "gru",
+            "gru": {"units": 64, "num_layers": 1},
+            "interval_encoding": "multi",
+            "use_step_index": True,
+            "use_beat_phase": True,
+        }
+        cfg = config.ArrowModelConfig.from_dict(data)
+        self.assertEqual(cfg.interval_encoding, "multi")
+        self.assertTrue(cfg.use_step_index)
+        self.assertTrue(cfg.use_beat_phase)
+        d = cfg.as_dict()
+        self.assertEqual(d["interval_encoding"], "multi")
+        self.assertEqual(d["use_step_index"], True)
+        self.assertEqual(d["use_beat_phase"], True)
+
+    def test_get_experiment_name_parts_tcn(self):
+        """get_experiment_name_parts returns tcn param fragments when model_type is tcn."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "tcn",
+                "tcn": {"filters": 32, "num_layers": 2, "dilation_base": 2},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("tcn_filters_32", parts)
+        self.assertIn("tcn_layers_2", parts)
+        self.assertIn("tcn_dilation_base_2", parts)
+
+    def test_get_experiment_name_parts_cnn1d(self):
+        """get_experiment_name_parts returns cnn1d param fragments when model_type is cnn1d."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "cnn1d",
+                "cnn1d": {"filters": 64, "kernel_sizes": [3, 3], "dropout_rate": 0.0},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("cnn1d_filters_64", parts)
+        self.assertIn("cnn1d_kernels_3_3", parts)
 
 
 class RunConfigTest(unittest.TestCase):
@@ -775,6 +939,75 @@ class ArrowRunConfigTest(unittest.TestCase):
             )
         self.assertIn("lr_min", str(ctx.exception))
 
+    def test_round_trip_loss_type_focal_gamma_label_smoothing_aux_interval_weight(self):
+        """Round-trip and validation for loss_type, focal_gamma, label_smoothing, aux_interval_weight."""
+        data = {
+            "epoch": 2,
+            "take_count": 1,
+            "model_output_dir": "out",
+            "loss_type": "focal",
+            "focal_gamma": 2.5,
+            "label_smoothing": 0.1,
+            "aux_interval_weight": 0.5,
+        }
+        cfg = config.ArrowRunConfig.from_dict(data)
+        self.assertEqual(cfg.loss_type, "focal")
+        self.assertEqual(cfg.focal_gamma, 2.5)
+        self.assertEqual(cfg.label_smoothing, 0.1)
+        self.assertEqual(cfg.aux_interval_weight, 0.5)
+        d = cfg.as_dict()
+        self.assertEqual(d["loss_type"], "focal")
+        self.assertEqual(d["focal_gamma"], 2.5)
+        self.assertEqual(d["label_smoothing"], 0.1)
+        self.assertEqual(d["aux_interval_weight"], 0.5)
+        cfg2 = config.ArrowRunConfig.from_dict(d)
+        self.assertEqual(cfg2.loss_type, cfg.loss_type)
+        self.assertEqual(cfg2.aux_interval_weight, cfg.aux_interval_weight)
+
+    def test_loss_type_invalid_raises(self):
+        """loss_type other than crossentropy or focal raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                loss_type="mse",
+            )
+        self.assertIn("loss_type", str(ctx.exception))
+
+    def test_focal_gamma_negative_raises(self):
+        """focal_gamma < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                focal_gamma=-0.1,
+            )
+        self.assertIn("focal_gamma", str(ctx.exception))
+
+    def test_label_smoothing_invalid_raises(self):
+        """label_smoothing outside [0, 1) raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                label_smoothing=1.0,
+            )
+        self.assertIn("label_smoothing", str(ctx.exception))
+
+    def test_aux_interval_weight_negative_raises(self):
+        """aux_interval_weight < 0 raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                aux_interval_weight=-0.1,
+            )
+        self.assertIn("aux_interval_weight", str(ctx.exception))
+
 
 class OnsetExperimentConfigTest(unittest.TestCase):
     def test_create_experiment_config(self):
@@ -939,6 +1172,75 @@ class ValidateArrowDatasetModelAlignmentTest(unittest.TestCase):
         self.assertIn("use_interval", str(ctx.exception))
         self.assertIn("dataset=True", str(ctx.exception))
         self.assertIn("model=False", str(ctx.exception))
+
+    def test_raises_on_interval_encoding_mismatch(self):
+        """Raises ValueError when interval_encoding differs between dataset and model."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", interval_encoding="log"
+        )
+        model_cfg = config.ArrowModelConfig(interval_encoding="default")
+        with self.assertRaises(ValueError) as ctx:
+            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+        self.assertIn("interval_encoding", str(ctx.exception))
+
+    def test_raises_on_use_step_index_mismatch(self):
+        """Raises ValueError when use_step_index differs between dataset and model."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", use_step_index=True
+        )
+        model_cfg = config.ArrowModelConfig(use_step_index=False)
+        with self.assertRaises(ValueError) as ctx:
+            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+        self.assertIn("use_step_index", str(ctx.exception))
+
+    def test_raises_on_use_beat_phase_mismatch(self):
+        """Raises ValueError when use_beat_phase differs between dataset and model."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", use_beat_phase=True
+        )
+        model_cfg = config.ArrowModelConfig(use_beat_phase=False)
+        with self.assertRaises(ValueError) as ctx:
+            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+        self.assertIn("use_beat_phase", str(ctx.exception))
+
+    def test_accepts_matching_interval_encoding_step_index_beat_phase(self):
+        """Does not raise when interval_encoding, use_step_index, use_beat_phase match."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d",
+            val_data_dir="v",
+            interval_encoding="multi",
+            use_step_index=True,
+            use_beat_phase=True,
+        )
+        model_cfg = config.ArrowModelConfig.from_dict(
+            {
+                "interval_encoding": "multi",
+                "use_step_index": True,
+                "use_beat_phase": True,
+            }
+        )
+        config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+
+    def test_raises_on_invalid_dataset_interval_encoding(self):
+        """Raises ValueError when dataset interval_encoding is not default/log/multi."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", interval_encoding="invalid"
+        )
+        model_cfg = config.ArrowModelConfig(interval_encoding="invalid")
+        with self.assertRaises(ValueError) as ctx:
+            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+        self.assertIn("interval_encoding", str(ctx.exception))
+        self.assertIn("default", str(ctx.exception))
+
+    def test_raises_on_invalid_model_interval_encoding(self):
+        """Raises ValueError when model interval_encoding is not default/log/multi."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", interval_encoding="default"
+        )
+        model_cfg = config.ArrowModelConfig(interval_encoding="other")
+        with self.assertRaises(ValueError) as ctx:
+            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+        self.assertIn("interval_encoding", str(ctx.exception))
 
 
 class ArrowExperimentConfigTest(unittest.TestCase):

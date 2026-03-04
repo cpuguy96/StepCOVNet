@@ -8,7 +8,7 @@ import os
 import keras
 import tensorflow as tf
 
-from stepcovnet import config, datasets, metrics, models
+from stepcovnet import config, constants, datasets, metrics, models
 
 
 def _get_tb_callback(root_dir: str, callback_name: str):
@@ -201,6 +201,16 @@ def _get_arrow_experiment_name(
     if run_config.diversity_aux_weight > 0:
         parts.append(
             f"diversity_aux_{str(run_config.diversity_aux_weight).replace('.', '_')}"
+        )
+    if run_config.loss_type == "focal":
+        parts.append(f"focal_gamma_{str(run_config.focal_gamma).replace('.', '_')}")
+    if run_config.label_smoothing > 0:
+        parts.append(
+            f"label_smooth_{str(run_config.label_smoothing).replace('.', '_')}"
+        )
+    if run_config.aux_interval_weight > 0:
+        parts.append(
+            f"aux_interval_{str(run_config.aux_interval_weight).replace('.', '_')}"
         )
 
     return "-".join(parts)
@@ -521,6 +531,56 @@ def _build_cosine_warmup_schedule(
     return keras.callbacks.LearningRateScheduler(schedule)
 
 
+def _sparse_focal_loss(y_true: tf.Tensor, y_pred: tf.Tensor, gamma: float, ignore_class: int = 0) -> tf.Tensor:
+    """Sparse categorical focal loss: - (1 - p_t)^gamma * log(p_t), masked for ignore_class.
+
+    Args:
+        y_true: (batch, steps) int class indices.
+        y_pred: (batch, steps, num_classes) float probabilities.
+        gamma: Focusing parameter (higher down-weights easy examples).
+        ignore_class: Class index to exclude from loss (e.g. padding).
+
+    Returns:
+        Scalar mean loss over valid (non-ignored) positions.
+    """
+    # Gather predicted probability of the true class: (batch, steps)
+    y_true_int = tf.cast(tf.reshape(y_true, [-1]), tf.int32)
+    indices = tf.range(tf.size(y_true_int))
+    flat_pred = tf.reshape(y_pred, [-1, constants.N_ARROW_TYPES])
+    p_t = tf.gather_nd(flat_pred, tf.stack([indices, y_true_int], axis=1))
+    p_t = tf.reshape(p_t, tf.shape(y_true))
+    _max_p = 1.0 - 1e-7
+    p_t = tf.clip_by_value(p_t, 1e-7, _max_p)
+    focal_weight = tf.pow(1.0 - p_t, gamma)
+    ce = -tf.math.log(p_t)
+    loss_per_step = focal_weight * ce
+    mask = tf.cast(tf.not_equal(y_true, ignore_class), tf.float32)
+    loss_sum = tf.reduce_sum(loss_per_step * mask)
+    count = tf.maximum(tf.reduce_sum(mask), 1.0)
+    return loss_sum / count
+
+
+def _masked_mse_aux_interval(
+    y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight: tf.Tensor | None = None
+) -> tf.Tensor:
+    """MSE for aux_interval regression; when sample_weight given, mask invalid steps.
+
+    Args:
+        y_true: (batch, steps, 1) target next-interval.
+        y_pred: (batch, steps, 1) predicted next-interval.
+        sample_weight: (batch, steps, 1) mask (1 = valid step, 0 = last step / padding).
+
+    Returns:
+        Scalar: mean squared error over valid (masked) positions.
+    """
+    sq = tf.square(tf.subtract(y_pred, y_true))
+    if sample_weight is None:
+        return tf.reduce_mean(sq)
+    return tf.reduce_sum(sq * sample_weight) / tf.maximum(
+        tf.reduce_sum(sample_weight), 1.0
+    )
+
+
 def run_arrow_train_from_config(
     dataset_config: config.ArrowDatasetConfig,
     model_config: config.ArrowModelConfig,
@@ -547,11 +607,17 @@ def run_arrow_train_from_config(
             or use_interval.
     """
     config.validate_arrow_dataset_model_alignment(dataset_config, model_config)
+    dataset_provides_aux = dataset_config.use_aux_interval_target
+    use_aux_interval = dataset_provides_aux and run_config.aux_interval_weight > 0
     train_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
         snippet_half_frames=dataset_config.snippet_half_frames,
         use_interval=dataset_config.use_interval,
+        interval_encoding=dataset_config.interval_encoding,
+        use_step_index=dataset_config.use_step_index,
+        use_beat_phase=dataset_config.use_beat_phase,
+        use_aux_interval_target=dataset_config.use_aux_interval_target,
     )
 
     val_dataset = datasets.create_arrow_dataset(
@@ -559,7 +625,31 @@ def run_arrow_train_from_config(
         batch_size=dataset_config.batch_size,
         snippet_half_frames=dataset_config.snippet_half_frames,
         use_interval=dataset_config.use_interval,
+        interval_encoding=dataset_config.interval_encoding,
+        use_step_index=dataset_config.use_step_index,
+        use_beat_phase=dataset_config.use_beat_phase,
+        use_aux_interval_target=dataset_config.use_aux_interval_target,
     )
+
+    if dataset_provides_aux:
+
+        def _prepare_aux_batch(out, cols):
+            x = {
+                k: v
+                for k, v in out.items()
+                if k not in ("aux_interval_target", "aux_interval_mask")
+            }
+            if use_aux_interval:
+                y = {
+                    "output_probabilities": cols,
+                    "aux_interval": out["aux_interval_target"],
+                }
+                sample_weight = {"aux_interval": out["aux_interval_mask"]}
+                return (x, y, sample_weight)
+            return (x, cols)
+
+        train_dataset = train_dataset.map(_prepare_aux_batch)
+        val_dataset = val_dataset.map(_prepare_aux_batch)
 
     experiment_name = _get_arrow_experiment_name(
         model_config=model_config,
@@ -569,20 +659,60 @@ def run_arrow_train_from_config(
     model = models.build_arrow_model_from_config(
         model_config,
         model_name=run_config.model_name or experiment_name,
+        use_aux_interval=use_aux_interval,
     )
 
     if run_config.show_model_summary:
         model.summary()
 
-    # Combined loss: main (cross-entropy) + validity penalty + diversity balance.
-    # Use chart_validity_aux_weight to punish invalid charts; use diversity_aux_weight
-    # so the model doesn't collapse to boring all-tap charts when validity is strong.
-    _main_loss = keras.losses.SparseCategoricalCrossentropy(ignore_class=0)
+    # Combined loss: main (cross-entropy or focal, optional label smoothing) + validity + diversity.
     _chart_validity_weight = run_config.chart_validity_aux_weight
     _diversity_weight = run_config.diversity_aux_weight
+    _loss_type = run_config.loss_type
+    _label_smoothing = run_config.label_smoothing
+    _focal_gamma = run_config.focal_gamma
+
+    if _loss_type == "crossentropy":
+        _ce = keras.losses.SparseCategoricalCrossentropy(ignore_class=0)
+        if _label_smoothing > 0:
+            _smoothing = _label_smoothing
+            _cat_ce = keras.losses.CategoricalCrossentropy(
+                label_smoothing=0.0, reduction="none"
+            )
+
+            def _main_loss_fn(y_true, y_pred):
+                # Apply label smoothing via one-hot + CategoricalCrossentropy
+                # (SparseCategoricalCrossentropy does not support label_smoothing in all Keras versions)
+                one_hot = tf.one_hot(
+                    tf.cast(tf.reshape(y_true, [-1]), tf.int32),
+                    constants.N_ARROW_TYPES,
+                )
+                one_hot = tf.reshape(
+                    one_hot,
+                    tf.concat(
+                        [tf.shape(y_true), [constants.N_ARROW_TYPES]], axis=0
+                    ),
+                )
+                smoothed = (
+                    one_hot * (1.0 - _smoothing)
+                    + _smoothing / constants.N_ARROW_TYPES
+                )
+                mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
+                per_step = _cat_ce(smoothed, y_pred)
+                return tf.reduce_sum(per_step * mask) / tf.maximum(
+                    tf.reduce_sum(mask), 1.0
+                )
+        else:
+            _main_loss_fn = _ce
+    else:
+
+        def _main_loss_fn(y_true, y_pred):
+            return _sparse_focal_loss(
+                y_true, y_pred, gamma=_focal_gamma, ignore_class=0
+            )
 
     def _arrow_combined_loss(y_true, y_pred):
-        main_loss = _main_loss(y_true, y_pred)
+        main_loss = _main_loss_fn(y_true, y_pred)
         validity_aux = metrics.chart_validity_auxiliary_loss(
             y_true, y_pred, ignore_class=0
         )
@@ -598,24 +728,44 @@ def run_arrow_train_from_config(
     use_lr_schedule = run_config.warmup_epochs > 0
     initial_lr = run_config.lr_min if use_lr_schedule else run_config.lr_peak
 
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),  # type: ignore
-        loss=_arrow_combined_loss,
-        metrics=[
-            keras.metrics.SparseCategoricalAccuracy(name="acc"),
-            keras.metrics.SparseCategoricalCrossentropy(
-                name="main_loss",
-                # ignore_class=0 # Set ignore class once Keras PR is merged: https://github.com/keras-team/keras/pull/22284
-            ),
-            metrics.ChartValidityAuxiliaryLossMetric(name="chart_validity_aux_loss"),
-            metrics.NoteKindBalanceAuxiliaryLossMetric(
-                name="note_kind_balance_aux_loss"
-            ),
-            metrics.ArrowDistributionMatchMetric(name="arrow_dist_match"),
-            metrics.ArrowNoteKindDistributionMetric(name="arrow_note_kind_dist_match"),
-            metrics.ChartValidityMetric(name="chart_validity"),
-        ],
-    )
+    _main_metrics = [
+        keras.metrics.SparseCategoricalAccuracy(name="acc"),
+        keras.metrics.SparseCategoricalCrossentropy(name="main_loss"),
+        metrics.ChartValidityAuxiliaryLossMetric(name="chart_validity_aux_loss"),
+        metrics.NoteKindBalanceAuxiliaryLossMetric(
+            name="note_kind_balance_aux_loss"
+        ),
+        metrics.ArrowDistributionMatchMetric(name="arrow_dist_match"),
+        metrics.ArrowNoteKindDistributionMetric(name="arrow_note_kind_dist_match"),
+        metrics.ChartValidityMetric(name="chart_validity"),
+    ]
+
+    if use_aux_interval:
+        model.compile(
+            optimizer=keras.optimizers.Adam(
+                learning_rate=initial_lr, clipnorm=1.0
+            ),  # type: ignore
+            loss={
+                "output_probabilities": _arrow_combined_loss,
+                "aux_interval": _masked_mse_aux_interval,
+            },
+            loss_weights={
+                "output_probabilities": 1.0,
+                "aux_interval": run_config.aux_interval_weight,
+            },
+            metrics={
+                "output_probabilities": _main_metrics,
+                "aux_interval": keras.metrics.MeanSquaredError(name="aux_interval_mse"),
+            },
+        )
+    else:
+        model.compile(
+            optimizer=keras.optimizers.Adam(
+                learning_rate=initial_lr, clipnorm=1.0
+            ),  # type: ignore
+            loss=_arrow_combined_loss,
+            metrics=_main_metrics,
+        )
 
     lr_callbacks: list[keras.callbacks.Callback] = []
     if use_lr_schedule:

@@ -68,6 +68,11 @@ class ArrowDatasetConfig:
         snippet_half_frames: Half-window of frames around each onset (total frames = 2*snippet_half_frames+1).
             When > 0, audio snippets are loaded and included per step; when 0, only timing and chart are used.
         use_interval: If True, include inter-step interval (time since previous step) as an input.
+        interval_encoding: How to encode interval: "default", "log" (log(1+interval)), or "multi" (extra channels).
+            Must match model config. Default "default".
+        use_step_index: If True, include step index (position in sequence) as an input. Must match model config.
+        use_beat_phase: If True, include beat/phase features (BPM from chart txt). Must match model config.
+        use_aux_interval_target: If True, include aux_interval_target (next-step interval) in batch for auxiliary loss.
     """
 
     data_dir: str
@@ -75,6 +80,10 @@ class ArrowDatasetConfig:
     batch_size: int = 1
     snippet_half_frames: int = 0
     use_interval: bool = False
+    interval_encoding: str = "default"
+    use_step_index: bool = False
+    use_beat_phase: bool = False
+    use_aux_interval_target: bool = False
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
@@ -158,6 +167,7 @@ class TransformerArrowParams:
         num_heads: Number of attention heads.
         ff_dim: Feed-forward inner dimension.
         dropout_rate: Dropout rate applied in sublayers.
+        use_timing_position: If True, use timing-based positional encoding instead of sinusoidal.
     """
 
     num_layers: int = 1
@@ -165,18 +175,22 @@ class TransformerArrowParams:
     num_heads: int = 4
     ff_dim: int = 512
     dropout_rate: float = 0.0
+    use_timing_position: bool = False
 
     def as_dict(self) -> dict:
         return dataclasses.asdict(self)
 
     def experiment_name_parts(self) -> list[str]:
-        return [
+        parts = [
             f"att_layers_{self.num_layers}",
             f"d_model_{self.d_model}",
             f"num_heads_{self.num_heads}",
             f"ff_dim_{self.ff_dim}",
             f"dropout_{str(self.dropout_rate).replace('.', '_')}",
         ]
+        if self.use_timing_position:
+            parts.append("timing_pos")
+        return parts
 
     @classmethod
     def from_dict(cls, data: dict) -> TransformerArrowParams:
@@ -270,12 +284,18 @@ class GRUArrowParams:
         num_layers: Number of stacked GRU layers.
         dropout_rate: Dropout rate for the GRU layers.
         bidirectional: If True, use bidirectional GRU.
+        add_attention_layer: If True, add a multi-head self-attention layer after the GRU stack.
+        attention_heads: Number of attention heads when add_attention_layer is True.
+        attention_dim: Dimension per head (or total key dim) when add_attention_layer is True.
     """
 
     units: int = 128
     num_layers: int = 1
     dropout_rate: float = 0.0
     bidirectional: bool = False
+    add_attention_layer: bool = False
+    attention_heads: int = 4
+    attention_dim: int = 64
 
     def as_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -288,10 +308,90 @@ class GRUArrowParams:
         ]
         if self.bidirectional:
             parts.append("gru_bidir")
+        if self.add_attention_layer:
+            parts.append("attn")
+            parts.append(f"attn_heads_{self.attention_heads}")
+            parts.append(f"attn_dim_{self.attention_dim}")
         return parts
 
     @classmethod
     def from_dict(cls, data: dict) -> GRUArrowParams:
+        return cls(
+            **{
+                k: v
+                for k, v in data.items()
+                if k in {f.name for f in dataclasses.fields(cls)}
+            }
+        )
+
+
+@dataclasses.dataclass
+class TCNArrowParams:
+    """Parameters for the TCN (Temporal Convolutional Network) arrow model. Used when model_type is 'tcn'.
+
+    Attributes:
+        filters: Number of convolutional filters per layer.
+        kernel_size: Size of the causal convolution kernel.
+        num_layers: Number of TCN blocks/layers.
+        dilation_base: Base for exponential dilation (dilation = dilation_base^layer_idx).
+        dropout_rate: Dropout rate applied in the TCN stack.
+    """
+
+    filters: int = 64
+    kernel_size: int = 3
+    num_layers: int = 4
+    dilation_base: int = 2
+    dropout_rate: float = 0.0
+
+    def as_dict(self) -> dict:
+        return dataclasses.asdict(self)
+
+    def experiment_name_parts(self) -> list[str]:
+        return [
+            f"tcn_filters_{self.filters}",
+            f"tcn_kernel_{self.kernel_size}",
+            f"tcn_layers_{self.num_layers}",
+            f"tcn_dilation_base_{self.dilation_base}",
+            f"dropout_{str(self.dropout_rate).replace('.', '_')}",
+        ]
+
+    @classmethod
+    def from_dict(cls, data: dict) -> TCNArrowParams:
+        return cls(
+            **{
+                k: v
+                for k, v in data.items()
+                if k in {f.name for f in dataclasses.fields(cls)}
+            }
+        )
+
+
+@dataclasses.dataclass
+class CNN1DArrowParams:
+    """Parameters for the 1D CNN arrow model. Used when model_type is 'cnn1d'.
+
+    Attributes:
+        filters: Number of convolutional filters per layer.
+        kernel_sizes: List of kernel sizes per layer (e.g. [3, 3, 3]).
+        dropout_rate: Dropout rate applied after conv stack.
+    """
+
+    filters: int = 64
+    kernel_sizes: list[int] = dataclasses.field(default_factory=lambda: [3, 3, 3])
+    dropout_rate: float = 0.0
+
+    def as_dict(self) -> dict:
+        return dataclasses.asdict(self)
+
+    def experiment_name_parts(self) -> list[str]:
+        return [
+            f"cnn1d_filters_{self.filters}",
+            "cnn1d_kernels_" + "_".join(str(k) for k in self.kernel_sizes),
+            f"dropout_{str(self.dropout_rate).replace('.', '_')}",
+        ]
+
+    @classmethod
+    def from_dict(cls, data: dict) -> CNN1DArrowParams:
         return cls(
             **{
                 k: v
@@ -312,6 +412,8 @@ _ARROW_MODEL_TYPE_ATTR: dict[str, str] = {
     "mlp": "mlp",
     "lstm": "lstm",
     "gru": "gru",
+    "tcn": "tcn",
+    "cnn1d": "cnn1d",
 }
 
 
@@ -323,22 +425,32 @@ class ArrowModelConfig:
     Only the block matching model_type is required when building; others can be None.
 
     Attributes:
-        model_type: One of 'transformer', 'mlp', 'lstm', 'gru'.
+        model_type: One of 'transformer', 'mlp', 'lstm', 'gru', 'tcn', 'cnn1d'.
         snippet_half_frames: Half-window of frames per step (0 = timing only).
         use_interval: If True, model expects interval_input (time since previous step).
+        interval_encoding: How to encode interval: "default", "log", or "multi". Must match dataset config.
+        use_step_index: If True, model expects step_index input. Must match dataset config.
+        use_beat_phase: If True, model expects beat_phase input (BPM from chart). Must match dataset config.
         transformer: Params for transformer model; used when model_type is 'transformer'.
         mlp: Params for MLP model; used when model_type is 'mlp'.
         lstm: Params for LSTM model; used when model_type is 'lstm'.
         gru: Params for GRU model; used when model_type is 'gru'.
+        tcn: Params for TCN model; used when model_type is 'tcn'.
+        cnn1d: Params for 1D CNN model; used when model_type is 'cnn1d'.
     """
 
     model_type: str = "transformer"
     snippet_half_frames: int = 0
     use_interval: bool = False
+    interval_encoding: str = "default"
+    use_step_index: bool = False
+    use_beat_phase: bool = False
     transformer: TransformerArrowParams | None = None
     mlp: MLPArrowParams | None = None
     lstm: LSTMArrowParams | None = None
     gru: GRUArrowParams | None = None
+    tcn: TCNArrowParams | None = None
+    cnn1d: CNN1DArrowParams | None = None
 
     def get_active_params_block(self) -> ArrowParamsProtocol | None:
         """Return the params block for the current model_type, or None if not set."""
@@ -358,6 +470,9 @@ class ArrowModelConfig:
             "model_type": self.model_type,
             "snippet_half_frames": self.snippet_half_frames,
             "use_interval": self.use_interval,
+            "interval_encoding": self.interval_encoding,
+            "use_step_index": self.use_step_index,
+            "use_beat_phase": self.use_beat_phase,
         }
         for _model_type, attr in _ARROW_MODEL_TYPE_ATTR.items():
             block = getattr(self, attr, None)
@@ -371,12 +486,17 @@ class ArrowModelConfig:
         model_type = data.get("model_type", "transformer")
         snippet_half_frames = data.get("snippet_half_frames", 0)
         use_interval = data.get("use_interval", False)
+        interval_encoding = data.get("interval_encoding", "default")
+        use_step_index = data.get("use_step_index", False)
+        use_beat_phase = data.get("use_beat_phase", False)
 
         # Parse active block; transformer has flat-key backward compat.
         transformer: TransformerArrowParams | None = None
         mlp: MLPArrowParams | None = None
         lstm: LSTMArrowParams | None = None
         gru: GRUArrowParams | None = None
+        tcn: TCNArrowParams | None = None
+        cnn1d: CNN1DArrowParams | None = None
 
         if model_type == "transformer":
             if "transformer" in data:
@@ -410,15 +530,32 @@ class ArrowModelConfig:
                 if "gru" in data
                 else GRUArrowParams()
             )
+        elif model_type == "tcn":
+            tcn = (
+                TCNArrowParams.from_dict(data["tcn"])
+                if "tcn" in data
+                else TCNArrowParams()
+            )
+        elif model_type == "cnn1d":
+            cnn1d = (
+                CNN1DArrowParams.from_dict(data["cnn1d"])
+                if "cnn1d" in data
+                else CNN1DArrowParams()
+            )
 
         return cls(
             model_type=model_type,
             snippet_half_frames=snippet_half_frames,
             use_interval=use_interval,
+            interval_encoding=interval_encoding,
+            use_step_index=use_step_index,
+            use_beat_phase=use_beat_phase,
             transformer=transformer,
             mlp=mlp,
             lstm=lstm,
             gru=gru,
+            tcn=tcn,
+            cnn1d=cnn1d,
         )
 
 
@@ -496,6 +633,10 @@ class ArrowRunConfig(RunConfig):
         warmup_epochs: Number of epochs for linear LR warmup before cosine decay. 0 disables the schedule (fixed LR).
         lr_peak: Peak learning rate reached at end of warmup (also the fixed LR when warmup is disabled).
         lr_min: Minimum learning rate at start of warmup and end of cosine decay.
+        loss_type: Main classification loss: "crossentropy" or "focal". Default "crossentropy".
+        focal_gamma: Gamma for focal loss when loss_type is "focal"; ignored otherwise.
+        label_smoothing: Label smoothing factor for crossentropy (0 = none). Used when loss_type is "crossentropy".
+        aux_interval_weight: Weight for auxiliary next-interval regression loss. 0 disables. Default 0.0.
     """
 
     chart_validity_aux_weight: float = 0.0
@@ -503,6 +644,10 @@ class ArrowRunConfig(RunConfig):
     warmup_epochs: int = 0
     lr_peak: float = 1e-3
     lr_min: float = 1e-5
+    loss_type: str = "crossentropy"
+    focal_gamma: float = 2.0
+    label_smoothing: float = 0.0
+    aux_interval_weight: float = 0.0
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -527,6 +672,20 @@ class ArrowRunConfig(RunConfig):
         if self.lr_min >= self.lr_peak:
             raise ValueError(
                 f"lr_min ({self.lr_min}) must be < lr_peak ({self.lr_peak})"
+            )
+        if self.loss_type not in ("crossentropy", "focal"):
+            raise ValueError(
+                f"loss_type must be 'crossentropy' or 'focal', got {self.loss_type!r}"
+            )
+        if self.focal_gamma < 0:
+            raise ValueError(f"focal_gamma must be >= 0, got {self.focal_gamma}")
+        if not 0 <= self.label_smoothing < 1:
+            raise ValueError(
+                f"label_smoothing must be in [0, 1), got {self.label_smoothing}"
+            )
+        if self.aux_interval_weight < 0:
+            raise ValueError(
+                f"aux_interval_weight must be >= 0, got {self.aux_interval_weight}"
             )
 
     @classmethod
@@ -621,18 +780,18 @@ def validate_arrow_dataset_model_alignment(
     dataset_config: ArrowDatasetConfig,
     model_config: ArrowModelConfig,
 ) -> None:
-    """Ensure dataset and model configs agree on snippet_half_frames and use_interval.
+    """Ensure dataset and model configs agree on inputs and encoding options.
 
     Training requires the dataset to produce inputs that match what the model
-    expects; these two fields must match.
+    expects. snippet_half_frames, use_interval, interval_encoding, use_step_index,
+    and use_beat_phase must match.
 
     Args:
         dataset_config: Dataset configuration.
         model_config: Model configuration.
 
     Raises:
-        ValueError: If snippet_half_frames or use_interval differ between
-            dataset and model configs.
+        ValueError: If any aligned field differs between dataset and model configs.
     """
     if dataset_config.snippet_half_frames != model_config.snippet_half_frames:
         raise ValueError(
@@ -644,6 +803,35 @@ def validate_arrow_dataset_model_alignment(
         raise ValueError(
             "dataset.use_interval and model.use_interval must match "
             f"(got dataset={dataset_config.use_interval}, model={model_config.use_interval})."
+        )
+    if dataset_config.use_step_index != model_config.use_step_index:
+        raise ValueError(
+            "dataset.use_step_index and model.use_step_index must match "
+            f"(got dataset={dataset_config.use_step_index}, "
+            f"model={model_config.use_step_index})."
+        )
+    if dataset_config.use_beat_phase != model_config.use_beat_phase:
+        raise ValueError(
+            "dataset.use_beat_phase and model.use_beat_phase must match "
+            f"(got dataset={dataset_config.use_beat_phase}, "
+            f"model={model_config.use_beat_phase})."
+        )
+    valid_encodings = ("default", "log", "multi")
+    if dataset_config.interval_encoding not in valid_encodings:
+        raise ValueError(
+            f"dataset.interval_encoding must be one of {valid_encodings!r}, "
+            f"got {dataset_config.interval_encoding!r}."
+        )
+    if model_config.interval_encoding not in valid_encodings:
+        raise ValueError(
+            f"model.interval_encoding must be one of {valid_encodings!r}, "
+            f"got {model_config.interval_encoding!r}."
+        )
+    if dataset_config.interval_encoding != model_config.interval_encoding:
+        raise ValueError(
+            "dataset.interval_encoding and model.interval_encoding must match "
+            f"(got dataset={dataset_config.interval_encoding!r}, "
+            f"model={model_config.interval_encoding!r})."
         )
 
 

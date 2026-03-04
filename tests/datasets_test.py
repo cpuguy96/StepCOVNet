@@ -182,6 +182,142 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(out.shape, (1,))
         self.assertEqual(out[0], 0.0)
 
+    def test_log_normalized_intervals_from_times(self):
+        """log_normalized_intervals_from_times returns log(1+interval) normalized; step 0 is 0."""
+        times = np.array([1.0, 2.5, 3.0, 10.0], dtype=np.float64)
+        out = datasets.log_normalized_intervals_from_times(times)
+        self.assertEqual(out.dtype, np.float32)
+        self.assertEqual(len(out), len(times))
+        self.assertEqual(out[0], 0.0)
+        self.assertGreaterEqual(out.min(), 0.0)
+        self.assertLessEqual(out.max(), 1.0)
+
+    def test_next_interval_normalized_from_times(self):
+        """next_interval_normalized_from_times: time-to-next per step; last step 0."""
+        times = np.array([1.0, 2.0, 5.0], dtype=np.float64)
+        out = datasets.next_interval_normalized_from_times(times)
+        self.assertEqual(out.dtype, np.float32)
+        self.assertEqual(len(out), 3)
+        self.assertEqual(out[2], 0.0)
+        self.assertGreaterEqual(out.min(), 0.0)
+        self.assertLessEqual(out.max(), 1.0)
+
+    def test_step_index_normalized(self):
+        """step_index_normalized returns [0,1] for n_steps; 0 and 1 for single step."""
+        out = datasets.step_index_normalized(4)
+        self.assertEqual(out.dtype, np.float32)
+        np.testing.assert_array_almost_equal(out, [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0])
+        self.assertEqual(datasets.step_index_normalized(1)[0], 0.0)
+        self.assertEqual(len(datasets.step_index_normalized(0)), 0)
+
+    def test_beat_phase_from_times_bpm(self):
+        """beat_phase_from_times_bpm returns phase in [0,1); empty when bpm<=0."""
+        times = np.array([0.0, 0.5, 1.0], dtype=np.float64)
+        out = datasets.beat_phase_from_times_bpm(times, 60.0)
+        self.assertEqual(out.dtype, np.float32)
+        self.assertEqual(len(out), 3)
+        self.assertGreaterEqual(out.min(), 0.0)
+        self.assertLess(out.max(), 1.0)
+        empty = datasets.beat_phase_from_times_bpm(times, 0.0)
+        np.testing.assert_array_equal(empty, 0.0)
+
+    def test_aux_interval_target_from_times(self):
+        """aux_interval_target_from_times matches next_interval (last step 0)."""
+        times = np.array([1.0, 2.0, 5.0], dtype=np.float64)
+        out = datasets.aux_interval_target_from_times(times)
+        self.assertEqual(out.dtype, np.float32)
+        self.assertEqual(out[2], 0.0)
+
+    def test_create_arrow_dataset_interval_encoding_log(self):
+        """With interval_encoding=log, batch dict has interval_log_input."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            use_interval=True,
+            interval_encoding="log",
+        )
+        features, targets = _first_batch(ds)
+        self.assertIn("interval_log_input", features)
+        self.assertEqual(
+            features["timing_input"].shape[:2],
+            features["interval_log_input"].shape[:2],
+        )
+
+    def test_create_arrow_dataset_interval_encoding_multi(self):
+        """With interval_encoding=multi, batch dict has interval_log_input and interval_next_input."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            use_interval=True,
+            interval_encoding="multi",
+        )
+        features, targets = _first_batch(ds)
+        self.assertIn("interval_log_input", features)
+        self.assertIn("interval_next_input", features)
+        self.assertEqual(
+            features["interval_log_input"].shape,
+            features["interval_next_input"].shape,
+        )
+
+    def test_create_arrow_dataset_use_step_index(self):
+        """With use_step_index=True, batch dict has step_index_input."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            use_step_index=True,
+        )
+        features, targets = _first_batch(ds)
+        self.assertIn("step_index_input", features)
+        self.assertEqual(features["step_index_input"].shape[-1], 1)
+
+    def test_create_arrow_dataset_use_beat_phase_chart(self):
+        """With use_beat_phase=True, batch dict has beat_phase_input (BPM from chart)."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            use_beat_phase=True,
+        )
+        features, targets = _first_batch(ds)
+        self.assertIn("beat_phase_input", features)
+        self.assertEqual(features["beat_phase_input"].shape[-1], 1)
+
+    def test_create_arrow_dataset_use_aux_interval_target(self):
+        """With use_aux_interval_target=True, batch dict has aux_interval_target and aux_interval_mask."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            use_aux_interval_target=True,
+        )
+        features, targets = _first_batch(ds)
+        self.assertIn("aux_interval_target", features)
+        self.assertEqual(features["aux_interval_target"].shape[-1], 1)
+        self.assertIn("aux_interval_mask", features)
+        self.assertEqual(features["aux_interval_mask"].shape[-1], 1)
+        # Last step should be masked (0); at least one step valid (1) when we have multiple steps
+        mask = features["aux_interval_mask"]
+        self.assertGreaterEqual(float(mask.shape[0]), 1)
+        self.assertGreaterEqual(float(mask.shape[1]), 1)
+
+    def test_load_arrow_pair_py_callback_returns_aux_interval_mask_when_requested(self):
+        """_load_arrow_pair_py_callback with use_aux_interval_target=True returns 9-tuple including aux_interval_mask."""
+        _, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
+        self.assertIsNotNone(chart_path)
+        assert chart_path is not None
+        ap = tf.constant("")
+        cp = tf.constant(chart_path)
+        result = datasets._load_arrow_pair_py_callback(
+            ap,
+            cp,
+            snippet_half_frames=0,
+            use_interval=False,
+            interval_encoding="default",
+            use_step_index=False,
+            use_beat_phase=False,
+            use_aux_interval_target=True,
+        )
+        self.assertEqual(len(result), 9)
+        times, _, _, _, _, _, _, aux_interval, aux_interval_mask = result
+        self.assertEqual(aux_interval.shape, aux_interval_mask.shape)
+        if len(times) > 0:
+            self.assertEqual(aux_interval_mask[-1], 0.0)
+            if len(times) > 1:
+                self.assertEqual(aux_interval_mask[0], 1.0)
+
     def test_load_arrow_pair_py_callback_with_snippets(self):
         """_load_arrow_pair_py_callback with snippet_half_frames > 0 returns correct shapes."""
         audio_path, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
@@ -190,8 +326,25 @@ class DatasetsTest(unittest.TestCase):
         assert audio_path is not None and chart_path is not None
         ap = tf.constant(audio_path)
         cp = tf.constant(chart_path)
-        times, intervals, snippets, cols = datasets._load_arrow_pair_py_callback(
-            ap, cp, snippet_half_frames=5, use_interval=True
+        (
+            times,
+            intervals,
+            _,
+            snippets,
+            cols,
+            _,
+            _,
+            _,
+            _,
+        ) = datasets._load_arrow_pair_py_callback(
+            ap,
+            cp,
+            snippet_half_frames=5,
+            use_interval=True,
+            interval_encoding="default",
+            use_step_index=False,
+            use_beat_phase=False,
+            use_aux_interval_target=False,
         )  # type: ignore[arg-type]
         self.assertEqual(times.ndim, 1)
         self.assertEqual(intervals.ndim, 1)
@@ -242,8 +395,25 @@ class DatasetsTest(unittest.TestCase):
                 f.write("TITLE Empty\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
             ap = tf.constant(audio_path)
             cp = tf.constant(chart_path)
-            times, intervals, snippets, cols = datasets._load_arrow_pair_py_callback(
-                ap, cp, snippet_half_frames=5, use_interval=True
+            (
+                times,
+                intervals,
+                _,
+                snippets,
+                cols,
+                _,
+                _,
+                _,
+                _,
+            ) = datasets._load_arrow_pair_py_callback(
+                ap,
+                cp,
+                snippet_half_frames=5,
+                use_interval=True,
+                interval_encoding="default",
+                use_step_index=False,
+                use_beat_phase=False,
+                use_aux_interval_target=False,
             )  # type: ignore[arg-type]
             self.assertEqual(len(times), 0)
             self.assertEqual(len(intervals), 0)
@@ -266,7 +436,14 @@ class DatasetsTest(unittest.TestCase):
             cp = tf.constant(chart_path)
             with self.assertRaises(ValueError):
                 datasets._load_arrow_pair_py_callback(
-                    ap, cp, snippet_half_frames=5, use_interval=True
+                    ap,
+                    cp,
+                    snippet_half_frames=5,
+                    use_interval=True,
+                    interval_encoding="default",
+                    use_step_index=False,
+                    use_beat_phase=False,
+                    use_aux_interval_target=False,
                 )  # type: ignore[arg-type]
 
     def test_load_arrow_pair_py_callback_empty_arrows_line_raises(self):
@@ -283,7 +460,14 @@ class DatasetsTest(unittest.TestCase):
             cp = tf.constant(chart_path)
             with self.assertRaises(ValueError):
                 datasets._load_arrow_pair_py_callback(
-                    ap, cp, snippet_half_frames=5, use_interval=True
+                    ap,
+                    cp,
+                    snippet_half_frames=5,
+                    use_interval=True,
+                    interval_encoding="default",
+                    use_step_index=False,
+                    use_beat_phase=False,
+                    use_aux_interval_target=False,
                 )  # type: ignore[arg-type]
 
     def test_create_dataset_use_gaussian_target(self):
@@ -463,8 +647,25 @@ class DatasetsTest(unittest.TestCase):
         assert chart_path is not None
         ap = tf.constant("")
         cp = tf.constant(chart_path)
-        times, intervals, snippets, cols = datasets._load_arrow_pair_py_callback(
-            ap, cp, snippet_half_frames=0, use_interval=False
+        (
+            times,
+            intervals,
+            _,
+            snippets,
+            cols,
+            _,
+            _,
+            _,
+            _,
+        ) = datasets._load_arrow_pair_py_callback(
+            ap,
+            cp,
+            snippet_half_frames=0,
+            use_interval=False,
+            interval_encoding="default",
+            use_step_index=False,
+            use_beat_phase=False,
+            use_aux_interval_target=False,
         )  # type: ignore[arg-type]
         self.assertEqual(times.ndim, 1)
         self.assertEqual(cols.ndim, 1)
@@ -488,6 +689,18 @@ class DatasetsTest(unittest.TestCase):
             times, _ = datasets._parse_step_chart(path, binary_timings=False)
             self.assertEqual(len(times), 1)
             self.assertEqual(times[0], 0.5)
+
+    def test_parse_step_chart_with_bpm(self):
+        """_parse_step_chart_with_bpm returns (times, cols, bpm) with BPM from chart."""
+        _, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
+        self.assertIsNotNone(chart_path)
+        assert chart_path is not None
+        times, cols, bpm = datasets._parse_step_chart_with_bpm(
+            chart_path, binary_timings=False
+        )
+        self.assertEqual(len(times), len(cols))
+        self.assertIsInstance(bpm, float)
+        self.assertGreater(bpm, 0)
 
     def test_audio_to_spectrogram_resample_branch(self):
         """Cover the sr != _TARGET_SR resample path in audio_to_spectrogram."""
@@ -546,9 +759,14 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=5,
             use_interval=False,
+            interval_encoding="default",
+            use_step_index=False,
+            use_beat_phase=False,
+            use_aux_interval_target=False,
         )
         self.assertIn("timing_input", features)
         self.assertIn("snippet_input", features)
+        assert isinstance(features, dict)
         self.assertEqual(features["timing_input"].shape[-1], 1)
         self.assertEqual(features["snippet_input"].shape[1], 11)
         self.assertEqual(features["snippet_input"].shape[2], constants.N_MELS)
@@ -563,7 +781,12 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=0,
             use_interval=False,
+            interval_encoding="default",
+            use_step_index=False,
+            use_beat_phase=False,
+            use_aux_interval_target=False,
         )
+        assert isinstance(times, tf.Tensor)
         self.assertEqual(times.shape[-1], 1)
         self.assertEqual(len(times.shape), 2)
         self.assertEqual(len(cols.shape), 1)
@@ -578,6 +801,10 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=0,
             use_interval=True,
+            interval_encoding="default",
+            use_step_index=False,
+            use_beat_phase=False,
+            use_aux_interval_target=False,
         )
         self.assertIsInstance(features, dict)
         self.assertIn("timing_input", features)
@@ -598,6 +825,10 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=5,
             use_interval=True,
+            interval_encoding="default",
+            use_step_index=False,
+            use_beat_phase=False,
+            use_aux_interval_target=False,
         )
         self.assertIsInstance(features, dict)
         self.assertIn("timing_input", features)

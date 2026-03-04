@@ -321,6 +321,52 @@ class ModelTest(unittest.TestCase):
         out = model.predict([timing_input, interval_input])
         self.assertEqual(out.shape, (1, 100, 256))
 
+    def test_build_arrow_model_from_config_tcn(self):
+        """build_arrow_model_from_config with model_type tcn produces valid model."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "tcn",
+                "tcn": {
+                    "filters": 32,
+                    "kernel_size": 3,
+                    "num_layers": 2,
+                    "dilation_base": 2,
+                    "dropout_rate": 0.0,
+                },
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="tcn_run")
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(len(model.inputs), 1)
+        self.assertEqual(model.output_shape, (None, None, 256))
+        dummy_input = np.random.random((1, 50, 1)).astype(np.float32)
+        prediction = model.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 50, 256))
+        self.assertIn("tcn_run", model.name)
+
+    def test_build_arrow_model_from_config_cnn1d(self):
+        """build_arrow_model_from_config with model_type cnn1d produces valid model."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "cnn1d",
+                "cnn1d": {
+                    "filters": 32,
+                    "kernel_sizes": [3, 3],
+                    "dropout_rate": 0.0,
+                },
+            }
+        )
+        model = models.build_arrow_model_from_config(
+            model_config, model_name="cnn1d_run"
+        )
+        self.assertIsInstance(model, keras.Model)
+        self.assertEqual(len(model.inputs), 1)
+        self.assertEqual(model.output_shape, (None, None, 256))
+        dummy_input = np.random.random((1, 50, 1)).astype(np.float32)
+        prediction = model.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 50, 256))
+        self.assertIn("cnn1d_run", model.name)
+
     def test_build_arrow_model_from_config_unknown_model_type_raises(self):
         """build_arrow_model_from_config raises ValueError for unknown model_type."""
         model_config = config.ArrowModelConfig.from_dict({"model_type": "unknown_arch"})
@@ -328,9 +374,125 @@ class ModelTest(unittest.TestCase):
             models.build_arrow_model_from_config(model_config, model_name="")
         self.assertIn("unknown_arch", str(ctx.exception))
         self.assertIn("transformer", str(ctx.exception))
-        self.assertIn("mlp", str(ctx.exception))
-        self.assertIn("lstm", str(ctx.exception))
         self.assertIn("gru", str(ctx.exception))
+        self.assertIn("tcn", str(ctx.exception))
+        self.assertIn("cnn1d", str(ctx.exception))
+
+    def test_build_arrow_model_from_config_tcn_with_interval_encoding_and_step_index(
+        self,
+    ):
+        """build_arrow_model_from_config tcn with interval_encoding=log and use_step_index has correct inputs and output shape."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "tcn",
+                "use_interval": True,
+                "interval_encoding": "log",
+                "use_step_index": True,
+                "tcn": {"filters": 32, "num_layers": 2, "dropout_rate": 0.0},
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="")
+        self.assertIsInstance(model, keras.Model)
+        input_names = [inp.name for inp in model.inputs]
+        self.assertIn("timing_input", input_names)
+        self.assertIn("interval_log_input", input_names)
+        self.assertIn("step_index_input", input_names)
+        batch_size, seq_len = 2, 40
+        timing = np.random.random((batch_size, seq_len, 1)).astype(np.float32)
+        interval_log = np.random.random((batch_size, seq_len, 1)).astype(np.float32)
+        step_idx = np.random.random((batch_size, seq_len, 1)).astype(np.float32)
+        out = model.predict([timing, interval_log, step_idx])
+        self.assertEqual(out.shape, (batch_size, seq_len, 256))
+
+    def test_build_arrow_model_from_config_cnn1d_with_interval_encoding_and_beat_phase(
+        self,
+    ):
+        """build_arrow_model_from_config cnn1d with interval_encoding=multi and use_beat_phase has correct inputs and output shape. Model 'multi' uses both interval_log_input and interval_next_input."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "cnn1d",
+                "use_interval": True,
+                "interval_encoding": "multi",
+                "use_beat_phase": True,
+                "cnn1d": {"filters": 32, "kernel_sizes": [3, 3], "dropout_rate": 0.0},
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="")
+        self.assertIsInstance(model, keras.Model)
+        input_names = [inp.name for inp in model.inputs]
+        self.assertIn("timing_input", input_names)
+        self.assertIn("interval_log_input", input_names)
+        self.assertIn("interval_next_input", input_names)
+        self.assertIn("beat_phase_input", input_names)
+        batch_size, seq_len = 2, 30
+        timing = np.random.random((batch_size, seq_len, 1)).astype(np.float32)
+        interval_log = np.random.random((batch_size, seq_len, 1)).astype(np.float32)
+        interval_next = np.random.random((batch_size, seq_len, 1)).astype(np.float32)
+        beat_phase = np.random.random((batch_size, seq_len, 1)).astype(np.float32)
+        out = model.predict([timing, interval_log, interval_next, beat_phase])
+        self.assertEqual(out.shape, (batch_size, seq_len, 256))
+
+    def test_build_arrow_model_from_config_gru_use_aux_interval_output_shapes(self):
+        """build_arrow_model_from_config with use_aux_interval=True (GRU) returns list [logits, aux_interval] with correct shapes."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
+            }
+        )
+        model = models.build_arrow_model_from_config(
+            model_config, model_name="", use_aux_interval=True
+        )
+        self.assertIsInstance(model, keras.Model)
+        dummy_input = np.random.random((1, 20, 1)).astype(np.float32)
+        outputs = model.predict(dummy_input)
+        self.assertIsInstance(outputs, list)
+        self.assertEqual(len(outputs), 2)
+        logits, aux_interval = outputs[0], outputs[1]
+        self.assertEqual(logits.shape, (1, 20, 256))
+        self.assertEqual(aux_interval.shape, (1, 20, 1))
+
+    def test_build_arrow_model_from_config_transformer_use_timing_position(self):
+        """build_arrow_model_from_config transformer with use_timing_position=True builds and runs."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "transformer": {
+                    "num_layers": 1,
+                    "d_model": 64,
+                    "num_heads": 2,
+                    "ff_dim": 128,
+                    "dropout_rate": 0.0,
+                    "use_timing_position": True,
+                },
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="")
+        self.assertIsInstance(model, keras.Model)
+        dummy_input = np.random.random((1, 25, 1)).astype(np.float32)
+        out = model.predict(dummy_input)
+        self.assertEqual(out.shape, (1, 25, 256))
+
+    def test_build_arrow_model_from_config_gru_add_attention_layer(self):
+        """build_arrow_model_from_config gru with add_attention_layer=True builds and runs."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "gru",
+                "gru": {
+                    "units": 32,
+                    "num_layers": 1,
+                    "dropout_rate": 0.0,
+                    "add_attention_layer": True,
+                    "attention_heads": 2,
+                    "attention_dim": 16,
+                },
+            }
+        )
+        model = models.build_arrow_model_from_config(model_config, model_name="")
+        self.assertIsInstance(model, keras.Model)
+        dummy_input = np.random.random((1, 20, 1)).astype(np.float32)
+        out = model.predict(dummy_input)
+        self.assertEqual(out.shape, (1, 20, 256))
 
 
 class PositionalEncodingTest(unittest.TestCase):

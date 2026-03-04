@@ -127,6 +127,42 @@ def _parse_step_chart(
     return np.array(times), np.array(cols, dtype=np.int32)
 
 
+def _parse_step_chart_with_bpm(
+    chart_path: str, binary_timings: bool = False
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Parse StepMania .sm file; return step times, note encodings, and BPM.
+
+    Used when BPM is needed (e.g. beat_phase). Same format as _parse_step_chart
+    plus BPM in beats per minute.
+
+    Args:
+        chart_path: Path to the StepMania .sm file.
+        binary_timings: If True, returns 0 for all note encodings.
+
+    Returns:
+        (times, cols, bpm): times and cols as in _parse_step_chart; bpm as float.
+    """
+    with open(chart_path) as f:
+        f.readline()  # TITLE
+        bpm_line = f.readline()
+        bpm = float(bpm_line.removeprefix("BPM").strip())
+        f.readline()  # NOTES
+        difficulty_level = f.readline().strip().lower().split(" ")[1]
+        _ = _DIFFICULTY_MAP.get(difficulty_level, 2)
+        times = []
+        cols = []
+        for line in f:
+            if line.startswith("DIFFICULTY"):
+                break
+            arrows, timing = line.strip().split(" ")
+            times.append(float(timing))
+            if binary_timings:
+                cols.append(0)
+            else:
+                cols.append(_base4_to_int(arrows))
+    return np.array(times), np.array(cols, dtype=np.int32), bpm
+
+
 def normalized_intervals_from_times(times_seconds: np.ndarray) -> np.ndarray:
     """Compute inter-step intervals from onset times, normalized to [0, 1] by max interval.
 
@@ -147,6 +183,102 @@ def normalized_intervals_from_times(times_seconds: np.ndarray) -> np.ndarray:
     intervals = np.concatenate([[0.0], diffs])
     max_iv = float(np.max(intervals)) + 1e-9
     return (intervals / max_iv).astype(np.float32)
+
+
+def log_normalized_intervals_from_times(times_seconds: np.ndarray) -> np.ndarray:
+    """Compute log(1 + interval) from onset times, normalized to [0, 1] by max.
+
+    Used for interval_encoding \"log\" or \"multi\". Step 0 gets 0.0.
+
+    Args:
+        times_seconds: (n_steps,) onset times in seconds.
+
+    Returns:
+        (n_steps,) float32 in [0, 1].
+    """
+    times = np.asarray(times_seconds, dtype=np.float64)
+    if len(times) == 0:
+        return times.astype(np.float32)
+    diffs = np.diff(times)
+    intervals = np.concatenate([[0.0], diffs])
+    log_iv = np.log1p(intervals)
+    max_log = float(np.max(log_iv)) + 1e-9
+    return (log_iv / max_log).astype(np.float32)
+
+
+def next_interval_normalized_from_times(times_seconds: np.ndarray) -> np.ndarray:
+    """Compute time-to-next-step per position, normalized to [0, 1]; last step 0.
+
+    Used for interval_encoding \"multi\". At step i, value is (times[i+1]-times[i])
+    normalized; last step is 0.
+
+    Args:
+        times_seconds: (n_steps,) onset times in seconds.
+
+    Returns:
+        (n_steps,) float32 in [0, 1].
+    """
+    times = np.asarray(times_seconds, dtype=np.float64)
+    if len(times) == 0:
+        return times.astype(np.float32)
+    if len(times) == 1:
+        return np.array([0.0], dtype=np.float32)
+    next_iv = np.diff(times)  # length n_steps - 1
+    next_iv = np.concatenate([next_iv, [0.0]])
+    max_iv = float(np.max(next_iv)) + 1e-9
+    return (next_iv / max_iv).astype(np.float32)
+
+
+def step_index_normalized(n_steps: int) -> np.ndarray:
+    """Step index 0..N-1 normalized to [0, 1] (0 at first step, 1 at last).
+
+    Args:
+        n_steps: Number of steps.
+
+    Returns:
+        (n_steps,) float32 in [0, 1].
+    """
+    if n_steps == 0:
+        return np.array([], dtype=np.float32)
+    if n_steps == 1:
+        return np.array([0.0], dtype=np.float32)
+    idx = np.arange(n_steps, dtype=np.float64) / (n_steps - 1)
+    return idx.astype(np.float32)
+
+
+def beat_phase_from_times_bpm(times_seconds: np.ndarray, bpm: float) -> np.ndarray:
+    """Compute beat phase (time mod beat_duration) / beat_duration per step.
+
+    Phase in [0, 1). Requires bpm > 0. BPM is always read from the chart txt file.
+
+    Args:
+        times_seconds: (n_steps,) onset times in seconds.
+        bpm: Beats per minute (from chart or elsewhere).
+
+    Returns:
+        (n_steps,) float32 in [0, 1).
+    """
+    times = np.asarray(times_seconds, dtype=np.float64)
+    if len(times) == 0 or bpm <= 0:
+        return np.zeros_like(times, dtype=np.float32)
+    beat_duration = 60.0 / bpm
+    phase = np.fmod(times, beat_duration) / beat_duration
+    return phase.astype(np.float32)
+
+
+def aux_interval_target_from_times(times_seconds: np.ndarray) -> np.ndarray:
+    """Next-step interval (shift by -1) normalized to [0, 1]; last step 0.
+
+    Target for auxiliary next-interval regression. At step i, value is the
+    interval that follows (to step i+1); last step is 0 (masked in loss).
+
+    Args:
+        times_seconds: (n_steps,) onset times in seconds.
+
+    Returns:
+        (n_steps,) float32 in [0, 1].
+    """
+    return next_interval_normalized_from_times(times_seconds)
 
 
 def extract_snippets_from_spec(
@@ -463,45 +595,112 @@ def _load_arrow_pair_py_callback(
     chart_path_t: tf.Tensor,
     snippet_half_frames: int,
     use_interval: bool,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    interval_encoding: str,
+    use_step_index: bool,
+    use_beat_phase: bool,
+    use_aux_interval_target: bool,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
     """Decode (audio_path, chart_path) tensors and load arrow data for tf.py_function.
 
     Parses chart, optionally loads audio and extracts mel snippets when
-    snippet_half_frames > 0, and optionally computes normalized intervals when
-    use_interval is True. Always returns four arrays so tf.py_function has a
-    fixed signature; when snippet_half_frames is 0, audio is not loaded and
-    snippets are (n_steps, 0, n_mels).
+    snippet_half_frames > 0, and optionally computes normalized step index and
+    extra features (step index, beat phase, aux target).
+    Returns a fixed 9-tuple for tf.py_function.
+
+    Args:
+        audio_path_t: Tensor containing the audio path.
+        chart_path_t: Tensor containing the chart path.
+        snippet_half_frames: Half-window of frames around each onset (total = 2*snippet_half_frames+1).
+        use_interval: If True, include interval_input (time since previous step) in the batch dict.
+        interval_encoding: "default", "log" (add interval_log_input), or "multi" (add interval_log_input,
+            interval_next_input). Must match model config.
+        use_step_index: If True, include step_index_input (normalized position in sequence).
+        use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
+        use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
 
     Returns:
         times: (n_steps,) float32, normalized to [0, 1].
         intervals: (n_steps,) float32, normalized when use_interval else zeros.
-        snippets: (n_steps, n_frames, n_mels) when snippet_half_frames > 0, else
-            (n_steps, 0, n_mels).
+        interval_log: (n_steps,) float32, log-normalized when interval_encoding multi else zeros.
+        snippets: (n_steps, n_frames, n_mels) or (n_steps, 0, n_mels).
         cols: (n_steps,) int32.
+        step_index: (n_steps,) float32, normalized [0,1] when use_step_index else zeros.
+        beat_phase: (n_steps,) float32, phase when use_beat_phase else zeros.
+        aux_interval: (n_steps,) float32, next-step interval target when use_aux else zeros.
+        aux_interval_mask: (n_steps,) float32, 1.0 for valid steps, 0.0 for last step (for loss masking).
     """
     audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
     chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
 
-    times, cols = _parse_step_chart(chart_path, binary_timings=False)
+    if use_beat_phase:
+        times, cols, bpm = _parse_step_chart_with_bpm(chart_path, binary_timings=False)
+    else:
+        times, cols = _parse_step_chart(chart_path, binary_timings=False)
+        bpm = 120.0  # unused when not use_beat_phase
+
     times = np.asarray(times, dtype=np.float64)
     cols = np.asarray(cols, dtype=np.int32)
     n_steps = len(times)
     n_frames = (2 * snippet_half_frames + 1) if snippet_half_frames > 0 else 0
+    zeros_n = np.zeros(n_steps, dtype=np.float32)
 
     if n_steps == 0:
         return (
             times.astype(np.float32),
             times.astype(np.float32),
+            zeros_n,
             np.zeros((0, n_frames, _N_MELS), dtype=np.float32),
             cols,
+            zeros_n,
+            zeros_n,
+            zeros_n,
+            np.array([], dtype=np.float32),  # aux_interval_mask
         )
 
     times_norm = (times / (np.max(times) + 1e-9)).astype(np.float32)
-    intervals_norm = (
-        normalized_intervals_from_times(times)
-        if use_interval
-        else np.zeros(n_steps, dtype=np.float32)
-    )
+    if use_interval:
+        if interval_encoding == "log":
+            intervals_norm = log_normalized_intervals_from_times(times)
+            interval_log_norm = zeros_n.copy()
+        elif interval_encoding == "multi":
+            intervals_norm = next_interval_normalized_from_times(times)
+            interval_log_norm = log_normalized_intervals_from_times(times)
+        elif interval_encoding == "default":
+            intervals_norm = normalized_intervals_from_times(times)
+            interval_log_norm = zeros_n.copy()
+        else:
+            raise ValueError(f"Invalid interval encoding: {interval_encoding}")
+    else:
+        intervals_norm = zeros_n.copy()
+        interval_log_norm = zeros_n.copy()
+
+    if use_step_index:
+        step_index = step_index_normalized(n_steps)
+    else:
+        step_index = zeros_n.copy()
+
+    if use_beat_phase and bpm > 0:
+        beat_phase = beat_phase_from_times_bpm(times, bpm)
+    else:
+        beat_phase = zeros_n.copy()
+
+    if use_aux_interval_target:
+        aux_interval = aux_interval_target_from_times(times)
+        aux_interval_mask = np.ones(n_steps, dtype=np.float32)
+        aux_interval_mask[-1] = 0.0  # last step has no next interval
+    else:
+        aux_interval = zeros_n.copy()
+        aux_interval_mask = zeros_n.copy()
 
     if snippet_half_frames > 0:
         spec_time_major = normalize_onset_spectrogram(
@@ -513,7 +712,34 @@ def _load_arrow_pair_py_callback(
     else:
         snippets = np.zeros((n_steps, 0, _N_MELS), dtype=np.float32)
 
-    return times_norm, intervals_norm, snippets, cols
+    return (
+        times_norm,
+        intervals_norm,
+        interval_log_norm,
+        snippets,
+        cols,
+        step_index,
+        beat_phase,
+        aux_interval,
+        aux_interval_mask,
+    )
+
+
+def _arrow_use_dict_output(
+    snippet_half_frames: int,
+    use_interval: bool,
+    use_step_index: bool,
+    use_beat_phase: bool,
+    use_aux_interval_target: bool,
+) -> bool:
+    """Return True if arrow dataset should yield (dict of inputs/targets, cols); else (times, cols)."""
+    return (
+        snippet_half_frames > 0
+        or use_interval
+        or use_step_index
+        or use_beat_phase
+        or use_aux_interval_target
+    )
 
 
 def _process_arrow_pair_tf_map(
@@ -521,35 +747,90 @@ def _process_arrow_pair_tf_map(
     chart_path_t: tf.Tensor,
     snippet_half_frames: int,
     use_interval: bool,
+    interval_encoding: str,
+    use_step_index: bool,
+    use_beat_phase: bool,
+    use_aux_interval_target: bool,
 ) -> tuple[tf.Tensor | dict[str, tf.Tensor], tf.Tensor]:
     """Map (audio_path, chart_path) to arrow inputs and cols.
 
-    Uses _load_arrow_pair_py_callback for all cases; builds dict or (times, cols)
-    from the fixed (times, intervals, snippets, cols) return based on
-    snippet_half_frames and use_interval.
+    Uses _load_arrow_pair_py_callback; builds dict or (times, cols) from the
+    returned 8-tuple based on config flags.
     """
-    times, intervals, snippets, cols = tf.py_function(  # type: ignore[misc]
+    (
+        times,
+        intervals,
+        interval_log,
+        snippets,
+        cols,
+        step_index,
+        beat_phase,
+        aux_interval,
+        aux_interval_mask,
+    ) = tf.py_function(  # type: ignore[misc]
         lambda ap, cp: _load_arrow_pair_py_callback(
-            ap, cp, snippet_half_frames, use_interval
+            ap,
+            cp,
+            snippet_half_frames,
+            use_interval,
+            interval_encoding,
+            use_step_index,
+            use_beat_phase,
+            use_aux_interval_target,
         ),
         [audio_path_t, chart_path_t],
-        (tf.float32, tf.float32, tf.float32, tf.int32),
+        (
+            tf.float32,
+            tf.float32,
+            tf.float32,
+            tf.float32,
+            tf.int32,
+            tf.float32,
+            tf.float32,
+            tf.float32,
+            tf.float32,
+        ),
     )
     times = tf.ensure_shape(times, [None])
     times = tf.expand_dims(times, axis=-1)
     cols = tf.ensure_shape(cols, [None])
 
     use_snippets = snippet_half_frames > 0
-    if use_snippets or use_interval:
-        out = {"timing_input": times}
+    use_dict = _arrow_use_dict_output(
+        snippet_half_frames,
+        use_interval,
+        use_step_index,
+        use_beat_phase,
+        use_aux_interval_target,
+    )
+
+    if use_dict:
+        out: dict[str, tf.Tensor] = {"timing_input": times}
         if use_interval:
             intervals = tf.ensure_shape(intervals, [None])
-            intervals = tf.expand_dims(intervals, axis=-1)
-            out["interval_input"] = intervals
+            if interval_encoding == "default":
+                out["interval_input"] = tf.expand_dims(intervals, axis=-1)
+            elif interval_encoding == "log":
+                out["interval_log_input"] = tf.expand_dims(intervals, axis=-1)
+            elif interval_encoding == "multi":
+                interval_log = tf.ensure_shape(interval_log, [None])
+                out["interval_log_input"] = tf.expand_dims(interval_log, axis=-1)
+                out["interval_next_input"] = tf.expand_dims(intervals, axis=-1)
+        if use_step_index:
+            step_index = tf.ensure_shape(step_index, [None])
+            out["step_index_input"] = tf.expand_dims(step_index, axis=-1)
+        if use_beat_phase:
+            beat_phase = tf.ensure_shape(beat_phase, [None])
+            out["beat_phase_input"] = tf.expand_dims(beat_phase, axis=-1)
         if use_snippets:
             n_frames_window = 2 * snippet_half_frames + 1
             snippets = tf.ensure_shape(snippets, [None, n_frames_window, _N_MELS])
             out["snippet_input"] = snippets
+        if use_aux_interval_target:
+            aux_interval = tf.ensure_shape(aux_interval, [None])
+            out["aux_interval_target"] = tf.expand_dims(aux_interval, axis=-1)
+            aux_interval_mask = tf.ensure_shape(aux_interval_mask, [None])
+            out["aux_interval_mask"] = tf.expand_dims(aux_interval_mask, axis=-1)
         return out, cols
 
     return times, cols
@@ -614,6 +895,10 @@ def create_arrow_dataset(
     batch_size: int = 1,
     snippet_half_frames: int = 0,
     use_interval: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
+    use_aux_interval_target: bool = False,
 ) -> tf.data.Dataset:
     """Creates a TensorFlow dataset for arrow prediction.
 
@@ -626,13 +911,16 @@ def create_arrow_dataset(
         snippet_half_frames: Half-window of frames around each onset (total = 2*snippet_half_frames+1).
             When > 0, load audio and yield mel snippets per step; when 0, timing only.
         use_interval: If True, include interval_input (time since previous step) in the batch dict.
+        interval_encoding: "default", "log" (add interval_log_input), or "multi" (add interval_log_input,
+            interval_next_input). Must match model config.
+        use_step_index: If True, include step_index_input (normalized position in sequence).
+        use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
+        use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
 
     Returns:
-        When snippet_half_frames=0 and use_interval=False: dataset yielding (times, cols).
-        When snippet_half_frames=0 and use_interval=True: dataset yielding (dict with timing_input,
-            interval_input, cols).
-        When snippet_half_frames>0: dataset yielding (dict with timing_input, snippet_input,
-            optionally interval_input, cols).
+        Dataset yielding (dict of inputs/targets, cols) when any extra feature is used,
+        else (times, cols). Dict may contain timing_input, interval_input, interval_log_input,
+        interval_next_input, step_index_input, beat_phase_input, snippet_input, aux_interval_target.
     """
     pairs = _load_and_pair_files(data_dir)
     if not pairs:
@@ -643,24 +931,62 @@ def create_arrow_dataset(
 
     ds = ds.map(
         lambda pair: _process_arrow_pair_tf_map(
-            pair[0], pair[1], snippet_half_frames, use_interval
+            pair[0],
+            pair[1],
+            snippet_half_frames,
+            use_interval,
+            interval_encoding,
+            use_step_index,
+            use_beat_phase,
+            use_aux_interval_target,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
     ds = ds.cache()
 
+    use_dict_output = _arrow_use_dict_output(
+        snippet_half_frames,
+        use_interval,
+        use_step_index,
+        use_beat_phase,
+        use_aux_interval_target,
+    )
+
     if batch_size > 1:
-        use_dict_output = snippet_half_frames > 0 or use_interval
         if use_dict_output:
             padded_shapes_dict: dict[str, tuple[Any, ...]] = {"timing_input": (None, 1)}
-            padding_values_dict = {"timing_input": 0.0}
+            padding_values_dict: dict[str, float | int] = {"timing_input": 0.0}
             if snippet_half_frames > 0:
-                padded_shapes_dict["snippet_input"] = (None, n_frames_window, _N_MELS)
+                padded_shapes_dict["snippet_input"] = (
+                    None,
+                    n_frames_window,
+                    _N_MELS,
+                )
                 padding_values_dict["snippet_input"] = 0.0
             if use_interval:
-                padded_shapes_dict["interval_input"] = (None, 1)
-                padding_values_dict["interval_input"] = 0.0
+                if interval_encoding == "default":
+                    padded_shapes_dict["interval_input"] = (None, 1)
+                    padding_values_dict["interval_input"] = 0.0
+                elif interval_encoding == "log":
+                    padded_shapes_dict["interval_log_input"] = (None, 1)
+                    padding_values_dict["interval_log_input"] = 0.0
+                elif interval_encoding == "multi":
+                    padded_shapes_dict["interval_log_input"] = (None, 1)
+                    padding_values_dict["interval_log_input"] = 0.0
+                    padded_shapes_dict["interval_next_input"] = (None, 1)
+                    padding_values_dict["interval_next_input"] = 0.0
+            if use_step_index:
+                padded_shapes_dict["step_index_input"] = (None, 1)
+                padding_values_dict["step_index_input"] = 0.0
+            if use_beat_phase:
+                padded_shapes_dict["beat_phase_input"] = (None, 1)
+                padding_values_dict["beat_phase_input"] = 0.0
+            if use_aux_interval_target:
+                padded_shapes_dict["aux_interval_target"] = (None, 1)
+                padding_values_dict["aux_interval_target"] = 0.0
+                padded_shapes_dict["aux_interval_mask"] = (None, 1)
+                padding_values_dict["aux_interval_mask"] = 0.0
             ds = ds.padded_batch(
                 batch_size,
                 padded_shapes=(padded_shapes_dict, (None,)),

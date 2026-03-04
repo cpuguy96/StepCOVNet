@@ -436,6 +436,9 @@ def _build_arrow_inputs(
     snippet_half_frames: int = 0,
     use_interval: bool = False,
     scale_timing: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
 ) -> tuple:
     """Build shared arrow model inputs and fused embedding tensor.
 
@@ -444,10 +447,14 @@ def _build_arrow_inputs(
         snippet_half_frames: Half-window of frames per snippet (0 = no snippet input).
         use_interval: If True, add interval_input and fuse with timing.
         scale_timing: If True, scale timing embedding by sqrt(embed_dim) (transformer convention).
+        interval_encoding: "default", "log" (add interval_log_input), or "multi" (add interval_next_input).
+        use_step_index: If True, add step_index_input, project and add to fused embedding.
+        use_beat_phase: If True, add beat_phase_input, project and fuse.
 
     Returns:
-        (inputs, x): inputs is a single Input or list of Inputs; x is the fused
-        tensor of shape (batch, steps, embed_dim).
+        (inputs, x, timing_tensor): inputs is a single Input or list of Inputs;
+        x is the fused tensor of shape (batch, steps, embed_dim); timing_tensor
+        is the raw timing input tensor for use e.g. in timing-based position encoding.
     """
     timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
     timing_embed = keras.layers.Dense(embed_dim, name="input_projection")(timing_input)
@@ -455,19 +462,61 @@ def _build_arrow_inputs(
         timing_embed *= tf.math.sqrt(
             tf.cast(embed_dim, tf.float32), name="sqrt_d_model"
         )
+    x = timing_embed
 
     inputs_list: list = [timing_input]
     if use_interval:
-        interval_input = keras.layers.Input(shape=(None, 1), name="interval_input")
-        interval_embed = keras.layers.Dense(embed_dim, name="interval_projection")(
-            interval_input
+        if interval_encoding == "default":
+            interval_input = keras.layers.Input(shape=(None, 1), name="interval_input")
+            interval_embed = keras.layers.Dense(embed_dim, name="interval_projection")(
+                interval_input
+            )
+            x = keras.layers.Add(name="fuse_timing_interval")([x, interval_embed])
+            inputs_list.append(interval_input)
+        elif interval_encoding == "log":
+            interval_log_input = keras.layers.Input(
+                shape=(None, 1), name="interval_log_input"
+            )
+            interval_log_embed = keras.layers.Dense(
+                embed_dim, name="interval_log_projection"
+            )(interval_log_input)
+            x = keras.layers.Add(name="fuse_interval_log")([x, interval_log_embed])
+            inputs_list.append(interval_log_input)
+        elif interval_encoding == "multi":
+            interval_log_input = keras.layers.Input(
+                shape=(None, 1), name="interval_log_input"
+            )
+            interval_log_embed = keras.layers.Dense(
+                embed_dim, name="interval_log_projection"
+            )(interval_log_input)
+            x = keras.layers.Add(name="fuse_interval_log")([x, interval_log_embed])
+            inputs_list.append(interval_log_input)
+            interval_next_input = keras.layers.Input(
+                shape=(None, 1), name="interval_next_input"
+            )
+            interval_next_embed = keras.layers.Dense(
+                embed_dim, name="interval_next_projection"
+            )(interval_next_input)
+            x = keras.layers.Add(name="fuse_interval_next")([x, interval_next_embed])
+            inputs_list.append(interval_next_input)
+        else:
+            raise ValueError(f"Invalid interval encoding: {interval_encoding}")
+
+    if use_step_index:
+        step_index_input = keras.layers.Input(shape=(None, 1), name="step_index_input")
+        step_index_embed = keras.layers.Dense(embed_dim, name="step_index_projection")(
+            step_index_input
         )
-        x = keras.layers.Add(name="fuse_timing_interval")(
-            [timing_embed, interval_embed]
+        x = keras.layers.Add(name="fuse_step_index")([x, step_index_embed])
+        inputs_list.append(step_index_input)
+
+    if use_beat_phase:
+        beat_phase_input = keras.layers.Input(shape=(None, 1), name="beat_phase_input")
+        beat_phase_embed = keras.layers.Dense(embed_dim, name="beat_phase_projection")(
+            beat_phase_input
         )
-        inputs_list.append(interval_input)
-    else:
-        x = timing_embed
+        x = keras.layers.Add(name="fuse_beat_phase")([x, beat_phase_embed])
+        inputs_list.append(beat_phase_input)
 
     if snippet_half_frames > 0:
         snippet_n_frames = 2 * snippet_half_frames + 1
@@ -487,11 +536,15 @@ def _build_arrow_inputs(
         inputs_list.append(snippet_input)
 
     inputs = inputs_list[0] if len(inputs_list) == 1 else inputs_list
-    return inputs, x
+    timing_tensor = inputs_list[0]
+    return inputs, x, timing_tensor
 
 
 def _wrap_arrow_output(
-    inputs, x: keras.KerasTensor, model_name: str = ""
+    inputs,
+    x: keras.KerasTensor,
+    model_name: str = "",
+    use_aux_interval: bool = False,
 ) -> keras.Model:
     """Apply arrow classification head and wrap inputs + outputs in a Keras Model.
 
@@ -499,13 +552,21 @@ def _wrap_arrow_output(
         inputs: Model input(s) from _build_arrow_inputs.
         x: Fused feature tensor (batch, steps, embed_dim).
         model_name: Optional suffix for model name (stepcovnet_ARROW-{model_name}).
+        use_aux_interval: If True, add aux_interval Dense(1) head and return model with
+            outputs [arrow_logits, aux_interval].
 
     Returns:
-        Keras Model with softmax output over N_ARROW_TYPES.
+        Keras Model with softmax output over N_ARROW_TYPES; if use_aux_interval,
+        outputs is [arrow_logits, aux_interval].
     """
-    outputs = keras.layers.Dense(
+    arrow_logits = keras.layers.Dense(
         constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
     )(x)
+    if use_aux_interval:
+        aux_interval = keras.layers.Dense(1, name="aux_interval")(x)
+        outputs = [arrow_logits, aux_interval]
+    else:
+        outputs = arrow_logits
     name = "stepcovnet_ARROW"
     if model_name:
         name += f"-{model_name}"
@@ -521,6 +582,11 @@ def build_arrow_model(
     model_name: str = "",
     snippet_half_frames: int = 0,
     use_interval: bool = False,
+    use_timing_position: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
+    use_aux_interval: bool = False,
 ):
     """Builds a model for StepMania arrow prediction.
 
@@ -534,18 +600,31 @@ def build_arrow_model(
         snippet_half_frames: Half-window of frames per snippet (total = 2*half+1).
             When > 0, add a second input for mel snippets per step and fuse with timing embedding via a small CNN.
         use_interval: If True, add interval_input (time since previous step) and fuse with timing embedding.
+        use_timing_position: If True, use timing-based additive position bias instead of sinusoidal encoding.
+        interval_encoding: "default", "log", or "multi" for extra interval inputs.
+        use_step_index: If True, add step_index input.
+        use_beat_phase: If True, add beat_phase input.
 
     Returns:
         A Keras Model instance. Inputs accept variable sequence length (None); internally padded to constants.MAX_STEPS.
     """
-    inputs, x = _build_arrow_inputs(
+    inputs, x, timing_tensor = _build_arrow_inputs(
         embed_dim=d_model,
         snippet_half_frames=snippet_half_frames,
         use_interval=use_interval,
         scale_timing=True,
+        interval_encoding=interval_encoding,
+        use_step_index=use_step_index,
+        use_beat_phase=use_beat_phase,
     )
 
-    x = PositionalEncoding(position=constants.MAX_STEPS, d_model=d_model)(x)
+    if use_timing_position:
+        timing_pos_bias = keras.layers.Dense(d_model, name="timing_position_bias")(
+            timing_tensor
+        )
+        x = keras.layers.Add(name="add_timing_position")([x, timing_pos_bias])
+    else:
+        x = PositionalEncoding(position=constants.MAX_STEPS, d_model=d_model)(x)
     x = keras.layers.Dropout(dropout_rate)(x)
 
     for i in range(num_layers):
@@ -558,7 +637,9 @@ def build_arrow_model(
             name=f"transformer_block_{i}",
         )
 
-    return _wrap_arrow_output(inputs, x, model_name=model_name)
+    return _wrap_arrow_output(
+        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
+    )
 
 
 def _build_arrow_mlp(
@@ -566,24 +647,33 @@ def _build_arrow_mlp(
     params: config.MLPArrowParams,
     model_name: str = "",
     use_interval: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
+    use_aux_interval: bool = False,
 ) -> keras.Model:
     """Build MLP-based arrow model. Same I/O contract as build_arrow_model."""
     hidden_dims = params.hidden_dims or [256, 128]
     dropout_rate = params.dropout_rate
     d = hidden_dims[0]
 
-    inputs, x = _build_arrow_inputs(
+    inputs, x, _ = _build_arrow_inputs(
         embed_dim=d,
         snippet_half_frames=snippet_half_frames,
         use_interval=use_interval,
         scale_timing=False,
+        interval_encoding=interval_encoding,
+        use_step_index=use_step_index,
+        use_beat_phase=use_beat_phase,
     )
 
     for i, dim in enumerate(hidden_dims[1:], start=1):
         x = keras.layers.Dense(dim, activation="relu", name=f"mlp_dense_{i}")(x)
         x = keras.layers.Dropout(dropout_rate, name=f"mlp_dropout_{i}")(x)
 
-    return _wrap_arrow_output(inputs, x, model_name=model_name)
+    return _wrap_arrow_output(
+        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
+    )
 
 
 def _build_arrow_lstm(
@@ -591,17 +681,24 @@ def _build_arrow_lstm(
     params: config.LSTMArrowParams,
     model_name: str = "",
     use_interval: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
+    use_aux_interval: bool = False,
 ) -> keras.Model:
     """Build LSTM-based arrow model. Same I/O contract as build_arrow_model."""
     units = params.units
     num_layers = params.num_layers
     dropout_rate = params.dropout_rate
 
-    inputs, x = _build_arrow_inputs(
+    inputs, x, _ = _build_arrow_inputs(
         embed_dim=units,
         snippet_half_frames=snippet_half_frames,
         use_interval=use_interval,
         scale_timing=False,
+        interval_encoding=interval_encoding,
+        use_step_index=use_step_index,
+        use_beat_phase=use_beat_phase,
     )
 
     for i in range(num_layers):
@@ -623,7 +720,9 @@ def _build_arrow_lstm(
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    return _wrap_arrow_output(inputs, x, model_name=model_name)
+    return _wrap_arrow_output(
+        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
+    )
 
 
 def _build_arrow_gru(
@@ -631,17 +730,29 @@ def _build_arrow_gru(
     params: config.GRUArrowParams,
     model_name: str = "",
     use_interval: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
+    use_aux_interval: bool = False,
 ) -> keras.Model:
-    """Build GRU-based arrow model. Same I/O contract as build_arrow_model."""
+    """Build GRU-based arrow model. Same I/O contract as build_arrow_model.
+
+    When params.add_attention_layer is True, adds one multi-head self-attention
+    layer after the GRU stack (no positional encoding). When use_aux_interval is
+    True, model outputs [arrow_logits, aux_interval].
+    """
     units = params.units
     num_layers = params.num_layers
     dropout_rate = params.dropout_rate
 
-    inputs, x = _build_arrow_inputs(
+    inputs, x, _ = _build_arrow_inputs(
         embed_dim=units,
         snippet_half_frames=snippet_half_frames,
         use_interval=use_interval,
         scale_timing=False,
+        interval_encoding=interval_encoding,
+        use_step_index=use_step_index,
+        use_beat_phase=use_beat_phase,
     )
 
     for i in range(num_layers):
@@ -656,19 +767,143 @@ def _build_arrow_gru(
         else:
             x = gru_layer(x)
 
+    if params.add_attention_layer:
+        attn_heads = params.attention_heads
+        attn_dim = params.attention_dim
+        if units != attn_dim:
+            x = keras.layers.Dense(attn_dim, name="gru_attn_projection")(x)
+        kv_dim = attn_dim // attn_heads
+        if kv_dim * attn_heads != attn_dim:
+            kv_dim = max(1, attn_dim // attn_heads)
+        x = keras.layers.MultiHeadAttention(
+            num_heads=attn_heads,
+            key_dim=kv_dim,
+            value_dim=kv_dim,
+            name="gru_attn_mha",
+        )(x, x)
+        x = keras.layers.Dropout(dropout_rate, name="gru_attn_dropout")(x)
+        head_dim = attn_dim
+    else:
+        head_dim = units
+
     # Classification head: dense + dropout before softmax (adds capacity and regularization)
     x = keras.layers.Dense(
-        max(units // 2, constants.N_ARROW_TYPES),
+        max(head_dim // 2, constants.N_ARROW_TYPES),
         activation="relu",
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    return _wrap_arrow_output(inputs, x, model_name=model_name)
+    return _wrap_arrow_output(
+        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
+    )
+
+
+def _build_arrow_tcn(
+    snippet_half_frames: int,
+    params: config.TCNArrowParams,
+    model_name: str = "",
+    use_interval: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
+    use_aux_interval: bool = False,
+) -> keras.Model:
+    """Build TCN-based arrow model with causal dilated Conv1D stack.
+
+    Same I/O contract as build_arrow_model. Uses dilation_base^layer_idx per layer.
+    """
+    filters = params.filters
+    kernel_size = params.kernel_size
+    num_layers = params.num_layers
+    dilation_base = params.dilation_base
+    dropout_rate = params.dropout_rate
+
+    inputs, x, _ = _build_arrow_inputs(
+        embed_dim=filters,
+        snippet_half_frames=snippet_half_frames,
+        use_interval=use_interval,
+        scale_timing=False,
+        interval_encoding=interval_encoding,
+        use_step_index=use_step_index,
+        use_beat_phase=use_beat_phase,
+    )
+
+    for i in range(num_layers):
+        dilation = dilation_base**i
+        x = keras.layers.Conv1D(
+            filters=filters,
+            kernel_size=kernel_size,
+            padding="causal",
+            dilation_rate=dilation,
+            activation="relu",
+            name=f"tcn_conv_{i}_d{dilation}",
+        )(x)
+        x = keras.layers.Dropout(dropout_rate, name=f"tcn_dropout_{i}")(x)
+
+    x = keras.layers.Dense(
+        max(filters // 2, constants.N_ARROW_TYPES),
+        activation="relu",
+        name="head_dense",
+    )(x)
+    x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
+    return _wrap_arrow_output(
+        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
+    )
+
+
+def _build_arrow_cnn1d(
+    snippet_half_frames: int,
+    params: config.CNN1DArrowParams,
+    model_name: str = "",
+    use_interval: bool = False,
+    interval_encoding: str = "default",
+    use_step_index: bool = False,
+    use_beat_phase: bool = False,
+    use_aux_interval: bool = False,
+) -> keras.Model:
+    """Build 1D CNN-based arrow model with causal Conv1D stack.
+
+    Same I/O contract as build_arrow_model.
+    """
+    filters = params.filters
+    kernel_sizes = params.kernel_sizes or [3, 3, 3]
+    dropout_rate = params.dropout_rate
+
+    inputs, x, _ = _build_arrow_inputs(
+        embed_dim=filters,
+        snippet_half_frames=snippet_half_frames,
+        use_interval=use_interval,
+        scale_timing=False,
+        interval_encoding=interval_encoding,
+        use_step_index=use_step_index,
+        use_beat_phase=use_beat_phase,
+    )
+
+    for i, k in enumerate(kernel_sizes):
+        x = keras.layers.Conv1D(
+            filters=filters,
+            kernel_size=k,
+            padding="causal",
+            activation="relu",
+            name=f"cnn1d_conv_{i}",
+        )(x)
+    x = keras.layers.Dropout(dropout_rate, name="cnn1d_dropout")(x)
+
+    x = keras.layers.Dense(
+        max(filters // 2, constants.N_ARROW_TYPES),
+        activation="relu",
+        name="head_dense",
+    )(x)
+    x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
+    return _wrap_arrow_output(
+        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
+    )
 
 
 def _build_arrow_transformer_from_config(
     model_config: config.ArrowModelConfig,
     model_name: str = "",
+    use_aux_interval: bool = False,
 ) -> keras.Model:
     if model_config.transformer is None:
         raise ValueError(
@@ -684,12 +919,18 @@ def _build_arrow_transformer_from_config(
         model_name=model_name,
         snippet_half_frames=model_config.snippet_half_frames,
         use_interval=model_config.use_interval,
+        use_timing_position=p.use_timing_position,
+        interval_encoding=model_config.interval_encoding,
+        use_step_index=model_config.use_step_index,
+        use_beat_phase=model_config.use_beat_phase,
+        use_aux_interval=use_aux_interval,
     )
 
 
 def _build_arrow_mlp_from_config(
     model_config: config.ArrowModelConfig,
     model_name: str = "",
+    use_aux_interval: bool = False,
 ) -> keras.Model:
     if model_config.mlp is None:
         raise ValueError("model_type is 'mlp' but mlp params are missing")
@@ -698,12 +939,17 @@ def _build_arrow_mlp_from_config(
         params=model_config.mlp,
         model_name=model_name,
         use_interval=model_config.use_interval,
+        interval_encoding=model_config.interval_encoding,
+        use_step_index=model_config.use_step_index,
+        use_beat_phase=model_config.use_beat_phase,
+        use_aux_interval=use_aux_interval,
     )
 
 
 def _build_arrow_lstm_from_config(
     model_config: config.ArrowModelConfig,
     model_name: str = "",
+    use_aux_interval: bool = False,
 ) -> keras.Model:
     if model_config.lstm is None:
         raise ValueError("model_type is 'lstm' but lstm params are missing")
@@ -712,12 +958,17 @@ def _build_arrow_lstm_from_config(
         params=model_config.lstm,
         model_name=model_name,
         use_interval=model_config.use_interval,
+        interval_encoding=model_config.interval_encoding,
+        use_step_index=model_config.use_step_index,
+        use_beat_phase=model_config.use_beat_phase,
+        use_aux_interval=use_aux_interval,
     )
 
 
 def _build_arrow_gru_from_config(
     model_config: config.ArrowModelConfig,
     model_name: str = "",
+    use_aux_interval: bool = False,
 ) -> keras.Model:
     if model_config.gru is None:
         raise ValueError("model_type is 'gru' but gru params are missing")
@@ -726,25 +977,81 @@ def _build_arrow_gru_from_config(
         params=model_config.gru,
         model_name=model_name,
         use_interval=model_config.use_interval,
+        interval_encoding=model_config.interval_encoding,
+        use_step_index=model_config.use_step_index,
+        use_beat_phase=model_config.use_beat_phase,
+        use_aux_interval=use_aux_interval,
+    )
+
+
+def _build_arrow_tcn_from_config(
+    model_config: config.ArrowModelConfig,
+    model_name: str = "",
+    use_aux_interval: bool = False,
+) -> keras.Model:
+    if model_config.tcn is None:
+        raise ValueError("model_type is 'tcn' but tcn params are missing")
+    return _build_arrow_tcn(
+        snippet_half_frames=model_config.snippet_half_frames,
+        params=model_config.tcn,
+        model_name=model_name,
+        use_interval=model_config.use_interval,
+        interval_encoding=model_config.interval_encoding,
+        use_step_index=model_config.use_step_index,
+        use_beat_phase=model_config.use_beat_phase,
+        use_aux_interval=use_aux_interval,
+    )
+
+
+def _build_arrow_cnn1d_from_config(
+    model_config: config.ArrowModelConfig,
+    model_name: str = "",
+    use_aux_interval: bool = False,
+) -> keras.Model:
+    if model_config.cnn1d is None:
+        raise ValueError("model_type is 'cnn1d' but cnn1d params are missing")
+    return _build_arrow_cnn1d(
+        snippet_half_frames=model_config.snippet_half_frames,
+        params=model_config.cnn1d,
+        model_name=model_name,
+        use_interval=model_config.use_interval,
+        interval_encoding=model_config.interval_encoding,
+        use_step_index=model_config.use_step_index,
+        use_beat_phase=model_config.use_beat_phase,
+        use_aux_interval=use_aux_interval,
     )
 
 
 _ARROW_MODEL_BUILDERS: dict[
     str,
-    Callable[[config.ArrowModelConfig, str], keras.Model],
+    Callable[..., keras.Model],
 ] = {
     "transformer": _build_arrow_transformer_from_config,
     "mlp": _build_arrow_mlp_from_config,
     "lstm": _build_arrow_lstm_from_config,
     "gru": _build_arrow_gru_from_config,
+    "tcn": _build_arrow_tcn_from_config,
+    "cnn1d": _build_arrow_cnn1d_from_config,
 }
 
 
 def build_arrow_model_from_config(
     model_config: config.ArrowModelConfig,
     model_name: str = "",
+    use_aux_interval: bool = False,
 ) -> keras.Model:
-    """Build an arrow model from ArrowModelConfig. Dispatches on model_type."""
+    """Build an arrow model from ArrowModelConfig. Dispatches on model_type.
+
+    Args:
+        model_config: Arrow model configuration.
+        model_name: Optional suffix for model name.
+        use_aux_interval: If True, backbones that support it (e.g. GRU) output
+            [arrow_logits, aux_interval] for auxiliary next-interval loss.
+
+    Returns:
+        Keras Model. When use_aux_interval and backbone supports it, outputs
+        is a list [arrow_logits, aux_interval].
+    """
     builder = _ARROW_MODEL_BUILDERS.get(model_config.model_type)
     if builder is None:
         supported = tuple(_ARROW_MODEL_BUILDERS.keys())
@@ -752,4 +1059,4 @@ def build_arrow_model_from_config(
             f"Unsupported arrow model_type {model_config.model_type!r}. "
             f"Supported: {supported}"
         )
-    return builder(model_config, model_name)
+    return builder(model_config, model_name, use_aux_interval=use_aux_interval)
