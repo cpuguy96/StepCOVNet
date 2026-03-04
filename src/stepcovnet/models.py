@@ -452,10 +452,9 @@ def _build_arrow_inputs(
     timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
     timing_embed = keras.layers.Dense(embed_dim, name="input_projection")(timing_input)
     if scale_timing:
-        timing_embed = keras.layers.Lambda(
-            lambda t, dim=embed_dim: t * tf.math.sqrt(tf.cast(dim, t.dtype)),
-            name="sqrt_d_model",
-        )(timing_embed)
+        timing_embed *= tf.math.sqrt(
+            tf.cast(embed_dim, tf.float32), name="sqrt_d_model"
+        )
 
     inputs_list: list = [timing_input]
     if use_interval:
