@@ -191,6 +191,9 @@ def _get_arrow_experiment_name(
     if model_config.snippet_half_frames > 0:
         parts.append(f"snippets_half_{model_config.snippet_half_frames}")
 
+    if model_config.use_interval:
+        parts.append("use_interval")
+
     if run_config.chart_validity_aux_weight > 0:
         parts.append(
             f"chart_val_aux_{str(run_config.chart_validity_aux_weight).replace('.', '_')}"
@@ -543,12 +546,14 @@ def run_arrow_train_from_config(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
         snippet_half_frames=dataset_config.snippet_half_frames,
+        use_interval=dataset_config.use_interval,
     )
 
     val_dataset = datasets.create_arrow_dataset(
         data_dir=dataset_config.val_data_dir,
         batch_size=dataset_config.batch_size,
         snippet_half_frames=dataset_config.snippet_half_frames,
+        use_interval=dataset_config.use_interval,
     )
 
     experiment_name = _get_arrow_experiment_name(

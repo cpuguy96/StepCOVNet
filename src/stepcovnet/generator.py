@@ -201,18 +201,26 @@ def generate_output_data(
 
     normalized_onsets = np.expand_dims(onsets / np.max(onsets), axis=(0, -1))
 
-    if len(arrow_model.inputs) == 2:
-        # Snippet input shape is (batch, steps, n_frames, n_mels)
-        snippet_shape = arrow_model.input_shape[1]
-        snippet_n_frames = snippet_shape[2]
-        half_frames = (snippet_n_frames - 1) // 2
-        snippets = datasets.extract_snippets_from_spec(
-            normalized_spec, onsets, half_frames
-        )
-        snippets_batch = np.expand_dims(snippets, axis=0)
-        arrows_pred = arrow_model.predict([normalized_onsets, snippets_batch])
+    arrow_inputs = []
+    for inp in arrow_model.inputs:
+        if inp.name == "timing_input":
+            arrow_inputs.append(normalized_onsets)
+        elif inp.name == "interval_input":
+            intervals_norm = datasets.normalized_intervals_from_times(onsets)
+            arrow_inputs.append(np.expand_dims(intervals_norm, axis=(0, -1)))
+        elif inp.name == "snippet_input":
+            snippet_shape = inp.shape
+            snippet_n_frames = snippet_shape[2]
+            half_frames = (snippet_n_frames - 1) // 2
+            snippets = datasets.extract_snippets_from_spec(
+                normalized_spec, onsets, half_frames
+            )
+            snippets_batch = np.expand_dims(snippets, axis=0)
+            arrow_inputs.append(snippets_batch)
+    if len(arrow_inputs) == 1:
+        arrows_pred = arrow_model.predict(arrow_inputs[0])
     else:
-        arrows_pred = arrow_model.predict(normalized_onsets)
+        arrows_pred = arrow_model.predict(arrow_inputs)
     arrows = np.argmax(arrows_pred[0], axis=1)
 
     return OutputData(

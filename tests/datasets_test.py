@@ -121,19 +121,85 @@ class DatasetsTest(unittest.TestCase):
             features, targets, min_batch_size=1, max_batch_size=2
         )
 
-    def test_extract_arrow_snippets_returns_correct_shapes(self):
+    def test_create_arrow_dataset_with_use_interval(self):
+        """With use_interval=True and no snippets, batch is dict with timing_input and interval_input."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            use_interval=True,
+        )
+        features, targets = _first_batch(ds)
+        self.assertIsInstance(features, dict)
+        self.assertIn("timing_input", features)
+        self.assertIn("interval_input", features)
+        t = features["timing_input"]
+        iv = features["interval_input"]
+        self.assertEqual(t.shape, iv.shape)
+        self.assertEqual(t.shape[2], 1)
+        self.assertEqual(iv.shape[2], 1)
+        self.assertEqual(t.shape[0], targets.shape[0])
+        self.assertEqual(t.shape[1], targets.shape[1])
+
+    def test_create_arrow_dataset_with_snippets_and_use_interval(self):
+        """With use_interval=True and snippets, batch dict includes interval_input."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            snippet_half_frames=5,
+            use_interval=True,
+        )
+        features, targets = _first_batch(ds)
+        self._assert_snippet_batch_structure(features, targets)
+        self.assertIn("interval_input", features)
+        self.assertEqual(
+            features["timing_input"].shape[:2],
+            features["interval_input"].shape[:2],
+        )
+
+    def test_normalized_intervals_from_times(self):
+        """normalized_intervals_from_times returns [0,1] scaled, step 0 is 0, intervals are diffs."""
+        times = np.array([1.0, 2.5, 3.0, 10.0], dtype=np.float64)
+        out = datasets.normalized_intervals_from_times(times)
+        self.assertEqual(out.dtype, np.float32)
+        self.assertEqual(len(out), len(times))
+        self.assertEqual(out[0], 0.0)
+        # Raw intervals [0, 1.5, 0.5, 7.0]; max 7.0 -> normalized [0, 1.5/7, 0.5/7, 1.0]
+        np.testing.assert_array_almost_equal(
+            out, [0.0, 1.5 / 7.0, 0.5 / 7.0, 1.0], decimal=5
+        )
+        self.assertGreaterEqual(out.min(), 0.0)
+        self.assertLessEqual(out.max(), 1.0)
+
+    def test_normalized_intervals_from_times_empty(self):
+        """normalized_intervals_from_times with empty times returns empty float32 array."""
+        out = datasets.normalized_intervals_from_times(np.array([], dtype=np.float64))
+        self.assertEqual(out.dtype, np.float32)
+        self.assertEqual(out.shape, (0,))
+
+    def test_normalized_intervals_from_times_single(self):
+        """normalized_intervals_from_times with one time returns [0.0] (step 0 has no prior)."""
+        times = np.array([5.0])
+        out = datasets.normalized_intervals_from_times(times)
+        self.assertEqual(out.dtype, np.float32)
+        self.assertEqual(out.shape, (1,))
+        self.assertEqual(out[0], 0.0)
+
+    def test_load_arrow_pair_py_callback_with_snippets(self):
+        """_load_arrow_pair_py_callback with snippet_half_frames > 0 returns correct shapes."""
         audio_path, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(audio_path)
         self.assertIsNotNone(chart_path)
         assert audio_path is not None and chart_path is not None
-        times_norm, snippets, cols = datasets.extract_arrow_snippets(
-            audio_path, chart_path, half_frames=5
-        )
-        self.assertEqual(times_norm.ndim, 1)
-        self.assertEqual(snippets.shape[0], len(times_norm))
+        ap = tf.constant(audio_path)
+        cp = tf.constant(chart_path)
+        times, intervals, snippets, cols = datasets._load_arrow_pair_py_callback(
+            ap, cp, snippet_half_frames=5, use_interval=True
+        )  # type: ignore[arg-type]
+        self.assertEqual(times.ndim, 1)
+        self.assertEqual(intervals.ndim, 1)
+        self.assertEqual(intervals.shape[0], len(times))
+        self.assertEqual(snippets.shape[0], len(times))
         self.assertEqual(snippets.shape[1], 11)
-        self.assertEqual(snippets.shape[2], 128)
-        self.assertEqual(cols.shape[0], len(times_norm))
+        self.assertEqual(snippets.shape[2], constants.N_MELS)
+        self.assertEqual(cols.shape[0], len(times))
 
     def test_normalize_onset_spectrogram(self):
         spec = np.random.randn(100, constants.N_MELS).astype(np.float64)
@@ -165,7 +231,8 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(snippets.shape, (n_times, n_frames, constants.N_MELS))
         self.assertEqual(snippets.dtype, np.float32)
 
-    def test_extract_arrow_snippets_empty_chart(self):
+    def test_load_arrow_pair_py_callback_empty_chart(self):
+        """_load_arrow_pair_py_callback with empty chart returns empty arrays."""
         audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
@@ -173,16 +240,20 @@ class DatasetsTest(unittest.TestCase):
             chart_path = os.path.join(tmpdir, "empty_chart.txt")
             with open(chart_path, "w") as f:
                 f.write("TITLE Empty\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
-            times_norm, snippets, cols = datasets.extract_arrow_snippets(
-                audio_path, chart_path, half_frames=5
-            )
-            self.assertEqual(len(times_norm), 0)
+            ap = tf.constant(audio_path)
+            cp = tf.constant(chart_path)
+            times, intervals, snippets, cols = datasets._load_arrow_pair_py_callback(
+                ap, cp, snippet_half_frames=5, use_interval=True
+            )  # type: ignore[arg-type]
+            self.assertEqual(len(times), 0)
+            self.assertEqual(len(intervals), 0)
             self.assertEqual(snippets.shape[0], 0)
             self.assertEqual(snippets.shape[1], 11)
-            self.assertEqual(snippets.shape[2], 128)
+            self.assertEqual(snippets.shape[2], constants.N_MELS)
             self.assertEqual(len(cols), 0)
 
-    def test_extract_arrow_snippets_invalid_chart_raises(self):
+    def test_load_arrow_pair_py_callback_invalid_chart_raises(self):
+        """_load_arrow_pair_py_callback with invalid base-4 in chart raises ValueError."""
         audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
@@ -191,10 +262,15 @@ class DatasetsTest(unittest.TestCase):
             with open(chart_path, "w") as f:
                 f.write("TITLE Bad\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
                 f.write("4012 7.5\n")  # invalid base-4 digit '4'
+            ap = tf.constant(audio_path)
+            cp = tf.constant(chart_path)
             with self.assertRaises(ValueError):
-                datasets.extract_arrow_snippets(audio_path, chart_path, half_frames=5)
+                datasets._load_arrow_pair_py_callback(
+                    ap, cp, snippet_half_frames=5, use_interval=True
+                )  # type: ignore[arg-type]
 
-    def test_extract_arrow_snippets_empty_arrows_line_raises(self):
+    def test_load_arrow_pair_py_callback_empty_arrows_line_raises(self):
+        """_load_arrow_pair_py_callback with empty arrows line raises ValueError."""
         audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
@@ -203,8 +279,12 @@ class DatasetsTest(unittest.TestCase):
             with open(chart_path, "w") as f:
                 f.write("TITLE Bad\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
                 f.write(" 7.5\n")  # empty arrows -> ValueError
+            ap = tf.constant(audio_path)
+            cp = tf.constant(chart_path)
             with self.assertRaises(ValueError):
-                datasets.extract_arrow_snippets(audio_path, chart_path, half_frames=5)
+                datasets._load_arrow_pair_py_callback(
+                    ap, cp, snippet_half_frames=5, use_interval=True
+                )  # type: ignore[arg-type]
 
     def test_create_dataset_use_gaussian_target(self):
         ds = datasets.create_dataset(
@@ -376,28 +456,22 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(out_f.shape, features.shape)
         self.assertEqual(out_t.shape, target.shape)
 
-    def test_arrow_snippets_py_callback(self):
-        audio_path, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
-        self.assertIsNotNone(audio_path)
-        self.assertIsNotNone(chart_path)
-        assert audio_path is not None and chart_path is not None
-        ap = tf.constant(audio_path)
-        cp = tf.constant(chart_path)
-        times, snippets, cols = datasets._arrow_snippets_py_callback(ap, cp, 5)  # type: ignore[arg-type]
-        self.assertEqual(times.ndim, 1)
-        self.assertEqual(snippets.shape[1], 11)
-        self.assertEqual(snippets.shape[2], constants.N_MELS)
-        self.assertEqual(len(cols), len(times))
-
-    def test_parse_step_chart_py_callback(self):
+    def test_load_arrow_pair_py_callback_chart_only(self):
+        """_load_arrow_pair_py_callback with snippet_half_frames=0 returns times, zeros intervals, empty snippets."""
         _, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(chart_path)
         assert chart_path is not None
+        ap = tf.constant("")
         cp = tf.constant(chart_path)
-        times, cols = datasets._parse_step_chart_py_callback(cp)  # type: ignore[arg-type]
+        times, intervals, snippets, cols = datasets._load_arrow_pair_py_callback(
+            ap, cp, snippet_half_frames=0, use_interval=False
+        )  # type: ignore[arg-type]
         self.assertEqual(times.ndim, 1)
         self.assertEqual(cols.ndim, 1)
         self.assertEqual(len(times), len(cols))
+        self.assertEqual(intervals.shape, times.shape)
+        self.assertEqual(snippets.shape[1], 0)
+        self.assertEqual(snippets.shape[2], constants.N_MELS)
 
     def test_parse_step_chart_difficulty_break(self):
         """Chart with second DIFFICULTY line stops parsing (break branch)."""
@@ -462,15 +536,16 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(aug_t.shape[1], 1)
 
     def test_process_pair_with_snippets_tf_map(self):
-        """Cover _process_pair_with_snippets_tf_map (tf.data map helper)."""
+        """Cover _process_arrow_pair_tf_map with snippets (tf.data map helper)."""
         audio_path, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(audio_path)
         self.assertIsNotNone(chart_path)
         assert audio_path is not None and chart_path is not None
-        features, _ = datasets._process_pair_with_snippets_tf_map(
+        features, _ = datasets._process_arrow_pair_tf_map(
             tf.constant(audio_path),  # type: ignore[arg-type]
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=5,
+            use_interval=False,
         )
         self.assertIn("timing_input", features)
         self.assertIn("snippet_input", features)
@@ -479,13 +554,59 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(features["snippet_input"].shape[2], constants.N_MELS)
 
     def test_process_pair_tf_map(self):
-        """Cover _process_pair_tf_map (tf.data map helper)."""
+        """Cover _process_arrow_pair_tf_map without snippets (tf.data map helper)."""
         _, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(chart_path)
         assert chart_path is not None
-        times, cols = datasets._process_pair_tf_map(tf.constant(chart_path))  # type: ignore[arg-type]
+        times, cols = datasets._process_arrow_pair_tf_map(
+            tf.constant(""),  # type: ignore[arg-type]
+            tf.constant(chart_path),  # type: ignore[arg-type]
+            snippet_half_frames=0,
+            use_interval=False,
+        )
         self.assertEqual(times.shape[-1], 1)
         self.assertEqual(len(times.shape), 2)
+        self.assertEqual(len(cols.shape), 1)
+
+    def test_process_arrow_pair_tf_map_interval_only(self):
+        """Cover _process_arrow_pair_tf_map with use_interval=True, no snippets (dict with timing_input + interval_input)."""
+        _, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
+        self.assertIsNotNone(chart_path)
+        assert chart_path is not None
+        features, cols = datasets._process_arrow_pair_tf_map(
+            tf.constant(""),  # type: ignore[arg-type]
+            tf.constant(chart_path),  # type: ignore[arg-type]
+            snippet_half_frames=0,
+            use_interval=True,
+        )
+        self.assertIsInstance(features, dict)
+        self.assertIn("timing_input", features)
+        self.assertIn("interval_input", features)
+        self.assertNotIn("snippet_input", features)
+        self.assertEqual(features["timing_input"].shape[-1], 1)  # type: ignore
+        self.assertEqual(features["interval_input"].shape[-1], 1)  # type: ignore
+        self.assertEqual(len(cols.shape), 1)
+
+    def test_process_arrow_pair_tf_map_snippets_and_interval(self):
+        """Cover _process_arrow_pair_tf_map with use_snippets and use_interval (dict with all three inputs)."""
+        audio_path, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
+        self.assertIsNotNone(audio_path)
+        self.assertIsNotNone(chart_path)
+        assert audio_path is not None and chart_path is not None
+        features, cols = datasets._process_arrow_pair_tf_map(
+            tf.constant(audio_path),  # type: ignore[arg-type]
+            tf.constant(chart_path),  # type: ignore[arg-type]
+            snippet_half_frames=5,
+            use_interval=True,
+        )
+        self.assertIsInstance(features, dict)
+        self.assertIn("timing_input", features)
+        self.assertIn("interval_input", features)
+        self.assertIn("snippet_input", features)
+        self.assertEqual(features["timing_input"].shape[-1], 1)  # type: ignore[union-attr]
+        self.assertEqual(features["interval_input"].shape[-1], 1)  # type: ignore[union-attr]
+        self.assertEqual(features["snippet_input"].shape[1], 11)  # type: ignore[union-attr]
+        self.assertEqual(features["snippet_input"].shape[2], constants.N_MELS)  # type: ignore[union-attr]
         self.assertEqual(len(cols.shape), 1)
 
 

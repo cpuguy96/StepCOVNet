@@ -7,6 +7,7 @@ dataset for training.
 
 import os
 import pathlib
+from typing import Any
 
 import librosa
 import numpy as np
@@ -126,66 +127,26 @@ def _parse_step_chart(
     return np.array(times), np.array(cols, dtype=np.int32)
 
 
-def _extract_snippet_windows(
-    spec: np.ndarray,
-    times_seconds: np.ndarray,
-    half_frames: int,
-) -> np.ndarray:
-    """Extract (time_steps, n_mels) windows around each time; spec is (time_steps, n_mels)."""
-    n_frames_total = spec.shape[0]
-    n_mels = spec.shape[1]
-    n_frames_window = 2 * half_frames + 1
-    n_times = len(times_seconds)
-    snippets = np.zeros((n_times, n_frames_window, n_mels), dtype=np.float32)
-    for i, t in enumerate(times_seconds):
-        frame_idx = int(round(t / HOP_COEFF))
-        start = frame_idx - half_frames
-        end = frame_idx + half_frames + 1
-        src_start = max(0, start)
-        src_end = min(n_frames_total, end)
-        dst_start = src_start - start
-        dst_end = dst_start + (src_end - src_start)
-        snippets[i, dst_start:dst_end, :] = spec[src_start:src_end, :]
-    return snippets
+def normalized_intervals_from_times(times_seconds: np.ndarray) -> np.ndarray:
+    """Compute inter-step intervals from onset times, normalized to [0, 1] by max interval.
 
-
-def extract_arrow_snippets(
-    audio_path: str,
-    chart_path: str,
-    half_frames: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Load chart and audio, return normalized times, mel snippets per step, and cols.
-
-    Used for arrow training when snippet_half_frames > 0. Snippets are windows
-    of mel spectrogram around each step time (same normalization as onset model).
+    Used at inference to feed interval_input when the arrow model was trained with use_interval.
+    Step 0 gets 0.0 (same as in training). Intervals are time since previous step;
+    normalized by the max interval so output is in [0, 1].
 
     Args:
-        audio_path: Path to audio file.
-        chart_path: Path to chart file.
-        half_frames: Half-window in frames (total frames per snippet = 2*half_frames+1).
+        times_seconds: (n_steps,) onset times in seconds.
 
     Returns:
-        times_norm: (n_steps,) normalized to [0, 1] by max time.
-        snippets: (n_steps, n_frames, n_mels) float32, n_frames = 2*half_frames+1.
-        cols: (n_steps,) int32 arrow codes.
+        intervals_norm: (n_steps,) float32 in [0, 1].
     """
-    times, cols = _parse_step_chart(chart_path, binary_timings=False)
-    times = np.asarray(times, dtype=np.float64)
-    cols = np.asarray(cols, dtype=np.int32)
-    n_steps = len(times)
-    if n_steps == 0:
-        return (
-            times.astype(np.float32),
-            np.zeros((0, 2 * half_frames + 1, _N_MELS), dtype=np.float32),
-            cols,
-        )
-
-    spec = audio_to_spectrogram(audio_path)
-    spec = normalize_onset_spectrogram(spec.T).T
-    spec_time_major = spec.T
-    snippets = _extract_snippet_windows(spec_time_major, times, half_frames)
-    times_norm = times / (np.max(times) + 1e-9)
-    return times_norm.astype(np.float32), snippets, cols
+    times = np.asarray(times_seconds, dtype=np.float64)
+    if len(times) == 0:
+        return times.astype(np.float32)
+    diffs = np.diff(times)
+    intervals = np.concatenate([[0.0], diffs])
+    max_iv = float(np.max(intervals)) + 1e-9
+    return (intervals / max_iv).astype(np.float32)
 
 
 def extract_snippets_from_spec(
@@ -205,7 +166,21 @@ def extract_snippets_from_spec(
     Returns:
         snippets: (n_times, n_frames, n_mels) float32.
     """
-    return _extract_snippet_windows(spec, times_seconds, half_frames)
+    n_frames_total = spec.shape[0]
+    n_mels = spec.shape[1]
+    n_frames_window = 2 * half_frames + 1
+    n_times = len(times_seconds)
+    snippets = np.zeros((n_times, n_frames_window, n_mels), dtype=np.float32)
+    for i, t in enumerate(times_seconds):
+        frame_idx = int(round(t / HOP_COEFF))
+        start = frame_idx - half_frames
+        end = frame_idx + half_frames + 1
+        src_start = max(0, start)
+        src_end = min(n_frames_total, end)
+        dst_start = src_start - start
+        dst_end = dst_start + (src_end - src_start)
+        snippets[i, dst_start:dst_end, :] = spec[src_start:src_end, :]
+    return snippets
 
 
 def audio_to_spectrogram(audio_path: str) -> np.ndarray:
@@ -483,55 +458,100 @@ def _apply_augmentations_tf_map(
     return aug_features, aug_target
 
 
-def _arrow_snippets_py_callback(
-    audio_path_t: tf.Tensor,
-    chart_path_t: tf.Tensor,
-    half_frames: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Decode paths and call extract_arrow_snippets (for tf.py_function)."""
-    audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
-    chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
-    return extract_arrow_snippets(audio_path, chart_path, half_frames)
-
-
-def _process_pair_with_snippets_tf_map(
+def _load_arrow_pair_py_callback(
     audio_path_t: tf.Tensor,
     chart_path_t: tf.Tensor,
     snippet_half_frames: int,
-) -> tuple[dict[str, tf.Tensor], tf.Tensor]:
-    """Map (audio_path, chart_path) to ({timing_input, snippet_input}, cols)."""
-    n_frames_window = 2 * snippet_half_frames + 1
-    times, snippets, cols = tf.py_function(  # type: ignore[misc]
-        lambda ap, cp: _arrow_snippets_py_callback(ap, cp, snippet_half_frames),
-        [audio_path_t, chart_path_t],
-        (tf.float32, tf.float32, tf.int32),
-    )
-    times = tf.ensure_shape(times, [None])
-    times = tf.expand_dims(times, axis=-1)
-    snippets = tf.ensure_shape(snippets, [None, n_frames_window, _N_MELS])
-    cols = tf.ensure_shape(cols, [None])
-    return {"timing_input": times, "snippet_input": snippets}, cols
+    use_interval: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Decode (audio_path, chart_path) tensors and load arrow data for tf.py_function.
 
+    Parses chart, optionally loads audio and extracts mel snippets when
+    snippet_half_frames > 0, and optionally computes normalized intervals when
+    use_interval is True. Always returns four arrays so tf.py_function has a
+    fixed signature; when snippet_half_frames is 0, audio is not loaded and
+    snippets are (n_steps, 0, n_mels).
 
-def _parse_step_chart_py_callback(
-    chart_path_t: tf.Tensor,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Decode path and call _parse_step_chart (for tf.py_function)."""
+    Returns:
+        times: (n_steps,) float32, normalized to [0, 1].
+        intervals: (n_steps,) float32, normalized when use_interval else zeros.
+        snippets: (n_steps, n_frames, n_mels) when snippet_half_frames > 0, else
+            (n_steps, 0, n_mels).
+        cols: (n_steps,) int32.
+    """
+    audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
     chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
-    return _parse_step_chart(chart_path)
 
+    times, cols = _parse_step_chart(chart_path, binary_timings=False)
+    times = np.asarray(times, dtype=np.float64)
+    cols = np.asarray(cols, dtype=np.int32)
+    n_steps = len(times)
+    n_frames = (2 * snippet_half_frames + 1) if snippet_half_frames > 0 else 0
 
-def _process_pair_tf_map(chart_path_t: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
-    """Map chart_path to (times, cols) with normalized times."""
-    times, cols = tf.py_function(  # type: ignore[misc]
-        _parse_step_chart_py_callback,
-        [chart_path_t],
-        (tf.float32, tf.int32),
+    if n_steps == 0:
+        return (
+            times.astype(np.float32),
+            times.astype(np.float32),
+            np.zeros((0, n_frames, _N_MELS), dtype=np.float32),
+            cols,
+        )
+
+    times_norm = (times / (np.max(times) + 1e-9)).astype(np.float32)
+    intervals_norm = (
+        normalized_intervals_from_times(times)
+        if use_interval
+        else np.zeros(n_steps, dtype=np.float32)
     )
-    times = times / tf.reduce_max(times)
+
+    if snippet_half_frames > 0:
+        spec_time_major = normalize_onset_spectrogram(
+            audio_to_spectrogram(audio_path).T
+        )
+        snippets = extract_snippets_from_spec(
+            spec_time_major, times, snippet_half_frames
+        )
+    else:
+        snippets = np.zeros((n_steps, 0, _N_MELS), dtype=np.float32)
+
+    return times_norm, intervals_norm, snippets, cols
+
+
+def _process_arrow_pair_tf_map(
+    audio_path_t: tf.Tensor,
+    chart_path_t: tf.Tensor,
+    snippet_half_frames: int,
+    use_interval: bool,
+) -> tuple[tf.Tensor | dict[str, tf.Tensor], tf.Tensor]:
+    """Map (audio_path, chart_path) to arrow inputs and cols.
+
+    Uses _load_arrow_pair_py_callback for all cases; builds dict or (times, cols)
+    from the fixed (times, intervals, snippets, cols) return based on
+    snippet_half_frames and use_interval.
+    """
+    times, intervals, snippets, cols = tf.py_function(  # type: ignore[misc]
+        lambda ap, cp: _load_arrow_pair_py_callback(
+            ap, cp, snippet_half_frames, use_interval
+        ),
+        [audio_path_t, chart_path_t],
+        (tf.float32, tf.float32, tf.float32, tf.int32),
+    )
     times = tf.ensure_shape(times, [None])
     times = tf.expand_dims(times, axis=-1)
     cols = tf.ensure_shape(cols, [None])
+
+    use_snippets = snippet_half_frames > 0
+    if use_snippets or use_interval:
+        out = {"timing_input": times}
+        if use_interval:
+            intervals = tf.ensure_shape(intervals, [None])
+            intervals = tf.expand_dims(intervals, axis=-1)
+            out["interval_input"] = intervals
+        if use_snippets:
+            n_frames_window = 2 * snippet_half_frames + 1
+            snippets = tf.ensure_shape(snippets, [None, n_frames_window, _N_MELS])
+            out["snippet_input"] = snippets
+        return out, cols
+
     return times, cols
 
 
@@ -593,6 +613,7 @@ def create_arrow_dataset(
     data_dir: str,
     batch_size: int = 1,
     snippet_half_frames: int = 0,
+    use_interval: bool = False,
 ) -> tf.data.Dataset:
     """Creates a TensorFlow dataset for arrow prediction.
 
@@ -603,14 +624,15 @@ def create_arrow_dataset(
         data_dir: Directory containing audio and chart files.
         batch_size: Number of samples per batch.
         snippet_half_frames: Half-window of frames around each onset (total = 2*snippet_half_frames+1).
-            When > 0, load audio and yield mel snippets per step (second element of x); when 0, timing only.
+            When > 0, load audio and yield mel snippets per step; when 0, timing only.
+        use_interval: If True, include interval_input (time since previous step) in the batch dict.
 
     Returns:
-        When snippet_half_frames=0: dataset yielding (times, cols) with
-            times shape (batch, MAX_STEPS, 1), cols shape (batch, MAX_STEPS).
-        When snippet_half_frames>0: dataset yielding ((times, snippets), cols)
-            with times (batch, MAX_STEPS, 1), snippets (batch, MAX_STEPS, n_frames, n_mels),
-            cols (batch, MAX_STEPS).
+        When snippet_half_frames=0 and use_interval=False: dataset yielding (times, cols).
+        When snippet_half_frames=0 and use_interval=True: dataset yielding (dict with timing_input,
+            interval_input, cols).
+        When snippet_half_frames>0: dataset yielding (dict with timing_input, snippet_input,
+            optionally interval_input, cols).
     """
     pairs = _load_and_pair_files(data_dir)
     if not pairs:
@@ -619,36 +641,30 @@ def create_arrow_dataset(
     ds = tf.data.Dataset.from_tensor_slices(pairs)
     n_frames_window = 2 * snippet_half_frames + 1
 
-    if snippet_half_frames > 0:
-        ds = ds.map(
-            lambda pair: _process_pair_with_snippets_tf_map(
-                pair[0], pair[1], snippet_half_frames
-            ),
-            num_parallel_calls=tf.data.AUTOTUNE,
-        )
-    else:
-        ds = ds.map(
-            lambda pair: _process_pair_tf_map(pair[1]),
-            num_parallel_calls=tf.data.AUTOTUNE,
-        )
+    ds = ds.map(
+        lambda pair: _process_arrow_pair_tf_map(
+            pair[0], pair[1], snippet_half_frames, use_interval
+        ),
+        num_parallel_calls=tf.data.AUTOTUNE,
+    )
 
     ds = ds.cache()
 
     if batch_size > 1:
-        if snippet_half_frames > 0:
+        use_dict_output = snippet_half_frames > 0 or use_interval
+        if use_dict_output:
+            padded_shapes_dict: dict[str, tuple[Any, ...]] = {"timing_input": (None, 1)}
+            padding_values_dict = {"timing_input": 0.0}
+            if snippet_half_frames > 0:
+                padded_shapes_dict["snippet_input"] = (None, n_frames_window, _N_MELS)
+                padding_values_dict["snippet_input"] = 0.0
+            if use_interval:
+                padded_shapes_dict["interval_input"] = (None, 1)
+                padding_values_dict["interval_input"] = 0.0
             ds = ds.padded_batch(
                 batch_size,
-                padded_shapes=(
-                    {
-                        "timing_input": (None, 1),
-                        "snippet_input": (None, n_frames_window, _N_MELS),
-                    },
-                    (None,),
-                ),
-                padding_values=(
-                    {"timing_input": 0.0, "snippet_input": 0.0},
-                    0,
-                ),
+                padded_shapes=(padded_shapes_dict, (None,)),
+                padding_values=(padding_values_dict, 0),
             )
         else:
             ds = ds.padded_batch(

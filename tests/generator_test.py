@@ -1,5 +1,6 @@
 import os
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import keras
@@ -11,6 +12,11 @@ from stepcovnet import (
 )
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
+
+
+def _mock_arrow_input(name: str):
+    """Minimal mock input with .name for generator's input-name dispatch."""
+    return SimpleNamespace(name=name)
 
 
 class GeneratorTest(unittest.TestCase):
@@ -32,7 +38,7 @@ class GeneratorTest(unittest.TestCase):
 
         mock_arrow_model = mock.MagicMock()
         mock_arrow_model.predict.side_effect = _arrow_pred_mock
-        mock_arrow_model.inputs = [None]
+        mock_arrow_model.inputs = [_mock_arrow_input("timing_input")]
 
         for use_post_processing in [True, False]:
             with self.subTest(f"use_post_processing={use_post_processing}"):
@@ -100,7 +106,10 @@ class GeneratorTest(unittest.TestCase):
 
         mock_arrow = mock.MagicMock()
         mock_arrow.predict.side_effect = _arrow_pred_mock
-        mock_arrow.inputs = [None, None]
+        mock_arrow.inputs = [
+            _mock_arrow_input("timing_input"),
+            SimpleNamespace(name="snippet_input", shape=snippet_shape),
+        ]
         mock_arrow.input_shape = [(None, None, 1), snippet_shape]
 
         generator.generate_output_data(
@@ -120,6 +129,46 @@ class GeneratorTest(unittest.TestCase):
             "Snippet n_frames must come from input_shape[1][2], not [3] (n_mels)",
         )
         self.assertEqual(snippets_batch.shape[3], n_mels)
+
+    def test_generate_output_data_with_interval_input(self):
+        """When arrow model has timing_input and interval_input, generator passes both."""
+
+        def _onset_pred_mock(x):
+            return np.random.random((1, x.shape[1], 1)).astype(np.float32)
+
+        mock_onset = mock.MagicMock()
+        mock_onset.predict.side_effect = _onset_pred_mock
+
+        call_args = []
+
+        def _arrow_pred_mock(x):
+            call_args.append(x)
+            num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
+            return np.random.random((1, num_steps, 256)).astype(np.float32)
+
+        mock_arrow = mock.MagicMock()
+        mock_arrow.predict.side_effect = _arrow_pred_mock
+        mock_arrow.inputs = [
+            _mock_arrow_input("timing_input"),
+            _mock_arrow_input("interval_input"),
+        ]
+
+        generator.generate_output_data(
+            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            song_title="Interval test",
+            bpm=120,
+            onset_model=mock_onset,
+            arrow_model=mock_arrow,
+        )
+        self.assertEqual(len(call_args), 1)
+        args = call_args[0]
+        self.assertIsInstance(args, list)
+        self.assertEqual(len(args), 2)
+        timing_batch, interval_batch = args[0], args[1]
+        self.assertEqual(timing_batch.shape[2], 1)
+        self.assertEqual(interval_batch.shape, timing_batch.shape)
+        self.assertGreaterEqual(interval_batch.min(), 0.0)
+        self.assertLessEqual(interval_batch.max(), 1.0)
 
     def test_generate_output_data(self):
         onset_model = keras.models.load_model(
@@ -177,7 +226,7 @@ class GeneratorTest(unittest.TestCase):
 
         mock_arrow = mock.MagicMock()
         mock_arrow.predict.side_effect = _arrow_pred_mock
-        mock_arrow.inputs = [None]
+        mock_arrow.inputs = [_mock_arrow_input("timing_input")]
 
         audio_path = os.path.join(TEST_DATA_DIR, "mayu.ogg")
         with mock.patch(

@@ -431,33 +431,44 @@ def build_unet_wavenet_model(
     return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
 
 
-def build_arrow_model(
-    num_layers: int = 1,
-    d_model: int = 128,
-    num_heads: int = 4,
-    ff_dim: int = 512,
-    dropout_rate: float = 0.0,
-    model_name: str = "",
+def _build_arrow_inputs(
+    embed_dim: int,
     snippet_half_frames: int = 0,
-):
-    """Builds a model for StepMania arrow prediction.
+    use_interval: bool = False,
+    scale_timing: bool = False,
+) -> tuple:
+    """Build shared arrow model inputs and fused embedding tensor.
 
     Args:
-        num_layers: Number of stacked encoder layers.
-        d_model: The dimensionality of the model's embeddings and layers.
-        num_heads: Number of attention heads.
-        ff_dim: The inner dimension of the feed-forward networks.
-        dropout_rate: The dropout rate used in sublayers.
-        model_name: Name for the model.
-        snippet_half_frames: Half-window of frames per snippet (total = 2*half+1).
-            When > 0, add a second input for mel snippets per step and fuse with timing embedding via a small CNN.
+        embed_dim: Dimension for timing, interval, and snippet projections.
+        snippet_half_frames: Half-window of frames per snippet (0 = no snippet input).
+        use_interval: If True, add interval_input and fuse with timing.
+        scale_timing: If True, scale timing embedding by sqrt(embed_dim) (transformer convention).
 
     Returns:
-        A Keras Model instance. Inputs accept variable sequence length (None); internally padded to constants.MAX_STEPS.
+        (inputs, x): inputs is a single Input or list of Inputs; x is the fused
+        tensor of shape (batch, steps, embed_dim).
     """
     timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
-    timing_embed = keras.layers.Dense(d_model, name="input_projection")(timing_input)
-    timing_embed *= tf.math.sqrt(tf.cast(d_model, tf.float32), name="sqrt_d_model")
+    timing_embed = keras.layers.Dense(embed_dim, name="input_projection")(timing_input)
+    if scale_timing:
+        timing_embed = keras.layers.Lambda(
+            lambda t, dim=embed_dim: t * tf.math.sqrt(tf.cast(dim, t.dtype)),
+            name="sqrt_d_model",
+        )(timing_embed)
+
+    inputs_list: list = [timing_input]
+    if use_interval:
+        interval_input = keras.layers.Input(shape=(None, 1), name="interval_input")
+        interval_embed = keras.layers.Dense(embed_dim, name="interval_projection")(
+            interval_input
+        )
+        x = keras.layers.Add(name="fuse_timing_interval")(
+            [timing_embed, interval_embed]
+        )
+        inputs_list.append(interval_input)
+    else:
+        x = timing_embed
 
     if snippet_half_frames > 0:
         snippet_n_frames = 2 * snippet_half_frames + 1
@@ -472,12 +483,68 @@ def build_arrow_model(
             filters=32,
             name="snippet_cnn",
         )(snippet_input)
-        s = keras.layers.Dense(d_model, name="snippet_projection")(s)
-        x = keras.layers.Add(name="fuse_timing_snippet")([timing_embed, s])
-        inputs = [timing_input, snippet_input]
-    else:
-        x = timing_embed
-        inputs = timing_input
+        s = keras.layers.Dense(embed_dim, name="snippet_projection")(s)
+        x = keras.layers.Add(name="fuse_timing_snippet")([x, s])
+        inputs_list.append(snippet_input)
+
+    inputs = inputs_list[0] if len(inputs_list) == 1 else inputs_list
+    return inputs, x
+
+
+def _wrap_arrow_output(
+    inputs, x: keras.KerasTensor, model_name: str = ""
+) -> keras.Model:
+    """Apply arrow classification head and wrap inputs + outputs in a Keras Model.
+
+    Args:
+        inputs: Model input(s) from _build_arrow_inputs.
+        x: Fused feature tensor (batch, steps, embed_dim).
+        model_name: Optional suffix for model name (stepcovnet_ARROW-{model_name}).
+
+    Returns:
+        Keras Model with softmax output over N_ARROW_TYPES.
+    """
+    outputs = keras.layers.Dense(
+        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
+    )(x)
+    name = "stepcovnet_ARROW"
+    if model_name:
+        name += f"-{model_name}"
+    return keras.Model(inputs=inputs, outputs=outputs, name=name)
+
+
+def build_arrow_model(
+    num_layers: int = 1,
+    d_model: int = 128,
+    num_heads: int = 4,
+    ff_dim: int = 512,
+    dropout_rate: float = 0.0,
+    model_name: str = "",
+    snippet_half_frames: int = 0,
+    use_interval: bool = False,
+):
+    """Builds a model for StepMania arrow prediction.
+
+    Args:
+        num_layers: Number of stacked encoder layers.
+        d_model: The dimensionality of the model's embeddings and layers.
+        num_heads: Number of attention heads.
+        ff_dim: The inner dimension of the feed-forward networks.
+        dropout_rate: The dropout rate used in sublayers.
+        model_name: Name for the model.
+        snippet_half_frames: Half-window of frames per snippet (total = 2*half+1).
+            When > 0, add a second input for mel snippets per step and fuse with timing embedding via a small CNN.
+        use_interval: If True, add interval_input (time since previous step) and fuse with timing embedding.
+
+    Returns:
+        A Keras Model instance. Inputs accept variable sequence length (None); internally padded to constants.MAX_STEPS.
+    """
+    inputs, x = _build_arrow_inputs(
+        embed_dim=d_model,
+        snippet_half_frames=snippet_half_frames,
+        use_interval=use_interval,
+        scale_timing=True,
+    )
 
     x = PositionalEncoding(position=constants.MAX_STEPS, d_model=d_model)(x)
     x = keras.layers.Dropout(dropout_rate)(x)
@@ -492,96 +559,51 @@ def build_arrow_model(
             name=f"transformer_block_{i}",
         )
 
-    outputs = keras.layers.Dense(
-        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
-    )(x)
-
-    _model_name = "stepcovnet_ARROW"
-    if model_name:
-        _model_name += f"-{model_name}"
-
-    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
+    return _wrap_arrow_output(inputs, x, model_name=model_name)
 
 
 def _build_arrow_mlp(
     snippet_half_frames: int,
     params: config.MLPArrowParams,
     model_name: str = "",
+    use_interval: bool = False,
 ) -> keras.Model:
     """Build MLP-based arrow model. Same I/O contract as build_arrow_model."""
     hidden_dims = params.hidden_dims or [256, 128]
     dropout_rate = params.dropout_rate
     d = hidden_dims[0]
 
-    timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
-    timing_embed = keras.layers.Dense(d, name="input_projection")(timing_input)
-
-    if snippet_half_frames > 0:
-        snippet_n_frames = 2 * snippet_half_frames + 1
-        snippet_n_mels = constants.N_MELS
-        snippet_input = keras.layers.Input(
-            shape=(None, snippet_n_frames, snippet_n_mels),
-            name="snippet_input",
-        )
-        s = SnippetCNN(
-            n_frames=snippet_n_frames,
-            n_mels=snippet_n_mels,
-            filters=32,
-            name="snippet_cnn",
-        )(snippet_input)
-        s = keras.layers.Dense(d, name="snippet_projection")(s)
-        x = keras.layers.Add(name="fuse_timing_snippet")([timing_embed, s])
-        inputs = [timing_input, snippet_input]
-    else:
-        x = timing_embed
-        inputs = timing_input
+    inputs, x = _build_arrow_inputs(
+        embed_dim=d,
+        snippet_half_frames=snippet_half_frames,
+        use_interval=use_interval,
+        scale_timing=False,
+    )
 
     for i, dim in enumerate(hidden_dims[1:], start=1):
         x = keras.layers.Dense(dim, activation="relu", name=f"mlp_dense_{i}")(x)
         x = keras.layers.Dropout(dropout_rate, name=f"mlp_dropout_{i}")(x)
 
-    outputs = keras.layers.Dense(
-        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
-    )(x)
-
-    _model_name = "stepcovnet_ARROW"
-    if model_name:
-        _model_name += f"-{model_name}"
-    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
+    return _wrap_arrow_output(inputs, x, model_name=model_name)
 
 
 def _build_arrow_lstm(
     snippet_half_frames: int,
     params: config.LSTMArrowParams,
     model_name: str = "",
+    use_interval: bool = False,
 ) -> keras.Model:
     """Build LSTM-based arrow model. Same I/O contract as build_arrow_model."""
     units = params.units
     num_layers = params.num_layers
     dropout_rate = params.dropout_rate
 
-    timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
-    timing_embed = keras.layers.Dense(units, name="input_projection")(timing_input)
-
-    if snippet_half_frames > 0:
-        snippet_n_frames = 2 * snippet_half_frames + 1
-        snippet_n_mels = constants.N_MELS
-        snippet_input = keras.layers.Input(
-            shape=(None, snippet_n_frames, snippet_n_mels),
-            name="snippet_input",
-        )
-        s = SnippetCNN(
-            n_frames=snippet_n_frames,
-            n_mels=snippet_n_mels,
-            filters=32,
-            name="snippet_cnn",
-        )(snippet_input)
-        s = keras.layers.Dense(units, name="snippet_projection")(s)
-        x = keras.layers.Add(name="fuse_timing_snippet")([timing_embed, s])
-        inputs = [timing_input, snippet_input]
-    else:
-        x = timing_embed
-        inputs = timing_input
+    inputs, x = _build_arrow_inputs(
+        embed_dim=units,
+        snippet_half_frames=snippet_half_frames,
+        use_interval=use_interval,
+        scale_timing=False,
+    )
 
     for i in range(num_layers):
         lstm_layer = keras.layers.LSTM(
@@ -602,48 +624,26 @@ def _build_arrow_lstm(
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    outputs = keras.layers.Dense(
-        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
-    )(x)
-
-    _model_name = "stepcovnet_ARROW"
-    if model_name:
-        _model_name += f"-{model_name}"
-    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
+    return _wrap_arrow_output(inputs, x, model_name=model_name)
 
 
 def _build_arrow_gru(
     snippet_half_frames: int,
     params: config.GRUArrowParams,
     model_name: str = "",
+    use_interval: bool = False,
 ) -> keras.Model:
     """Build GRU-based arrow model. Same I/O contract as build_arrow_model."""
     units = params.units
     num_layers = params.num_layers
     dropout_rate = params.dropout_rate
 
-    timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
-    timing_embed = keras.layers.Dense(units, name="input_projection")(timing_input)
-
-    if snippet_half_frames > 0:
-        snippet_n_frames = 2 * snippet_half_frames + 1
-        snippet_n_mels = constants.N_MELS
-        snippet_input = keras.layers.Input(
-            shape=(None, snippet_n_frames, snippet_n_mels),
-            name="snippet_input",
-        )
-        s = SnippetCNN(
-            n_frames=snippet_n_frames,
-            n_mels=snippet_n_mels,
-            filters=32,
-            name="snippet_cnn",
-        )(snippet_input)
-        s = keras.layers.Dense(units, name="snippet_projection")(s)
-        x = keras.layers.Add(name="fuse_timing_snippet")([timing_embed, s])
-        inputs = [timing_input, snippet_input]
-    else:
-        x = timing_embed
-        inputs = timing_input
+    inputs, x = _build_arrow_inputs(
+        embed_dim=units,
+        snippet_half_frames=snippet_half_frames,
+        use_interval=use_interval,
+        scale_timing=False,
+    )
 
     for i in range(num_layers):
         gru_layer = keras.layers.GRU(
@@ -664,14 +664,7 @@ def _build_arrow_gru(
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    outputs = keras.layers.Dense(
-        constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
-    )(x)
-
-    _model_name = "stepcovnet_ARROW"
-    if model_name:
-        _model_name += f"-{model_name}"
-    return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
+    return _wrap_arrow_output(inputs, x, model_name=model_name)
 
 
 def _build_arrow_transformer_from_config(
@@ -691,6 +684,7 @@ def _build_arrow_transformer_from_config(
         dropout_rate=p.dropout_rate,
         model_name=model_name,
         snippet_half_frames=model_config.snippet_half_frames,
+        use_interval=model_config.use_interval,
     )
 
 
@@ -704,6 +698,7 @@ def _build_arrow_mlp_from_config(
         snippet_half_frames=model_config.snippet_half_frames,
         params=model_config.mlp,
         model_name=model_name,
+        use_interval=model_config.use_interval,
     )
 
 
@@ -717,6 +712,7 @@ def _build_arrow_lstm_from_config(
         snippet_half_frames=model_config.snippet_half_frames,
         params=model_config.lstm,
         model_name=model_name,
+        use_interval=model_config.use_interval,
     )
 
 
@@ -730,6 +726,7 @@ def _build_arrow_gru_from_config(
         snippet_half_frames=model_config.snippet_half_frames,
         params=model_config.gru,
         model_name=model_name,
+        use_interval=model_config.use_interval,
     )
 
 

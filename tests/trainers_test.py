@@ -793,6 +793,54 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("chart_val_aux_0_3", name)
         self.assertIn("diversity_aux_0_4", name)
 
+    def test_get_arrow_experiment_name_includes_use_interval_when_true(self):
+        """_get_arrow_experiment_name with use_interval=True includes 'use_interval' in the name."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "use_interval": True,
+                "transformer": {
+                    "num_layers": 1,
+                    "d_model": 128,
+                    "num_heads": 4,
+                    "ff_dim": 256,
+                    "dropout_rate": 0.0,
+                },
+            }
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=5,
+            model_output_dir="out",
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertIn("use_interval", name)
+        self.assertIn("ARROW", name)
+        self.assertIn("transformer", name)
+
+    def test_get_arrow_experiment_name_omits_use_interval_when_false(self):
+        """_get_arrow_experiment_name with use_interval=False does not include 'use_interval'."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "use_interval": False,
+                "transformer": {
+                    "num_layers": 1,
+                    "d_model": 128,
+                    "num_heads": 4,
+                    "ff_dim": 256,
+                    "dropout_rate": 0.0,
+                },
+            }
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1,
+            take_count=5,
+            model_output_dir="out",
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertNotIn("use_interval", name)
+
     def test_get_arrow_experiment_name_mlp_includes_hidden_dims_and_dropout(self):
         """_get_arrow_experiment_name with model_type=mlp includes mlp_* and dropout (mlp branch)."""
         model_config = config.ArrowModelConfig.from_dict(

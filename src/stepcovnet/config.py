@@ -67,12 +67,14 @@ class ArrowDatasetConfig:
         batch_size: Number of samples per batch.
         snippet_half_frames: Half-window of frames around each onset (total frames = 2*snippet_half_frames+1).
             When > 0, audio snippets are loaded and included per step; when 0, only timing and chart are used.
+        use_interval: If True, include inter-step interval (time since previous step) as an input.
     """
 
     data_dir: str
     val_data_dir: str
     batch_size: int = 1
     snippet_half_frames: int = 0
+    use_interval: bool = False
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
@@ -323,6 +325,7 @@ class ArrowModelConfig:
     Attributes:
         model_type: One of 'transformer', 'mlp', 'lstm', 'gru'.
         snippet_half_frames: Half-window of frames per step (0 = timing only).
+        use_interval: If True, model expects interval_input (time since previous step).
         transformer: Params for transformer model; used when model_type is 'transformer'.
         mlp: Params for MLP model; used when model_type is 'mlp'.
         lstm: Params for LSTM model; used when model_type is 'lstm'.
@@ -331,6 +334,7 @@ class ArrowModelConfig:
 
     model_type: str = "transformer"
     snippet_half_frames: int = 0
+    use_interval: bool = False
     transformer: TransformerArrowParams | None = None
     mlp: MLPArrowParams | None = None
     lstm: LSTMArrowParams | None = None
@@ -353,6 +357,7 @@ class ArrowModelConfig:
         out: dict = {
             "model_type": self.model_type,
             "snippet_half_frames": self.snippet_half_frames,
+            "use_interval": self.use_interval,
         }
         for _model_type, attr in _ARROW_MODEL_TYPE_ATTR.items():
             block = getattr(self, attr, None)
@@ -365,6 +370,7 @@ class ArrowModelConfig:
         """Create config from dictionary. Supports nested format and flat (legacy) format."""
         model_type = data.get("model_type", "transformer")
         snippet_half_frames = data.get("snippet_half_frames", 0)
+        use_interval = data.get("use_interval", False)
 
         # Parse active block; transformer has flat-key backward compat.
         transformer: TransformerArrowParams | None = None
@@ -408,6 +414,7 @@ class ArrowModelConfig:
         return cls(
             model_type=model_type,
             snippet_half_frames=snippet_half_frames,
+            use_interval=use_interval,
             transformer=transformer,
             mlp=mlp,
             lstm=lstm,
