@@ -201,14 +201,19 @@ def generate_output_data(
 
     normalized_onsets = np.expand_dims(onsets / np.max(onsets), axis=(0, -1))
 
+    # Keras/TF may expose input tensor names with a ":0" suffix; use base name.
+    def _input_base_name(keras_input):
+        return keras_input.name.split(":")[0]
+
     arrow_inputs = []
     for inp in arrow_model.inputs:
-        if inp.name == "timing_input":
+        base = _input_base_name(inp)
+        if base == "timing_input":
             arrow_inputs.append(normalized_onsets)
-        elif inp.name == "interval_input":
+        elif base == "interval_input":
             intervals_norm = datasets.normalized_intervals_from_times(onsets)
             arrow_inputs.append(np.expand_dims(intervals_norm, axis=(0, -1)))
-        elif inp.name == "snippet_input":
+        elif base == "snippet_input":
             snippet_shape = inp.shape
             snippet_n_frames = snippet_shape[2]
             half_frames = (snippet_n_frames - 1) // 2

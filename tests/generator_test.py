@@ -130,6 +130,41 @@ class GeneratorTest(unittest.TestCase):
         )
         self.assertEqual(snippets_batch.shape[3], n_mels)
 
+    def test_generate_output_data_matches_input_names_with_keras_suffix(self):
+        """Input names with ':0' suffix (Keras/TF tensor names) are matched by base name."""
+
+        def _onset_pred_mock(x):
+            return np.random.random((1, x.shape[1], 1)).astype(np.float32)
+
+        mock_onset = mock.MagicMock()
+        mock_onset.predict.side_effect = _onset_pred_mock
+
+        call_args = []
+
+        def _arrow_pred_mock(x):
+            call_args.append(x)
+            num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
+            return np.random.random((1, num_steps, 256)).astype(np.float32)
+
+        mock_arrow = mock.MagicMock()
+        mock_arrow.predict.side_effect = _arrow_pred_mock
+        mock_arrow.inputs = [
+            _mock_arrow_input("timing_input:0"),
+            _mock_arrow_input("interval_input:0"),
+        ]
+
+        generator.generate_output_data(
+            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            song_title="Keras suffix test",
+            bpm=120,
+            onset_model=mock_onset,
+            arrow_model=mock_arrow,
+        )
+        self.assertEqual(len(call_args), 1)
+        args = call_args[0]
+        self.assertIsInstance(args, list)
+        self.assertEqual(len(args), 2, "Both timing and interval inputs must be passed")
+
     def test_generate_output_data_with_interval_input(self):
         """When arrow model has timing_input and interval_input, generator passes both."""
 
