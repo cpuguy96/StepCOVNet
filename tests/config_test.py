@@ -892,6 +892,55 @@ class OnsetExperimentConfigTest(unittest.TestCase):
                 config.OnsetExperimentConfig.from_json(config_path)
 
 
+class ValidateArrowDatasetModelAlignmentTest(unittest.TestCase):
+    """Tests for validate_arrow_dataset_model_alignment."""
+
+    def test_accepts_matching_configs(self):
+        """Does not raise when snippet_half_frames and use_interval match."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", snippet_half_frames=0, use_interval=False
+        )
+        model_cfg = config.ArrowModelConfig(snippet_half_frames=0, use_interval=False)
+        config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+
+    def test_accepts_matching_configs_with_snippets_and_interval(self):
+        """Does not raise when both use snippet_half_frames and use_interval consistently."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d",
+            val_data_dir="v",
+            snippet_half_frames=5,
+            use_interval=True,
+        )
+        model_cfg = config.ArrowModelConfig.from_dict(
+            {"snippet_half_frames": 5, "use_interval": True}
+        )
+        config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+
+    def test_raises_on_snippet_half_frames_mismatch(self):
+        """Raises ValueError when snippet_half_frames differ."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", snippet_half_frames=0
+        )
+        model_cfg = config.ArrowModelConfig.from_dict({"snippet_half_frames": 5})
+        with self.assertRaises(ValueError) as ctx:
+            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+        self.assertIn("snippet_half_frames", str(ctx.exception))
+        self.assertIn("dataset=0", str(ctx.exception))
+        self.assertIn("model=5", str(ctx.exception))
+
+    def test_raises_on_use_interval_mismatch(self):
+        """Raises ValueError when use_interval differs."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", use_interval=True
+        )
+        model_cfg = config.ArrowModelConfig(use_interval=False)
+        with self.assertRaises(ValueError) as ctx:
+            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
+        self.assertIn("use_interval", str(ctx.exception))
+        self.assertIn("dataset=True", str(ctx.exception))
+        self.assertIn("model=False", str(ctx.exception))
+
+
 class ArrowExperimentConfigTest(unittest.TestCase):
     def test_create_experiment_config(self):
         """Test creating complete experiment config; run is ArrowRunConfig."""
@@ -973,6 +1022,36 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         self.assertIsInstance(loaded.run, config.ArrowRunConfig)
         self.assertEqual(loaded.run.chart_validity_aux_weight, 0.3)
         self.assertEqual(loaded.run.diversity_aux_weight, 0.1)
+
+    def test_from_dict_raises_when_snippet_half_frames_mismatch(self):
+        """from_dict raises ValueError when dataset and model snippet_half_frames differ."""
+        data = {
+            "dataset": {
+                "data_dir": "d",
+                "val_data_dir": "v",
+                "snippet_half_frames": 0,
+            },
+            "model": {"snippet_half_frames": 5},
+            "run": {"epoch": 1, "take_count": 1, "model_output_dir": "out"},
+        }
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowExperimentConfig.from_dict(data)
+        self.assertIn("snippet_half_frames", str(ctx.exception))
+
+    def test_from_dict_raises_when_use_interval_mismatch(self):
+        """from_dict raises ValueError when dataset and model use_interval differ."""
+        data = {
+            "dataset": {
+                "data_dir": "d",
+                "val_data_dir": "v",
+                "use_interval": True,
+            },
+            "model": {"use_interval": False},
+            "run": {"epoch": 1, "take_count": 1, "model_output_dir": "out"},
+        }
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowExperimentConfig.from_dict(data)
+        self.assertIn("use_interval", str(ctx.exception))
 
 
 if __name__ == "__main__":

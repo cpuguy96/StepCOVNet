@@ -617,6 +617,36 @@ class OnsetExperimentConfig:
         return cls.from_dict(data)
 
 
+def validate_arrow_dataset_model_alignment(
+    dataset_config: ArrowDatasetConfig,
+    model_config: ArrowModelConfig,
+) -> None:
+    """Ensure dataset and model configs agree on snippet_half_frames and use_interval.
+
+    Training requires the dataset to produce inputs that match what the model
+    expects; these two fields must match.
+
+    Args:
+        dataset_config: Dataset configuration.
+        model_config: Model configuration.
+
+    Raises:
+        ValueError: If snippet_half_frames or use_interval differ between
+            dataset and model configs.
+    """
+    if dataset_config.snippet_half_frames != model_config.snippet_half_frames:
+        raise ValueError(
+            "dataset.snippet_half_frames and model.snippet_half_frames must match "
+            f"(got dataset={dataset_config.snippet_half_frames}, "
+            f"model={model_config.snippet_half_frames})."
+        )
+    if dataset_config.use_interval != model_config.use_interval:
+        raise ValueError(
+            "dataset.use_interval and model.use_interval must match "
+            f"(got dataset={dataset_config.use_interval}, model={model_config.use_interval})."
+        )
+
+
 @dataclasses.dataclass
 class ArrowExperimentConfig:
     """Complete configuration for an arrow classification experiment.
@@ -659,12 +689,13 @@ class ArrowExperimentConfig:
 
         Raises:
             KeyError: If required keys ('dataset', 'model', 'run') are missing.
+            ValueError: If dataset and model snippet_half_frames or use_interval differ.
         """
-        return cls(
-            dataset=ArrowDatasetConfig.from_dict(data["dataset"]),
-            model=ArrowModelConfig.from_dict(data["model"]),
-            run=ArrowRunConfig.from_dict(data["run"]),
-        )
+        dataset = ArrowDatasetConfig.from_dict(data["dataset"])
+        model = ArrowModelConfig.from_dict(data["model"])
+        run = ArrowRunConfig.from_dict(data["run"])
+        validate_arrow_dataset_model_alignment(dataset, model)
+        return cls(dataset=dataset, model=model, run=run)
 
     def to_json(self, path: str):
         """Save config to JSON file.
