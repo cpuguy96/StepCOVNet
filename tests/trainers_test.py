@@ -844,6 +844,45 @@ class ExperimentNameHelperTests(unittest.TestCase):
         name = trainers._get_arrow_experiment_name(model_config, run_config)
         self.assertNotIn("use_interval", name)
 
+    def test_get_arrow_experiment_name_differing_only_in_interval_encoding_differ(self):
+        """Configs differing only in interval_encoding produce different experiment names."""
+        base = {
+            "model_type": "transformer",
+            "use_interval": True,
+            "transformer": {"num_layers": 1, "d_model": 64},
+        }
+        run = config.ArrowRunConfig(
+            epoch=1, take_count=1, model_output_dir="out"
+        )
+        cfg_default = config.ArrowModelConfig.from_dict(
+            {**base, "interval_encoding": "default"}
+        )
+        cfg_log = config.ArrowModelConfig.from_dict(
+            {**base, "interval_encoding": "log"}
+        )
+        name_default = trainers._get_arrow_experiment_name(cfg_default, run)
+        name_log = trainers._get_arrow_experiment_name(cfg_log, run)
+        self.assertNotEqual(name_default, name_log)
+        self.assertIn("interval_enc_log", name_log)
+        self.assertNotIn("interval_enc", name_default)
+
+    def test_get_arrow_experiment_name_includes_use_step_index_and_use_beat_phase(self):
+        """Config with use_step_index and use_beat_phase includes them in experiment name."""
+        model_config = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "use_step_index": True,
+                "use_beat_phase": True,
+                "transformer": {"num_layers": 1, "d_model": 64},
+            }
+        )
+        run_config = config.ArrowRunConfig(
+            epoch=1, take_count=1, model_output_dir="out"
+        )
+        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        self.assertIn("use_step_index", name)
+        self.assertIn("use_beat_phase", name)
+
     def test_get_arrow_experiment_name_mlp_includes_hidden_dims_and_dropout(self):
         """_get_arrow_experiment_name with model_type=mlp includes mlp_* and dropout (mlp branch)."""
         model_config = config.ArrowModelConfig.from_dict(

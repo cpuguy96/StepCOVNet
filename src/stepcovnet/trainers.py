@@ -169,50 +169,19 @@ def _get_arrow_experiment_name(
 
     Creates a human-readable name that encodes key training and model
     configuration parameters for arrow classification experiments.
+    All distinguishing model and run fields are provided by the configs'
+    get_experiment_name_parts() so that different configs yield different names.
 
     Args:
-        model_config: Model configuration ArrowModelConfig object
-            containing architecture parameters.
-        run_config: Run configuration RunConfig object (used for
-            chart_validity_aux_weight and diversity_aux_weight).
+        model_config: Model configuration (architecture and input options).
+        run_config: Run configuration (take, aux weights, loss options).
 
     Returns:
-        String experiment name with format: "ARROW-take_{N}-att_layers_{N}".
+        String experiment name, e.g. "ARROW-transformer-take_all-att_layers_1-...".
     """
     parts = ["ARROW", model_config.model_type]
-
-    if run_config.take_count == -1:
-        parts.append("take_all")
-    else:
-        parts.append(f"take_{run_config.take_count}")
-
     parts.extend(model_config.get_experiment_name_parts())
-
-    if model_config.snippet_half_frames > 0:
-        parts.append(f"snippets_half_{model_config.snippet_half_frames}")
-
-    if model_config.use_interval:
-        parts.append("use_interval")
-
-    if run_config.chart_validity_aux_weight > 0:
-        parts.append(
-            f"chart_val_aux_{str(run_config.chart_validity_aux_weight).replace('.', '_')}"
-        )
-    if run_config.diversity_aux_weight > 0:
-        parts.append(
-            f"diversity_aux_{str(run_config.diversity_aux_weight).replace('.', '_')}"
-        )
-    if run_config.loss_type == "focal":
-        parts.append(f"focal_gamma_{str(run_config.focal_gamma).replace('.', '_')}")
-    if run_config.label_smoothing > 0:
-        parts.append(
-            f"label_smooth_{str(run_config.label_smoothing).replace('.', '_')}"
-        )
-    if run_config.aux_interval_weight > 0:
-        parts.append(
-            f"aux_interval_{str(run_config.aux_interval_weight).replace('.', '_')}"
-        )
-
+    parts.extend(run_config.get_experiment_name_parts())
     return "-".join(parts)
 
 

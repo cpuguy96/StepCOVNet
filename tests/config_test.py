@@ -530,6 +530,41 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertNotIn("lstm_units", parts)
         self.assertNotIn("lstm_layers", parts)
 
+    def test_get_experiment_name_parts_includes_input_options_when_set(self):
+        """get_experiment_name_parts includes snippet_half_frames, use_interval, interval_encoding, use_step_index, use_beat_phase when set."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "snippet_half_frames": 5,
+                "use_interval": True,
+                "interval_encoding": "log",
+                "use_step_index": True,
+                "use_beat_phase": True,
+                "transformer": {"num_layers": 1, "d_model": 64},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("snippets_half_5", parts)
+        self.assertIn("use_interval", parts)
+        self.assertIn("interval_enc_log", parts)
+        self.assertIn("use_step_index", parts)
+        self.assertIn("use_beat_phase", parts)
+        self.assertIn("att_layers_1", parts)
+
+    def test_get_experiment_name_parts_omits_interval_encoding_when_default(self):
+        """interval_encoding 'default' does not add an experiment name part."""
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "use_interval": True,
+                "interval_encoding": "default",
+                "transformer": {"num_layers": 1, "d_model": 64},
+            }
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertNotIn("interval_enc", parts)
+        self.assertIn("use_interval", parts)
+
     def test_from_dict_nested_tcn(self):
         """Test creating config with model_type tcn and tcn block; round-trip."""
         data = {
@@ -882,6 +917,55 @@ class ArrowRunConfigTest(unittest.TestCase):
         with self.assertRaises(TypeError) as ctx:
             config.ArrowRunConfig.from_dict(data)
         self.assertIn("unknown_param", str(ctx.exception))
+
+    def test_get_experiment_name_parts_returns_take_aux_loss_and_loss_options(self):
+        """get_experiment_name_parts returns take_*, aux weights, focal, label_smooth, aux_interval when set."""
+        cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=42,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.2,
+            diversity_aux_weight=0.1,
+            loss_type="focal",
+            focal_gamma=3.0,
+            label_smoothing=0.1,
+            aux_interval_weight=0.5,
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("take_42", parts)
+        self.assertIn("chart_val_aux_0_2", parts)
+        self.assertIn("diversity_aux_0_1", parts)
+        self.assertIn("focal_gamma_3_0", parts)
+        self.assertIn("label_smooth_0_1", parts)
+        self.assertIn("aux_interval_0_5", parts)
+
+    def test_get_experiment_name_parts_take_all(self):
+        """get_experiment_name_parts returns take_all when take_count is -1."""
+        cfg = config.ArrowRunConfig(
+            epoch=1, take_count=-1, model_output_dir="out"
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("take_all", parts)
+
+    def test_get_experiment_name_parts_omits_defaults(self):
+        """get_experiment_name_parts omits aux weights and loss options when zero/default."""
+        cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=5,
+            model_output_dir="out",
+            chart_validity_aux_weight=0.0,
+            diversity_aux_weight=0.0,
+            loss_type="crossentropy",
+            label_smoothing=0.0,
+            aux_interval_weight=0.0,
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("take_5", parts)
+        self.assertNotIn("chart_val_aux", parts)
+        self.assertNotIn("diversity_aux", parts)
+        self.assertNotIn("focal_gamma", parts)
+        self.assertNotIn("label_smooth", parts)
+        self.assertNotIn("aux_interval", parts)
 
     def test_negative_warmup_epochs_raises(self):
         """warmup_epochs < 0 raises ValueError."""

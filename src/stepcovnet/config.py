@@ -460,9 +460,20 @@ class ArrowModelConfig:
         return getattr(self, attr, None)  # type: ignore[return-value]
 
     def get_experiment_name_parts(self) -> list[str]:
-        """Return experiment name fragments from the active params block."""
+        """Return experiment name fragments: active params block plus input-related options."""
         block = self.get_active_params_block()
-        return block.experiment_name_parts() if block is not None else []
+        parts = block.experiment_name_parts() if block is not None else []
+        if self.snippet_half_frames > 0:
+            parts.append(f"snippets_half_{self.snippet_half_frames}")
+        if self.use_interval:
+            parts.append("use_interval")
+            if self.interval_encoding != "default":
+                parts.append(f"interval_enc_{self.interval_encoding}")
+        if self.use_step_index:
+            parts.append("use_step_index")
+        if self.use_beat_phase:
+            parts.append("use_beat_phase")
+        return parts
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization (nested shape)."""
@@ -687,6 +698,31 @@ class ArrowRunConfig(RunConfig):
             raise ValueError(
                 f"aux_interval_weight must be >= 0, got {self.aux_interval_weight}"
             )
+
+    def get_experiment_name_parts(self) -> list[str]:
+        """Return experiment name fragments for run-level options (take, aux weights, loss)."""
+        parts: list[str] = []
+        if self.take_count == -1:
+            parts.append("take_all")
+        else:
+            parts.append(f"take_{self.take_count}")
+        if self.chart_validity_aux_weight > 0:
+            parts.append(
+                f"chart_val_aux_{str(self.chart_validity_aux_weight).replace('.', '_')}"
+            )
+        if self.diversity_aux_weight > 0:
+            parts.append(
+                f"diversity_aux_{str(self.diversity_aux_weight).replace('.', '_')}"
+            )
+        if self.loss_type == "focal":
+            parts.append(f"focal_gamma_{str(self.focal_gamma).replace('.', '_')}")
+        if self.label_smoothing > 0:
+            parts.append(f"label_smooth_{str(self.label_smoothing).replace('.', '_')}")
+        if self.aux_interval_weight > 0:
+            parts.append(
+                f"aux_interval_{str(self.aux_interval_weight).replace('.', '_')}"
+            )
+        return parts
 
     @classmethod
     def from_dict(cls, data: dict) -> ArrowRunConfig:
