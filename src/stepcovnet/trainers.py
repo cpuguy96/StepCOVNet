@@ -500,7 +500,9 @@ def _build_cosine_warmup_schedule(
     return keras.callbacks.LearningRateScheduler(schedule)
 
 
-def _sparse_focal_loss(y_true: tf.Tensor, y_pred: tf.Tensor, gamma: float, ignore_class: int = 0) -> tf.Tensor:
+def _sparse_focal_loss(
+    y_true: tf.Tensor, y_pred: tf.Tensor, gamma: float, ignore_class: int = 0
+) -> tf.Tensor:
     """Sparse categorical focal loss: - (1 - p_t)^gamma * log(p_t), masked for ignore_class.
 
     Args:
@@ -608,7 +610,12 @@ def run_arrow_train_from_config(
                     "output_probabilities": cols,
                     "aux_interval": out["aux_interval_target"],
                 }
-                sample_weight = {"aux_interval": out["aux_interval_mask"]}
+                sample_weight = {
+                    # Uniform weight for the main classification head.
+                    "output_probabilities": tf.ones_like(cols, dtype=tf.float32),
+                    # Masked weights for aux_interval regression (last step masked out).
+                    "aux_interval": out["aux_interval_mask"],
+                }
                 return (x, y, sample_weight)
             return (x, cols)
 
@@ -653,13 +660,10 @@ def run_arrow_train_from_config(
                 )
                 one_hot = tf.reshape(
                     one_hot,
-                    tf.concat(
-                        [tf.shape(y_true), [constants.N_ARROW_TYPES]], axis=0
-                    ),
+                    tf.concat([tf.shape(y_true), [constants.N_ARROW_TYPES]], axis=0),
                 )
                 smoothed = (
-                    one_hot * (1.0 - _smoothing)
-                    + _smoothing / constants.N_ARROW_TYPES
+                    one_hot * (1.0 - _smoothing) + _smoothing / constants.N_ARROW_TYPES
                 )
                 mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
                 per_step = _cat_ce(smoothed, y_pred)
@@ -696,9 +700,7 @@ def run_arrow_train_from_config(
         keras.metrics.SparseCategoricalAccuracy(name="acc"),
         keras.metrics.SparseCategoricalCrossentropy(name="main_loss"),
         metrics.ChartValidityAuxiliaryLossMetric(name="chart_validity_aux_loss"),
-        metrics.NoteKindBalanceAuxiliaryLossMetric(
-            name="note_kind_balance_aux_loss"
-        ),
+        metrics.NoteKindBalanceAuxiliaryLossMetric(name="note_kind_balance_aux_loss"),
         metrics.ArrowDistributionMatchMetric(name="arrow_dist_match"),
         metrics.ArrowNoteKindDistributionMetric(name="arrow_note_kind_dist_match"),
         metrics.ChartValidityMetric(name="chart_validity"),
@@ -706,9 +708,7 @@ def run_arrow_train_from_config(
 
     if use_aux_interval:
         model.compile(
-            optimizer=keras.optimizers.Adam(
-                learning_rate=initial_lr, clipnorm=1.0
-            ),  # type: ignore
+            optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),  # type: ignore
             loss={
                 "output_probabilities": _arrow_combined_loss,
                 "aux_interval": _masked_mse_aux_interval,
@@ -724,9 +724,7 @@ def run_arrow_train_from_config(
         )
     else:
         model.compile(
-            optimizer=keras.optimizers.Adam(
-                learning_rate=initial_lr, clipnorm=1.0
-            ),  # type: ignore
+            optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),  # type: ignore
             loss=_arrow_combined_loss,
             metrics=_main_metrics,
         )
@@ -745,10 +743,19 @@ def run_arrow_train_from_config(
     experiment_config = config.ArrowExperimentConfig(
         dataset=dataset_config, model=model_config, run=run_config
     )
+
+    # When aux_interval is enabled, the main loss metric is logged under the
+    # "output_probabilities" head, so its validation metric name is
+    # "val_output_probabilities_main_loss" instead of "val_main_loss".
+    if use_aux_interval:
+        monitor_metric = "val_output_probabilities_main_loss"
+    else:
+        monitor_metric = "val_main_loss"
+
     training_callbacks = _build_experiment_callbacks(
         run_config=run_config,
         experiment_name=experiment_name,
-        monitor_metric="val_main_loss",
+        monitor_metric=monitor_metric,
         monitor_mode="min",
         experiment_config=experiment_config,
     )

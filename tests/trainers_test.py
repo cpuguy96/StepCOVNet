@@ -1306,7 +1306,10 @@ class ArrowLossTests(unittest.TestCase):
         model = models.build_arrow_model_from_config(
             model_config, model_name="aux_test", use_aux_interval=True
         )
-        self.assertEqual(len(model.outputs), 2)
+        # Model outputs are a dict keyed by output layer names when aux head enabled.
+        self.assertEqual(
+            sorted(model.output_names), ["aux_interval", "output_probabilities"]
+        )
         # Compile with same loss setup as run_arrow_train_from_config (ensures loss and masking are wired)
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=1e-3, clipnorm=1.0),
@@ -1319,12 +1322,45 @@ class ArrowLossTests(unittest.TestCase):
             loss_weights={"output_probabilities": 1.0, "aux_interval": 0.3},
         )
         # One train step with manual batch split (x, y, sample_weight) to verify loss computation.
-        # Keras multi-output sample_weight: list per output order [output_probabilities, aux_interval].
         x = {k: v for k, v in out.items() if k not in ("aux_interval_target", "aux_interval_mask")}
         y = {"output_probabilities": cols, "aux_interval": out["aux_interval_target"]}
-        sw = [None, out["aux_interval_mask"]]  # no sample_weight for main head, mask for aux
+        sw = {
+            "output_probabilities": tf.ones_like(cols, dtype=tf.float32),
+            "aux_interval": out["aux_interval_mask"],
+        }
         _ = model.train_on_batch(x, y, sample_weight=sw)
         self.assertIsNotNone(model)
+
+    def test_run_arrow_train_from_config_with_aux_interval_weight_end_to_end(self):
+        """run_arrow_train_from_config integrates aux_interval targets, mask, and sample_weight without errors."""
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config = config.ArrowDatasetConfig(
+                data_dir=TEST_DATA_DIR,
+                val_data_dir=TEST_DATA_DIR,
+                batch_size=1,
+                use_aux_interval_target=True,
+            )
+            model_config = config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "gru",
+                    "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
+                }
+            )
+            run_config = config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir=model_output_dir,
+                callback_root_dir=callback_root_dir,
+                aux_interval_weight=0.3,
+            )
+            model, history = trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+        self.assertIsNotNone(model)
+        self.assertIsNotNone(history)
 
     def test_run_arrow_train_from_config_uses_dataset_config_for_aux_interval_target(
         self,

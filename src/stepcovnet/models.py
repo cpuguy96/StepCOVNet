@@ -553,18 +553,23 @@ def _wrap_arrow_output(
         x: Fused feature tensor (batch, steps, embed_dim).
         model_name: Optional suffix for model name (stepcovnet_ARROW-{model_name}).
         use_aux_interval: If True, add aux_interval Dense(1) head and return model with
-            outputs [arrow_logits, aux_interval].
+            a dict output mapping names to tensors.
 
     Returns:
-        Keras Model with softmax output over N_ARROW_TYPES; if use_aux_interval,
-        outputs is [arrow_logits, aux_interval].
+        Keras Model with softmax output over N_ARROW_TYPES. When use_aux_interval is
+        True, the model has a dict output with keys 'output_probabilities' and
+        'aux_interval', which aligns with the loss/metrics/sample_weight dicts used
+        during compilation and training.
     """
     arrow_logits = keras.layers.Dense(
         constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
     )(x)
     if use_aux_interval:
         aux_interval = keras.layers.Dense(1, name="aux_interval")(x)
-        outputs = [arrow_logits, aux_interval]
+        outputs = {
+            "output_probabilities": arrow_logits,
+            "aux_interval": aux_interval,
+        }
     else:
         outputs = arrow_logits
     name = "stepcovnet_ARROW"
