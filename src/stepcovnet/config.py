@@ -69,9 +69,10 @@ class ArrowDatasetConfig:
             When > 0, audio snippets are loaded and included per step; when 0, only timing and chart are used.
         use_interval: If True, include inter-step interval (time since previous step) as an input.
         interval_encoding: How to encode interval: "default", "log" (log(1+interval)), or "multi" (extra channels).
-            Must match model config. Default "default".
-        use_step_index: If True, include step index (position in sequence) as an input. Must match model config.
-        use_beat_phase: If True, include beat/phase features (BPM from chart txt). Must match model config.
+            Default "default". These input options are the single source of truth; they are applied to the
+            model config when loading an experiment so dataset and model stay in sync.
+        use_step_index: If True, include step index (position in sequence) as an input.
+        use_beat_phase: If True, include beat/phase features (BPM from chart txt).
         use_aux_interval_target: If True, include aux_interval_target (next-step interval) in batch for auxiliary loss.
     """
 
@@ -105,6 +106,22 @@ class ArrowDatasetConfig:
             ArrowDatasetConfig instance created from the dictionary.
         """
         return cls(**data)
+
+
+ARROW_INPUT_OPTION_KEYS = frozenset(
+    {
+        "snippet_half_frames",
+        "use_interval",
+        "interval_encoding",
+        "use_step_index",
+        "use_beat_phase",
+    }
+)
+
+
+def _input_options_from_dataset(dataset_config: ArrowDatasetConfig) -> dict:
+    """Return the shared input-option fields from dataset config for merging into model."""
+    return {k: getattr(dataset_config, k) for k in ARROW_INPUT_OPTION_KEYS}
 
 
 @dataclasses.dataclass
@@ -426,11 +443,13 @@ class ArrowModelConfig:
 
     Attributes:
         model_type: One of 'transformer', 'mlp', 'lstm', 'gru', 'tcn', 'cnn1d'.
-        snippet_half_frames: Half-window of frames per step (0 = timing only).
+        snippet_half_frames: Half-window of frames per step (0 = timing only). When loading an
+            experiment from JSON, this and the other input-option fields are taken from the dataset
+            config; do not set them under "model" in the config file.
         use_interval: If True, model expects interval_input (time since previous step).
-        interval_encoding: How to encode interval: "default", "log", or "multi". Must match dataset config.
-        use_step_index: If True, model expects step_index input. Must match dataset config.
-        use_beat_phase: If True, model expects beat_phase input (BPM from chart). Must match dataset config.
+        interval_encoding: How to encode interval: "default", "log", or "multi".
+        use_step_index: If True, model expects step_index input.
+        use_beat_phase: If True, model expects beat_phase input (BPM from chart).
         transformer: Params for transformer model; used when model_type is 'transformer'.
         mlp: Params for MLP model; used when model_type is 'mlp'.
         lstm: Params for LSTM model; used when model_type is 'lstm'.
@@ -812,65 +831,6 @@ class OnsetExperimentConfig:
         return cls.from_dict(data)
 
 
-def validate_arrow_dataset_model_alignment(
-    dataset_config: ArrowDatasetConfig,
-    model_config: ArrowModelConfig,
-) -> None:
-    """Ensure dataset and model configs agree on inputs and encoding options.
-
-    Training requires the dataset to produce inputs that match what the model
-    expects. snippet_half_frames, use_interval, interval_encoding, use_step_index,
-    and use_beat_phase must match.
-
-    Args:
-        dataset_config: Dataset configuration.
-        model_config: Model configuration.
-
-    Raises:
-        ValueError: If any aligned field differs between dataset and model configs.
-    """
-    if dataset_config.snippet_half_frames != model_config.snippet_half_frames:
-        raise ValueError(
-            "dataset.snippet_half_frames and model.snippet_half_frames must match "
-            f"(got dataset={dataset_config.snippet_half_frames}, "
-            f"model={model_config.snippet_half_frames})."
-        )
-    if dataset_config.use_interval != model_config.use_interval:
-        raise ValueError(
-            "dataset.use_interval and model.use_interval must match "
-            f"(got dataset={dataset_config.use_interval}, model={model_config.use_interval})."
-        )
-    if dataset_config.use_step_index != model_config.use_step_index:
-        raise ValueError(
-            "dataset.use_step_index and model.use_step_index must match "
-            f"(got dataset={dataset_config.use_step_index}, "
-            f"model={model_config.use_step_index})."
-        )
-    if dataset_config.use_beat_phase != model_config.use_beat_phase:
-        raise ValueError(
-            "dataset.use_beat_phase and model.use_beat_phase must match "
-            f"(got dataset={dataset_config.use_beat_phase}, "
-            f"model={model_config.use_beat_phase})."
-        )
-    valid_encodings = ("default", "log", "multi")
-    if dataset_config.interval_encoding not in valid_encodings:
-        raise ValueError(
-            f"dataset.interval_encoding must be one of {valid_encodings!r}, "
-            f"got {dataset_config.interval_encoding!r}."
-        )
-    if model_config.interval_encoding not in valid_encodings:
-        raise ValueError(
-            f"model.interval_encoding must be one of {valid_encodings!r}, "
-            f"got {model_config.interval_encoding!r}."
-        )
-    if dataset_config.interval_encoding != model_config.interval_encoding:
-        raise ValueError(
-            "dataset.interval_encoding and model.interval_encoding must match "
-            f"(got dataset={dataset_config.interval_encoding!r}, "
-            f"model={model_config.interval_encoding!r})."
-        )
-
-
 @dataclasses.dataclass
 class ArrowExperimentConfig:
     """Complete configuration for an arrow classification experiment.
@@ -890,19 +850,29 @@ class ArrowExperimentConfig:
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
 
+        Input-option keys are stored only under 'dataset'; they are omitted
+        from 'model' to avoid duplication.
+
         Returns:
             Dictionary representation containing nested dictionaries for
             'dataset', 'model', and 'run' configurations.
         """
+        model_dict = self.model.as_dict()
+        for k in ARROW_INPUT_OPTION_KEYS:
+            model_dict.pop(k, None)
         return {
             "dataset": self.dataset.as_dict(),
-            "model": self.model.as_dict(),
+            "model": model_dict,
             "run": self.run.as_dict(),
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> ArrowExperimentConfig:
         """Create config from dictionary.
+
+        Input-option fields (snippet_half_frames, use_interval, interval_encoding,
+        use_step_index, use_beat_phase) are taken from the 'dataset' section and
+        applied to the model so both configs stay in sync.
 
         Args:
             data: Dictionary containing 'dataset', 'model', and 'run' keys,
@@ -913,12 +883,12 @@ class ArrowExperimentConfig:
 
         Raises:
             KeyError: If required keys ('dataset', 'model', 'run') are missing.
-            ValueError: If dataset and model snippet_half_frames or use_interval differ.
         """
         dataset = ArrowDatasetConfig.from_dict(data["dataset"])
-        model = ArrowModelConfig.from_dict(data["model"])
+        input_options = _input_options_from_dataset(dataset)
+        model_data = {**data["model"], **input_options}
+        model = ArrowModelConfig.from_dict(model_data)
         run = ArrowRunConfig.from_dict(data["run"])
-        validate_arrow_dataset_model_alignment(dataset, model)
         return cls(dataset=dataset, model=model, run=run)
 
     def to_json(self, path: str):

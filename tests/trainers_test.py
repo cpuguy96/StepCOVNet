@@ -1155,32 +1155,43 @@ class ExperimentNameHelperTests(unittest.TestCase):
             self.assertIn("unknown_arch", str(ctx.exception))
 
     def test_run_arrow_train_from_config_raises_when_snippet_half_frames_mismatch(self):
-        """run_arrow_train_from_config raises ValueError when dataset and model snippet_half_frames differ."""
+        """run_arrow_train_from_config uses configs; input options are synced via ArrowExperimentConfig.from_dict."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
             dataset_config, _, run_config = _make_arrow_configs(
                 model_output_dir,
                 dataset_kwargs={"snippet_half_frames": 0},
             )
-            model_config = config.ArrowModelConfig.from_dict({"snippet_half_frames": 5})
-            with self.assertRaises(ValueError) as ctx:
-                trainers.run_arrow_train_from_config(
-                    dataset_config, model_config, run_config
-                )
-            self.assertIn("snippet_half_frames", str(ctx.exception))
-
-    def test_run_arrow_train_from_config_raises_when_use_interval_mismatch(self):
-        """run_arrow_train_from_config raises ValueError when dataset and model use_interval differ."""
-        with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, _, run_config = _make_arrow_configs(
-                model_output_dir,
-                dataset_kwargs={"use_interval": True},
+            model_config = config.ArrowModelConfig.from_dict(
+                {"model_type": "gru", "gru": {"units": 32}}
             )
-            model_config = config.ArrowModelConfig.from_dict({"use_interval": False})
-            with self.assertRaises(ValueError) as ctx:
-                trainers.run_arrow_train_from_config(
-                    dataset_config, model_config, run_config
-                )
-            self.assertIn("use_interval", str(ctx.exception))
+            trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+
+    def test_run_arrow_train_from_config_with_use_interval_from_dataset(self):
+        """When configs are built from ArrowExperimentConfig.from_dict, model gets input options from dataset."""
+        with _temp_model_and_callback_dirs() as (model_output_dir, _):
+            data = {
+                "dataset": {
+                    "data_dir": TEST_DATA_DIR,
+                    "val_data_dir": TEST_DATA_DIR,
+                    "batch_size": 1,
+                    "use_interval": True,
+                },
+                "model": {
+                    "model_type": "gru",
+                    "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
+                },
+                "run": {
+                    "epoch": 1,
+                    "take_count": 1,
+                    "model_output_dir": model_output_dir,
+                },
+            }
+            exp = config.ArrowExperimentConfig.from_dict(data)
+            self.assertTrue(exp.dataset.use_interval)
+            self.assertTrue(exp.model.use_interval)
+            trainers.run_arrow_train_from_config(exp.dataset, exp.model, exp.run)
 
 
 class ArrowLossTests(unittest.TestCase):
@@ -1280,7 +1291,6 @@ class ArrowLossTests(unittest.TestCase):
             model_output_dir=os.path.join(tempfile.gettempdir(), "arrow_aux_test"),
             aux_interval_weight=0.3,
         )
-        config.validate_arrow_dataset_model_alignment(dataset_config, model_config)
         use_aux_interval = run_config.aux_interval_weight > 0
         self.assertTrue(use_aux_interval)
         train_ds = datasets.create_arrow_dataset(

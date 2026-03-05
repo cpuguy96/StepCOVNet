@@ -570,12 +570,7 @@ def run_arrow_train_from_config(
             - model: The trained Keras model.
             - train_history: The training history object containing loss and
             metrics per epoch.
-
-    Raises:
-        ValueError: If dataset and model configs disagree on snippet_half_frames
-            or use_interval.
     """
-    config.validate_arrow_dataset_model_alignment(dataset_config, model_config)
     dataset_provides_aux = dataset_config.use_aux_interval_target
     use_aux_interval = dataset_provides_aux and run_config.aux_interval_weight > 0
     train_dataset = datasets.create_arrow_dataset(

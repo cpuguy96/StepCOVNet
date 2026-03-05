@@ -1209,124 +1209,6 @@ class OnsetExperimentConfigTest(unittest.TestCase):
                 config.OnsetExperimentConfig.from_json(config_path)
 
 
-class ValidateArrowDatasetModelAlignmentTest(unittest.TestCase):
-    """Tests for validate_arrow_dataset_model_alignment."""
-
-    def test_accepts_matching_configs(self):
-        """Does not raise when snippet_half_frames and use_interval match."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", snippet_half_frames=0, use_interval=False
-        )
-        model_cfg = config.ArrowModelConfig(snippet_half_frames=0, use_interval=False)
-        config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-
-    def test_accepts_matching_configs_with_snippets_and_interval(self):
-        """Does not raise when both use snippet_half_frames and use_interval consistently."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d",
-            val_data_dir="v",
-            snippet_half_frames=5,
-            use_interval=True,
-        )
-        model_cfg = config.ArrowModelConfig.from_dict(
-            {"snippet_half_frames": 5, "use_interval": True}
-        )
-        config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-
-    def test_raises_on_snippet_half_frames_mismatch(self):
-        """Raises ValueError when snippet_half_frames differ."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", snippet_half_frames=0
-        )
-        model_cfg = config.ArrowModelConfig.from_dict({"snippet_half_frames": 5})
-        with self.assertRaises(ValueError) as ctx:
-            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-        self.assertIn("snippet_half_frames", str(ctx.exception))
-        self.assertIn("dataset=0", str(ctx.exception))
-        self.assertIn("model=5", str(ctx.exception))
-
-    def test_raises_on_use_interval_mismatch(self):
-        """Raises ValueError when use_interval differs."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", use_interval=True
-        )
-        model_cfg = config.ArrowModelConfig(use_interval=False)
-        with self.assertRaises(ValueError) as ctx:
-            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-        self.assertIn("use_interval", str(ctx.exception))
-        self.assertIn("dataset=True", str(ctx.exception))
-        self.assertIn("model=False", str(ctx.exception))
-
-    def test_raises_on_interval_encoding_mismatch(self):
-        """Raises ValueError when interval_encoding differs between dataset and model."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", interval_encoding="log"
-        )
-        model_cfg = config.ArrowModelConfig(interval_encoding="default")
-        with self.assertRaises(ValueError) as ctx:
-            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-        self.assertIn("interval_encoding", str(ctx.exception))
-
-    def test_raises_on_use_step_index_mismatch(self):
-        """Raises ValueError when use_step_index differs between dataset and model."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", use_step_index=True
-        )
-        model_cfg = config.ArrowModelConfig(use_step_index=False)
-        with self.assertRaises(ValueError) as ctx:
-            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-        self.assertIn("use_step_index", str(ctx.exception))
-
-    def test_raises_on_use_beat_phase_mismatch(self):
-        """Raises ValueError when use_beat_phase differs between dataset and model."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", use_beat_phase=True
-        )
-        model_cfg = config.ArrowModelConfig(use_beat_phase=False)
-        with self.assertRaises(ValueError) as ctx:
-            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-        self.assertIn("use_beat_phase", str(ctx.exception))
-
-    def test_accepts_matching_interval_encoding_step_index_beat_phase(self):
-        """Does not raise when interval_encoding, use_step_index, use_beat_phase match."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d",
-            val_data_dir="v",
-            interval_encoding="multi",
-            use_step_index=True,
-            use_beat_phase=True,
-        )
-        model_cfg = config.ArrowModelConfig.from_dict(
-            {
-                "interval_encoding": "multi",
-                "use_step_index": True,
-                "use_beat_phase": True,
-            }
-        )
-        config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-
-    def test_raises_on_invalid_dataset_interval_encoding(self):
-        """Raises ValueError when dataset interval_encoding is not default/log/multi."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", interval_encoding="invalid"
-        )
-        model_cfg = config.ArrowModelConfig(interval_encoding="invalid")
-        with self.assertRaises(ValueError) as ctx:
-            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-        self.assertIn("interval_encoding", str(ctx.exception))
-        self.assertIn("default", str(ctx.exception))
-
-    def test_raises_on_invalid_model_interval_encoding(self):
-        """Raises ValueError when model interval_encoding is not default/log/multi."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d", val_data_dir="v", interval_encoding="default"
-        )
-        model_cfg = config.ArrowModelConfig(interval_encoding="other")
-        with self.assertRaises(ValueError) as ctx:
-            config.validate_arrow_dataset_model_alignment(dataset_cfg, model_cfg)
-        self.assertIn("interval_encoding", str(ctx.exception))
-
-
 class ArrowExperimentConfigTest(unittest.TestCase):
     def test_create_experiment_config(self):
         """Test creating complete experiment config; run is ArrowRunConfig."""
@@ -1344,9 +1226,13 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         self.assertIsInstance(exp_cfg.run, config.ArrowRunConfig)
 
     def test_as_dict(self):
-        """Test converting experiment config to dictionary."""
+        """Test converting experiment config to dictionary; input options only under dataset."""
         dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="data/train", val_data_dir="data/val", batch_size=2
+            data_dir="data/train",
+            val_data_dir="data/val",
+            batch_size=2,
+            use_interval=True,
+            interval_encoding="log",
         )
         model_cfg = config.ArrowModelConfig.from_dict(
             {"transformer": {"num_layers": 2}}
@@ -1357,7 +1243,13 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         )
         d = exp_cfg.as_dict()
         self.assertEqual(d["dataset"]["batch_size"], 2)
+        self.assertEqual(d["dataset"]["use_interval"], True)
+        self.assertEqual(d["dataset"]["interval_encoding"], "log")
         self.assertEqual(d["model"]["transformer"]["num_layers"], 2)
+        for key in config.ARROW_INPUT_OPTION_KEYS:
+            self.assertNotIn(
+                key, d["model"], f"input option {key} should not be in model"
+            )
 
     def test_to_json_and_from_json(self):
         """Test saving and loading config from JSON file."""
@@ -1409,35 +1301,64 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         self.assertEqual(loaded.run.chart_validity_aux_weight, 0.3)
         self.assertEqual(loaded.run.diversity_aux_weight, 0.1)
 
-    def test_from_dict_raises_when_snippet_half_frames_mismatch(self):
-        """from_dict raises ValueError when dataset and model snippet_half_frames differ."""
-        data = {
-            "dataset": {
-                "data_dir": "d",
-                "val_data_dir": "v",
-                "snippet_half_frames": 0,
-            },
-            "model": {"snippet_half_frames": 5},
-            "run": {"epoch": 1, "take_count": 1, "model_output_dir": "out"},
-        }
-        with self.assertRaises(ValueError) as ctx:
-            config.ArrowExperimentConfig.from_dict(data)
-        self.assertIn("snippet_half_frames", str(ctx.exception))
+    def test_round_trip_input_options_only_under_dataset_model_synced_from_dataset(
+        self,
+    ):
+        """Input options are stored only under dataset; from_dict syncs them to model."""
+        dataset_cfg = config.ArrowDatasetConfig(
+            data_dir="d",
+            val_data_dir="v",
+            snippet_half_frames=5,
+            use_interval=True,
+            interval_encoding="multi",
+            use_step_index=True,
+            use_beat_phase=True,
+        )
+        model_cfg = config.ArrowModelConfig.from_dict(
+            {"model_type": "lstm", "lstm": {"units": 64}}
+        )
+        run_cfg = config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir="out")
+        exp_cfg = config.ArrowExperimentConfig(
+            dataset=dataset_cfg, model=model_cfg, run=run_cfg
+        )
+        d = exp_cfg.as_dict()
+        for key in config.ARROW_INPUT_OPTION_KEYS:
+            self.assertIn(key, d["dataset"])
+            self.assertNotIn(key, d["model"])
+        loaded = config.ArrowExperimentConfig.from_dict(d)
+        self.assertEqual(loaded.dataset.snippet_half_frames, 5)
+        self.assertEqual(loaded.model.snippet_half_frames, 5)
+        self.assertTrue(loaded.dataset.use_interval)
+        self.assertEqual(loaded.model.use_interval, loaded.dataset.use_interval)
+        self.assertEqual(loaded.dataset.interval_encoding, "multi")
+        self.assertEqual(
+            loaded.model.interval_encoding, loaded.dataset.interval_encoding
+        )
+        self.assertTrue(loaded.dataset.use_step_index)
+        self.assertEqual(loaded.model.use_step_index, loaded.dataset.use_step_index)
+        self.assertTrue(loaded.dataset.use_beat_phase)
+        self.assertEqual(loaded.model.use_beat_phase, loaded.dataset.use_beat_phase)
 
-    def test_from_dict_raises_when_use_interval_mismatch(self):
-        """from_dict raises ValueError when dataset and model use_interval differ."""
+    def test_from_dict_input_options_only_under_dataset(self):
+        """Loading with input options only under dataset populates both configs."""
         data = {
             "dataset": {
                 "data_dir": "d",
                 "val_data_dir": "v",
+                "snippet_half_frames": 3,
                 "use_interval": True,
+                "interval_encoding": "log",
             },
-            "model": {"use_interval": False},
+            "model": {"model_type": "transformer", "transformer": {"num_layers": 1}},
             "run": {"epoch": 1, "take_count": 1, "model_output_dir": "out"},
         }
-        with self.assertRaises(ValueError) as ctx:
-            config.ArrowExperimentConfig.from_dict(data)
-        self.assertIn("use_interval", str(ctx.exception))
+        loaded = config.ArrowExperimentConfig.from_dict(data)
+        self.assertEqual(loaded.dataset.snippet_half_frames, 3)
+        self.assertEqual(loaded.model.snippet_half_frames, 3)
+        self.assertEqual(loaded.dataset.use_interval, True)
+        self.assertEqual(loaded.model.use_interval, True)
+        self.assertEqual(loaded.dataset.interval_encoding, "log")
+        self.assertEqual(loaded.model.interval_encoding, "log")
 
 
 if __name__ == "__main__":
