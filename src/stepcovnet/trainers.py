@@ -525,8 +525,8 @@ def _sparse_focal_loss(
     p_t = tf.reshape(p_t, tf.shape(y_true))
     _max_p = 1.0 - 1e-7
     p_t = tf.clip_by_value(p_t, 1e-7, _max_p)
-    focal_weight = tf.pow(1.0 - p_t, gamma)
-    ce = -tf.math.log(p_t)
+    focal_weight = tf.pow(tf.subtract(1.0, p_t), gamma)
+    ce = tf.negative(tf.math.log(p_t))
     loss_per_step = focal_weight * ce
     mask = tf.cast(tf.not_equal(y_true, ignore_class), tf.float32)
     loss_sum = tf.reduce_sum(loss_per_step * mask)
