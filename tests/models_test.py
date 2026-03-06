@@ -433,7 +433,7 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(out.shape, (batch_size, seq_len, 256))
 
     def test_build_arrow_model_from_config_gru_use_aux_interval_output_shapes(self):
-        """build_arrow_model_from_config with use_aux_interval=True (GRU) returns list [logits, aux_interval] with correct shapes."""
+        """build_arrow_model_from_config with use_aux_interval=True (GRU) returns dict with output_probabilities and aux_interval and correct shapes."""
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "gru",
@@ -446,9 +446,11 @@ class ModelTest(unittest.TestCase):
         self.assertIsInstance(model, keras.Model)
         dummy_input = np.random.random((1, 20, 1)).astype(np.float32)
         outputs = model.predict(dummy_input)
-        self.assertIsInstance(outputs, list)
-        self.assertEqual(len(outputs), 2)
-        logits, aux_interval = outputs[0], outputs[1]
+        self.assertIsInstance(outputs, dict)
+        self.assertIn("output_probabilities", outputs)
+        self.assertIn("aux_interval", outputs)
+        logits = outputs["output_probabilities"]
+        aux_interval = outputs["aux_interval"]
         self.assertEqual(logits.shape, (1, 20, 256))
         self.assertEqual(aux_interval.shape, (1, 20, 1))
 
