@@ -501,7 +501,10 @@ def _build_cosine_warmup_schedule(
 
 
 def _sparse_focal_loss(
-    y_true: tf.Tensor, y_pred: tf.Tensor, gamma: float, ignore_class: int = 0
+    y_true: tf.Tensor,
+    y_pred: tf.Tensor,
+    gamma: float,
+    ignore_class: int = constants.ARROW_PADDING_CLASS,
 ) -> tf.Tensor:
     """Sparse categorical focal loss: - (1 - p_t)^gamma * log(p_t), masked for ignore_class.
 
@@ -529,6 +532,34 @@ def _sparse_focal_loss(
     loss_sum = tf.reduce_sum(loss_per_step * mask)
     count = tf.maximum(tf.reduce_sum(mask), 1.0)
     return loss_sum / count
+
+
+def _arrow_label_smoothed_crossentropy(
+    y_true: tf.Tensor, y_pred: tf.Tensor, smoothing: float
+) -> tf.Tensor:
+    """Cross-entropy with label smoothing over valid (non-ignore) positions.
+
+    Args:
+        y_true: (batch, steps) int class indices.
+        y_pred: (batch, steps, num_classes) logits or probabilities.
+        smoothing: Label smoothing factor in (0, 1).
+
+    Returns:
+        Scalar mean loss over valid (non-zero) positions.
+    """
+    one_hot = tf.one_hot(
+        tf.cast(tf.reshape(y_true, [-1]), tf.int32),
+        constants.N_ARROW_TYPES,
+    )
+    one_hot = tf.reshape(
+        one_hot,
+        tf.concat([tf.shape(y_true), [constants.N_ARROW_TYPES]], axis=0),
+    )
+    smoothed = one_hot * (1.0 - smoothing) + smoothing / constants.N_ARROW_TYPES
+    mask = tf.cast(tf.not_equal(y_true, constants.ARROW_PADDING_CLASS), tf.float32)
+    cat_ce = keras.losses.CategoricalCrossentropy(label_smoothing=0.0, reduction="none")
+    per_step = cat_ce(smoothed, y_pred)
+    return tf.reduce_sum(per_step * mask) / tf.maximum(tf.reduce_sum(mask), 1.0)
 
 
 def _masked_mse_aux_interval(
@@ -637,61 +668,36 @@ def run_arrow_train_from_config(
         model.summary()
 
     # Combined loss: main (cross-entropy or focal, optional label smoothing) + validity + diversity.
-    _chart_validity_weight = run_config.chart_validity_aux_weight
-    _diversity_weight = run_config.diversity_aux_weight
-    _loss_type = run_config.loss_type
-    _label_smoothing = run_config.label_smoothing
-    _focal_gamma = run_config.focal_gamma
+    w_val = run_config.chart_validity_aux_weight
+    w_div = run_config.diversity_aux_weight
 
-    if _loss_type == "crossentropy":
-        _ce = keras.losses.SparseCategoricalCrossentropy(ignore_class=0)
-        if _label_smoothing > 0:
-            _smoothing = _label_smoothing
-            _cat_ce = keras.losses.CategoricalCrossentropy(
-                label_smoothing=0.0, reduction="none"
-            )
+    if run_config.loss_type == "crossentropy":
+        if run_config.label_smoothing > 0:
+            _smoothing = run_config.label_smoothing
 
             def _main_loss_fn(y_true, y_pred):
-                # Apply label smoothing via one-hot + CategoricalCrossentropy
-                # (SparseCategoricalCrossentropy does not support label_smoothing in all Keras versions)
-                one_hot = tf.one_hot(
-                    tf.cast(tf.reshape(y_true, [-1]), tf.int32),
-                    constants.N_ARROW_TYPES,
-                )
-                one_hot = tf.reshape(
-                    one_hot,
-                    tf.concat([tf.shape(y_true), [constants.N_ARROW_TYPES]], axis=0),
-                )
-                smoothed = (
-                    one_hot * (1.0 - _smoothing) + _smoothing / constants.N_ARROW_TYPES
-                )
-                mask = tf.cast(tf.not_equal(y_true, 0), tf.float32)
-                per_step = _cat_ce(smoothed, y_pred)
-                return tf.reduce_sum(per_step * mask) / tf.maximum(
-                    tf.reduce_sum(mask), 1.0
-                )
+                return _arrow_label_smoothed_crossentropy(y_true, y_pred, _smoothing)
         else:
-            _main_loss_fn = _ce
+            _main_loss_fn = keras.losses.SparseCategoricalCrossentropy(
+                ignore_class=constants.ARROW_PADDING_CLASS
+            )  # type: ignore
     else:
+        _gamma = run_config.focal_gamma
 
         def _main_loss_fn(y_true, y_pred):
             return _sparse_focal_loss(
-                y_true, y_pred, gamma=_focal_gamma, ignore_class=0
+                y_true, y_pred, gamma=_gamma, ignore_class=constants.ARROW_PADDING_CLASS
             )
 
     def _arrow_combined_loss(y_true, y_pred):
-        main_loss = _main_loss_fn(y_true, y_pred)
-        validity_aux = metrics.chart_validity_auxiliary_loss(
-            y_true, y_pred, ignore_class=0
+        main = _main_loss_fn(y_true, y_pred)
+        validity = metrics.chart_validity_auxiliary_loss(
+            y_true, y_pred, ignore_class=constants.ARROW_PADDING_CLASS
         )
-        diversity_aux = metrics.note_kind_balance_auxiliary_loss(
-            y_true, y_pred, ignore_class=0
+        diversity = metrics.note_kind_balance_auxiliary_loss(
+            y_true, y_pred, ignore_class=constants.ARROW_PADDING_CLASS
         )
-        return (
-            main_loss
-            + tf.multiply(validity_aux, _chart_validity_weight)
-            + tf.multiply(diversity_aux, _diversity_weight)
-        )
+        return main + tf.multiply(validity, w_val) + tf.multiply(diversity, w_div)
 
     use_lr_schedule = run_config.warmup_epochs > 0
     initial_lr = run_config.lr_min if use_lr_schedule else run_config.lr_peak

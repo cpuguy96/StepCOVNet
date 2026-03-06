@@ -227,13 +227,13 @@ class ArrowDistributionMatchMetric(keras.metrics.Metric):
     """Measures match between predicted and ground-truth arrow-type distribution.
 
     Uses 1 - Jensen-Shannon divergence. Higher values (closer to 1) mean the
-    model's pattern of arrow choices matches the chart. Uses ignore_class=0
+    model's pattern of arrow choices matches the chart. Uses ARROW_PADDING_CLASS
     for padding (same as arrow loss). Expects y_true (batch, seq_len) and
     y_pred (batch, seq_len, N_ARROW_TYPES).
 
     Attributes:
         num_classes: Number of arrow types (default N_ARROW_TYPES).
-        ignore_class: Label value treated as padding (default 0).
+        ignore_class: Label value treated as padding (default ARROW_PADDING_CLASS).
         pred_counts: Accumulated predicted class counts (Keras weight).
         true_counts: Accumulated true class counts (Keras weight).
     """
@@ -241,7 +241,7 @@ class ArrowDistributionMatchMetric(keras.metrics.Metric):
     def __init__(
         self,
         num_classes: int = constants.N_ARROW_TYPES,
-        ignore_class: int = 0,
+        ignore_class: int = constants.ARROW_PADDING_CLASS,
         name: str = "arrow_dist_match",
         **kwargs,
     ):
@@ -346,12 +346,12 @@ class ArrowNoteKindDistributionMetric(keras.metrics.Metric):
     """Measures match between predicted and true note-kind distribution.
 
     Compares distribution over note kinds (single, chord, hold_start, hold_end,
-    hold_both) via 1 - JSD over 6 note-kind categories. Uses ignore_class=0 for
+    hold_both) via 1 - JSD over 6 note-kind categories. Uses ARROW_PADDING_CLASS for
     padding. Expects y_true (batch, seq_len) and y_pred (batch, seq_len, N_ARROW_TYPES).
 
     Attributes:
         num_note_kinds: Number of note-kind categories (default 6).
-        ignore_class: Label value treated as padding (default 0).
+        ignore_class: Label value treated as padding (default ARROW_PADDING_CLASS).
         pred_counts: Accumulated predicted note-kind counts (Keras weight).
         true_counts: Accumulated true note-kind counts (Keras weight).
     """
@@ -359,7 +359,7 @@ class ArrowNoteKindDistributionMetric(keras.metrics.Metric):
     def __init__(
         self,
         num_note_kinds: int = _N_NOTE_KINDS,
-        ignore_class: int = 0,
+        ignore_class: int = constants.ARROW_PADDING_CLASS,
         name: str = "arrow_note_kind_dist_match",
         **kwargs,
     ):
@@ -586,7 +586,7 @@ def _chart_validity_violation_weights(
 def chart_validity_auxiliary_loss(
     y_true: tf.Tensor,
     y_pred: tf.Tensor,
-    ignore_class: int = 0,
+    ignore_class: int = constants.ARROW_PADDING_CLASS,
 ) -> tf.Tensor:
     """Differentiable auxiliary loss encouraging chart-valid predictions.
 
@@ -598,7 +598,7 @@ def chart_validity_auxiliary_loss(
     Args:
         y_true: (batch, seq) int arrow codes.
         y_pred: (batch, seq, N_ARROW_TYPES) float probabilities.
-        ignore_class: Label value to treat as padding (default 0).
+        ignore_class: Label value to treat as padding (default ARROW_PADDING_CLASS).
 
     Returns:
         Scalar tensor: mean penalty over valid step-columns (same denominator as
@@ -648,7 +648,7 @@ def chart_validity_auxiliary_loss(
 def note_kind_balance_auxiliary_loss(
     y_true: tf.Tensor,
     y_pred: tf.Tensor,
-    ignore_class: int = 0,
+    ignore_class: int = constants.ARROW_PADDING_CLASS,
 ) -> tf.Tensor:
     """Differentiable auxiliary loss encouraging predicted hold/tap balance to match labels.
 
@@ -661,7 +661,7 @@ def note_kind_balance_auxiliary_loss(
     Args:
         y_true: (batch, seq) int arrow codes.
         y_pred: (batch, seq, N_ARROW_TYPES) float probabilities.
-        ignore_class: Label value to treat as padding (default 0).
+        ignore_class: Label value to treat as padding (default ARROW_PADDING_CLASS).
 
     Returns:
         Scalar tensor: mean squared error of (pred_hold_rate - true_hold_rate) over valid steps.
@@ -704,12 +704,12 @@ class ChartValidityAuxiliaryLossMetric(keras.metrics.Metric):
     Tracks the mean chart-validity auxiliary loss over batches for monitoring.
 
     Attributes:
-        ignore_class: Label value treated as padding (default 0).
+        ignore_class: Label value treated as padding (default ARROW_PADDING_CLASS).
     """
 
     def __init__(
         self,
-        ignore_class: int = 0,
+        ignore_class: int = constants.ARROW_PADDING_CLASS,
         name: str = "chart_validity_aux_loss",
         **kwargs,
     ):
@@ -742,12 +742,12 @@ class NoteKindBalanceAuxiliaryLossMetric(keras.metrics.Metric):
     Tracks the mean note-kind balance auxiliary loss over batches for monitoring.
 
     Attributes:
-        ignore_class: Label value treated as padding (default 0).
+        ignore_class: Label value treated as padding (default ARROW_PADDING_CLASS).
     """
 
     def __init__(
         self,
-        ignore_class: int = 0,
+        ignore_class: int = constants.ARROW_PADDING_CLASS,
         name: str = "note_kind_balance_aux_loss",
         **kwargs,
     ):
@@ -781,18 +781,18 @@ class ChartValidityMetric(keras.metrics.Metric):
     2=Hold Head, 3=Hold Tail. Violations: (1) Orphaned tail (3 in FREE).
     (2) Tap during hold (1 in HOLDING). (3) Nested hold (2 in HOLDING).
     (4) Unterminated hold (sequence ends in HOLDING). Returns value in [0, 1]:
-    1 - (total_violations / max(1, total_valid_step_columns)). Uses ignore_class=0
+    1 - (total_violations / max(1, total_valid_step_columns)). Uses ARROW_PADDING_CLASS
     for padding.
 
     Attributes:
-        ignore_class: Label value treated as padding (default 0).
+        ignore_class: Label value treated as padding (default ARROW_PADDING_CLASS).
         total_violations: Accumulated violation count (Keras weight).
         total_valid_step_columns: Accumulated valid step-column count (Keras weight).
     """
 
     def __init__(
         self,
-        ignore_class: int = 0,
+        ignore_class: int = constants.ARROW_PADDING_CLASS,
         name: str = "chart_validity",
         **kwargs,
     ):

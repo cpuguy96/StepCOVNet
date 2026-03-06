@@ -990,13 +990,13 @@ def create_arrow_dataset(
             ds = ds.padded_batch(
                 batch_size,
                 padded_shapes=(padded_shapes_dict, (None,)),
-                padding_values=(padding_values_dict, 0),
+                padding_values=(padding_values_dict, constants.ARROW_PADDING_CLASS),
             )
         else:
             ds = ds.padded_batch(
                 batch_size,
                 padded_shapes=((None, 1), (None,)),
-                padding_values=(0.0, 0),
+                padding_values=(0.0, constants.ARROW_PADDING_CLASS),
             )
     else:
         ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)

@@ -124,7 +124,8 @@ def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
     note_data = []
     assert len(onsets) == len(arrows)
     for onset, arrow in zip(onsets, arrows, strict=False):
-        if not (int_arrow := int(arrow)):
+        int_arrow = int(arrow)
+        if int_arrow == constants.ARROW_PADDING_CLASS:
             # Remove all padding arrows from the output.
             continue
         binary_arrow = _int_to_base4_string(int_arrow, min_digits=4)
