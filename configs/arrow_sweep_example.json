@@ -1,11 +1,11 @@
 {
   "base_config": "configs/arrow_baseline.json",
   "search_space": {
-    "model.dropout_rate": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
-    "model.num_layers": [1, 2],
-    "model.d_model": [128, 256],
-    "model.num_heads": [1, 2, 4],
-    "model.ff_dim": [512, 1024],
+    "model.transformer.dropout_rate": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+    "model.transformer.num_layers": [1, 2],
+    "model.transformer.d_model": [128, 256],
+    "model.transformer.num_heads": [1, 2, 4],
+    "model.transformer.ff_dim": [512, 1024],
     "run.chart_validity_aux_weight": [0.0, 0.5, 1.0],
     "run.diversity_aux_weight": [0.0, 0.5, 1.0],
     "run.take_count": [1],

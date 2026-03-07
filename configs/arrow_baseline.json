@@ -5,11 +5,14 @@
     "batch_size": 1
   },
   "model": {
-    "num_layers": 1,
-    "d_model": 128,
-    "num_heads": 4,
-    "ff_dim": 512,
-    "dropout_rate": 0.0
+    "model_type": "transformer",
+    "transformer": {
+      "num_layers": 1,
+      "d_model": 128,
+      "num_heads": 4,
+      "ff_dim": 512,
+      "dropout_rate": 0.0
+    }
   },
   "run": {
     "epoch": 10,

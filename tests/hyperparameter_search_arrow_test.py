@@ -43,7 +43,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
                 {
                     "base_config": "configs/arrow_baseline.json",
                     "search_space": {
-                        "model.dropout_rate": [0.0, 0.1],
+                        "model.transformer.dropout_rate": [0.0, 0.1],
                         "run.chart_validity_aux_weight": [0.0],
                     },
                     "optimize": {"metric": "val_loss", "mode": "min"},
@@ -55,7 +55,9 @@ class SweepConfigLoadingTest(unittest.TestCase):
             data = hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIsInstance(data, dict)
             self.assertEqual(data["base_config"], "configs/arrow_baseline.json")
-            self.assertEqual(data["search_space"]["model.dropout_rate"], [0.0, 0.1])
+            self.assertEqual(
+                data["search_space"]["model.transformer.dropout_rate"], [0.0, 0.1]
+            )
             self.assertEqual(
                 data["search_space"]["run.chart_validity_aux_weight"], [0.0]
             )
@@ -68,7 +70,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(
                 {
-                    "search_space": {"model.dropout_rate": [0.0]},
+                    "search_space": {"model.transformer.dropout_rate": [0.0]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                 },
                 f,
@@ -86,7 +88,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             json.dump(
                 {
                     "base_config": "configs/arrow_baseline.json",
-                    "search_space": {"model.dropout_rate": [0.0]},
+                    "search_space": {"model.transformer.dropout_rate": [0.0]},
                 },
                 f,
             )
@@ -103,7 +105,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             json.dump(
                 {
                     "base_config": "configs/arrow_baseline.json",
-                    "search_space": {"model.dropout_rate": [0.0]},
+                    "search_space": {"model.transformer.dropout_rate": [0.0]},
                     "optimize": {"metric": "val_loss", "mode": "invalid"},
                 },
                 f,
@@ -144,7 +146,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
                 json.dump(
                     {
                         "base_config": "configs/arrow_baseline.json",
-                        "search_space": {"model.dropout_rate": [0.0]},
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "search": search_val,
                     },
@@ -163,7 +165,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             json.dump(
                 {
                     "base_config": "configs/arrow_baseline.json",
-                    "search_space": {"model.dropout_rate": [0.0]},
+                    "search_space": {"model.transformer.dropout_rate": [0.0]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "search": "monte_carlo",
                 },
@@ -262,6 +264,20 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         out = hyperparameter_search_arrow.apply_overrides(base, overrides)
         assert out.model.transformer is not None
         self.assertEqual(out.model.transformer.num_layers, 3)
+
+    def test_apply_overrides_flat_transformer_keys_ignored(self):
+        """Flat keys (model.dropout_rate) do not apply; config reads from model.transformer.*."""
+        base = self._minimal_base_config()
+        assert base.model.transformer is not None
+        base_dropout = base.model.transformer.dropout_rate
+        overrides = {"model.dropout_rate": 0.99}
+        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
+        assert out.model.transformer is not None
+        self.assertEqual(
+            out.model.transformer.dropout_rate,
+            base_dropout,
+            "model.dropout_rate must not override transformer dropout; use model.transformer.dropout_rate",
+        )
 
     def test_apply_overrides_creates_missing_intermediate_dict(self):
         """Override targeting a nested key on a non-existent intermediate dict creates it (_set_nested branch)."""
@@ -466,7 +482,7 @@ class EndToEndMinimalTest(unittest.TestCase):
                     {
                         "base_config": base_config_path,
                         "search_space": {
-                            "model.dropout_rate": [0.0],
+                            "model.transformer.dropout_rate": [0.0],
                         },
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
@@ -521,7 +537,7 @@ class RandomSearchTest(unittest.TestCase):
                     {
                         "base_config": base_config_path,
                         "search_space": {
-                            "model.dropout_rate": [0.0, 0.1],
+                            "model.transformer.dropout_rate": [0.0, 0.1],
                             "run.chart_validity_aux_weight": [0.0, 0.3],
                         },
                         "optimize": {"metric": "val_loss", "mode": "min"},
@@ -561,7 +577,7 @@ class RandomSearchTest(unittest.TestCase):
             )
             full_combinations = hyperparameter_search_arrow.expand_grid(
                 {
-                    "model.dropout_rate": [0.0, 0.1],
+                    "model.transformer.dropout_rate": [0.0, 0.1],
                     "run.chart_validity_aux_weight": [0.0, 0.3],
                 }
             )
@@ -587,7 +603,7 @@ class RandomSearchTest(unittest.TestCase):
                     {
                         "base_config": base_config_path,
                         "search_space": {
-                            "model.dropout_rate": [0.0, 0.1],
+                            "model.transformer.dropout_rate": [0.0, 0.1],
                             "run.chart_validity_aux_weight": [0.0, 0.3],
                         },
                         "optimize": {"metric": "val_loss", "mode": "min"},
@@ -653,7 +669,7 @@ class ResumeSweepTest(unittest.TestCase):
                 json.dump(
                     {
                         "base_config": "configs/arrow_baseline.json",
-                        "search_space": {"model.dropout_rate": [0.0]},
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "sweep_output_dir": temp_dir,
                     },
@@ -690,7 +706,7 @@ class ResumeSweepTest(unittest.TestCase):
             os.makedirs(os.path.join(resume_dir, "models"), exist_ok=True)
             os.makedirs(os.path.join(resume_dir, "callbacks"), exist_ok=True)
 
-            search_space = {"model.dropout_rate": [0.0, 0.1]}
+            search_space = {"model.transformer.dropout_rate": [0.0, 0.1]}
             combinations = hyperparameter_search_arrow.expand_grid(search_space)
             sweep_config = {
                 "base_config": os.path.abspath(base_config_override),
@@ -790,7 +806,7 @@ class WorkersOptionTest(unittest.TestCase):
                 json.dump(
                     {
                         "base_config": base_config_path,
-                        "search_space": {"model.dropout_rate": [0.0, 0.1]},
+                        "search_space": {"model.transformer.dropout_rate": [0.0, 0.1]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
                     },
@@ -882,7 +898,7 @@ class WorkersOptionTest(unittest.TestCase):
                     {
                         "base_config": base_config_path,
                         "search_space": {
-                            "model.dropout_rate": [0.0, 0.1, 0.2],
+                            "model.transformer.dropout_rate": [0.0, 0.1, 0.2],
                         },
                         "optimize": {"metric": "val_main_loss", "mode": "min"},
                         "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
@@ -982,7 +998,7 @@ class MemoryBoundedSweepTest(unittest.TestCase):
         base_config.dataset.val_data_dir = TEST_DATA_DIR
         base_config.run.take_count = 2
         base_config.run.epoch = 1
-        search_space = {"model.dropout_rate": [0.0, 0.1, 0.2, 0.25]}
+        search_space = {"model.transformer.dropout_rate": [0.0, 0.1, 0.2, 0.25]}
         combinations = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertGreaterEqual(len(combinations), 4)
         combinations = combinations[:4]
@@ -1039,7 +1055,7 @@ class SweepVerbosityTest(unittest.TestCase):
                 json.dump(
                     {
                         "base_config": base_config_path,
-                        "search_space": {"model.dropout_rate": [0.0]},
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
                     },

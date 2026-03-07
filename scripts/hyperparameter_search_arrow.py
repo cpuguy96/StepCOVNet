@@ -201,7 +201,8 @@ def _set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
     parts = key_path.split(".")
     current = d
     for part in parts[:-1]:
-        if part not in current:
+        next_level = current.get(part)
+        if not isinstance(next_level, dict):
             current[part] = {}
         current = current[part]
     current[parts[-1]] = value
