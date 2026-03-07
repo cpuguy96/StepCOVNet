@@ -21,7 +21,10 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(prediction.shape, (1, 100, 1))
 
     def test_build_arrow_model_model(self):
-        model_instance = models.build_arrow_model()
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions()
+        params = config.TransformerArrowParams()
+        model_instance = models.build_arrow_model(input_opts, output_opts, params)
 
         self.assertIsInstance(model_instance, keras.Model)
 
@@ -45,19 +48,26 @@ class ModelTest(unittest.TestCase):
 
     def test_build_arrow_model_default_name(self):
         """Arrow model has default name stepcovnet_ARROW when model_name is empty."""
-        model = models.build_arrow_model(model_name="")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="")
+        params = config.TransformerArrowParams()
+        model = models.build_arrow_model(input_opts, output_opts, params)
         self.assertEqual(model.name, "stepcovnet_ARROW")
 
     def test_build_arrow_model_custom_name(self):
         """Arrow model name includes custom model_name suffix."""
-        model = models.build_arrow_model(model_name="my_arrow_run")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="my_arrow_run")
+        params = config.TransformerArrowParams()
+        model = models.build_arrow_model(input_opts, output_opts, params)
         self.assertEqual(model.name, "stepcovnet_ARROW-my_arrow_run")
 
     def test_build_arrow_model_with_audio_snippets(self):
         """Arrow model with snippet_half_frames > 0 has two inputs and runs forward pass."""
-        model = models.build_arrow_model(
-            snippet_half_frames=5,
-        )
+        input_opts = models.ArrowInputOptions(snippet_half_frames=5)
+        output_opts = models.ArrowOutputOptions()
+        params = config.TransformerArrowParams()
+        model = models.build_arrow_model(input_opts, output_opts, params)
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 2)
         timing_input = np.random.random((1, 100, 1)).astype(np.float32)
@@ -67,7 +77,10 @@ class ModelTest(unittest.TestCase):
 
     def test_build_arrow_model_with_interval(self):
         """Arrow model with use_interval=True has two inputs (timing, interval) and runs forward pass."""
-        model = models.build_arrow_model(use_interval=True)
+        input_opts = models.ArrowInputOptions(use_interval=True)
+        output_opts = models.ArrowOutputOptions()
+        params = config.TransformerArrowParams()
+        model = models.build_arrow_model(input_opts, output_opts, params)
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 2)
         input_names = [inp.name for inp in model.inputs]
@@ -80,10 +93,13 @@ class ModelTest(unittest.TestCase):
 
     def test_build_arrow_model_with_interval_and_snippets(self):
         """Arrow model with use_interval and snippet_half_frames has three inputs."""
-        model = models.build_arrow_model(
+        input_opts = models.ArrowInputOptions(
             snippet_half_frames=5,
             use_interval=True,
         )
+        output_opts = models.ArrowOutputOptions()
+        params = config.TransformerArrowParams()
+        model = models.build_arrow_model(input_opts, output_opts, params)
         self.assertEqual(len(model.inputs), 3)
         timing = np.random.random((1, 50, 1)).astype(np.float32)
         interval = np.random.random((1, 50, 1)).astype(np.float32)
@@ -99,7 +115,11 @@ class ModelTest(unittest.TestCase):
                 "transformer": {"num_layers": 1, "d_model": 128},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(model.input_shape, (None, None, 1))
         self.assertEqual(model.output_shape, (None, None, 256))
@@ -116,7 +136,11 @@ class ModelTest(unittest.TestCase):
                 "mlp": {"hidden_dims": [256, 128], "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="mlp_run")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="mlp_run")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 1)
         self.assertEqual(model.output_shape, (None, None, 256))
@@ -130,11 +154,14 @@ class ModelTest(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "mlp",
-                "snippet_half_frames": 5,
                 "mlp": {"hidden_dims": [128], "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions(snippet_half_frames=5)
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 2)
         timing_input = np.random.random((1, 100, 1)).astype(np.float32)
@@ -147,11 +174,14 @@ class ModelTest(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "mlp",
-                "use_interval": True,
                 "mlp": {"hidden_dims": [256, 128], "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions(use_interval=True)
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 2)
         input_names = [inp.name for inp in model.inputs]
@@ -170,8 +200,10 @@ class ModelTest(unittest.TestCase):
                 "lstm": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
             }
         )
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="lstm_run")
         model = models.build_arrow_model_from_config(
-            model_config, model_name="lstm_run"
+            model_config, input_opts, output_opts
         )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 1)
@@ -194,8 +226,10 @@ class ModelTest(unittest.TestCase):
                 },
             }
         )
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="lstm_bidir_run")
         model = models.build_arrow_model_from_config(
-            model_config, model_name="lstm_bidir_run"
+            model_config, input_opts, output_opts
         )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 1)
@@ -219,11 +253,14 @@ class ModelTest(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "lstm",
-                "use_interval": True,
                 "lstm": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions(use_interval=True)
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 2)
         input_names = [inp.name for inp in model.inputs]
@@ -242,7 +279,11 @@ class ModelTest(unittest.TestCase):
                 "gru": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="gru_run")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="gru_run")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 1)
         self.assertEqual(model.output_shape, (None, None, 256))
@@ -264,8 +305,10 @@ class ModelTest(unittest.TestCase):
                 },
             }
         )
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="gru_bidir_run")
         model = models.build_arrow_model_from_config(
-            model_config, model_name="gru_bidir_run"
+            model_config, input_opts, output_opts
         )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 1)
@@ -289,11 +332,14 @@ class ModelTest(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "gru",
-                "snippet_half_frames": 5,
                 "gru": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions(snippet_half_frames=5)
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 2)
         timing_input = np.random.random((1, 100, 1)).astype(np.float32)
@@ -306,11 +352,14 @@ class ModelTest(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "gru",
-                "use_interval": True,
                 "gru": {"units": 64, "num_layers": 1, "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions(use_interval=True)
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 2)
         input_names = [inp.name for inp in model.inputs]
@@ -335,7 +384,11 @@ class ModelTest(unittest.TestCase):
                 },
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="tcn_run")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="tcn_run")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 1)
         self.assertEqual(model.output_shape, (None, None, 256))
@@ -356,8 +409,10 @@ class ModelTest(unittest.TestCase):
                 },
             }
         )
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="cnn1d_run")
         model = models.build_arrow_model_from_config(
-            model_config, model_name="cnn1d_run"
+            model_config, input_opts, output_opts
         )
         self.assertIsInstance(model, keras.Model)
         self.assertEqual(len(model.inputs), 1)
@@ -369,14 +424,9 @@ class ModelTest(unittest.TestCase):
 
     def test_build_arrow_model_from_config_unknown_model_type_raises(self):
         """build_arrow_model_from_config raises ValueError for unknown model_type."""
-        model_config = config.ArrowModelConfig.from_dict({"model_type": "unknown_arch"})
         with self.assertRaises(ValueError) as ctx:
-            models.build_arrow_model_from_config(model_config, model_name="")
-        self.assertIn("unknown_arch", str(ctx.exception))
-        self.assertIn("transformer", str(ctx.exception))
-        self.assertIn("gru", str(ctx.exception))
-        self.assertIn("tcn", str(ctx.exception))
-        self.assertIn("cnn1d", str(ctx.exception))
+            config.ArrowModelConfig.from_dict({"model_type": "unknown_arch"})
+        self.assertIn("Invalid model_type: unknown_arch", str(ctx.exception))
 
     def test_build_arrow_model_from_config_tcn_with_interval_encoding_and_step_index(
         self,
@@ -385,13 +435,18 @@ class ModelTest(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "tcn",
-                "use_interval": True,
-                "interval_encoding": "log",
-                "use_step_index": True,
                 "tcn": {"filters": 32, "num_layers": 2, "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions(
+            use_interval=True,
+            interval_encoding="log",
+            use_step_index=True,
+        )
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         input_names = [inp.name for inp in model.inputs]
         self.assertIn("timing_input", input_names)
@@ -411,13 +466,18 @@ class ModelTest(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "cnn1d",
-                "use_interval": True,
-                "interval_encoding": "multi",
-                "use_beat_phase": True,
                 "cnn1d": {"filters": 32, "kernel_sizes": [3, 3], "dropout_rate": 0.0},
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions(
+            use_interval=True,
+            interval_encoding="multi",
+            use_beat_phase=True,
+        )
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         input_names = [inp.name for inp in model.inputs]
         self.assertIn("timing_input", input_names)
@@ -440,8 +500,10 @@ class ModelTest(unittest.TestCase):
                 "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
             }
         )
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="", use_aux_interval=True)
         model = models.build_arrow_model_from_config(
-            model_config, model_name="", use_aux_interval=True
+            model_config, input_opts, output_opts
         )
         self.assertIsInstance(model, keras.Model)
         dummy_input = np.random.random((1, 20, 1)).astype(np.float32)
@@ -469,7 +531,11 @@ class ModelTest(unittest.TestCase):
                 },
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         dummy_input = np.random.random((1, 25, 1)).astype(np.float32)
         out = model.predict(dummy_input)
@@ -490,7 +556,11 @@ class ModelTest(unittest.TestCase):
                 },
             }
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        input_opts = models.ArrowInputOptions()
+        output_opts = models.ArrowOutputOptions(model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config, input_opts, output_opts
+        )
         self.assertIsInstance(model, keras.Model)
         dummy_input = np.random.random((1, 20, 1)).astype(np.float32)
         out = model.predict(dummy_input)

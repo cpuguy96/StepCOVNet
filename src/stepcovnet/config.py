@@ -10,11 +10,28 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
-from typing import Protocol
+from typing import Any, get_args, get_origin, get_type_hints
+
+
+class _DictSerializableMixin:
+    """Mixin providing default as_dict and from_dict for dataclass configs."""
+
+    def as_dict(self) -> dict:
+        """Convert config to dictionary for JSON serialization."""
+        return dataclasses.asdict(self)  # type: ignore[arg-type]
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Create config from dictionary.
+
+        Returns:
+            Instance of the config class with fields taken from data.
+        """
+        return cls(**data)
 
 
 @dataclasses.dataclass
-class OnsetDatasetConfig:
+class OnsetDatasetConfig(_DictSerializableMixin):
     """Configuration for onset detection dataset creation.
 
     Attributes:
@@ -35,30 +52,9 @@ class OnsetDatasetConfig:
     use_gaussian_target: bool = False
     gaussian_sigma: float = 1.0
 
-    def as_dict(self) -> dict:
-        """Convert config to dictionary for JSON serialization.
-
-        Returns:
-            Dictionary representation of the config with all fields.
-        """
-        return dataclasses.asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> OnsetDatasetConfig:
-        """Create config from dictionary.
-
-        Args:
-            data: Dictionary containing config fields. Must include 'data_dir'
-                and 'val_data_dir', other fields are optional and will use defaults.
-
-        Returns:
-            OnsetDatasetConfig instance created from the dictionary.
-        """
-        return cls(**data)
-
 
 @dataclasses.dataclass
-class ArrowDatasetConfig:
+class ArrowDatasetConfig(_DictSerializableMixin):
     """Configuration for arrow classification dataset creation.
 
     Attributes:
@@ -86,46 +82,9 @@ class ArrowDatasetConfig:
     use_beat_phase: bool = False
     use_aux_interval_target: bool = False
 
-    def as_dict(self) -> dict:
-        """Convert config to dictionary for JSON serialization.
-
-        Returns:
-            Dictionary representation of the config with all fields.
-        """
-        return dataclasses.asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> ArrowDatasetConfig:
-        """Create config from dictionary.
-
-        Args:
-            data: Dictionary containing config fields. Must include 'data_dir'
-                and 'val_data_dir', other fields are optional and will use defaults.
-
-        Returns:
-            ArrowDatasetConfig instance created from the dictionary.
-        """
-        return cls(**data)
-
-
-ARROW_INPUT_OPTION_KEYS = frozenset(
-    {
-        "snippet_half_frames",
-        "use_interval",
-        "interval_encoding",
-        "use_step_index",
-        "use_beat_phase",
-    }
-)
-
-
-def _input_options_from_dataset(dataset_config: ArrowDatasetConfig) -> dict:
-    """Return the shared input-option fields from dataset config for merging into model."""
-    return {k: getattr(dataset_config, k) for k in ARROW_INPUT_OPTION_KEYS}
-
 
 @dataclasses.dataclass
-class OnsetModelConfig:
+class OnsetModelConfig(_DictSerializableMixin):
     """Configuration for U-Net WaveNet model architecture.
 
     Attributes:
@@ -142,40 +101,18 @@ class OnsetModelConfig:
     kernel_size: int = 3
     dropout_rate: float = 0.0
 
-    def as_dict(self) -> dict:
-        """Convert config to dictionary for JSON serialization.
 
-        Returns:
-            Dictionary representation of the config with all fields.
-        """
-        return dataclasses.asdict(self)
+class ArrowParamsBase(_DictSerializableMixin):
+    """Base for arrow model params. All arrow param classes must implement this.
 
-    @classmethod
-    def from_dict(cls, data: dict) -> OnsetModelConfig:
-        """Create config from dictionary.
-
-        Args:
-            data: Dictionary containing config fields. All fields are optional
-                and will use defaults if not provided.
-
-        Returns:
-            OnsetModelConfig instance created from the dictionary.
-        """
-        return cls(**data)
-
-
-class ArrowParamsProtocol(Protocol):
-    """Protocol for arrow model params. All arrow param classes must implement this.
-
-    Implementors must provide as_dict() and experiment_name_parts().
+    Implementors must provide experiment_name_parts().
     """
 
-    def as_dict(self) -> dict: ...
     def experiment_name_parts(self) -> list[str]: ...
 
 
 @dataclasses.dataclass
-class TransformerArrowParams:
+class TransformerArrowParams(ArrowParamsBase):
     """Parameters for the transformer-based arrow model. Used when model_type is 'transformer'.
 
     Attributes:
@@ -194,9 +131,6 @@ class TransformerArrowParams:
     dropout_rate: float = 0.0
     use_timing_position: bool = False
 
-    def as_dict(self) -> dict:
-        return dataclasses.asdict(self)
-
     def experiment_name_parts(self) -> list[str]:
         parts = [
             f"att_layers_{self.num_layers}",
@@ -209,19 +143,9 @@ class TransformerArrowParams:
             parts.append("timing_pos")
         return parts
 
-    @classmethod
-    def from_dict(cls, data: dict) -> TransformerArrowParams:
-        return cls(
-            **{
-                k: v
-                for k, v in data.items()
-                if k in {f.name for f in dataclasses.fields(cls)}
-            }
-        )
-
 
 @dataclasses.dataclass
-class MLPArrowParams:
+class MLPArrowParams(ArrowParamsBase):
     """Parameters for the MLP-based arrow model. Used when model_type is 'mlp'.
 
     Attributes:
@@ -232,28 +156,15 @@ class MLPArrowParams:
     hidden_dims: list[int] = dataclasses.field(default_factory=lambda: [256, 128])
     dropout_rate: float = 0.0
 
-    def as_dict(self) -> dict:
-        return dataclasses.asdict(self)
-
     def experiment_name_parts(self) -> list[str]:
         return [
             "mlp_" + "_".join(str(d) for d in self.hidden_dims),
             f"dropout_{str(self.dropout_rate).replace('.', '_')}",
         ]
 
-    @classmethod
-    def from_dict(cls, data: dict) -> MLPArrowParams:
-        return cls(
-            **{
-                k: v
-                for k, v in data.items()
-                if k in {f.name for f in dataclasses.fields(cls)}
-            }
-        )
-
 
 @dataclasses.dataclass
-class LSTMArrowParams:
+class LSTMArrowParams(ArrowParamsBase):
     """Parameters for the LSTM-based arrow model. Used when model_type is 'lstm'.
 
     Attributes:
@@ -268,9 +179,6 @@ class LSTMArrowParams:
     dropout_rate: float = 0.0
     bidirectional: bool = False
 
-    def as_dict(self) -> dict:
-        return dataclasses.asdict(self)
-
     def experiment_name_parts(self) -> list[str]:
         parts = [
             f"lstm_units_{self.units}",
@@ -281,19 +189,9 @@ class LSTMArrowParams:
             parts.append("lstm_bidir")
         return parts
 
-    @classmethod
-    def from_dict(cls, data: dict) -> LSTMArrowParams:
-        return cls(
-            **{
-                k: v
-                for k, v in data.items()
-                if k in {f.name for f in dataclasses.fields(cls)}
-            }
-        )
-
 
 @dataclasses.dataclass
-class GRUArrowParams:
+class GRUArrowParams(ArrowParamsBase):
     """Parameters for the GRU-based arrow model. Used when model_type is 'gru'.
 
     Attributes:
@@ -314,9 +212,6 @@ class GRUArrowParams:
     attention_heads: int = 4
     attention_dim: int = 64
 
-    def as_dict(self) -> dict:
-        return dataclasses.asdict(self)
-
     def experiment_name_parts(self) -> list[str]:
         parts = [
             f"gru_units_{self.units}",
@@ -331,19 +226,9 @@ class GRUArrowParams:
             parts.append(f"attn_dim_{self.attention_dim}")
         return parts
 
-    @classmethod
-    def from_dict(cls, data: dict) -> GRUArrowParams:
-        return cls(
-            **{
-                k: v
-                for k, v in data.items()
-                if k in {f.name for f in dataclasses.fields(cls)}
-            }
-        )
-
 
 @dataclasses.dataclass
-class TCNArrowParams:
+class TCNArrowParams(ArrowParamsBase):
     """Parameters for the TCN (Temporal Convolutional Network) arrow model. Used when model_type is 'tcn'.
 
     Attributes:
@@ -360,9 +245,6 @@ class TCNArrowParams:
     dilation_base: int = 2
     dropout_rate: float = 0.0
 
-    def as_dict(self) -> dict:
-        return dataclasses.asdict(self)
-
     def experiment_name_parts(self) -> list[str]:
         return [
             f"tcn_filters_{self.filters}",
@@ -372,19 +254,9 @@ class TCNArrowParams:
             f"dropout_{str(self.dropout_rate).replace('.', '_')}",
         ]
 
-    @classmethod
-    def from_dict(cls, data: dict) -> TCNArrowParams:
-        return cls(
-            **{
-                k: v
-                for k, v in data.items()
-                if k in {f.name for f in dataclasses.fields(cls)}
-            }
-        )
-
 
 @dataclasses.dataclass
-class CNN1DArrowParams:
+class CNN1DArrowParams(ArrowParamsBase):
     """Parameters for the 1D CNN arrow model. Used when model_type is 'cnn1d'.
 
     Attributes:
@@ -397,9 +269,6 @@ class CNN1DArrowParams:
     kernel_sizes: list[int] = dataclasses.field(default_factory=lambda: [3, 3, 3])
     dropout_rate: float = 0.0
 
-    def as_dict(self) -> dict:
-        return dataclasses.asdict(self)
-
     def experiment_name_parts(self) -> list[str]:
         return [
             f"cnn1d_filters_{self.filters}",
@@ -407,35 +276,9 @@ class CNN1DArrowParams:
             f"dropout_{str(self.dropout_rate).replace('.', '_')}",
         ]
 
-    @classmethod
-    def from_dict(cls, data: dict) -> CNN1DArrowParams:
-        return cls(
-            **{
-                k: v
-                for k, v in data.items()
-                if k in {f.name for f in dataclasses.fields(cls)}
-            }
-        )
-
-
-# Flat transformer keys used for backward compatibility when parsing old configs.
-_TRANSFORMER_FLAT_KEYS = frozenset(
-    {"num_layers", "d_model", "num_heads", "ff_dim", "dropout_rate"}
-)
-
-# Registry: model_type -> attribute name on ArrowModelConfig. Used for serialization and active block lookup.
-_ARROW_MODEL_TYPE_ATTR: dict[str, str] = {
-    "transformer": "transformer",
-    "mlp": "mlp",
-    "lstm": "lstm",
-    "gru": "gru",
-    "tcn": "tcn",
-    "cnn1d": "cnn1d",
-}
-
 
 @dataclasses.dataclass
-class ArrowModelConfig:
+class ArrowModelConfig(_DictSerializableMixin):
     """Configuration for arrow classification model architecture.
 
     Supports multiple model types via nested architecture-specific params.
@@ -443,13 +286,6 @@ class ArrowModelConfig:
 
     Attributes:
         model_type: One of 'transformer', 'mlp', 'lstm', 'gru', 'tcn', 'cnn1d'.
-        snippet_half_frames: Half-window of frames per step (0 = timing only). When loading an
-            experiment from JSON, this and the other input-option fields are taken from the dataset
-            config; do not set them under "model" in the config file.
-        use_interval: If True, model expects interval_input (time since previous step).
-        interval_encoding: How to encode interval: "default", "log", or "multi".
-        use_step_index: If True, model expects step_index input.
-        use_beat_phase: If True, model expects beat_phase input (BPM from chart).
         transformer: Params for transformer model; used when model_type is 'transformer'.
         mlp: Params for MLP model; used when model_type is 'mlp'.
         lstm: Params for LSTM model; used when model_type is 'lstm'.
@@ -459,11 +295,6 @@ class ArrowModelConfig:
     """
 
     model_type: str = "transformer"
-    snippet_half_frames: int = 0
-    use_interval: bool = False
-    interval_encoding: str = "default"
-    use_step_index: bool = False
-    use_beat_phase: bool = False
     transformer: TransformerArrowParams | None = None
     mlp: MLPArrowParams | None = None
     lstm: LSTMArrowParams | None = None
@@ -471,126 +302,87 @@ class ArrowModelConfig:
     tcn: TCNArrowParams | None = None
     cnn1d: CNN1DArrowParams | None = None
 
-    def get_active_params_block(self) -> ArrowParamsProtocol | None:
+    def get_active_params_block(self) -> ArrowParamsBase | None:
         """Return the params block for the current model_type, or None if not set."""
-        attr = _ARROW_MODEL_TYPE_ATTR.get(self.model_type)
-        if attr is None:
-            return None
-        return getattr(self, attr, None)  # type: ignore[return-value]
+        return getattr(self, self.model_type, None)  # type: ignore[return-value]
 
     def get_experiment_name_parts(self) -> list[str]:
-        """Return experiment name fragments: active params block plus input-related options."""
+        """Return experiment name fragments from the active params block."""
         block = self.get_active_params_block()
         parts = block.experiment_name_parts() if block is not None else []
-        if self.snippet_half_frames > 0:
-            parts.append(f"snippets_half_{self.snippet_half_frames}")
-        if self.use_interval:
-            parts.append("use_interval")
-            if self.interval_encoding != "default":
-                parts.append(f"interval_enc_{self.interval_encoding}")
-        if self.use_step_index:
-            parts.append("use_step_index")
-        if self.use_beat_phase:
-            parts.append("use_beat_phase")
         return parts
-
-    def as_dict(self) -> dict:
-        """Convert config to dictionary for JSON serialization (nested shape)."""
-        out: dict = {
-            "model_type": self.model_type,
-            "snippet_half_frames": self.snippet_half_frames,
-            "use_interval": self.use_interval,
-            "interval_encoding": self.interval_encoding,
-            "use_step_index": self.use_step_index,
-            "use_beat_phase": self.use_beat_phase,
-        }
-        for _model_type, attr in _ARROW_MODEL_TYPE_ATTR.items():
-            block = getattr(self, attr, None)
-            if block is not None:
-                out[attr] = block.as_dict()
-        return out
 
     @classmethod
     def from_dict(cls, data: dict) -> ArrowModelConfig:
-        """Create config from dictionary. Supports nested format and flat (legacy) format."""
-        model_type = data.get("model_type", "transformer")
-        snippet_half_frames = data.get("snippet_half_frames", 0)
-        use_interval = data.get("use_interval", False)
-        interval_encoding = data.get("interval_encoding", "default")
-        use_step_index = data.get("use_step_index", False)
-        use_beat_phase = data.get("use_beat_phase", False)
+        """Create config from dictionary. Only model_type and the active param block key are accepted.
 
-        # Parse active block; transformer has flat-key backward compat.
-        transformer: TransformerArrowParams | None = None
-        mlp: MLPArrowParams | None = None
-        lstm: LSTMArrowParams | None = None
-        gru: GRUArrowParams | None = None
-        tcn: TCNArrowParams | None = None
-        cnn1d: CNN1DArrowParams | None = None
+        Args:
+            data: Dictionary with 'model_type' and one of the param block keys
+                ('transformer', 'mlp', 'lstm', 'gru', 'tcn', 'cnn1d') with nested params.
 
-        if model_type == "transformer":
-            if "transformer" in data:
-                transformer = TransformerArrowParams.from_dict(data["transformer"])
-            elif _TRANSFORMER_FLAT_KEYS.intersection(data):
-                flat = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
-                transformer = TransformerArrowParams.from_dict(flat)
+        Returns:
+            ArrowModelConfig instance.
+
+        Raises:
+            ValueError: If invalid keys are present or model_type is unknown.
+        """
+        param_blocks = _arrow_model_param_blocks(cls)
+        allowed_keys = {"model_type"} | set(param_blocks.keys())
+        invalid = set(data.keys()) - allowed_keys
+        if invalid:
+            raise ValueError(f"Invalid keys for ArrowModelConfig: {sorted(invalid)}")
+
+        model_type: str = data.get("model_type", "transformer")
+        if model_type not in param_blocks:
+            raise ValueError(f"Invalid model_type: {model_type}")
+
+        kwargs: dict[str, Any] = {"model_type": model_type}
+        for param_name, param_class in param_blocks.items():
+            if param_name == model_type:
+                raw = data.get(param_name)
+                block_data = raw if isinstance(raw, dict) else {}
+                kwargs[param_name] = param_class.from_dict(block_data)
             else:
-                transformer = TransformerArrowParams()
-            # Flat keys only when no nested block (nested format takes precedence).
-            if "transformer" not in data:
-                flat_overlay = {k: data[k] for k in _TRANSFORMER_FLAT_KEYS if k in data}
-                if flat_overlay:
-                    merged = {**transformer.as_dict(), **flat_overlay}
-                    transformer = TransformerArrowParams.from_dict(merged)
-        elif model_type == "mlp":
-            mlp = (
-                MLPArrowParams.from_dict(data["mlp"])
-                if "mlp" in data
-                else MLPArrowParams()
-            )
-        elif model_type == "lstm":
-            lstm = (
-                LSTMArrowParams.from_dict(data["lstm"])
-                if "lstm" in data
-                else LSTMArrowParams()
-            )
-        elif model_type == "gru":
-            gru = (
-                GRUArrowParams.from_dict(data["gru"])
-                if "gru" in data
-                else GRUArrowParams()
-            )
-        elif model_type == "tcn":
-            tcn = (
-                TCNArrowParams.from_dict(data["tcn"])
-                if "tcn" in data
-                else TCNArrowParams()
-            )
-        elif model_type == "cnn1d":
-            cnn1d = (
-                CNN1DArrowParams.from_dict(data["cnn1d"])
-                if "cnn1d" in data
-                else CNN1DArrowParams()
-            )
+                kwargs[param_name] = None
+        return cls(**kwargs)
 
-        return cls(
-            model_type=model_type,
-            snippet_half_frames=snippet_half_frames,
-            use_interval=use_interval,
-            interval_encoding=interval_encoding,
-            use_step_index=use_step_index,
-            use_beat_phase=use_beat_phase,
-            transformer=transformer,
-            mlp=mlp,
-            lstm=lstm,
-            gru=gru,
-            tcn=tcn,
-            cnn1d=cnn1d,
-        )
+
+def _arrow_model_param_blocks(
+    config_cls: type[ArrowModelConfig],
+) -> dict[str, type[ArrowParamsBase]]:
+    """Build model_type -> param class map from config dataclass fields.
+
+    Introspects param fields (those typed as Optional[ArrowParamsBase])
+    so adding a new param block only requires adding the field to the config class.
+    Resolves annotations via get_type_hints for PEP 563 (forward refs).
+
+    Returns:
+        Ordered mapping from param field name (e.g. 'transformer') to param class.
+    """
+    result: dict[str, type[ArrowParamsBase]] = {}
+    try:
+        hints = get_type_hints(config_cls)
+    except Exception:
+        hints = {}
+    for f in dataclasses.fields(config_cls):
+        if f.name == "model_type":
+            continue
+        ann = hints.get(f.name, f.type)
+        if get_origin(ann) is not None:
+            args = get_args(ann)
+            for a in args:
+                if a is type(None):
+                    continue
+                if isinstance(a, type) and issubclass(a, ArrowParamsBase):
+                    result[f.name] = a
+                    break
+        elif isinstance(ann, type) and issubclass(ann, ArrowParamsBase):
+            result[f.name] = ann
+    return result
 
 
 @dataclasses.dataclass
-class RunConfig:
+class RunConfig(_DictSerializableMixin):
     """Configuration for training run parameters (shared by onset and arrow).
 
     Attributes:
@@ -632,19 +424,6 @@ class RunConfig:
             )
         if self.fit_verbose not in (0, 1, 2):
             raise ValueError(f"fit_verbose must be 0, 1, or 2, got {self.fit_verbose}")
-
-    def as_dict(self) -> dict:
-        """Convert config to dictionary for JSON serialization.
-
-        Returns:
-            Dictionary representation of the config with all fields.
-        """
-        return dataclasses.asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> RunConfig:
-        """Create config from dictionary. Only valid RunConfig field names are accepted."""
-        return cls(**data)
 
 
 @dataclasses.dataclass
@@ -742,11 +521,6 @@ class ArrowRunConfig(RunConfig):
                 f"aux_interval_{str(self.aux_interval_weight).replace('.', '_')}"
             )
         return parts
-
-    @classmethod
-    def from_dict(cls, data: dict) -> ArrowRunConfig:
-        """Create config from dictionary. Only valid ArrowRunConfig field names are accepted."""
-        return cls(**data)
 
 
 @dataclasses.dataclass
@@ -850,29 +624,19 @@ class ArrowExperimentConfig:
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization.
 
-        Input-option keys are stored only under 'dataset'; they are omitted
-        from 'model' to avoid duplication.
-
         Returns:
-            Dictionary representation containing nested dictionaries for
-            'dataset', 'model', and 'run' configurations.
+            Dictionary with 'dataset', 'model', and 'run' keys containing
+            the serialized nested configurations.
         """
-        model_dict = self.model.as_dict()
-        for k in ARROW_INPUT_OPTION_KEYS:
-            model_dict.pop(k, None)
         return {
             "dataset": self.dataset.as_dict(),
-            "model": model_dict,
+            "model": self.model.as_dict(),
             "run": self.run.as_dict(),
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> ArrowExperimentConfig:
         """Create config from dictionary.
-
-        Input-option fields (snippet_half_frames, use_interval, interval_encoding,
-        use_step_index, use_beat_phase) are taken from the 'dataset' section and
-        applied to the model so both configs stay in sync.
 
         Args:
             data: Dictionary containing 'dataset', 'model', and 'run' keys,
@@ -884,12 +648,11 @@ class ArrowExperimentConfig:
         Raises:
             KeyError: If required keys ('dataset', 'model', 'run') are missing.
         """
-        dataset = ArrowDatasetConfig.from_dict(data["dataset"])
-        input_options = _input_options_from_dataset(dataset)
-        model_data = {**data["model"], **input_options}
-        model = ArrowModelConfig.from_dict(model_data)
-        run = ArrowRunConfig.from_dict(data["run"])
-        return cls(dataset=dataset, model=model, run=run)
+        return cls(
+            dataset=ArrowDatasetConfig.from_dict(data["dataset"]),
+            model=ArrowModelConfig.from_dict(data["model"]),
+            run=ArrowRunConfig.from_dict(data["run"]),
+        )
 
     def to_json(self, path: str):
         """Save config to JSON file.

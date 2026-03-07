@@ -1,13 +1,46 @@
-"""Model architectures and custom Keras components for onset detection."""
+"""Model architectures and custom Keras components for onset detection and arrow classification."""
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 
 import keras
 import tensorflow as tf
 
 from stepcovnet import config, constants
+
+
+@dataclasses.dataclass
+class ArrowInputOptions:
+    """Options for building arrow model inputs.
+
+    Attributes:
+        snippet_half_frames: Half-window of frames per snippet (total = 2*half+1).
+        use_interval: If True, add interval_input (time since previous step) and fuse with timing embedding.
+        interval_encoding: "default", "log", or "multi" for extra interval inputs.
+        use_step_index: If True, add step_index input.
+        use_beat_phase: If True, add beat_phase input.
+    """
+
+    snippet_half_frames: int = 0
+    use_interval: bool = False
+    interval_encoding: str = "default"  # "default", "log", or "multi"
+    use_step_index: bool = False
+    use_beat_phase: bool = False
+
+
+@dataclasses.dataclass
+class ArrowOutputOptions:
+    """Options for building arrow model outputs.
+
+    Attributes:
+        use_aux_interval: If True, add aux_interval output.
+        model_name: Name for the model.
+    """
+
+    use_aux_interval: bool = False
+    model_name: str = ""
 
 
 @keras.saving.register_keras_serializable()
@@ -433,29 +466,29 @@ def build_unet_wavenet_model(
 
 def _build_arrow_inputs(
     embed_dim: int,
-    snippet_half_frames: int = 0,
-    use_interval: bool = False,
+    input_options: ArrowInputOptions,
     scale_timing: bool = False,
-    interval_encoding: str = "default",
-    use_step_index: bool = False,
-    use_beat_phase: bool = False,
 ) -> tuple:
     """Build shared arrow model inputs and fused embedding tensor.
 
     Args:
         embed_dim: Dimension for timing, interval, and snippet projections.
-        snippet_half_frames: Half-window of frames per snippet (0 = no snippet input).
-        use_interval: If True, add interval_input and fuse with timing.
+        input_options: Options for which inputs to add (snippets, interval, step_index, beat_phase, etc.).
         scale_timing: If True, scale timing embedding by sqrt(embed_dim) (transformer convention).
-        interval_encoding: "default", "log" (add interval_log_input), or "multi" (add interval_next_input).
-        use_step_index: If True, add step_index_input, project and add to fused embedding.
-        use_beat_phase: If True, add beat_phase_input, project and fuse.
 
     Returns:
         (inputs, x, timing_tensor): inputs is a single Input or list of Inputs;
         x is the fused tensor of shape (batch, steps, embed_dim); timing_tensor
         is the raw timing input tensor for use e.g. in timing-based position encoding.
     """
+
+    o = input_options
+    use_interval = o.use_interval
+    interval_encoding = o.interval_encoding
+    use_step_index = o.use_step_index
+    use_beat_phase = o.use_beat_phase
+    snippet_half_frames = o.snippet_half_frames
+
     timing_input = keras.layers.Input(shape=(None, 1), name="timing_input")
     timing_embed = keras.layers.Dense(embed_dim, name="input_projection")(timing_input)
     if scale_timing:
@@ -543,24 +576,25 @@ def _build_arrow_inputs(
 def _wrap_arrow_output(
     inputs,
     x: keras.KerasTensor,
-    model_name: str = "",
-    use_aux_interval: bool = False,
+    output_options: ArrowOutputOptions,
 ) -> keras.Model:
     """Apply arrow classification head and wrap inputs + outputs in a Keras Model.
 
     Args:
         inputs: Model input(s) from _build_arrow_inputs.
         x: Fused feature tensor (batch, steps, embed_dim).
-        model_name: Optional suffix for model name (stepcovnet_ARROW-{model_name}).
-        use_aux_interval: If True, add aux_interval Dense(1) head and return model with
-            a dict output mapping names to tensors.
+        output_options: Options for model name and whether to add aux_interval output.
 
     Returns:
-        Keras Model with softmax output over N_ARROW_TYPES. When use_aux_interval is
-        True, the model has a dict output with keys 'output_probabilities' and
+        Keras Model with softmax output over N_ARROW_TYPES. When output_options.use_aux_interval
+        is True, the model has a dict output with keys 'output_probabilities' and
         'aux_interval', which aligns with the loss/metrics/sample_weight dicts used
         during compilation and training.
     """
+    o = output_options
+    use_aux_interval = o.use_aux_interval
+    model_name = o.model_name
+
     arrow_logits = keras.layers.Dense(
         constants.N_ARROW_TYPES, activation="softmax", name="output_probabilities"
     )(x)
@@ -579,48 +613,32 @@ def _wrap_arrow_output(
 
 
 def build_arrow_model(
-    num_layers: int = 1,
-    d_model: int = 128,
-    num_heads: int = 4,
-    ff_dim: int = 512,
-    dropout_rate: float = 0.0,
-    model_name: str = "",
-    snippet_half_frames: int = 0,
-    use_interval: bool = False,
-    use_timing_position: bool = False,
-    interval_encoding: str = "default",
-    use_step_index: bool = False,
-    use_beat_phase: bool = False,
-    use_aux_interval: bool = False,
+    input_options: ArrowInputOptions,
+    output_options: ArrowOutputOptions,
+    params: config.TransformerArrowParams,
 ):
-    """Builds a model for StepMania arrow prediction.
+    """Build a transformer-based model for StepMania arrow prediction.
 
     Args:
-        num_layers: Number of stacked encoder layers.
-        d_model: The dimensionality of the model's embeddings and layers.
-        num_heads: Number of attention heads.
-        ff_dim: The inner dimension of the feed-forward networks.
-        dropout_rate: The dropout rate used in sublayers.
-        model_name: Name for the model.
-        snippet_half_frames: Half-window of frames per snippet (total = 2*half+1).
-            When > 0, add a second input for mel snippets per step and fuse with timing embedding via a small CNN.
-        use_interval: If True, add interval_input (time since previous step) and fuse with timing embedding.
-        use_timing_position: If True, use timing-based additive position bias instead of sinusoidal encoding.
-        interval_encoding: "default", "log", or "multi" for extra interval inputs.
-        use_step_index: If True, add step_index input.
-        use_beat_phase: If True, add beat_phase input.
+        input_options: Options for building inputs (snippets, interval, step_index, beat_phase, etc.).
+        output_options: Options for model name and optional aux_interval output.
+        params: Transformer architecture parameters (layers, d_model, heads, ff_dim, dropout, etc.).
 
     Returns:
         A Keras Model instance. Inputs accept variable sequence length (None); internally padded to constants.MAX_STEPS.
     """
+    p = params
+    d_model = p.d_model
+    num_layers = p.num_layers
+    num_heads = p.num_heads
+    ff_dim = p.ff_dim
+    dropout_rate = p.dropout_rate
+    use_timing_position = p.use_timing_position
+
     inputs, x, timing_tensor = _build_arrow_inputs(
         embed_dim=d_model,
-        snippet_half_frames=snippet_half_frames,
-        use_interval=use_interval,
+        input_options=input_options,
         scale_timing=True,
-        interval_encoding=interval_encoding,
-        use_step_index=use_step_index,
-        use_beat_phase=use_beat_phase,
     )
 
     if use_timing_position:
@@ -642,20 +660,13 @@ def build_arrow_model(
             name=f"transformer_block_{i}",
         )
 
-    return _wrap_arrow_output(
-        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
-    )
+    return _wrap_arrow_output(inputs, x, output_options=output_options)
 
 
 def _build_arrow_mlp(
-    snippet_half_frames: int,
+    input_options: ArrowInputOptions,
+    output_options: ArrowOutputOptions,
     params: config.MLPArrowParams,
-    model_name: str = "",
-    use_interval: bool = False,
-    interval_encoding: str = "default",
-    use_step_index: bool = False,
-    use_beat_phase: bool = False,
-    use_aux_interval: bool = False,
 ) -> keras.Model:
     """Build MLP-based arrow model. Same I/O contract as build_arrow_model."""
     hidden_dims = params.hidden_dims or [256, 128]
@@ -664,32 +675,21 @@ def _build_arrow_mlp(
 
     inputs, x, _ = _build_arrow_inputs(
         embed_dim=d,
-        snippet_half_frames=snippet_half_frames,
-        use_interval=use_interval,
+        input_options=input_options,
         scale_timing=False,
-        interval_encoding=interval_encoding,
-        use_step_index=use_step_index,
-        use_beat_phase=use_beat_phase,
     )
 
     for i, dim in enumerate(hidden_dims[1:], start=1):
         x = keras.layers.Dense(dim, activation="relu", name=f"mlp_dense_{i}")(x)
         x = keras.layers.Dropout(dropout_rate, name=f"mlp_dropout_{i}")(x)
 
-    return _wrap_arrow_output(
-        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
-    )
+    return _wrap_arrow_output(inputs, x, output_options=output_options)
 
 
 def _build_arrow_lstm(
-    snippet_half_frames: int,
+    input_options: ArrowInputOptions,
+    output_options: ArrowOutputOptions,
     params: config.LSTMArrowParams,
-    model_name: str = "",
-    use_interval: bool = False,
-    interval_encoding: str = "default",
-    use_step_index: bool = False,
-    use_beat_phase: bool = False,
-    use_aux_interval: bool = False,
 ) -> keras.Model:
     """Build LSTM-based arrow model. Same I/O contract as build_arrow_model."""
     units = params.units
@@ -698,12 +698,8 @@ def _build_arrow_lstm(
 
     inputs, x, _ = _build_arrow_inputs(
         embed_dim=units,
-        snippet_half_frames=snippet_half_frames,
-        use_interval=use_interval,
+        input_options=input_options,
         scale_timing=False,
-        interval_encoding=interval_encoding,
-        use_step_index=use_step_index,
-        use_beat_phase=use_beat_phase,
     )
 
     for i in range(num_layers):
@@ -725,26 +721,19 @@ def _build_arrow_lstm(
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    return _wrap_arrow_output(
-        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
-    )
+    return _wrap_arrow_output(inputs, x, output_options=output_options)
 
 
 def _build_arrow_gru(
-    snippet_half_frames: int,
+    input_options: ArrowInputOptions,
+    output_options: ArrowOutputOptions,
     params: config.GRUArrowParams,
-    model_name: str = "",
-    use_interval: bool = False,
-    interval_encoding: str = "default",
-    use_step_index: bool = False,
-    use_beat_phase: bool = False,
-    use_aux_interval: bool = False,
 ) -> keras.Model:
     """Build GRU-based arrow model. Same I/O contract as build_arrow_model.
 
     When params.add_attention_layer is True, adds one multi-head self-attention
-    layer after the GRU stack (no positional encoding). When use_aux_interval is
-    True, model outputs [arrow_logits, aux_interval].
+    layer after the GRU stack (no positional encoding). Optional aux_interval
+    output is controlled by output_options.use_aux_interval.
     """
     units = params.units
     num_layers = params.num_layers
@@ -752,12 +741,8 @@ def _build_arrow_gru(
 
     inputs, x, _ = _build_arrow_inputs(
         embed_dim=units,
-        snippet_half_frames=snippet_half_frames,
-        use_interval=use_interval,
+        input_options=input_options,
         scale_timing=False,
-        interval_encoding=interval_encoding,
-        use_step_index=use_step_index,
-        use_beat_phase=use_beat_phase,
     )
 
     for i in range(num_layers):
@@ -798,20 +783,13 @@ def _build_arrow_gru(
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    return _wrap_arrow_output(
-        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
-    )
+    return _wrap_arrow_output(inputs, x, output_options=output_options)
 
 
 def _build_arrow_tcn(
-    snippet_half_frames: int,
     params: config.TCNArrowParams,
-    model_name: str = "",
-    use_interval: bool = False,
-    interval_encoding: str = "default",
-    use_step_index: bool = False,
-    use_beat_phase: bool = False,
-    use_aux_interval: bool = False,
+    input_options: ArrowInputOptions,
+    output_options: ArrowOutputOptions,
 ) -> keras.Model:
     """Build TCN-based arrow model with causal dilated Conv1D stack.
 
@@ -825,12 +803,8 @@ def _build_arrow_tcn(
 
     inputs, x, _ = _build_arrow_inputs(
         embed_dim=filters,
-        snippet_half_frames=snippet_half_frames,
-        use_interval=use_interval,
+        input_options=input_options,
         scale_timing=False,
-        interval_encoding=interval_encoding,
-        use_step_index=use_step_index,
-        use_beat_phase=use_beat_phase,
     )
 
     for i in range(num_layers):
@@ -851,20 +825,13 @@ def _build_arrow_tcn(
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    return _wrap_arrow_output(
-        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
-    )
+    return _wrap_arrow_output(inputs, x, output_options=output_options)
 
 
 def _build_arrow_cnn1d(
-    snippet_half_frames: int,
+    input_options: ArrowInputOptions,
     params: config.CNN1DArrowParams,
-    model_name: str = "",
-    use_interval: bool = False,
-    interval_encoding: str = "default",
-    use_step_index: bool = False,
-    use_beat_phase: bool = False,
-    use_aux_interval: bool = False,
+    output_options: ArrowOutputOptions,
 ) -> keras.Model:
     """Build 1D CNN-based arrow model with causal Conv1D stack.
 
@@ -876,12 +843,8 @@ def _build_arrow_cnn1d(
 
     inputs, x, _ = _build_arrow_inputs(
         embed_dim=filters,
-        snippet_half_frames=snippet_half_frames,
-        use_interval=use_interval,
         scale_timing=False,
-        interval_encoding=interval_encoding,
-        use_step_index=use_step_index,
-        use_beat_phase=use_beat_phase,
+        input_options=input_options,
     )
 
     for i, k in enumerate(kernel_sizes):
@@ -900,168 +863,52 @@ def _build_arrow_cnn1d(
         name="head_dense",
     )(x)
     x = keras.layers.Dropout(dropout_rate, name="head_dropout")(x)
-    return _wrap_arrow_output(
-        inputs, x, model_name=model_name, use_aux_interval=use_aux_interval
-    )
-
-
-def _build_arrow_transformer_from_config(
-    model_config: config.ArrowModelConfig,
-    model_name: str = "",
-    use_aux_interval: bool = False,
-) -> keras.Model:
-    if model_config.transformer is None:
-        raise ValueError(
-            "model_type is 'transformer' but transformer params are missing"
-        )
-    p = model_config.transformer
-    return build_arrow_model(
-        num_layers=p.num_layers,
-        d_model=p.d_model,
-        num_heads=p.num_heads,
-        ff_dim=p.ff_dim,
-        dropout_rate=p.dropout_rate,
-        model_name=model_name,
-        snippet_half_frames=model_config.snippet_half_frames,
-        use_interval=model_config.use_interval,
-        use_timing_position=p.use_timing_position,
-        interval_encoding=model_config.interval_encoding,
-        use_step_index=model_config.use_step_index,
-        use_beat_phase=model_config.use_beat_phase,
-        use_aux_interval=use_aux_interval,
-    )
-
-
-def _build_arrow_mlp_from_config(
-    model_config: config.ArrowModelConfig,
-    model_name: str = "",
-    use_aux_interval: bool = False,
-) -> keras.Model:
-    if model_config.mlp is None:
-        raise ValueError("model_type is 'mlp' but mlp params are missing")
-    return _build_arrow_mlp(
-        snippet_half_frames=model_config.snippet_half_frames,
-        params=model_config.mlp,
-        model_name=model_name,
-        use_interval=model_config.use_interval,
-        interval_encoding=model_config.interval_encoding,
-        use_step_index=model_config.use_step_index,
-        use_beat_phase=model_config.use_beat_phase,
-        use_aux_interval=use_aux_interval,
-    )
-
-
-def _build_arrow_lstm_from_config(
-    model_config: config.ArrowModelConfig,
-    model_name: str = "",
-    use_aux_interval: bool = False,
-) -> keras.Model:
-    if model_config.lstm is None:
-        raise ValueError("model_type is 'lstm' but lstm params are missing")
-    return _build_arrow_lstm(
-        snippet_half_frames=model_config.snippet_half_frames,
-        params=model_config.lstm,
-        model_name=model_name,
-        use_interval=model_config.use_interval,
-        interval_encoding=model_config.interval_encoding,
-        use_step_index=model_config.use_step_index,
-        use_beat_phase=model_config.use_beat_phase,
-        use_aux_interval=use_aux_interval,
-    )
-
-
-def _build_arrow_gru_from_config(
-    model_config: config.ArrowModelConfig,
-    model_name: str = "",
-    use_aux_interval: bool = False,
-) -> keras.Model:
-    if model_config.gru is None:
-        raise ValueError("model_type is 'gru' but gru params are missing")
-    return _build_arrow_gru(
-        snippet_half_frames=model_config.snippet_half_frames,
-        params=model_config.gru,
-        model_name=model_name,
-        use_interval=model_config.use_interval,
-        interval_encoding=model_config.interval_encoding,
-        use_step_index=model_config.use_step_index,
-        use_beat_phase=model_config.use_beat_phase,
-        use_aux_interval=use_aux_interval,
-    )
-
-
-def _build_arrow_tcn_from_config(
-    model_config: config.ArrowModelConfig,
-    model_name: str = "",
-    use_aux_interval: bool = False,
-) -> keras.Model:
-    if model_config.tcn is None:
-        raise ValueError("model_type is 'tcn' but tcn params are missing")
-    return _build_arrow_tcn(
-        snippet_half_frames=model_config.snippet_half_frames,
-        params=model_config.tcn,
-        model_name=model_name,
-        use_interval=model_config.use_interval,
-        interval_encoding=model_config.interval_encoding,
-        use_step_index=model_config.use_step_index,
-        use_beat_phase=model_config.use_beat_phase,
-        use_aux_interval=use_aux_interval,
-    )
-
-
-def _build_arrow_cnn1d_from_config(
-    model_config: config.ArrowModelConfig,
-    model_name: str = "",
-    use_aux_interval: bool = False,
-) -> keras.Model:
-    if model_config.cnn1d is None:
-        raise ValueError("model_type is 'cnn1d' but cnn1d params are missing")
-    return _build_arrow_cnn1d(
-        snippet_half_frames=model_config.snippet_half_frames,
-        params=model_config.cnn1d,
-        model_name=model_name,
-        use_interval=model_config.use_interval,
-        interval_encoding=model_config.interval_encoding,
-        use_step_index=model_config.use_step_index,
-        use_beat_phase=model_config.use_beat_phase,
-        use_aux_interval=use_aux_interval,
-    )
+    return _wrap_arrow_output(inputs, x, output_options=output_options)
 
 
 _ARROW_MODEL_BUILDERS: dict[
     str,
     Callable[..., keras.Model],
 ] = {
-    "transformer": _build_arrow_transformer_from_config,
-    "mlp": _build_arrow_mlp_from_config,
-    "lstm": _build_arrow_lstm_from_config,
-    "gru": _build_arrow_gru_from_config,
-    "tcn": _build_arrow_tcn_from_config,
-    "cnn1d": _build_arrow_cnn1d_from_config,
+    "transformer": build_arrow_model,
+    "mlp": _build_arrow_mlp,
+    "lstm": _build_arrow_lstm,
+    "gru": _build_arrow_gru,
+    "tcn": _build_arrow_tcn,
+    "cnn1d": _build_arrow_cnn1d,
 }
 
 
 def build_arrow_model_from_config(
     model_config: config.ArrowModelConfig,
-    model_name: str = "",
-    use_aux_interval: bool = False,
+    input_options: ArrowInputOptions,
+    output_options: ArrowOutputOptions,
 ) -> keras.Model:
     """Build an arrow model from ArrowModelConfig. Dispatches on model_type.
 
     Args:
-        model_config: Arrow model configuration.
-        model_name: Optional suffix for model name.
-        use_aux_interval: If True, backbones that support it (e.g. GRU) output
-            [arrow_logits, aux_interval] for auxiliary next-interval loss.
+        model_config: Arrow model config specifying model_type and the active params block.
+        input_options: Options for building inputs (snippets, interval, step_index, beat_phase, etc.).
+        output_options: Options for model name and optional aux_interval output.
 
     Returns:
-        Keras Model. When use_aux_interval and backbone supports it, outputs
-        is a list [arrow_logits, aux_interval].
+        Keras Model. When output_options.use_aux_interval is True, the model output
+        is a dict with keys 'output_probabilities' and 'aux_interval'.
     """
     builder = _ARROW_MODEL_BUILDERS.get(model_config.model_type)
     if builder is None:
-        supported = tuple(_ARROW_MODEL_BUILDERS.keys())
+        supported = ", ".join(sorted(_ARROW_MODEL_BUILDERS.keys()))
         raise ValueError(
             f"Unsupported arrow model_type {model_config.model_type!r}. "
             f"Supported: {supported}"
         )
-    return builder(model_config, model_name, use_aux_interval=use_aux_interval)
+    params = model_config.get_active_params_block()
+    if params is None:
+        raise ValueError(
+            f"Arrow model_type {model_config.model_type!r} has no params block set"
+        )
+    return builder(
+        input_options=input_options,
+        output_options=output_options,
+        params=params,
+    )

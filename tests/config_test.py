@@ -168,7 +168,6 @@ class ArrowModelConfigTest(unittest.TestCase):
         """Test creating config with default values (via from_dict for full defaults)."""
         cfg = config.ArrowModelConfig.from_dict({})
         self.assertEqual(cfg.model_type, "transformer")
-        self.assertEqual(cfg.snippet_half_frames, 0)
         self.assertIsNotNone(cfg.transformer)
         assert cfg.transformer is not None
         self.assertEqual(cfg.transformer.num_layers, 1)
@@ -190,36 +189,30 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(d["transformer"]["num_layers"], 2)
         self.assertEqual(d["transformer"]["d_model"], 256)
 
-    def test_from_dict(self):
-        """Test creating config from dictionary (flat backward compat)."""
-        data = {"num_layers": 3, "dropout_rate": 0.2}
-        cfg = config.ArrowModelConfig.from_dict(data)
-        self.assertEqual(cfg.model_type, "transformer")
-        self.assertIsNotNone(cfg.transformer)
-        assert cfg.transformer is not None
-        self.assertEqual(cfg.transformer.num_layers, 3)
-        self.assertEqual(cfg.transformer.dropout_rate, 0.2)
-        self.assertEqual(cfg.transformer.d_model, 128)
+    def test_from_dict_with_invalid_attribute_raises_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowModelConfig.from_dict({"invalid_attribute": 5})
+        self.assertIn("invalid_attribute", str(ctx.exception))
+        self.assertIn("Invalid keys", str(ctx.exception))
 
-    def test_from_dict_with_snippet_half_frames(self):
-        """Test creating config with snippet_half_frames."""
-        data = {"snippet_half_frames": 5}
-        cfg = config.ArrowModelConfig.from_dict(data)
-        self.assertEqual(cfg.snippet_half_frames, 5)
+    def test_from_dict_invalid_model_type_raises_error(self):
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowModelConfig.from_dict({"model_type": "unknown_arch"})
+        self.assertIn("unknown_arch", str(ctx.exception))
+        self.assertIn("Invalid model_type", str(ctx.exception))
 
-    def test_from_dict_nested_transformer_takes_precedence_over_flat_keys(self):
-        """When both nested 'transformer' and flat transformer keys exist, nested wins."""
-        data = {
-            "transformer": {"num_layers": 2, "d_model": 128},
-            "d_model": 64,
-            "num_layers": 5,
-        }
-        cfg = config.ArrowModelConfig.from_dict(data)
-        self.assertEqual(cfg.model_type, "transformer")
-        self.assertIsNotNone(cfg.transformer)
-        assert cfg.transformer is not None
-        self.assertEqual(cfg.transformer.num_layers, 2)
-        self.assertEqual(cfg.transformer.d_model, 128)
+    def test_param_blocks_derived_from_config_class(self):
+        """Param blocks for from_dict are derived from ArrowModelConfig fields.
+
+        Adding a new param (e.g. resnet: ResNetArrowParams | None) to the config
+        class is sufficient; no manual update to from_dict or a separate map is needed.
+        """
+        blocks = config._arrow_model_param_blocks(config.ArrowModelConfig)
+        expected = {"transformer", "mlp", "lstm", "gru", "tcn", "cnn1d"}
+        self.assertEqual(set(blocks.keys()), expected)
+        self.assertIs(blocks["transformer"], config.TransformerArrowParams)
+        self.assertIs(blocks["mlp"], config.MLPArrowParams)
+        self.assertIs(blocks["cnn1d"], config.CNN1DArrowParams)
 
     def test_from_dict_nested_mlp(self):
         """Test creating config with model_type mlp and mlp block."""
@@ -233,22 +226,6 @@ class ArrowModelConfigTest(unittest.TestCase):
         assert cfg.mlp is not None
         self.assertEqual(cfg.mlp.hidden_dims, [128, 64])
         self.assertEqual(cfg.mlp.dropout_rate, 0.1)
-
-    def test_from_dict_mlp_ignores_flat_transformer_keys(self):
-        """With model_type=mlp, flat transformer keys must not create a transformer block."""
-        data = {
-            "model_type": "mlp",
-            "mlp": {"hidden_dims": [256, 128], "dropout_rate": 0.0},
-            "num_layers": 4,
-            "d_model": 64,
-        }
-        cfg = config.ArrowModelConfig.from_dict(data)
-        self.assertEqual(cfg.model_type, "mlp")
-        self.assertIsNone(cfg.transformer)
-        self.assertIsNotNone(cfg.mlp)
-        assert cfg.mlp is not None
-        self.assertEqual(cfg.mlp.hidden_dims, [256, 128])
-        self.assertEqual(cfg.mlp.dropout_rate, 0.0)
 
     def test_from_dict_mlp_ignores_nested_transformer_block(self):
         """With model_type=mlp, a nested 'transformer' key must not create a transformer block."""
@@ -275,13 +252,9 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(d["mlp"]["hidden_dims"], [64])
         self.assertEqual(d["mlp"]["dropout_rate"], 0.0)
 
-    def test_mlp_params_from_dict_filters_unknown_keys(self):
-        """MLPArrowParams.from_dict ignores unknown keys (only known fields passed to constructor)."""
-        params = config.MLPArrowParams.from_dict(
-            {"hidden_dims": [32], "dropout_rate": 0.1, "unknown_key": 99}
-        )
-        self.assertEqual(params.hidden_dims, [32])
-        self.assertEqual(params.dropout_rate, 0.1)
+    def test_mlp_params_from_dict_raises_attribute_error_for_unknown_keys(self):
+        with self.assertRaises(TypeError):
+            config.MLPArrowParams.from_dict({"unknown_key": 99})
 
     def test_from_dict_nested_lstm(self):
         """Test creating config with model_type lstm and lstm block."""
@@ -505,7 +478,6 @@ class ArrowModelConfigTest(unittest.TestCase):
         """When both transformer and lstm are set, get_experiment_name_parts uses only active model_type."""
         cfg = config.ArrowModelConfig(
             model_type="lstm",
-            snippet_half_frames=0,
             transformer=config.TransformerArrowParams(num_layers=2, d_model=128),
             mlp=None,
             lstm=config.LSTMArrowParams(units=32, num_layers=1, dropout_rate=0.0),
@@ -519,7 +491,6 @@ class ArrowModelConfigTest(unittest.TestCase):
         """When both lstm and gru are set, get_experiment_name_parts uses only active model_type (gru)."""
         cfg = config.ArrowModelConfig(
             model_type="gru",
-            snippet_half_frames=0,
             transformer=None,
             mlp=None,
             lstm=config.LSTMArrowParams(units=64, num_layers=2, dropout_rate=0.0),
@@ -531,39 +502,28 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertNotIn("lstm_layers", parts)
 
     def test_get_experiment_name_parts_includes_input_options_when_set(self):
-        """get_experiment_name_parts includes snippet_half_frames, use_interval, interval_encoding, use_step_index, use_beat_phase when set."""
+        """get_experiment_name_parts returns only active block parts (input options live on dataset)."""
         cfg = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "transformer",
-                "snippet_half_frames": 5,
-                "use_interval": True,
-                "interval_encoding": "log",
-                "use_step_index": True,
-                "use_beat_phase": True,
                 "transformer": {"num_layers": 1, "d_model": 64},
             }
         )
         parts = cfg.get_experiment_name_parts()
-        self.assertIn("snippets_half_5", parts)
-        self.assertIn("use_interval", parts)
-        self.assertIn("interval_enc_log", parts)
-        self.assertIn("use_step_index", parts)
-        self.assertIn("use_beat_phase", parts)
         self.assertIn("att_layers_1", parts)
+        self.assertIn("d_model_64", parts)
 
     def test_get_experiment_name_parts_omits_interval_encoding_when_default(self):
-        """interval_encoding 'default' does not add an experiment name part."""
+        """get_experiment_name_parts returns only transformer block parts."""
         cfg = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "transformer",
-                "use_interval": True,
-                "interval_encoding": "default",
                 "transformer": {"num_layers": 1, "d_model": 64},
             }
         )
         parts = cfg.get_experiment_name_parts()
-        self.assertNotIn("interval_enc", parts)
-        self.assertIn("use_interval", parts)
+        self.assertIn("att_layers_1", parts)
+        self.assertIn("d_model_64", parts)
 
     def test_from_dict_nested_tcn(self):
         """Test creating config with model_type tcn and tcn block; round-trip."""
@@ -618,22 +578,21 @@ class ArrowModelConfigTest(unittest.TestCase):
         self.assertEqual(cfg2.cnn1d.kernel_sizes, [3, 5, 3])
 
     def test_from_dict_interval_encoding_use_step_index_use_beat_phase(self):
-        """Round-trip for interval_encoding, use_step_index, use_beat_phase on ArrowModelConfig."""
+        """Round-trip for gru block; input options live on dataset, not model config."""
         data = {
             "model_type": "gru",
             "gru": {"units": 64, "num_layers": 1},
-            "interval_encoding": "multi",
-            "use_step_index": True,
-            "use_beat_phase": True,
         }
         cfg = config.ArrowModelConfig.from_dict(data)
-        self.assertEqual(cfg.interval_encoding, "multi")
-        self.assertTrue(cfg.use_step_index)
-        self.assertTrue(cfg.use_beat_phase)
+        self.assertEqual(cfg.model_type, "gru")
+        self.assertIsNotNone(cfg.gru)
+        assert cfg.gru is not None
+        self.assertEqual(cfg.gru.units, 64)
+        self.assertEqual(cfg.gru.num_layers, 1)
         d = cfg.as_dict()
-        self.assertEqual(d["interval_encoding"], "multi")
-        self.assertEqual(d["use_step_index"], True)
-        self.assertEqual(d["use_beat_phase"], True)
+        self.assertEqual(d["model_type"], "gru")
+        self.assertIn("gru", d)
+        self.assertEqual(d["gru"]["units"], 64)
 
     def test_get_experiment_name_parts_tcn(self):
         """get_experiment_name_parts returns tcn param fragments when model_type is tcn."""
@@ -1246,10 +1205,6 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         self.assertEqual(d["dataset"]["use_interval"], True)
         self.assertEqual(d["dataset"]["interval_encoding"], "log")
         self.assertEqual(d["model"]["transformer"]["num_layers"], 2)
-        for key in config.ARROW_INPUT_OPTION_KEYS:
-            self.assertNotIn(
-                key, d["model"], f"input option {key} should not be in model"
-            )
 
     def test_to_json_and_from_json(self):
         """Test saving and loading config from JSON file."""
@@ -1301,44 +1256,6 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         self.assertEqual(loaded.run.chart_validity_aux_weight, 0.3)
         self.assertEqual(loaded.run.diversity_aux_weight, 0.1)
 
-    def test_round_trip_input_options_only_under_dataset_model_synced_from_dataset(
-        self,
-    ):
-        """Input options are stored only under dataset; from_dict syncs them to model."""
-        dataset_cfg = config.ArrowDatasetConfig(
-            data_dir="d",
-            val_data_dir="v",
-            snippet_half_frames=5,
-            use_interval=True,
-            interval_encoding="multi",
-            use_step_index=True,
-            use_beat_phase=True,
-        )
-        model_cfg = config.ArrowModelConfig.from_dict(
-            {"model_type": "lstm", "lstm": {"units": 64}}
-        )
-        run_cfg = config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir="out")
-        exp_cfg = config.ArrowExperimentConfig(
-            dataset=dataset_cfg, model=model_cfg, run=run_cfg
-        )
-        d = exp_cfg.as_dict()
-        for key in config.ARROW_INPUT_OPTION_KEYS:
-            self.assertIn(key, d["dataset"])
-            self.assertNotIn(key, d["model"])
-        loaded = config.ArrowExperimentConfig.from_dict(d)
-        self.assertEqual(loaded.dataset.snippet_half_frames, 5)
-        self.assertEqual(loaded.model.snippet_half_frames, 5)
-        self.assertTrue(loaded.dataset.use_interval)
-        self.assertEqual(loaded.model.use_interval, loaded.dataset.use_interval)
-        self.assertEqual(loaded.dataset.interval_encoding, "multi")
-        self.assertEqual(
-            loaded.model.interval_encoding, loaded.dataset.interval_encoding
-        )
-        self.assertTrue(loaded.dataset.use_step_index)
-        self.assertEqual(loaded.model.use_step_index, loaded.dataset.use_step_index)
-        self.assertTrue(loaded.dataset.use_beat_phase)
-        self.assertEqual(loaded.model.use_beat_phase, loaded.dataset.use_beat_phase)
-
     def test_from_dict_input_options_only_under_dataset(self):
         """Loading with input options only under dataset populates both configs."""
         data = {
@@ -1354,11 +1271,8 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         }
         loaded = config.ArrowExperimentConfig.from_dict(data)
         self.assertEqual(loaded.dataset.snippet_half_frames, 3)
-        self.assertEqual(loaded.model.snippet_half_frames, 3)
         self.assertEqual(loaded.dataset.use_interval, True)
-        self.assertEqual(loaded.model.use_interval, True)
         self.assertEqual(loaded.dataset.interval_encoding, "log")
-        self.assertEqual(loaded.model.interval_encoding, "log")
 
 
 if __name__ == "__main__":

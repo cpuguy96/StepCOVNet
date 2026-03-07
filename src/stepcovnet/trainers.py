@@ -658,10 +658,19 @@ def run_arrow_train_from_config(
         run_config=run_config,
     )
 
-    model = models.build_arrow_model_from_config(
-        model_config,
-        model_name=run_config.model_name or experiment_name,
+    input_options = models.ArrowInputOptions(
+        snippet_half_frames=dataset_config.snippet_half_frames,
+        use_interval=dataset_config.use_interval,
+        interval_encoding=dataset_config.interval_encoding,
+        use_step_index=dataset_config.use_step_index,
+        use_beat_phase=dataset_config.use_beat_phase,
+    )
+    output_options = models.ArrowOutputOptions(
         use_aux_interval=use_aux_interval,
+        model_name=run_config.model_name or experiment_name,
+    )
+    model = models.build_arrow_model_from_config(
+        model_config, input_options, output_options
     )
 
     if run_config.show_model_summary:
