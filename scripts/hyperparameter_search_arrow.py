@@ -217,7 +217,8 @@ def apply_overrides(
     Does not apply forbidden keys. After overrides, forces run.val_take_count=-1,
     dataset.batch_size=1, and sweep-time verbosity (show_model_summary=False,
     fit_verbose=0). run.epoch and run.take_count come from base config or overrides.
-    Supports multi-level keys (e.g. model.transformer.num_layers, model.mlp.hidden_dims).
+    Model overrides use dotted paths: model.model_type or model.<block>.<param>
+    (e.g. model.transformer.num_layers, model.mlp.hidden_dims).
     """
     # Work with dict so we can mutate nested fields.
     d = base.as_dict()
@@ -230,6 +231,10 @@ def apply_overrides(
         if prefix == "dataset":
             _set_nested(d["dataset"], rest, value)
         elif prefix == "model":
+            if rest != "model_type" and "." not in rest:
+                raise ValueError(
+                    f"Model override key must be model.model_type or model.<block>.<param>, got model.{rest}"
+                )
             _set_nested(d["model"], rest, value)
         elif prefix == "run":
             _set_nested(d["run"], rest, value)

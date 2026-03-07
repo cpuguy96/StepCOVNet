@@ -185,27 +185,27 @@ class GridExpansionTest(unittest.TestCase):
 
     def test_expand_grid_2x3x2(self):
         search_space = {
-            "model.dropout_rate": [0.0, 0.1],
-            "model.num_layers": [1, 2, 3],
+            "model.transformer.dropout_rate": [0.0, 0.1],
+            "model.transformer.num_layers": [1, 2, 3],
             "run.chart_validity_aux_weight": [0.0, 0.3],
         }
         combinations = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertEqual(len(combinations), 2 * 3 * 2)
         for combo in combinations:
             self.assertIsInstance(combo, dict)
-            self.assertIn("model.dropout_rate", combo)
-            self.assertIn("model.num_layers", combo)
+            self.assertIn("model.transformer.dropout_rate", combo)
+            self.assertIn("model.transformer.num_layers", combo)
             self.assertIn("run.chart_validity_aux_weight", combo)
-            self.assertIn(combo["model.dropout_rate"], [0.0, 0.1])
-            self.assertIn(combo["model.num_layers"], [1, 2, 3])
+            self.assertIn(combo["model.transformer.dropout_rate"], [0.0, 0.1])
+            self.assertIn(combo["model.transformer.num_layers"], [1, 2, 3])
             self.assertIn(combo["run.chart_validity_aux_weight"], [0.0, 0.3])
 
     def test_expand_grid_single_param(self):
-        search_space = {"model.num_layers": [1, 2]}
+        search_space = {"model.transformer.num_layers": [1, 2]}
         combinations = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertEqual(len(combinations), 2)
-        self.assertEqual(combinations[0], {"model.num_layers": 1})
-        self.assertEqual(combinations[1], {"model.num_layers": 2})
+        self.assertEqual(combinations[0], {"model.transformer.num_layers": 1})
+        self.assertEqual(combinations[1], {"model.transformer.num_layers": 2})
 
 
 class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
@@ -264,20 +264,6 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         out = hyperparameter_search_arrow.apply_overrides(base, overrides)
         assert out.model.transformer is not None
         self.assertEqual(out.model.transformer.num_layers, 3)
-
-    def test_apply_overrides_flat_transformer_keys_ignored(self):
-        """Flat keys (model.dropout_rate) do not apply; config reads from model.transformer.*."""
-        base = self._minimal_base_config()
-        assert base.model.transformer is not None
-        base_dropout = base.model.transformer.dropout_rate
-        overrides = {"model.dropout_rate": 0.99}
-        out = hyperparameter_search_arrow.apply_overrides(base, overrides)
-        assert out.model.transformer is not None
-        self.assertEqual(
-            out.model.transformer.dropout_rate,
-            base_dropout,
-            "model.dropout_rate must not override transformer dropout; use model.transformer.dropout_rate",
-        )
 
     def test_apply_overrides_creates_missing_intermediate_dict(self):
         """Override targeting a nested key on a non-existent intermediate dict creates it (_set_nested branch)."""
@@ -643,7 +629,10 @@ class RandomSearchTest(unittest.TestCase):
 
     def test_random_search_same_seed_same_order(self):
         """Same seed produces the same sampled overrides (reproducibility)."""
-        search_space = {"model.dropout_rate": [0.0, 0.1, 0.2], "run.epoch": [1, 2]}
+        search_space = {
+            "model.transformer.dropout_rate": [0.0, 0.1, 0.2],
+            "run.epoch": [1, 2],
+        }
         full = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertEqual(len(full), 6)
         import random
