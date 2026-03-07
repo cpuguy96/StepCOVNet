@@ -14,7 +14,7 @@ import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
-from stepcovnet import constants
+from stepcovnet import config, constants
 
 HOP_COEFF = 0.01  # 100ms per frame
 
@@ -595,7 +595,7 @@ def _load_arrow_pair_py_callback(
     chart_path_t: tf.Tensor,
     snippet_half_frames: int,
     use_interval: bool,
-    interval_encoding: str,
+    interval_encoding: config.IntervalEncoding,
     use_step_index: bool,
     use_beat_phase: bool,
     use_aux_interval_target: bool,
@@ -622,8 +622,7 @@ def _load_arrow_pair_py_callback(
         chart_path_t: Tensor containing the chart path.
         snippet_half_frames: Half-window of frames around each onset (total = 2*snippet_half_frames+1).
         use_interval: If True, include interval_input (time since previous step) in the batch dict.
-        interval_encoding: "default", "log" (add interval_log_input), or "multi" (add interval_log_input,
-            interval_next_input). Must match model config.
+        interval_encoding: IntervalEncoding (DEFAULT, LOG, or MULTI). Must match model config.
         use_step_index: If True, include step_index_input (normalized position in sequence).
         use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
         use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
@@ -669,13 +668,13 @@ def _load_arrow_pair_py_callback(
 
     times_norm = (times / (np.max(times) + 1e-9)).astype(np.float32)
     if use_interval:
-        if interval_encoding == "log":
+        if interval_encoding == config.IntervalEncoding.LOG:
             intervals_norm = log_normalized_intervals_from_times(times)
             interval_log_norm = zeros_n.copy()
-        elif interval_encoding == "multi":
+        elif interval_encoding == config.IntervalEncoding.MULTI:
             intervals_norm = next_interval_normalized_from_times(times)
             interval_log_norm = log_normalized_intervals_from_times(times)
-        elif interval_encoding == "default":
+        elif interval_encoding == config.IntervalEncoding.DEFAULT:
             intervals_norm = normalized_intervals_from_times(times)
             interval_log_norm = zeros_n.copy()
         else:
@@ -747,7 +746,7 @@ def _process_arrow_pair_tf_map(
     chart_path_t: tf.Tensor,
     snippet_half_frames: int,
     use_interval: bool,
-    interval_encoding: str,
+    interval_encoding: config.IntervalEncoding,
     use_step_index: bool,
     use_beat_phase: bool,
     use_aux_interval_target: bool,
@@ -808,11 +807,11 @@ def _process_arrow_pair_tf_map(
         out: dict[str, tf.Tensor] = {"timing_input": times}
         if use_interval:
             intervals = tf.ensure_shape(intervals, [None])
-            if interval_encoding == "default":
+            if interval_encoding == config.IntervalEncoding.DEFAULT:
                 out["interval_input"] = tf.expand_dims(intervals, axis=-1)
-            elif interval_encoding == "log":
+            elif interval_encoding == config.IntervalEncoding.LOG:
                 out["interval_log_input"] = tf.expand_dims(intervals, axis=-1)
-            elif interval_encoding == "multi":
+            elif interval_encoding == config.IntervalEncoding.MULTI:
                 interval_log = tf.ensure_shape(interval_log, [None])
                 out["interval_log_input"] = tf.expand_dims(interval_log, axis=-1)
                 out["interval_next_input"] = tf.expand_dims(intervals, axis=-1)
@@ -895,7 +894,7 @@ def create_arrow_dataset(
     batch_size: int = 1,
     snippet_half_frames: int = 0,
     use_interval: bool = False,
-    interval_encoding: str = "default",
+    interval_encoding: config.IntervalEncoding = config.IntervalEncoding.DEFAULT,
     use_step_index: bool = False,
     use_beat_phase: bool = False,
     use_aux_interval_target: bool = False,
@@ -911,8 +910,7 @@ def create_arrow_dataset(
         snippet_half_frames: Half-window of frames around each onset (total = 2*snippet_half_frames+1).
             When > 0, load audio and yield mel snippets per step; when 0, timing only.
         use_interval: If True, include interval_input (time since previous step) in the batch dict.
-        interval_encoding: "default", "log" (add interval_log_input), or "multi" (add interval_log_input,
-            interval_next_input). Must match model config.
+        interval_encoding: IntervalEncoding (DEFAULT, LOG, or MULTI). Must match model config.
         use_step_index: If True, include step_index_input (normalized position in sequence).
         use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
         use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
@@ -965,13 +963,13 @@ def create_arrow_dataset(
                 )
                 padding_values_dict["snippet_input"] = 0.0
             if use_interval:
-                if interval_encoding == "default":
+                if interval_encoding == config.IntervalEncoding.DEFAULT:
                     padded_shapes_dict["interval_input"] = (None, 1)
                     padding_values_dict["interval_input"] = 0.0
-                elif interval_encoding == "log":
+                elif interval_encoding == config.IntervalEncoding.LOG:
                     padded_shapes_dict["interval_log_input"] = (None, 1)
                     padding_values_dict["interval_log_input"] = 0.0
-                elif interval_encoding == "multi":
+                elif interval_encoding == config.IntervalEncoding.MULTI:
                     padded_shapes_dict["interval_log_input"] = (None, 1)
                     padding_values_dict["interval_log_input"] = 0.0
                     padded_shapes_dict["interval_next_input"] = (None, 1)

@@ -8,9 +8,23 @@ for saving with runs and loading for re-running experiments.
 from __future__ import annotations
 
 import dataclasses
+import enum
 import json
 import os
 from typing import Any, get_args, get_origin, get_type_hints
+
+
+class IntervalEncoding(enum.StrEnum):
+    """How to encode inter-step interval as model input.
+
+    DEFAULT: raw normalized interval (interval_input).
+    LOG: log(1+interval) (interval_log_input).
+    MULTI: both log and next-interval channels (interval_log_input, interval_next_input).
+    """
+
+    DEFAULT = "default"
+    LOG = "log"
+    MULTI = "multi"
 
 
 class _DictSerializableMixin:
@@ -64,8 +78,8 @@ class ArrowDatasetConfig(_DictSerializableMixin):
         snippet_half_frames: Half-window of frames around each onset (total frames = 2*snippet_half_frames+1).
             When > 0, audio snippets are loaded and included per step; when 0, only timing and chart are used.
         use_interval: If True, include inter-step interval (time since previous step) as an input.
-        interval_encoding: How to encode interval: "default", "log" (log(1+interval)), or "multi" (extra channels).
-            Default "default". These input options are the single source of truth; they are applied to the
+        interval_encoding: How to encode interval (IntervalEncoding): DEFAULT, LOG (log(1+interval)), or MULTI (extra channels).
+            These input options are the single source of truth; they are applied to the
             model config when loading an experiment so dataset and model stay in sync.
         use_step_index: If True, include step index (position in sequence) as an input.
         use_beat_phase: If True, include beat/phase features (BPM from chart txt).
@@ -77,10 +91,32 @@ class ArrowDatasetConfig(_DictSerializableMixin):
     batch_size: int = 1
     snippet_half_frames: int = 0
     use_interval: bool = False
-    interval_encoding: str = "default"
+    interval_encoding: IntervalEncoding = IntervalEncoding.DEFAULT
     use_step_index: bool = False
     use_beat_phase: bool = False
     use_aux_interval_target: bool = False
+
+    def __post_init__(self) -> None:
+        """Normalize interval_encoding from string to enum when loaded from dict/JSON."""
+        if isinstance(self.interval_encoding, str):
+            object.__setattr__(
+                self, "interval_encoding", IntervalEncoding(self.interval_encoding)
+            )
+
+    def as_dict(self) -> dict:
+        """Convert to dict for JSON; interval_encoding serialized as string."""
+        d = dataclasses.asdict(self)  # type: ignore[arg-type]
+        d["interval_encoding"] = self.interval_encoding.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ArrowDatasetConfig:
+        """Create from dict; interval_encoding accepted as string or enum."""
+        kwargs = dict(data)
+        kwargs["interval_encoding"] = IntervalEncoding(
+            kwargs.get("interval_encoding", IntervalEncoding.DEFAULT)
+        )
+        return cls(**kwargs)
 
 
 @dataclasses.dataclass

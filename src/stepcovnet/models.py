@@ -18,14 +18,14 @@ class ArrowInputOptions:
     Attributes:
         snippet_half_frames: Half-window of frames per snippet (total = 2*half+1).
         use_interval: If True, add interval_input (time since previous step) and fuse with timing embedding.
-        interval_encoding: "default", "log", or "multi" for extra interval inputs.
+        interval_encoding: IntervalEncoding for extra interval inputs (DEFAULT, LOG, or MULTI).
         use_step_index: If True, add step_index input.
         use_beat_phase: If True, add beat_phase input.
     """
 
     snippet_half_frames: int = 0
     use_interval: bool = False
-    interval_encoding: str = "default"  # "default", "log", or "multi"
+    interval_encoding: config.IntervalEncoding = config.IntervalEncoding.DEFAULT
     use_step_index: bool = False
     use_beat_phase: bool = False
 
@@ -499,14 +499,14 @@ def _build_arrow_inputs(
 
     inputs_list: list = [timing_input]
     if use_interval:
-        if interval_encoding == "default":
+        if interval_encoding == config.IntervalEncoding.DEFAULT:
             interval_input = keras.layers.Input(shape=(None, 1), name="interval_input")
             interval_embed = keras.layers.Dense(embed_dim, name="interval_projection")(
                 interval_input
             )
             x = keras.layers.Add(name="fuse_timing_interval")([x, interval_embed])
             inputs_list.append(interval_input)
-        elif interval_encoding == "log":
+        elif interval_encoding == config.IntervalEncoding.LOG:
             interval_log_input = keras.layers.Input(
                 shape=(None, 1), name="interval_log_input"
             )
@@ -515,7 +515,7 @@ def _build_arrow_inputs(
             )(interval_log_input)
             x = keras.layers.Add(name="fuse_interval_log")([x, interval_log_embed])
             inputs_list.append(interval_log_input)
-        elif interval_encoding == "multi":
+        elif interval_encoding == config.IntervalEncoding.MULTI:
             interval_log_input = keras.layers.Input(
                 shape=(None, 1), name="interval_log_input"
             )

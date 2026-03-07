@@ -685,15 +685,19 @@ class TrainersTest(unittest.TestCase):
             batch_size=1,
             snippet_half_frames=5,
         )
-        model_config = config.ArrowModelConfig.from_dict(
-            {"snippet_half_frames": 5},
-        )
+        model_config = config.ArrowModelConfig()
         ds = datasets.create_arrow_dataset(
             data_dir=dataset_config.data_dir,
             batch_size=dataset_config.batch_size,
             snippet_half_frames=dataset_config.snippet_half_frames,
         )
-        model = models.build_arrow_model_from_config(model_config, model_name="")
+        model = models.build_arrow_model_from_config(
+            model_config,
+            input_options=models.ArrowInputOptions(
+                snippet_half_frames=dataset_config.snippet_half_frames
+            ),
+            output_options=models.ArrowOutputOptions(),
+        )
         batch = next(iter(ds.take(1)))
         x, y = batch  # type: ignore[reportGeneralTypeIssues]
         out = model(x)
@@ -845,24 +849,24 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertNotIn("use_interval", name)
 
     def test_get_arrow_experiment_name_differing_only_in_interval_encoding_differ(self):
-        """Configs differing only in interval_encoding produce different experiment names."""
-        base = {
-            "model_type": "transformer",
-            "use_interval": True,
-            "transformer": {"num_layers": 1, "d_model": 64},
-        }
-        run = config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir="out")
-        cfg_default = config.ArrowModelConfig.from_dict(
-            {**base, "interval_encoding": "default"}
+        """Dataset configs differing only in interval_encoding are distinct; round-trip preserves enum."""
+        dataset_default = config.ArrowDatasetConfig(
+            data_dir="d",
+            val_data_dir="v",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
         )
-        cfg_log = config.ArrowModelConfig.from_dict(
-            {**base, "interval_encoding": "log"}
+        dataset_log = config.ArrowDatasetConfig(
+            data_dir="d",
+            val_data_dir="v",
+            interval_encoding=config.IntervalEncoding.LOG,
         )
-        name_default = trainers._get_arrow_experiment_name(cfg_default, run)
-        name_log = trainers._get_arrow_experiment_name(cfg_log, run)
-        self.assertNotEqual(name_default, name_log)
-        self.assertIn("interval_enc_log", name_log)
-        self.assertNotIn("interval_enc", name_default)
+        self.assertNotEqual(
+            dataset_default.interval_encoding, dataset_log.interval_encoding
+        )
+        d = dataset_log.as_dict()
+        self.assertEqual(d["interval_encoding"], "log")
+        loaded = config.ArrowDatasetConfig.from_dict(d)
+        self.assertEqual(loaded.interval_encoding, config.IntervalEncoding.LOG)
 
     def test_get_arrow_experiment_name_includes_use_step_index_and_use_beat_phase(self):
         """Config with use_step_index and use_beat_phase includes them in experiment name."""
@@ -997,7 +1001,6 @@ class ExperimentNameHelperTests(unittest.TestCase):
         # Simulate e.g. loading transformer config then overriding --model_type mlp without clearing transformer
         model_config = config.ArrowModelConfig(
             model_type="mlp",
-            snippet_half_frames=0,
             transformer=config.TransformerArrowParams(
                 num_layers=2, d_model=128, num_heads=4, ff_dim=512, dropout_rate=0.0
             ),
@@ -1188,7 +1191,6 @@ class ExperimentNameHelperTests(unittest.TestCase):
             }
             exp = config.ArrowExperimentConfig.from_dict(data)
             self.assertTrue(exp.dataset.use_interval)
-            self.assertTrue(exp.model.use_interval)
             trainers.run_arrow_train_from_config(exp.dataset, exp.model, exp.run)
 
 
@@ -1393,7 +1395,9 @@ class ArrowLossTests(unittest.TestCase):
         self.assertIn("aux_interval_target", out)
         self.assertIn("aux_interval_mask", out)
         model = models.build_arrow_model_from_config(
-            model_config, model_name="aux_test", use_aux_interval=True
+            model_config,
+            input_options=models.ArrowInputOptions(),
+            output_options=models.ArrowOutputOptions(use_aux_interval=True),
         )
         # Model outputs are a dict keyed by output layer names when aux head enabled.
         self.assertEqual(

@@ -103,7 +103,7 @@ class ArrowDatasetConfigTest(unittest.TestCase):
             "use_aux_interval_target": True,
         }
         cfg = config.ArrowDatasetConfig.from_dict(data)
-        self.assertEqual(cfg.interval_encoding, "log")
+        self.assertEqual(cfg.interval_encoding, config.IntervalEncoding.LOG)
         self.assertTrue(cfg.use_step_index)
         self.assertTrue(cfg.use_beat_phase)
         self.assertTrue(cfg.use_aux_interval_target)
@@ -117,6 +117,16 @@ class ArrowDatasetConfigTest(unittest.TestCase):
         self.assertEqual(cfg2.use_step_index, cfg.use_step_index)
         self.assertEqual(cfg2.use_beat_phase, cfg.use_beat_phase)
         self.assertEqual(cfg2.use_aux_interval_target, cfg.use_aux_interval_target)
+
+    def test_interval_encoding_enum_values_and_invalid_raises(self):
+        """IntervalEncoding has DEFAULT, LOG, MULTI; from_dict with invalid value raises."""
+        self.assertEqual(config.IntervalEncoding.DEFAULT.value, "default")
+        self.assertEqual(config.IntervalEncoding.LOG.value, "log")
+        self.assertEqual(config.IntervalEncoding.MULTI.value, "multi")
+        with self.assertRaises(ValueError):
+            config.ArrowDatasetConfig.from_dict(
+                {"data_dir": "d", "val_data_dir": "v", "interval_encoding": "invalid"}
+            )
 
 
 class OnsetModelConfigTest(unittest.TestCase):
@@ -1191,7 +1201,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
             val_data_dir="data/val",
             batch_size=2,
             use_interval=True,
-            interval_encoding="log",
+            interval_encoding=config.IntervalEncoding.LOG,
         )
         model_cfg = config.ArrowModelConfig.from_dict(
             {"transformer": {"num_layers": 2}}
@@ -1272,7 +1282,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         loaded = config.ArrowExperimentConfig.from_dict(data)
         self.assertEqual(loaded.dataset.snippet_half_frames, 3)
         self.assertEqual(loaded.dataset.use_interval, True)
-        self.assertEqual(loaded.dataset.interval_encoding, "log")
+        self.assertEqual(loaded.dataset.interval_encoding, config.IntervalEncoding.LOG)
 
 
 if __name__ == "__main__":

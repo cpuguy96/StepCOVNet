@@ -440,7 +440,7 @@ class ModelTest(unittest.TestCase):
         )
         input_opts = models.ArrowInputOptions(
             use_interval=True,
-            interval_encoding="log",
+            interval_encoding=config.IntervalEncoding.LOG,
             use_step_index=True,
         )
         output_opts = models.ArrowOutputOptions(model_name="")
@@ -471,7 +471,7 @@ class ModelTest(unittest.TestCase):
         )
         input_opts = models.ArrowInputOptions(
             use_interval=True,
-            interval_encoding="multi",
+            interval_encoding=config.IntervalEncoding.MULTI,
             use_beat_phase=True,
         )
         output_opts = models.ArrowOutputOptions(model_name="")

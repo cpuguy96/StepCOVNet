@@ -8,7 +8,7 @@ from unittest import mock
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import constants, datasets
+from stepcovnet import config, constants, datasets
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
@@ -233,7 +233,7 @@ class DatasetsTest(unittest.TestCase):
         ds = datasets.create_arrow_dataset(
             TEST_DATA_DIR,
             use_interval=True,
-            interval_encoding="log",
+            interval_encoding=config.IntervalEncoding.LOG,
         )
         features, targets = _first_batch(ds)
         self.assertIn("interval_log_input", features)
@@ -247,7 +247,7 @@ class DatasetsTest(unittest.TestCase):
         ds = datasets.create_arrow_dataset(
             TEST_DATA_DIR,
             use_interval=True,
-            interval_encoding="multi",
+            interval_encoding=config.IntervalEncoding.MULTI,
         )
         features, targets = _first_batch(ds)
         self.assertIn("interval_log_input", features)
@@ -305,7 +305,7 @@ class DatasetsTest(unittest.TestCase):
             cp,
             snippet_half_frames=0,
             use_interval=False,
-            interval_encoding="default",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
             use_step_index=False,
             use_beat_phase=False,
             use_aux_interval_target=True,
@@ -341,7 +341,7 @@ class DatasetsTest(unittest.TestCase):
             cp,
             snippet_half_frames=5,
             use_interval=True,
-            interval_encoding="default",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
             use_step_index=False,
             use_beat_phase=False,
             use_aux_interval_target=False,
@@ -410,7 +410,7 @@ class DatasetsTest(unittest.TestCase):
                 cp,
                 snippet_half_frames=5,
                 use_interval=True,
-                interval_encoding="default",
+                interval_encoding=config.IntervalEncoding.DEFAULT,
                 use_step_index=False,
                 use_beat_phase=False,
                 use_aux_interval_target=False,
@@ -440,7 +440,7 @@ class DatasetsTest(unittest.TestCase):
                     cp,
                     snippet_half_frames=5,
                     use_interval=True,
-                    interval_encoding="default",
+                    interval_encoding=config.IntervalEncoding.DEFAULT,
                     use_step_index=False,
                     use_beat_phase=False,
                     use_aux_interval_target=False,
@@ -464,7 +464,7 @@ class DatasetsTest(unittest.TestCase):
                     cp,
                     snippet_half_frames=5,
                     use_interval=True,
-                    interval_encoding="default",
+                    interval_encoding=config.IntervalEncoding.DEFAULT,
                     use_step_index=False,
                     use_beat_phase=False,
                     use_aux_interval_target=False,
@@ -662,7 +662,7 @@ class DatasetsTest(unittest.TestCase):
             cp,
             snippet_half_frames=0,
             use_interval=False,
-            interval_encoding="default",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
             use_step_index=False,
             use_beat_phase=False,
             use_aux_interval_target=False,
@@ -759,7 +759,7 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=5,
             use_interval=False,
-            interval_encoding="default",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
             use_step_index=False,
             use_beat_phase=False,
             use_aux_interval_target=False,
@@ -781,7 +781,7 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=0,
             use_interval=False,
-            interval_encoding="default",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
             use_step_index=False,
             use_beat_phase=False,
             use_aux_interval_target=False,
@@ -801,7 +801,7 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=0,
             use_interval=True,
-            interval_encoding="default",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
             use_step_index=False,
             use_beat_phase=False,
             use_aux_interval_target=False,
@@ -825,7 +825,7 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             snippet_half_frames=5,
             use_interval=True,
-            interval_encoding="default",
+            interval_encoding=config.IntervalEncoding.DEFAULT,
             use_step_index=False,
             use_beat_phase=False,
             use_aux_interval_target=False,
