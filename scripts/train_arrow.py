@@ -120,16 +120,16 @@ def main():
         PARSER.error("--config is required")
     experiment_config = config.ArrowExperimentConfig.from_json(ARGS.config)
     experiment_config = apply_overrides_from_cli(experiment_config, ARGS.set or [])
-    dataset_config = experiment_config.dataset
-    model_config = experiment_config.model
-    run_config = experiment_config.run
 
-    if not dataset_config.data_dir or not dataset_config.val_data_dir:
+    if (
+        not experiment_config.dataset.data_dir
+        or not experiment_config.dataset.val_data_dir
+    ):
         PARSER.error("dataset.data_dir and dataset.val_data_dir are required")
-    if not run_config.model_output_dir:
+    if not experiment_config.run.model_output_dir:
         PARSER.error("run.model_output_dir is required")
 
-    trainers.run_arrow_train_from_config(dataset_config, model_config, run_config)
+    trainers.run_arrow_train_from_config(experiment_config)
 
 
 if __name__ == "__main__":

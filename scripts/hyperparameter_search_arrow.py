@@ -363,11 +363,7 @@ def _run_single_training(
     )
     os.makedirs(run_config.run.model_output_dir, exist_ok=True)
     os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
-    _model, history = trainers.run_arrow_train_from_config(
-        run_config.dataset,
-        run_config.model,
-        run_config.run,
-    )
+    _model, history = trainers.run_arrow_train_from_config(run_config)
     metrics = extract_metrics(history)
     # Clear TF session so this worker doesn't keep memory when reused for next run
     del _model, history

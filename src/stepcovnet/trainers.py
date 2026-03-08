@@ -584,19 +584,15 @@ def _masked_mse_aux_interval(
 
 
 def run_arrow_train_from_config(
-    dataset_config: config.ArrowDatasetConfig,
-    model_config: config.ArrowModelConfig,
-    run_config: config.ArrowRunConfig,
+    experiment_config: config.ArrowExperimentConfig,
 ) -> tuple[keras.Model, keras.callbacks.History]:
-    """Train an arrow classification model using configuration objects.
+    """Train an arrow classification model using an experiment config.
 
     This is the recommended way to train models as it provides better tracking
     and reproducibility. The config is automatically saved with the run.
 
     Args:
-        dataset_config: Configuration for dataset creation.
-        model_config: Configuration for model architecture.
-        run_config: Configuration for training run parameters.
+        experiment_config: Full arrow experiment configuration (dataset, model, run).
 
     Returns:
         A tuple containing:
@@ -604,6 +600,9 @@ def run_arrow_train_from_config(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
+    dataset_config = experiment_config.dataset
+    model_config = experiment_config.model
+    run_config = experiment_config.run
     dataset_provides_aux = dataset_config.use_aux_interval_target
     use_aux_interval = dataset_provides_aux and run_config.aux_interval_weight > 0
     train_dataset = datasets.create_arrow_dataset(
@@ -773,10 +772,6 @@ def run_arrow_train_from_config(
             )
         )
 
-    experiment_config = config.ArrowExperimentConfig(
-        dataset=dataset_config, model=model_config, run=run_config
-    )
-
     # When aux_interval is enabled, the main loss metric is logged under the
     # "output_probabilities" head, so its validation metric name is
     # "val_output_probabilities_main_loss" instead of "val_main_loss".
@@ -861,4 +856,7 @@ def run_arrow_train(
         model_name=model_name,
         val_take_count=val_take_count,
     )
-    return run_arrow_train_from_config(dataset_config, model_config, run_config)
+    experiment_config = config.ArrowExperimentConfig(
+        dataset=dataset_config, model=model_config, run=run_config
+    )
+    return run_arrow_train_from_config(experiment_config)

@@ -1247,11 +1247,7 @@ class MemoryBoundedSweepTest(unittest.TestCase):
                 )
                 os.makedirs(run_config.run.model_output_dir, exist_ok=True)
                 os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
-                model, history = trainers.run_arrow_train_from_config(
-                    run_config.dataset,
-                    run_config.model,
-                    run_config.run,
-                )
+                model, history = trainers.run_arrow_train_from_config(run_config)
                 hyperparameter_search_arrow.extract_metrics(history)
                 del model, history
                 hyperparameter_search_arrow._clear_tf_memory()

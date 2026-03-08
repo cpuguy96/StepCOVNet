@@ -82,6 +82,25 @@ def _make_arrow_configs(
     return dataset_config, model_config, run_config
 
 
+def _make_arrow_experiment_config(
+    model_output_dir: str,
+    *,
+    dataset_kwargs: dict | None = None,
+    model_kwargs: dict | None = None,
+    run_kwargs: dict | None = None,
+) -> config.ArrowExperimentConfig:
+    """Build an ArrowExperimentConfig for tests that call run_arrow_train_from_config."""
+    dataset_config, model_config, run_config = _make_arrow_configs(
+        model_output_dir,
+        dataset_kwargs=dataset_kwargs,
+        model_kwargs=model_kwargs,
+        run_kwargs=run_kwargs,
+    )
+    return config.ArrowExperimentConfig(
+        dataset=dataset_config, model=model_config, run=run_config
+    )
+
+
 class TrainersTest(unittest.TestCase):
     def test_run_train(self):
         with _temp_model_and_callback_dirs(with_callbacks=True) as (
@@ -166,7 +185,7 @@ class TrainersTest(unittest.TestCase):
             model_output_dir,
             callback_root_dir,
         ):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={
                     "epoch": 1,
@@ -174,9 +193,7 @@ class TrainersTest(unittest.TestCase):
                     "callback_root_dir": callback_root_dir,
                 },
             )
-            model, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, history = trainers.run_arrow_train_from_config(exp)
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
 
@@ -225,13 +242,11 @@ class TrainersTest(unittest.TestCase):
     def test_run_arrow_train_from_config_saves_model_with_explicit_model_name(self):
         """Arrow saved model file and model.name use run_config.model_name when set."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={"model_name": "my_arrow_model"},
             )
-            model, _ = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, _ = trainers.run_arrow_train_from_config(exp)
             expected_name = "stepcovnet_ARROW-my_arrow_model"
             self.assertEqual(model.name, expected_name)
             saved_path = os.path.join(model_output_dir, expected_name + ".keras")
@@ -245,13 +260,11 @@ class TrainersTest(unittest.TestCase):
     ):
         """When model_name is empty, arrow model name uses experiment-derived name."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={"model_name": ""},
             )
-            model, _ = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, _ = trainers.run_arrow_train_from_config(exp)
             self.assertTrue(
                 model.name.startswith("stepcovnet_ARROW-"),
                 f"Expected model.name to start with 'stepcovnet_ARROW-', got {model.name!r}",
@@ -268,7 +281,7 @@ class TrainersTest(unittest.TestCase):
             model_output_dir,
             callback_root_dir,
         ):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={
                     "callback_root_dir": callback_root_dir,
@@ -276,9 +289,7 @@ class TrainersTest(unittest.TestCase):
                     "fit_verbose": 0,
                 },
             )
-            model, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, history = trainers.run_arrow_train_from_config(exp)
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
 
@@ -291,7 +302,7 @@ class TrainersTest(unittest.TestCase):
         )
 
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={"fit_verbose": 2},
             )
@@ -302,9 +313,7 @@ class TrainersTest(unittest.TestCase):
                 ),
                 mock.patch("stepcovnet.trainers._write_model"),
             ):
-                trainers.run_arrow_train_from_config(
-                    dataset_config, model_config, run_config
-                )
+                trainers.run_arrow_train_from_config(exp)
         mock_model.fit.assert_called_once()
         self.assertEqual(mock_model.fit.call_args.kwargs["verbose"], 2)
 
@@ -319,7 +328,7 @@ class TrainersTest(unittest.TestCase):
         )
 
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={"show_model_summary": False},
             )
@@ -330,9 +339,7 @@ class TrainersTest(unittest.TestCase):
                 ),
                 mock.patch("stepcovnet.trainers._write_model"),
             ):
-                trainers.run_arrow_train_from_config(
-                    dataset_config, model_config, run_config
-                )
+                trainers.run_arrow_train_from_config(exp)
         mock_model.summary.assert_not_called()
 
     def test_run_arrow_train_from_config_show_model_summary_true_calls_summary(
@@ -346,7 +353,7 @@ class TrainersTest(unittest.TestCase):
         )
 
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={"show_model_summary": True},
             )
@@ -357,9 +364,7 @@ class TrainersTest(unittest.TestCase):
                 ),
                 mock.patch("stepcovnet.trainers._write_model"),
             ):
-                trainers.run_arrow_train_from_config(
-                    dataset_config, model_config, run_config
-                )
+                trainers.run_arrow_train_from_config(exp)
         mock_model.summary.assert_called_once()
 
     def test_config_serialization(self):
@@ -544,20 +549,20 @@ class TrainersTest(unittest.TestCase):
         """Test arrow training with take_count=-1 (entire dataset)."""
         with tempfile.TemporaryDirectory() as temp_dir:
             model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
+            exp = config.ArrowExperimentConfig(
+                dataset=config.ArrowDatasetConfig(
+                    data_dir=TEST_DATA_DIR,
+                    val_data_dir=TEST_DATA_DIR,
+                    batch_size=1,
+                ),
+                model=config.ArrowModelConfig.from_dict({}),
+                run=config.ArrowRunConfig(
+                    epoch=1,
+                    take_count=-1,  # Entire dataset
+                    model_output_dir=model_output_dir,
+                ),
             )
-            model_config = config.ArrowModelConfig.from_dict({})
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=-1,  # Entire dataset
-                model_output_dir=model_output_dir,
-            )
-            model, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, history = trainers.run_arrow_train_from_config(exp)
             self.assertIsNotNone(model)
             self.assertIsNotNone(history)
 
@@ -566,23 +571,23 @@ class TrainersTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             callback_root_dir = os.path.join(temp_dir, "callbacks")
             model_output_dir = os.path.join(temp_dir, "models")
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
+            exp = config.ArrowExperimentConfig(
+                dataset=config.ArrowDatasetConfig(
+                    data_dir=TEST_DATA_DIR,
+                    val_data_dir=TEST_DATA_DIR,
+                    batch_size=1,
+                ),
+                model=config.ArrowModelConfig.from_dict(
+                    {"transformer": {"num_layers": 2}}
+                ),
+                run=config.ArrowRunConfig(
+                    epoch=1,
+                    take_count=1,
+                    model_output_dir=model_output_dir,
+                    callback_root_dir=callback_root_dir,
+                ),
             )
-            model_config = config.ArrowModelConfig.from_dict(
-                {"transformer": {"num_layers": 2}}
-            )
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir=callback_root_dir,
-            )
-            model, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, history = trainers.run_arrow_train_from_config(exp)
 
             # Check that config file was created
             log_dirs = [
@@ -1024,7 +1029,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
     def test_run_arrow_train_from_config_lstm_succeeds(self):
         """run_arrow_train_from_config with model_type lstm builds and runs (minimal step)."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
+            dataset_config, _, _ = _make_arrow_configs(model_output_dir)
             model_config = config.ArrowModelConfig.from_dict(
                 {
                     "model_type": "lstm",
@@ -1039,9 +1044,10 @@ class ExperimentNameHelperTests(unittest.TestCase):
                 callback_root_dir=model_output_dir,
                 model_name="",
             )
-            trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
+            exp = config.ArrowExperimentConfig(
+                dataset=dataset_config, model=model_config, run=run_config
             )
+            trainers.run_arrow_train_from_config(exp)
             keras_files = [
                 f for f in os.listdir(model_output_dir) if f.endswith(".keras")
             ]
@@ -1052,7 +1058,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
     def test_run_arrow_train_from_config_lstm_bidirectional_succeeds(self):
         """run_arrow_train_from_config with model_type lstm and bidirectional=True runs."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
+            dataset_config, _, _ = _make_arrow_configs(model_output_dir)
             model_config = config.ArrowModelConfig.from_dict(
                 {
                     "model_type": "lstm",
@@ -1072,9 +1078,10 @@ class ExperimentNameHelperTests(unittest.TestCase):
                 callback_root_dir=model_output_dir,
                 model_name="",
             )
-            trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
+            exp = config.ArrowExperimentConfig(
+                dataset=dataset_config, model=model_config, run=run_config
             )
+            trainers.run_arrow_train_from_config(exp)
             keras_files = [
                 f for f in os.listdir(model_output_dir) if f.endswith(".keras")
             ]
@@ -1085,7 +1092,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
     def test_run_arrow_train_from_config_gru_succeeds(self):
         """run_arrow_train_from_config with model_type gru builds and runs (minimal step)."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
+            dataset_config, _, _ = _make_arrow_configs(model_output_dir)
             model_config = config.ArrowModelConfig.from_dict(
                 {
                     "model_type": "gru",
@@ -1100,9 +1107,10 @@ class ExperimentNameHelperTests(unittest.TestCase):
                 callback_root_dir=model_output_dir,
                 model_name="",
             )
-            trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
+            exp = config.ArrowExperimentConfig(
+                dataset=dataset_config, model=model_config, run=run_config
             )
+            trainers.run_arrow_train_from_config(exp)
             keras_files = [
                 f for f in os.listdir(model_output_dir) if f.endswith(".keras")
             ]
@@ -1113,7 +1121,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
     def test_run_arrow_train_from_config_gru_bidirectional_succeeds(self):
         """run_arrow_train_from_config with model_type gru and bidirectional=True runs."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
-            dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
+            dataset_config, _, _ = _make_arrow_configs(model_output_dir)
             model_config = config.ArrowModelConfig.from_dict(
                 {
                     "model_type": "gru",
@@ -1133,9 +1141,10 @@ class ExperimentNameHelperTests(unittest.TestCase):
                 callback_root_dir=model_output_dir,
                 model_name="",
             )
-            trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
+            exp = config.ArrowExperimentConfig(
+                dataset=dataset_config, model=model_config, run=run_config
             )
+            trainers.run_arrow_train_from_config(exp)
             keras_files = [
                 f for f in os.listdir(model_output_dir) if f.endswith(".keras")
             ]
@@ -1148,10 +1157,11 @@ class ExperimentNameHelperTests(unittest.TestCase):
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
             dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
             model_config = config.ArrowModelConfig(model_type="unknown_arch")
+            exp = config.ArrowExperimentConfig(
+                dataset=dataset_config, model=model_config, run=run_config
+            )
             with self.assertRaises(ValueError) as ctx:
-                trainers.run_arrow_train_from_config(
-                    dataset_config, model_config, run_config
-                )
+                trainers.run_arrow_train_from_config(exp)
             self.assertIn("unknown_arch", str(ctx.exception))
 
     def test_run_arrow_train_from_config_raises_when_snippet_half_frames_mismatch(self):
@@ -1164,9 +1174,10 @@ class ExperimentNameHelperTests(unittest.TestCase):
             model_config = config.ArrowModelConfig.from_dict(
                 {"model_type": "gru", "gru": {"units": 32}}
             )
-            trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
+            exp = config.ArrowExperimentConfig(
+                dataset=dataset_config, model=model_config, run=run_config
             )
+            trainers.run_arrow_train_from_config(exp)
 
     def test_run_arrow_train_from_config_with_use_interval_from_dataset(self):
         """When configs are built from ArrowExperimentConfig.from_dict, model gets input options from dataset."""
@@ -1190,7 +1201,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
             }
             exp = config.ArrowExperimentConfig.from_dict(data)
             self.assertTrue(exp.dataset.use_interval)
-            trainers.run_arrow_train_from_config(exp.dataset, exp.model, exp.run)
+            trainers.run_arrow_train_from_config(exp)
 
 
 class ArrowLossTests(unittest.TestCase):
@@ -1323,7 +1334,7 @@ class ArrowLossTests(unittest.TestCase):
             model_output_dir,
             callback_root_dir,
         ):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={
                     "epoch": 1,
@@ -1333,9 +1344,7 @@ class ArrowLossTests(unittest.TestCase):
                     "focal_gamma": 2.0,
                 },
             )
-            model, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, history = trainers.run_arrow_train_from_config(exp)
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
         self.assertIn("val_main_loss", history.history)
@@ -1348,7 +1357,7 @@ class ArrowLossTests(unittest.TestCase):
             model_output_dir,
             callback_root_dir,
         ):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={
                     "callback_root_dir": callback_root_dir,
@@ -1356,9 +1365,7 @@ class ArrowLossTests(unittest.TestCase):
                     "chart_validity_rejection_scale": 10.0,
                 },
             )
-            _, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            _, history = trainers.run_arrow_train_from_config(exp)
         self.assertIn("chart_validity_pass_rate_0_99", history.history)
         self.assertIn("val_chart_validity_pass_rate_0_99", history.history)
 
@@ -1368,7 +1375,7 @@ class ArrowLossTests(unittest.TestCase):
             model_output_dir,
             callback_root_dir,
         ):
-            dataset_config, model_config, run_config = _make_arrow_configs(
+            exp = _make_arrow_experiment_config(
                 model_output_dir,
                 run_kwargs={
                     "epoch": 1,
@@ -1377,9 +1384,7 @@ class ArrowLossTests(unittest.TestCase):
                     "label_smoothing": 0.1,
                 },
             )
-            model, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, history = trainers.run_arrow_train_from_config(exp)
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
 
@@ -1455,28 +1460,28 @@ class ArrowLossTests(unittest.TestCase):
             model_output_dir,
             callback_root_dir,
         ):
-            dataset_config = config.ArrowDatasetConfig(
-                data_dir=TEST_DATA_DIR,
-                val_data_dir=TEST_DATA_DIR,
-                batch_size=1,
-                use_aux_interval_target=True,
+            exp = config.ArrowExperimentConfig(
+                dataset=config.ArrowDatasetConfig(
+                    data_dir=TEST_DATA_DIR,
+                    val_data_dir=TEST_DATA_DIR,
+                    batch_size=1,
+                    use_aux_interval_target=True,
+                ),
+                model=config.ArrowModelConfig.from_dict(
+                    {
+                        "model_type": "gru",
+                        "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
+                    }
+                ),
+                run=config.ArrowRunConfig(
+                    epoch=1,
+                    take_count=1,
+                    model_output_dir=model_output_dir,
+                    callback_root_dir=callback_root_dir,
+                    aux_interval_weight=0.3,
+                ),
             )
-            model_config = config.ArrowModelConfig.from_dict(
-                {
-                    "model_type": "gru",
-                    "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
-                }
-            )
-            run_config = config.ArrowRunConfig(
-                epoch=1,
-                take_count=1,
-                model_output_dir=model_output_dir,
-                callback_root_dir=callback_root_dir,
-                aux_interval_weight=0.3,
-            )
-            model, history = trainers.run_arrow_train_from_config(
-                dataset_config, model_config, run_config
-            )
+            model, history = trainers.run_arrow_train_from_config(exp)
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
 
@@ -1510,9 +1515,10 @@ class ArrowLossTests(unittest.TestCase):
                     model_output_dir=model_output_dir,
                     aux_interval_weight=0.0,
                 )
-                trainers.run_arrow_train_from_config(
-                    dataset_config, model_config, run_config
+                exp = config.ArrowExperimentConfig(
+                    dataset=dataset_config, model=model_config, run=run_config
                 )
+                trainers.run_arrow_train_from_config(exp)
             self.assertGreaterEqual(create_ds.call_count, 2)
             for call in create_ds.call_args_list:
                 kwargs = call.kwargs

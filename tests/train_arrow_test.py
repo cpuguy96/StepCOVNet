@@ -60,8 +60,8 @@ def _run_train_arrow_main(args):
         import train_arrow  # noqa: E402
     with mock.patch("stepcovnet.trainers.run_arrow_train_from_config") as run_mock:
         train_arrow.main()
-    _dataset_config, model_config, _run_config = run_mock.call_args[0]
-    return run_mock, model_config
+    (experiment_config,) = run_mock.call_args[0]
+    return run_mock, experiment_config.model
 
 
 def _run_train_arrow_main_with_run_config(args):
@@ -72,8 +72,13 @@ def _run_train_arrow_main_with_run_config(args):
         import train_arrow  # noqa: E402
     with mock.patch("stepcovnet.trainers.run_arrow_train_from_config") as run_mock:
         train_arrow.main()
-    dataset_config, model_config, run_config = run_mock.call_args[0]
-    return run_mock, dataset_config, model_config, run_config
+    (experiment_config,) = run_mock.call_args[0]
+    return (
+        run_mock,
+        experiment_config.dataset,
+        experiment_config.model,
+        experiment_config.run,
+    )
 
 
 class ApplyOverridesFromCliTest(unittest.TestCase):
