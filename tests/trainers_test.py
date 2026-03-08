@@ -8,7 +8,7 @@ from unittest import mock
 import keras
 import tensorflow as tf
 
-from stepcovnet import config, constants, datasets, models, trainers
+from stepcovnet import config, datasets, losses, models, trainers
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
@@ -1205,128 +1205,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
 
 
 class ArrowLossTests(unittest.TestCase):
-    """Unit tests for arrow loss functions: focal, label smoothing, aux_interval masking."""
-
-    def test_sparse_focal_loss_returns_scalar_and_masks_ignore_class(self):
-        """_sparse_focal_loss returns a scalar and ignores steps with y_true==ignore_class (0)."""
-        batch_size, steps, num_classes = 2, 10, constants.N_ARROW_TYPES
-        y_true = tf.constant(
-            [[0, 1, 2, 0, 3, 0, 1, 0, 2, 1]], dtype=tf.int32
-        )  # 0 = padding
-        y_pred = tf.random.uniform((batch_size, steps, num_classes))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
-        loss = trainers._sparse_focal_loss(y_true, y_pred, gamma=2.0, ignore_class=0)
-        self.assertEqual(loss.shape, ())
-        self.assertGreater(float(loss), 0.0)
-
-    def test_arrow_label_smoothed_crossentropy_returns_scalar(self):
-        """_arrow_label_smoothed_crossentropy returns a scalar loss."""
-        batch_size, steps, num_classes = 2, 5, constants.N_ARROW_TYPES
-        y_true = tf.constant([[1, 2, 3, 1, 2], [2, 1, 3, 2, 1]], dtype=tf.int32)
-        y_pred = tf.random.uniform((batch_size, steps, num_classes))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
-        loss = trainers._arrow_label_smoothed_crossentropy(
-            y_true, y_pred, smoothing=0.1
-        )
-        self.assertEqual(loss.shape, ())
-        self.assertGreater(float(loss), 0.0)
-
-    def test_arrow_label_smoothed_crossentropy_masks_padding(self):
-        """_arrow_label_smoothed_crossentropy ignores steps where y_true is ARROW_PADDING_CLASS."""
-        # One valid step (class 1), one padding (0). Loss should depend only on the valid step.
-        y_true = tf.constant([[constants.ARROW_PADDING_CLASS, 1]], dtype=tf.int32)
-        num_classes = constants.N_ARROW_TYPES
-        # Valid probs everywhere so CE is finite; perfect at step 1, uniform at step 0 (masked).
-        uniform = [1.0 / num_classes] * num_classes
-        perfect_step1 = [0.0, 1.0] + [0.0] * (num_classes - 2)
-        y_pred = tf.constant(
-            [[uniform, perfect_step1]],
-            dtype=tf.float32,
-        )
-        loss = trainers._arrow_label_smoothed_crossentropy(
-            y_true, y_pred, smoothing=0.0
-        )
-        self.assertEqual(loss.shape, ())
-        # With smoothing=0 and perfect prediction at the only valid step, CE is 0
-        self.assertAlmostEqual(float(loss), 0.0, places=5)
-
-    def test_arrow_label_smoothed_crossentropy_all_padding(self):
-        """_arrow_label_smoothed_crossentropy with all padding returns zero (no divide-by-zero)."""
-        y_true = tf.constant(
-            [[constants.ARROW_PADDING_CLASS, constants.ARROW_PADDING_CLASS]],
-            dtype=tf.int32,
-        )
-        y_pred = tf.random.uniform((1, 2, constants.N_ARROW_TYPES))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
-        loss = trainers._arrow_label_smoothed_crossentropy(
-            y_true, y_pred, smoothing=0.1
-        )
-        self.assertEqual(loss.shape, ())
-        self.assertAlmostEqual(float(loss), 0.0, places=5)
-
-    def test_arrow_label_smoothed_crossentropy_smoothing_zero_vs_positive(self):
-        """_arrow_label_smoothed_crossentropy with smoothing=0 and 0.1 gives different losses."""
-        y_true = tf.constant([[1, 2, 3]], dtype=tf.int32)
-        y_pred = tf.random.uniform((1, 3, constants.N_ARROW_TYPES))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
-        loss_zero = trainers._arrow_label_smoothed_crossentropy(
-            y_true, y_pred, smoothing=0.0
-        )
-        loss_smooth = trainers._arrow_label_smoothed_crossentropy(
-            y_true, y_pred, smoothing=0.1
-        )
-        self.assertNotEqual(float(loss_zero), float(loss_smooth))
-        self.assertGreater(float(loss_zero), 0.0)
-        self.assertGreater(float(loss_smooth), 0.0)
-
-    def test_arrow_label_smoothed_crossentropy_perfect_prediction_lower_than_random(
-        self,
-    ):
-        """_arrow_label_smoothed_crossentropy is lower for correct predictions than uniform."""
-        y_true = tf.constant([[1, 2]], dtype=tf.int32)
-        num_classes = constants.N_ARROW_TYPES
-        # Perfect: one-hot on correct class (with smoothing applied inside the function)
-        perfect_pred = tf.constant(
-            [
-                [
-                    [0.0, 1.0] + [0.0] * (num_classes - 2),
-                    [0.0, 0.0, 1.0] + [0.0] * (num_classes - 3),
-                ]
-            ],
-            dtype=tf.float32,
-        )
-        uniform_pred = tf.ones((1, 2, num_classes), dtype=tf.float32) / num_classes
-        loss_perfect = trainers._arrow_label_smoothed_crossentropy(
-            y_true, perfect_pred, smoothing=0.1
-        )
-        loss_uniform = trainers._arrow_label_smoothed_crossentropy(
-            y_true, uniform_pred, smoothing=0.1
-        )
-        self.assertLess(float(loss_perfect), float(loss_uniform))
-
-    def test_masked_mse_aux_interval_without_sample_weight(self):
-        """_masked_mse_aux_interval without sample_weight returns mean over all elements."""
-        y_true = tf.constant([[[0.1], [0.2], [0.3]]], dtype=tf.float32)
-        y_pred = tf.constant([[[0.2], [0.2], [0.4]]], dtype=tf.float32)
-        loss = trainers._masked_mse_aux_interval(y_true, y_pred, sample_weight=None)
-        self.assertEqual(loss.shape, ())
-        expected = ((0.1**2) + (0.0**2) + (0.1**2)) / 3
-        self.assertAlmostEqual(float(loss), expected, places=5)
-
-    def test_masked_mse_aux_interval_with_sample_weight_masks_steps(self):
-        """_masked_mse_aux_interval with sample_weight only averages over masked (1.0) steps."""
-        # (1, 3, 1): last step masked (0), so only first two steps contribute
-        y_true = tf.constant([[[1.0], [2.0], [0.0]]], dtype=tf.float32)
-        y_pred = tf.constant(
-            [[[1.0], [3.0], [99.0]]], dtype=tf.float32
-        )  # last step wrong but masked
-        sample_weight = tf.constant([[[1.0], [1.0], [0.0]]], dtype=tf.float32)
-        loss = trainers._masked_mse_aux_interval(
-            y_true, y_pred, sample_weight=sample_weight
-        )
-        self.assertEqual(loss.shape, ())
-        # Only steps 0 and 1: (0 + 1) / 2 = 0.5
-        self.assertAlmostEqual(float(loss), 0.5, places=5)
+    """Integration tests for arrow training with focal, label smoothing, aux_interval, rejection."""
 
     def test_run_arrow_train_from_config_with_focal_loss_completes(self):
         """run_arrow_train_from_config with loss_type=focal builds and runs one epoch."""
@@ -1436,7 +1315,7 @@ class ArrowLossTests(unittest.TestCase):
                 "output_probabilities": keras.losses.SparseCategoricalCrossentropy(
                     ignore_class=0
                 ),
-                "aux_interval": trainers._masked_mse_aux_interval,
+                "aux_interval": losses.masked_mse_aux_interval,
             },
             loss_weights={"output_probabilities": 1.0, "aux_interval": 0.3},
         )
