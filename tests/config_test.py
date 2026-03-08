@@ -1005,16 +1005,19 @@ class ArrowRunConfigTest(unittest.TestCase):
         self.assertIn("chart_validity_rejection_temperature", str(ctx.exception))
 
     def test_get_experiment_name_parts_includes_chart_val_rej_when_threshold_set(self):
-        """get_experiment_name_parts includes chart_val_rej_* when threshold is set."""
+        """get_experiment_name_parts includes chart_val_rej threshold, scale, and temp when threshold is set."""
         cfg = config.ArrowRunConfig(
             epoch=1,
             take_count=1,
             model_output_dir="out",
             chart_validity_rejection_threshold=0.99,
-            chart_validity_rejection_scale=50.0,
+            chart_validity_rejection_scale=5.0,
+            chart_validity_rejection_temperature=25.0,
         )
         parts = cfg.get_experiment_name_parts()
         self.assertIn("chart_val_rej_0_99", parts)
+        self.assertIn("chart_val_rej_scale_5_0", parts)
+        self.assertIn("chart_val_rej_temp_25_0", parts)
 
     def test_as_dict_includes_rejection_params(self):
         """as_dict includes chart_validity_rejection_* for round-trip."""

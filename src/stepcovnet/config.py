@@ -582,6 +582,12 @@ class ArrowRunConfig(RunConfig):
             parts.append(
                 f"chart_val_rej_{str(self.chart_validity_rejection_threshold).replace('.', '_')}"
             )
+            parts.append(
+                f"chart_val_rej_scale_{str(self.chart_validity_rejection_scale).replace('.', '_')}"
+            )
+            parts.append(
+                f"chart_val_rej_temp_{str(self.chart_validity_rejection_temperature).replace('.', '_')}"
+            )
         return parts
 
 
