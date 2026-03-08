@@ -861,8 +861,11 @@ def main() -> int:
     workers = (
         args.workers if args.workers is not None else ctx.sweep_save.get("workers", 1)
     )
-    if workers < 1:
-        PARSER.error("--workers / sweep config 'workers' must be >= 1")
+    if not isinstance(workers, int) or workers < 1:
+        PARSER.error(
+            "--workers / sweep config 'workers' must be an integer >= 1, got "
+            f"{workers!r}"
+        )
     _run_pending(ctx, workers)
     _write_final_results_and_best(ctx)
     return 0

@@ -1084,6 +1084,127 @@ class WorkersOptionTest(unittest.TestCase):
                 "ProcessPoolExecutor should be called with max_workers=3 from config",
             )
 
+    def test_workers_defaults_to_one_when_omitted_from_cli_and_config(self):
+        """When --workers is not passed and sweep config has no 'workers', default to 1."""
+        from concurrent.futures import Future
+
+        captured_max_workers = []
+
+        class FakeExecutor:
+            def __init__(self, max_workers=None, max_tasks_per_child=None, **kwargs):
+                captured_max_workers.append(max_workers)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def submit(self, fn, *args):
+                run_index, overrides = args[0], args[1]
+                fut = Future()
+                fut.set_result((run_index, {"best_val_loss": 0.5}, overrides))
+                return fut
+
+            def as_completed(self, futures):
+                return iter(futures)
+
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": base_config_path,
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
+                    },
+                    f,
+                )
+            base = config.ArrowExperimentConfig.from_json(base_config_path)
+            base.dataset.data_dir = TEST_DATA_DIR
+            base.dataset.val_data_dir = TEST_DATA_DIR
+            base.run.take_count = 2
+            base_config_override = os.path.join(temp_dir, "base_arrow.json")
+            base.to_json(base_config_override)
+            with open(sweep_path) as f:
+                sweep_data = json.load(f)
+            sweep_data["base_config"] = base_config_override
+            with open(sweep_path, "w") as f:
+                json.dump(sweep_data, f)
+
+            def make_executor(*args, **kwargs):
+                return FakeExecutor(*args, **kwargs)
+
+            with (
+                mock.patch.object(
+                    hyperparameter_search_arrow.futures,
+                    "ProcessPoolExecutor",
+                    side_effect=make_executor,
+                ),
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--sweep_config",
+                        sweep_path,
+                    ],
+                ),
+            ):
+                exit_code = hyperparameter_search_arrow.main()
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(
+                captured_max_workers,
+                [1],
+                "ProcessPoolExecutor should be called with max_workers=1 when omitted from CLI and config",
+            )
+
+    def test_resume_with_invalid_workers_type_exits_with_validation_error(self):
+        """When resuming, if sweep_config.json has non-integer workers (e.g. string), main exits with clear error."""
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        base_config_path = os.path.abspath(base_config_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sweep_config = {
+                "base_config": base_config_path,
+                "search_space": {"model.transformer.dropout_rate": [0.0]},
+                "optimize": {"metric": "val_loss", "mode": "min"},
+                "workers": "2",
+            }
+            with open(os.path.join(tmpdir, "sweep_config.json"), "w") as f:
+                json.dump(sweep_config, f, indent=2)
+            with open(os.path.join(tmpdir, "results.json"), "w") as f:
+                json.dump([], f)
+            with (
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--resume_from",
+                        os.path.abspath(tmpdir),
+                    ],
+                ),
+                mock.patch.object(
+                    hyperparameter_search_arrow.PARSER,
+                    "error",
+                    side_effect=SystemExit(2),
+                ) as err_mock,
+            ):
+                with self.assertRaises(SystemExit):
+                    hyperparameter_search_arrow.main()
+            err_mock.assert_called_once()
+            msg = err_mock.call_args[0][0]
+            self.assertIn("workers", msg)
+            self.assertIn("integer", msg)
+
     def test_new_best_printed_when_run_has_best_val_metric_so_far(self):
         """When a run has the best optimize metric seen so far, 'NEW BEST' is printed."""
         from concurrent.futures import Future
