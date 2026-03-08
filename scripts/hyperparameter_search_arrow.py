@@ -76,8 +76,8 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--workers",
     type=int,
-    default=1,
-    help="Number of training jobs to run in parallel (default: 1).",
+    default=None,
+    help="Number of training jobs to run in parallel. Overrides sweep config 'workers' when set; otherwise uses config or 1.",
 )
 PARSER.add_argument(
     "--resume_from",
@@ -138,6 +138,12 @@ def load_sweep_config(path: str) -> dict[str, Any]:
         raise ValueError(
             f"sweep config 'search' must be 'grid' or 'random', got {data['search']!r}"
         )
+    if "workers" in data:
+        w = data["workers"]
+        if not isinstance(w, int) or w < 1:
+            raise ValueError(
+                f"sweep config 'workers' must be an integer >= 1, got {w!r}"
+            )
     return data
 
 
@@ -737,7 +743,7 @@ def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
     )
 
 
-def _run_pending(ctx: _SweepContext, args: argparse.Namespace) -> None:
+def _run_pending(ctx: _SweepContext, workers: int) -> None:
     """Run pending training jobs, update ctx.results_by_index, write checkpoints, print progress."""
     optimize_metric = ctx.sweep_save["optimize"]["metric"]
     optimize_mode = ctx.sweep_save["optimize"]["mode"]
@@ -758,8 +764,8 @@ def _run_pending(ctx: _SweepContext, args: argparse.Namespace) -> None:
             len(ctx.full_combinations) if ctx.effective_search == "random" else None
         ),
     )
-    if args.workers > 1:
-        print(f"  Workers:       {args.workers} (parallel)\n")
+    if workers > 1:
+        print(f"  Workers:       {workers} (parallel)\n")
     results_path = os.path.join(ctx.sweep_output_dir, "results.json")
 
     def write_checkpoint() -> None:
@@ -769,7 +775,7 @@ def _run_pending(ctx: _SweepContext, args: argparse.Namespace) -> None:
 
     base_config_dict = ctx.base_config.as_dict()
     with futures.ProcessPoolExecutor(
-        max_workers=args.workers,
+        max_workers=workers,
         max_tasks_per_child=1,
     ) as executor:
         future_to_index = {
@@ -842,8 +848,6 @@ def _write_final_results_and_best(ctx: _SweepContext) -> None:
 
 def main() -> int:
     args = PARSER.parse_args()
-    if args.workers < 1:
-        PARSER.error("--workers must be >= 1")
     if not args.resume_from and not args.sweep_config:
         PARSER.error("--sweep_config is required unless --resume_from is set")
     if args.resume_from and args.sweep_config:
@@ -858,7 +862,12 @@ def main() -> int:
     else:
         ctx = _setup_fresh_sweep(args)
 
-    _run_pending(ctx, args)
+    workers = (
+        args.workers if args.workers is not None else ctx.sweep_save.get("workers", 1)
+    )
+    if workers < 1:
+        PARSER.error("--workers / sweep config 'workers' must be >= 1")
+    _run_pending(ctx, workers)
     _write_final_results_and_best(ctx)
     return 0
 

@@ -179,6 +179,41 @@ class SweepConfigLoadingTest(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_load_accepts_optional_workers(self):
+        """Sweep config may include optional 'workers' (int >= 1)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "sweep.json")
+            with open(path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": "configs/arrow_baseline.json",
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "workers": 4,
+                    },
+                    f,
+                )
+            data = hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertEqual(data["workers"], 4)
+
+    def test_load_rejects_invalid_workers(self):
+        """Sweep config 'workers' must be an integer >= 1."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "sweep.json")
+            with open(path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": "configs/arrow_baseline.json",
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "workers": 0,
+                    },
+                    f,
+                )
+            with self.assertRaises(ValueError) as ctx:
+                hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertIn("workers", str(ctx.exception))
+
 
 class GridExpansionTest(unittest.TestCase):
     """Grid expansion: number of combinations and structure."""
@@ -852,23 +887,36 @@ class WorkersOptionTest(unittest.TestCase):
 
     def test_workers_zero_exits_with_error(self):
         """--workers=0 causes main to call parser.error and exit."""
-        with (
-            mock.patch(
-                "sys.argv",
-                [
-                    "hyperparameter_search_arrow",
-                    "--sweep_config",
-                    "x.json",
-                    "--workers",
-                    "0",
-                ],
-            ),
-            mock.patch.object(
-                hyperparameter_search_arrow.PARSER, "error", side_effect=SystemExit(2)
-            ),
-        ):
-            with self.assertRaises(SystemExit):
-                hyperparameter_search_arrow.main()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sweep_path = os.path.join(tmpdir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": "configs/arrow_baseline.json",
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                    },
+                    f,
+                )
+            with (
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--sweep_config",
+                        sweep_path,
+                        "--workers",
+                        "0",
+                    ],
+                ),
+                mock.patch.object(
+                    hyperparameter_search_arrow.PARSER,
+                    "error",
+                    side_effect=SystemExit(2),
+                ),
+            ):
+                with self.assertRaises(SystemExit):
+                    hyperparameter_search_arrow.main()
 
     def test_workers_two_uses_parallel_path(self):
         """With --workers=2 and 2 grid points, executor receives 2 submit() calls and results are collected."""
@@ -954,6 +1002,87 @@ class WorkersOptionTest(unittest.TestCase):
             self.assertEqual(len(results), 2)
             self.assertEqual(results[0]["run_index"], 0)
             self.assertEqual(results[1]["run_index"], 1)
+
+    def test_workers_from_sweep_config_when_cli_omitted(self):
+        """When --workers is not passed, workers from sweep config is used."""
+        from concurrent.futures import Future
+
+        captured_max_workers = []
+
+        class FakeExecutor:
+            def __init__(self, max_workers=None, max_tasks_per_child=None, **kwargs):
+                captured_max_workers.append(max_workers)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def submit(self, fn, *args):
+                run_index, overrides = args[0], args[1]
+                fut = Future()
+                fut.set_result((run_index, {"best_val_loss": 0.5}, overrides))
+                return fut
+
+            def as_completed(self, futures):
+                return iter(futures)
+
+        base_config_path = os.path.join(
+            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        )
+        if not os.path.isfile(base_config_path):
+            self.skipTest("configs/arrow_baseline.json not found")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            with open(sweep_path, "w") as f:
+                json.dump(
+                    {
+                        "base_config": base_config_path,
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
+                        "workers": 3,
+                    },
+                    f,
+                )
+            base = config.ArrowExperimentConfig.from_json(base_config_path)
+            base.dataset.data_dir = TEST_DATA_DIR
+            base.dataset.val_data_dir = TEST_DATA_DIR
+            base.run.take_count = 2
+            base_config_override = os.path.join(temp_dir, "base_arrow.json")
+            base.to_json(base_config_override)
+            with open(sweep_path) as f:
+                sweep_data = json.load(f)
+            sweep_data["base_config"] = base_config_override
+            with open(sweep_path, "w") as f:
+                json.dump(sweep_data, f)
+
+            def make_executor(*args, **kwargs):
+                return FakeExecutor(*args, **kwargs)
+
+            with (
+                mock.patch.object(
+                    hyperparameter_search_arrow.futures,
+                    "ProcessPoolExecutor",
+                    side_effect=make_executor,
+                ),
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--sweep_config",
+                        sweep_path,
+                    ],
+                ),
+            ):
+                exit_code = hyperparameter_search_arrow.main()
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(
+                captured_max_workers,
+                [3],
+                "ProcessPoolExecutor should be called with max_workers=3 from config",
+            )
 
     def test_new_best_printed_when_run_has_best_val_metric_so_far(self):
         """When a run has the best optimize metric seen so far, 'NEW BEST' is printed."""
