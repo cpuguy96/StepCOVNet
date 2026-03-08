@@ -206,7 +206,7 @@ def _set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
     current = d
     for i, part in enumerate(parts[:-1]):
         existing = current.get(part)
-        if existing is None or part not in current:
+        if part not in current:
             current[part] = {}
         elif not isinstance(existing, dict):
             segment = ".".join(parts[: i + 1])
