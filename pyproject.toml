@@ -1,6 +1,5 @@
 [build-system]
-# Required for Tensorboard - https://github.com/tensorflow/tensorboard/pull/7026
-requires = ["setuptools<82.0.0", "wheel"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -26,9 +25,7 @@ classifiers = [
 keywords = ["stepmania", "rhythm-game", "music", "neural-network", "deep-learning"]
 
 # Core: library, scripts, and notebooks (run + execute)
-# setuptools provides pkg_resources required by TensorBoard (TF dependency); 82+ drops it
 dependencies = [
-    "setuptools>=65.0.0,<82.0.0",
     "tensorboard",
     "tensorflow",
     "librosa",
