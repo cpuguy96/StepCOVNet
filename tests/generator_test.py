@@ -7,6 +7,7 @@ import keras
 import numpy as np
 
 from stepcovnet import (
+    config,
     generator,
     models,  # Required to ensure registration of custom Keras layers/functions for model loading.
 )
@@ -68,7 +69,9 @@ class GeneratorTest(unittest.TestCase):
             compile=False,
         )
         arrow_model = models.build_arrow_model(
-            snippet_half_frames=5,
+            models.ArrowInputOptions(snippet_half_frames=5),
+            models.ArrowOutputOptions(),
+            config.TransformerArrowParams(),
         )
         output_data = generator.generate_output_data(
             audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),

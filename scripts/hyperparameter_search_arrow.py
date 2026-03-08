@@ -233,14 +233,15 @@ def filter_valid_model_combinations(
 def _set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
     """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed.
 
-    Raises ValueError if an intermediate segment exists and is not a dict (e.g. setting
-    transformer.num_layers when transformer is already a scalar).
+    Missing or None intermediate segments are created as empty dicts so nested keys can be set.
+    Raises ValueError if an intermediate segment exists and is a non-dict, non-None value (e.g.
+    setting transformer.num_layers when transformer is already a scalar).
     """
     parts = key_path.split(".")
     current = d
     for i, part in enumerate(parts[:-1]):
         existing = current.get(part)
-        if part not in current:
+        if part not in current or existing is None:
             current[part] = {}
         elif not isinstance(existing, dict):
             segment = ".".join(parts[: i + 1])

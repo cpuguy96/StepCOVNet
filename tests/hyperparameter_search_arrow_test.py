@@ -370,15 +370,13 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         self.assertIn("transformer", str(ctx.exception))
         self.assertIn("not a nested object", str(ctx.exception))
 
-    def test_set_nested_raises_when_intermediate_is_none(self):
-        """_set_nested raises (does not overwrite) when intermediate segment exists with value None."""
+    def test_set_nested_promotes_none_to_dict_when_setting_nested_key(self):
+        """_set_nested promotes None to {} when setting a nested key so param blocks can be created."""
         d = {"model": {"transformer": None}}
-        with self.assertRaises(ValueError) as ctx:
-            hyperparameter_search_arrow._set_nested(
-                d["model"], "transformer.num_layers", 2
-            )
-        self.assertIn("not a nested object", str(ctx.exception))
-        self.assertEqual(d["model"]["transformer"], None)
+        hyperparameter_search_arrow._set_nested(d["model"], "transformer.num_layers", 2)
+        self.assertIsInstance(d["model"]["transformer"], dict)
+        assert d["model"]["transformer"] is not None
+        self.assertEqual(d["model"]["transformer"]["num_layers"], 2)
 
     def test_apply_overrides_raises_for_invalid_model_override_key(self):
         """apply_overrides raises ValueError for model.<single-key> when key is not model_type."""

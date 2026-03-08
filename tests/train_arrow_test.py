@@ -257,8 +257,8 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         self.assertIn("epoch", str(ctx.exception))
         self.assertIn("not a nested object", str(ctx.exception))
 
-    def test_set_nested_raises_when_intermediate_is_none(self):
-        """_set_nested raises (does not overwrite) when intermediate segment exists with value None."""
+    def test_set_nested_promotes_none_to_dict_when_setting_nested_key(self):
+        """_set_nested promotes None to {} when setting a nested key so param blocks can be created."""
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with mock.patch.object(
@@ -266,10 +266,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         ):
             import train_arrow  # noqa: E402
         d = {"run": {"epoch": None}}
-        with self.assertRaises(ValueError) as ctx:
-            train_arrow._set_nested(d["run"], "epoch.foo", "bar")
-        self.assertIn("not a nested object", str(ctx.exception))
-        self.assertIsNone(d["run"]["epoch"])
+        train_arrow._set_nested(d["run"], "epoch.foo", "bar")
+        self.assertIsInstance(d["run"]["epoch"], dict)
+        assert d["run"]["epoch"] is not None
+        self.assertEqual(d["run"]["epoch"]["foo"], "bar")
 
     def test_apply_overrides_raises_when_nested_path_targets_leaf(self):
         """apply_overrides_from_cli raises ValueError for run.epoch.foo=bar (epoch is int)."""

@@ -687,7 +687,10 @@ class TrainersTest(unittest.TestCase):
             batch_size=1,
             snippet_half_frames=5,
         )
-        model_config = config.ArrowModelConfig()
+        model_config = config.ArrowModelConfig(
+            model_type="transformer",
+            transformer=config.TransformerArrowParams(),
+        )
         ds = datasets.create_arrow_dataset(
             data_dir=dataset_config.data_dir,
             batch_size=dataset_config.batch_size,
@@ -1144,9 +1147,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
         """run_arrow_train_from_config raises ValueError for unsupported model_type."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
             dataset_config, _, run_config = _make_arrow_configs(model_output_dir)
-            model_config = config.ArrowModelConfig.from_dict(
-                {"model_type": "unknown_arch"}
-            )
+            model_config = config.ArrowModelConfig(model_type="unknown_arch")
             with self.assertRaises(ValueError) as ctx:
                 trainers.run_arrow_train_from_config(
                     dataset_config, model_config, run_config

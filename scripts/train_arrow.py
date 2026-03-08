@@ -52,7 +52,8 @@ def _set_nested(d: dict, key_path: str, value) -> None:
     """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed.
     Key path components must be non-empty; otherwise no-op (avoids empty string keys that
     break config reconstruction).
-    Raises ValueError if an intermediate segment already exists and is not a dict (e.g.
+    Missing or None intermediate segments are created as empty dicts so nested keys can be set.
+    Raises ValueError if an intermediate segment exists and is a non-dict, non-None value (e.g.
     run.epoch.foo=bar when epoch is an integer).
     """
     parts = key_path.split(".")
@@ -61,7 +62,7 @@ def _set_nested(d: dict, key_path: str, value) -> None:
     current = d
     for i, part in enumerate(parts[:-1]):
         existing = current.get(part)
-        if part not in current:
+        if part not in current or existing is None:
             current[part] = {}
         elif not isinstance(existing, dict):
             segment = ".".join(parts[: i + 1])
