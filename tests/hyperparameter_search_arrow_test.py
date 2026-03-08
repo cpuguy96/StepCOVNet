@@ -275,6 +275,26 @@ class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
         assert out.model.mlp is not None
         self.assertEqual(out.model.mlp.hidden_dims, [128, 64])
 
+    def test_set_nested_raises_when_intermediate_is_leaf(self):
+        """_set_nested raises ValueError when path goes through a leaf (non-dict) value."""
+        d = {"model": {"transformer": 42}}
+        with self.assertRaises(ValueError) as ctx:
+            hyperparameter_search_arrow._set_nested(
+                d["model"], "transformer.num_layers", 2
+            )
+        self.assertIn("transformer.num_layers", str(ctx.exception))
+        self.assertIn("transformer", str(ctx.exception))
+        self.assertIn("not a nested object", str(ctx.exception))
+
+    def test_apply_overrides_raises_for_invalid_model_override_key(self):
+        """apply_overrides raises ValueError for model.<single-key> when key is not model_type."""
+        base = self._minimal_base_config()
+        overrides = {"model.dropout_rate": 0.5}
+        with self.assertRaises(ValueError) as ctx:
+            hyperparameter_search_arrow.apply_overrides(base, overrides)
+        self.assertIn("model.dropout_rate", str(ctx.exception))
+        self.assertIn("model.model_type or model.<block>.<param>", str(ctx.exception))
+
     def test_apply_overrides_model_type_can_be_set(self):
         """Sweep can set model.model_type (e.g. transformer vs mlp) in overrides."""
         base = self._minimal_base_config()

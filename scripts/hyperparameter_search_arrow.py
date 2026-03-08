@@ -197,13 +197,23 @@ def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
 
 
 def _set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
-    """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed."""
+    """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed.
+
+    Raises ValueError if an intermediate segment exists and is not a dict (e.g. setting
+    transformer.num_layers when transformer is already a scalar).
+    """
     parts = key_path.split(".")
     current = d
-    for part in parts[:-1]:
-        next_level = current.get(part)
-        if not isinstance(next_level, dict):
+    for i, part in enumerate(parts[:-1]):
+        existing = current.get(part)
+        if existing is None or part not in current:
             current[part] = {}
+        elif not isinstance(existing, dict):
+            segment = ".".join(parts[: i + 1])
+            raise ValueError(
+                f"Cannot set nested key '{key_path}': segment '{segment}' is not a "
+                "nested object (leaf value); use a path without extra segments."
+            )
         current = current[part]
     current[parts[-1]] = value
 
