@@ -196,6 +196,40 @@ def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
     return combinations
 
 
+def filter_valid_model_combinations(
+    combinations: list[dict[str, Any]],
+    default_model_type: str,
+) -> list[dict[str, Any]]:
+    """Keep only combinations where model.<block>.<param> keys match effective model_type.
+
+    For each combination, effective model_type is overrides.get("model.model_type")
+    or default_model_type. A combination is kept iff every key of the form
+    model.<block>.<param> has block == effective model_type. Non-model-block keys
+    (dataset.*, run.*, model.model_type) are always allowed.
+
+    Args:
+        combinations: List of override dicts from expand_grid.
+        default_model_type: model_type from base config when not overridden.
+
+    Returns:
+        Filtered list of combinations (only valid model-specific overrides).
+    """
+    result = []
+    for combo in combinations:
+        effective = combo.get("model.model_type", default_model_type)
+        valid = True
+        for key in combo:
+            if not key.startswith("model.") or key == "model.model_type":
+                continue
+            parts = key.split(".")
+            if len(parts) >= 3 and parts[1] != effective:
+                valid = False
+                break
+        if valid:
+            result.append(combo)
+    return result
+
+
 def _set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
     """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed.
 
@@ -643,6 +677,16 @@ def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
         PARSER.error(f"max_runs must be > 0 when set (got {max_runs})")
     search_space = sweep["search_space"]
     full_combinations = expand_grid(search_space)
+    raw_count = len(full_combinations)
+    full_combinations = filter_valid_model_combinations(
+        full_combinations, base_config.model.model_type
+    )
+    excluded = raw_count - len(full_combinations)
+    if excluded > 0:
+        print(
+            f"Filtered to {len(full_combinations)} valid model-specific combinations "
+            f"({excluded} excluded)."
+        )
     effective_seed = args.seed if args.seed is not None else sweep.get("seed")
     if effective_search == "random":
         if effective_seed is not None:

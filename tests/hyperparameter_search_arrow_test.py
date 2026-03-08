@@ -208,6 +208,90 @@ class GridExpansionTest(unittest.TestCase):
         self.assertEqual(combinations[1], {"model.transformer.num_layers": 2})
 
 
+class FilterValidModelCombinationsTest(unittest.TestCase):
+    """filter_valid_model_combinations: only keep combos where model.<block>.* matches model_type."""
+
+    def test_kept_when_model_type_and_block_match(self):
+        """Combination with model.model_type=transformer and model.transformer.d_model is kept."""
+        combinations = [
+            {
+                "model.model_type": "transformer",
+                "model.transformer.d_model": 128,
+                "run.epoch": 10,
+            }
+        ]
+        out = hyperparameter_search_arrow.filter_valid_model_combinations(
+            combinations, default_model_type="gru"
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["model.model_type"], "transformer")
+        self.assertEqual(out[0]["model.transformer.d_model"], 128)
+
+    def test_excluded_when_model_type_differs_from_block(self):
+        """Combination with model.model_type=mlp but model.transformer.d_model is excluded."""
+        combinations = [
+            {"model.model_type": "mlp", "model.transformer.d_model": 128},
+            {"model.model_type": "transformer", "model.transformer.d_model": 128},
+        ]
+        out = hyperparameter_search_arrow.filter_valid_model_combinations(
+            combinations, default_model_type="gru"
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["model.model_type"], "transformer")
+
+    def test_default_model_type_used_when_not_in_overrides(self):
+        """When model.model_type is not in overrides, default is used; transformer block kept if default is transformer."""
+        combinations = [
+            {"model.transformer.d_model": 128},
+            {"model.mlp.hidden_dims": [64]},
+        ]
+        out = hyperparameter_search_arrow.filter_valid_model_combinations(
+            combinations, default_model_type="transformer"
+        )
+        self.assertEqual(len(out), 1)
+        self.assertIn("model.transformer.d_model", out[0])
+        self.assertEqual(out[0]["model.transformer.d_model"], 128)
+
+    def test_no_model_block_keys_all_kept(self):
+        """Search space with only dataset/run keys: no combinations excluded."""
+        combinations = [
+            {"dataset.use_interval": True, "run.epoch": 10},
+            {"dataset.use_interval": False, "run.epoch": 20},
+        ]
+        out = hyperparameter_search_arrow.filter_valid_model_combinations(
+            combinations, default_model_type="transformer"
+        )
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out, combinations)
+
+    def test_mixed_model_types_filters_correctly(self):
+        """Grid with model_type in [mlp, transformer] and transformer.d_model: only transformer combos kept."""
+        combinations = [
+            {
+                "model.model_type": "mlp",
+                "model.transformer.d_model": 128,
+                "run.epoch": 10,
+            },
+            {
+                "model.model_type": "transformer",
+                "model.transformer.d_model": 128,
+                "run.epoch": 10,
+            },
+        ]
+        out = hyperparameter_search_arrow.filter_valid_model_combinations(
+            combinations, default_model_type="gru"
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["model.model_type"], "transformer")
+        self.assertEqual(out[0]["model.transformer.d_model"], 128)
+
+    def test_empty_combinations_returns_empty(self):
+        out = hyperparameter_search_arrow.filter_valid_model_combinations(
+            [], default_model_type="transformer"
+        )
+        self.assertEqual(out, [])
+
+
 class ApplyOverridesAndFixedValuesTest(unittest.TestCase):
     """Apply overrides and enforce fixed val_take_count, batch_size; epoch/take_count from base or overrides."""
 
