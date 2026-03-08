@@ -29,6 +29,7 @@ keywords = ["stepmania", "rhythm-game", "music", "neural-network", "deep-learnin
 # setuptools provides pkg_resources required by TensorBoard (TF dependency); 82+ drops it
 dependencies = [
     "setuptools>=65.0.0,<82.0.0",
+    "tensorboard",
     "tensorflow",
     "librosa",
     "scipy",
