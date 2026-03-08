@@ -482,10 +482,16 @@ class ArrowRunConfig(RunConfig):
         focal_gamma: Gamma for focal loss when loss_type is "focal"; ignored otherwise.
         label_smoothing: Label smoothing factor for crossentropy (0 = none). Used when loss_type is "crossentropy".
         aux_interval_weight: Weight for auxiliary next-interval regression loss. 0 disables. Default 0.0.
+        chart_validity_rejection_threshold: Minimum validity (0, 1] to consider a batch valid; None disables tiered loss.
+        chart_validity_rejection_scale: Multiplier for rejection penalty when below threshold. Used only when threshold is set.
+        chart_validity_rejection_temperature: Sigmoid temperature for tiered-loss gate; larger = sharper transition.
     """
 
     chart_validity_aux_weight: float = 0.0
     diversity_aux_weight: float = 0.0
+    chart_validity_rejection_threshold: float | None = None
+    chart_validity_rejection_scale: float = 10.0
+    chart_validity_rejection_temperature: float = 50.0
     warmup_epochs: int = 0
     lr_peak: float = 1e-3
     lr_min: float = 1e-5
@@ -532,6 +538,22 @@ class ArrowRunConfig(RunConfig):
             raise ValueError(
                 f"aux_interval_weight must be >= 0, got {self.aux_interval_weight}"
             )
+        if self.chart_validity_rejection_threshold is not None:
+            if not (0.0 < self.chart_validity_rejection_threshold <= 1.0):
+                raise ValueError(
+                    "chart_validity_rejection_threshold must be in (0, 1] when set, "
+                    f"got {self.chart_validity_rejection_threshold}"
+                )
+            if self.chart_validity_rejection_scale <= 0:
+                raise ValueError(
+                    f"chart_validity_rejection_scale must be > 0 when threshold is set, "
+                    f"got {self.chart_validity_rejection_scale}"
+                )
+            if self.chart_validity_rejection_temperature <= 0:
+                raise ValueError(
+                    f"chart_validity_rejection_temperature must be > 0 when threshold is set, "
+                    f"got {self.chart_validity_rejection_temperature}"
+                )
 
     def get_experiment_name_parts(self) -> list[str]:
         """Return experiment name fragments for run-level options (take, aux weights, loss)."""
@@ -555,6 +577,10 @@ class ArrowRunConfig(RunConfig):
         if self.aux_interval_weight > 0:
             parts.append(
                 f"aux_interval_{str(self.aux_interval_weight).replace('.', '_')}"
+            )
+        if self.chart_validity_rejection_threshold is not None:
+            parts.append(
+                f"chart_val_rej_{str(self.chart_validity_rejection_threshold).replace('.', '_')}"
             )
         return parts
 

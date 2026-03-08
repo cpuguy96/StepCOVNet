@@ -509,6 +509,97 @@ class ChartValidityAuxiliaryLossMetricTest(unittest.TestCase):
         self.assertEqual(config["name"], "chart_validity_aux_loss")
 
 
+class ChartValidityPerBatchTest(unittest.TestCase):
+    """Tests for chart_validity_per_batch (batch-level hard validity, same rules as ChartValidityMetric)."""
+
+    def test_valid_sequence_returns_one(self):
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
+        result = metrics.chart_validity_per_batch(
+            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+        )
+        self.assertAlmostEqual(float(result), 1.0, places=5)
+
+    def test_orphaned_tail_below_one(self):
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[192, 0]]))
+        result = metrics.chart_validity_per_batch(
+            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+        )
+        expected = 1.0 - 1.0 / 8.0
+        self.assertAlmostEqual(float(result), expected, places=4)
+
+    def test_matches_chart_validity_metric_single_batch(self):
+        """Single batch: chart_validity_per_batch matches ChartValidityMetric result."""
+        y_true = np.array([[1, 128, 192]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 3, 256, np.array([[1, 128, 192]]))
+        per_batch = metrics.chart_validity_per_batch(
+            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+        )
+        m = metrics.ChartValidityMetric(ignore_class=0)
+        m.update_state(y_true, y_pred)
+        metric_result = float(m.result())
+        self.assertAlmostEqual(float(per_batch), metric_result, places=5)
+
+
+class ChartValidityPassRateMetricTest(unittest.TestCase):
+    """Tests for ChartValidityPassRateMetric (fraction of batches above threshold)."""
+
+    def test_all_valid_batches_pass_rate_one(self):
+        """When every batch has validity >= threshold, pass rate is 1.0."""
+        m = metrics.ChartValidityPassRateMetric(threshold=0.99, ignore_class=0)
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
+        m.update_state(y_true, y_pred)
+        m.update_state(y_true, y_pred)
+        self.assertAlmostEqual(float(m.result()), 1.0, places=5)
+
+    def test_half_valid_half_invalid_pass_rate_half(self):
+        """One batch valid, one invalid -> pass rate 0.5."""
+        m = metrics.ChartValidityPassRateMetric(threshold=0.99, ignore_class=0)
+        y_valid_true = np.array([[1, 1]], dtype=np.int32)
+        y_valid_pred = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
+        y_invalid_true = np.array([[1, 1]], dtype=np.int32)
+        y_invalid_pred = _one_hot_pred(1, 2, 256, np.array([[192, 0]]))
+        m.update_state(y_valid_true, y_valid_pred)
+        m.update_state(y_invalid_true, y_invalid_pred)
+        self.assertAlmostEqual(float(m.result()), 0.5, places=5)
+
+    def test_all_invalid_pass_rate_zero(self):
+        """When every batch has validity < threshold, pass rate is 0.0."""
+        m = metrics.ChartValidityPassRateMetric(threshold=0.99, ignore_class=0)
+        y_true = np.array([[1, 1]], dtype=np.int32)
+        y_pred = _one_hot_pred(1, 2, 256, np.array([[192, 0]]))
+        m.update_state(y_true, y_pred)
+        m.update_state(y_true, y_pred)
+        self.assertAlmostEqual(float(m.result()), 0.0, places=5)
+
+    def test_reset_state(self):
+        m = metrics.ChartValidityPassRateMetric(threshold=0.5, ignore_class=0)
+        y_invalid = np.array([[1]], dtype=np.int32)
+        y_invalid_pred = _one_hot_pred(1, 1, 256, np.array([[128]]))
+        m.update_state(y_invalid, y_invalid_pred)
+        m.reset_state()
+        y_valid = np.array([[1, 1]], dtype=np.int32)
+        y_valid_pred = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
+        m.update_state(y_valid, y_valid_pred)
+        self.assertAlmostEqual(float(m.result()), 1.0, places=5)
+
+    def test_get_config(self):
+        m = metrics.ChartValidityPassRateMetric(
+            threshold=0.99, ignore_class=0, name="chart_validity_pass_rate"
+        )
+        cfg = m.get_config()
+        self.assertEqual(cfg["threshold"], 0.99)
+        self.assertEqual(cfg["ignore_class"], 0)
+        self.assertEqual(cfg["name"], "chart_validity_pass_rate")
+
+    def test_no_batches_result_zero(self):
+        """Before any update_state, result is 0 (total is 0)."""
+        m = metrics.ChartValidityPassRateMetric(threshold=0.99, ignore_class=0)
+        self.assertAlmostEqual(float(m.result()), 0.0, places=5)
+
+
 class NoteKindBalanceAuxiliaryLossTest(unittest.TestCase):
     """Tests for note_kind_balance_auxiliary_loss (hold/tap balance vs labels)."""
 

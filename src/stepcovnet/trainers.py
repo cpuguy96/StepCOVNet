@@ -677,8 +677,12 @@ def run_arrow_train_from_config(
         model.summary()
 
     # Combined loss: main (cross-entropy or focal, optional label smoothing) + validity + diversity.
+    # When chart_validity_rejection_threshold is set, use tiered loss: below threshold -> rejection penalty; above -> main + diversity only.
     w_val = run_config.chart_validity_aux_weight
     w_div = run_config.diversity_aux_weight
+    rej_threshold = run_config.chart_validity_rejection_threshold
+    rej_scale = run_config.chart_validity_rejection_scale
+    rej_temp = run_config.chart_validity_rejection_temperature
 
     if run_config.loss_type == "crossentropy":
         if run_config.label_smoothing > 0:
@@ -706,7 +710,14 @@ def run_arrow_train_from_config(
         diversity = metrics.note_kind_balance_auxiliary_loss(
             y_true, y_pred, ignore_class=constants.ARROW_PADDING_CLASS
         )
-        return main + tf.multiply(validity, w_val) + tf.multiply(diversity, w_div)
+        if rej_threshold is None:
+            return main + tf.multiply(validity, w_val) + tf.multiply(diversity, w_div)
+        validity_score = tf.subtract(1.0, validity)
+        gate = tf.sigmoid((validity_score - rej_threshold) * rej_temp)
+        return (
+            gate * (main + tf.multiply(diversity, w_div))
+            + (1.0 - gate) * rej_scale * validity
+        )
 
     use_lr_schedule = run_config.warmup_epochs > 0
     initial_lr = run_config.lr_min if use_lr_schedule else run_config.lr_peak
@@ -720,6 +731,13 @@ def run_arrow_train_from_config(
         metrics.ArrowNoteKindDistributionMetric(name="arrow_note_kind_dist_match"),
         metrics.ChartValidityMetric(name="chart_validity"),
     ]
+    if rej_threshold is not None:
+        _main_metrics.append(
+            metrics.ChartValidityPassRateMetric(
+                threshold=rej_threshold,
+                name=f"chart_validity_pass_rate_{str(rej_threshold).replace('.', '_')}",
+            )
+        )
 
     if use_aux_interval:
         model.compile(

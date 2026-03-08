@@ -773,6 +773,72 @@ class NoteKindBalanceAuxiliaryLossMetric(keras.metrics.Metric):
         return config
 
 
+def chart_validity_per_batch(
+    y_true: tf.Tensor,
+    y_pred: tf.Tensor,
+    ignore_class: int = constants.ARROW_PADDING_CLASS,
+) -> tf.Tensor:
+    """Compute hard chart validity (argmax) for a single batch, same rules as ChartValidityMetric.
+
+    Returns a scalar in [0, 1]: 1 - (batch_violations / max(1, batch_valid_step_columns)).
+
+    Args:
+        y_true: (batch, seq) int arrow codes.
+        y_pred: (batch, seq, N_ARROW_TYPES) float probabilities.
+        ignore_class: Label value treated as padding (default ARROW_PADDING_CLASS).
+
+    Returns:
+        Scalar tensor: batch chart validity in [0, 1].
+    """
+    y_true = tf.cast(y_true, tf.int32)
+    y_pred = tf.cast(y_pred, tf.float32)
+    pred_classes = tf.cast(tf.argmax(y_pred, axis=-1), tf.int32)
+    mask_bool = tf.not_equal(y_true, ignore_class)
+    mask = tf.cast(mask_bool, tf.float32)
+
+    pred_onehot = tf.one_hot(
+        tf.clip_by_value(pred_classes, 0, constants.N_ARROW_TYPES - 1),
+        depth=constants.N_ARROW_TYPES,
+        dtype=tf.float32,
+    )
+    prob_digit = tf.einsum(
+        "bsn,ncd->bscd",
+        pred_onehot,
+        _ARROW_DIGIT_ONEHOT_TABLE,
+    )
+    mask_exp_4d = tf.reshape(mask, [tf.shape(mask)[0], tf.shape(mask)[1], 1, 1])
+    prob_digit = prob_digit * mask_exp_4d
+
+    seq_len = tf.shape(prob_digit)[1]
+    batch_size = tf.shape(prob_digit)[0]
+    seq_indices = tf.range(seq_len, dtype=tf.int32)
+    last_valid_idx = tf.argmax(
+        tf.cast(mask_bool, tf.int32) * seq_indices[tf.newaxis, :],
+        axis=1,
+        output_type=tf.int32,
+    )
+    batch_idx = tf.range(batch_size, dtype=tf.int32)
+    scatter_indices = tf.stack([batch_idx, last_valid_idx], axis=1)
+    last_valid_weights = tf.scatter_nd(
+        scatter_indices,
+        tf.ones((batch_size, 4), dtype=tf.float32),
+        [batch_size, seq_len, 4],
+    )
+    valid_batch = tf.reduce_sum(mask, axis=1) > 0.0
+    last_valid_weights = last_valid_weights * tf.cast(
+        valid_batch[:, tf.newaxis, tf.newaxis], tf.float32
+    )
+
+    weights = _chart_validity_violation_weights(
+        prob_digit, mask, last_valid_weights, soft=False
+    )
+    mask_exp = tf.expand_dims(mask, axis=-1)
+    total_violations_batch = tf.reduce_sum(weights * mask_exp)
+    total_slots = tf.maximum(tf.reduce_sum(mask) * 4.0, 1.0)
+    ratio = total_violations_batch / total_slots
+    return tf.clip_by_value(1.0 - ratio, 0.0, 1.0)
+
+
 @keras.saving.register_keras_serializable()
 class ChartValidityMetric(keras.metrics.Metric):
     """Measures full-sequence validity of StepMania chart predictions per column.
@@ -869,4 +935,55 @@ class ChartValidityMetric(keras.metrics.Metric):
     def get_config(self):
         config = super().get_config()
         config.update({"ignore_class": self.ignore_class})
+        return config
+
+
+@keras.saving.register_keras_serializable()
+class ChartValidityPassRateMetric(keras.metrics.Metric):
+    """Fraction of batches whose hard chart validity is >= threshold.
+
+    Uses the same hard (argmax) validity as ChartValidityMetric, computed
+    per batch. Result is passed_batches / total_batches.
+
+    Attributes:
+        threshold: Minimum validity in [0, 1] to count a batch as passing.
+        ignore_class: Label value treated as padding (default ARROW_PADDING_CLASS).
+    """
+
+    def __init__(
+        self,
+        threshold: float,
+        ignore_class: int = constants.ARROW_PADDING_CLASS,
+        name: str = "chart_validity_pass_rate",
+        **kwargs,
+    ):
+        super().__init__(name=name, **kwargs)
+        self.threshold = float(threshold)
+        self.ignore_class = ignore_class
+        self.passed = self.add_weight(name="passed", initializer="zeros")
+        self.total = self.add_weight(name="total", initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        batch_validity = chart_validity_per_batch(
+            y_true, y_pred, ignore_class=self.ignore_class
+        )
+        passed_batch = tf.cast(batch_validity >= self.threshold, tf.float32)
+        self.passed.assign_add(passed_batch)
+        self.total.assign_add(1.0)
+
+    def result(self):
+        return tf.where(
+            self.total > 0.0,
+            self.passed / self.total,
+            tf.constant(0.0, dtype=self.passed.dtype),
+        )
+
+    def reset_state(self):
+        self.passed.assign(0.0)
+        self.total.assign(0.0)
+
+    def get_config(self):
+        config = super().get_config()
+        config["threshold"] = self.threshold
+        config["ignore_class"] = self.ignore_class
         return config

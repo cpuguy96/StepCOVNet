@@ -936,6 +936,105 @@ class ArrowRunConfigTest(unittest.TestCase):
         self.assertNotIn("label_smooth", parts)
         self.assertNotIn("aux_interval", parts)
 
+    def test_chart_validity_rejection_defaults(self):
+        """chart_validity_rejection_* default to None, 10.0, 50.0."""
+        cfg = config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir="out")
+        self.assertIsNone(cfg.chart_validity_rejection_threshold)
+        self.assertEqual(cfg.chart_validity_rejection_scale, 10.0)
+        self.assertEqual(cfg.chart_validity_rejection_temperature, 50.0)
+
+    def test_chart_validity_rejection_threshold_valid_accepted(self):
+        """chart_validity_rejection_threshold in (0, 1] with scale > 0 is accepted."""
+        cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_rejection_threshold=0.99,
+            chart_validity_rejection_scale=100.0,
+        )
+        self.assertEqual(cfg.chart_validity_rejection_threshold, 0.99)
+        self.assertEqual(cfg.chart_validity_rejection_scale, 100.0)
+
+    def test_chart_validity_rejection_threshold_zero_raises(self):
+        """chart_validity_rejection_threshold 0 raises when set."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                chart_validity_rejection_threshold=0.0,
+                chart_validity_rejection_scale=10.0,
+            )
+        self.assertIn("chart_validity_rejection_threshold", str(ctx.exception))
+
+    def test_chart_validity_rejection_threshold_above_one_raises(self):
+        """chart_validity_rejection_threshold > 1 raises when set."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                chart_validity_rejection_threshold=1.01,
+                chart_validity_rejection_scale=10.0,
+            )
+        self.assertIn("chart_validity_rejection_threshold", str(ctx.exception))
+
+    def test_chart_validity_rejection_scale_zero_when_threshold_set_raises(self):
+        """chart_validity_rejection_scale <= 0 raises when threshold is set."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                chart_validity_rejection_threshold=0.99,
+                chart_validity_rejection_scale=0.0,
+            )
+        self.assertIn("chart_validity_rejection_scale", str(ctx.exception))
+
+    def test_chart_validity_rejection_temperature_zero_when_threshold_set_raises(self):
+        """chart_validity_rejection_temperature <= 0 raises when threshold is set."""
+        with self.assertRaises(ValueError) as ctx:
+            config.ArrowRunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                chart_validity_rejection_threshold=0.99,
+                chart_validity_rejection_scale=10.0,
+                chart_validity_rejection_temperature=0.0,
+            )
+        self.assertIn("chart_validity_rejection_temperature", str(ctx.exception))
+
+    def test_get_experiment_name_parts_includes_chart_val_rej_when_threshold_set(self):
+        """get_experiment_name_parts includes chart_val_rej_* when threshold is set."""
+        cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_rejection_threshold=0.99,
+            chart_validity_rejection_scale=50.0,
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("chart_val_rej_0_99", parts)
+
+    def test_as_dict_includes_rejection_params(self):
+        """as_dict includes chart_validity_rejection_* for round-trip."""
+        cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_rejection_threshold=0.99,
+            chart_validity_rejection_scale=20.0,
+            chart_validity_rejection_temperature=100.0,
+        )
+        d = cfg.as_dict()
+        self.assertEqual(d["chart_validity_rejection_threshold"], 0.99)
+        self.assertEqual(d["chart_validity_rejection_scale"], 20.0)
+        self.assertEqual(d["chart_validity_rejection_temperature"], 100.0)
+        loaded = config.ArrowRunConfig.from_dict(d)
+        self.assertEqual(loaded.chart_validity_rejection_threshold, 0.99)
+        self.assertEqual(loaded.chart_validity_rejection_scale, 20.0)
+        self.assertEqual(loaded.chart_validity_rejection_temperature, 100.0)
+
     def test_negative_warmup_epochs_raises(self):
         """warmup_epochs < 0 raises ValueError."""
         with self.assertRaises(ValueError) as ctx:
@@ -1265,6 +1364,27 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         self.assertIsInstance(loaded.run, config.ArrowRunConfig)
         self.assertEqual(loaded.run.chart_validity_aux_weight, 0.3)
         self.assertEqual(loaded.run.diversity_aux_weight, 0.1)
+
+    def test_arrow_experiment_round_trip_includes_rejection_params(self):
+        """ArrowExperimentConfig as_dict/from_dict round-trip includes chart_validity_rejection_*."""
+        run_cfg = config.ArrowRunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            chart_validity_rejection_threshold=0.99,
+            chart_validity_rejection_scale=15.0,
+        )
+        exp_cfg = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig(),
+            run=run_cfg,
+        )
+        d = exp_cfg.as_dict()
+        self.assertEqual(d["run"]["chart_validity_rejection_threshold"], 0.99)
+        self.assertEqual(d["run"]["chart_validity_rejection_scale"], 15.0)
+        loaded = config.ArrowExperimentConfig.from_dict(d)
+        self.assertEqual(loaded.run.chart_validity_rejection_threshold, 0.99)
+        self.assertEqual(loaded.run.chart_validity_rejection_scale, 15.0)
 
     def test_from_dict_input_options_only_under_dataset(self):
         """Loading with input options only under dataset populates both configs."""

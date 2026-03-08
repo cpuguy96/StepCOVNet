@@ -1340,6 +1340,28 @@ class ArrowLossTests(unittest.TestCase):
         self.assertIsNotNone(history)
         self.assertIn("val_main_loss", history.history)
 
+    def test_run_arrow_train_from_config_with_rejection_threshold_includes_pass_rate_metric(
+        self,
+    ):
+        """With chart_validity_rejection_threshold set, training logs chart_validity_pass_rate."""
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_arrow_configs(
+                model_output_dir,
+                run_kwargs={
+                    "callback_root_dir": callback_root_dir,
+                    "chart_validity_rejection_threshold": 0.99,
+                    "chart_validity_rejection_scale": 10.0,
+                },
+            )
+            _, history = trainers.run_arrow_train_from_config(
+                dataset_config, model_config, run_config
+            )
+        self.assertIn("chart_validity_pass_rate_0_99", history.history)
+        self.assertIn("val_chart_validity_pass_rate_0_99", history.history)
+
     def test_run_arrow_train_from_config_with_label_smoothing_completes(self):
         """run_arrow_train_from_config with label_smoothing > 0 builds and runs one epoch."""
         with _temp_model_and_callback_dirs(with_callbacks=True) as (
