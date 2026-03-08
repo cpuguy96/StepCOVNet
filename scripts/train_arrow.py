@@ -60,15 +60,15 @@ def _set_nested(d: dict, key_path: str, value) -> None:
         return
     current = d
     for i, part in enumerate(parts[:-1]):
-        if part not in current:
+        existing = current.get(part)
+        if existing is None or part not in current:
             current[part] = {}
-        else:
-            if not isinstance(current[part], dict):
-                segment = ".".join(parts[: i + 1])
-                raise ValueError(
-                    f"Cannot set nested key '{key_path}': segment '{segment}' is not a "
-                    "nested object (leaf value); use a path without extra segments."
-                )
+        elif not isinstance(existing, dict):
+            segment = ".".join(parts[: i + 1])
+            raise ValueError(
+                f"Cannot set nested key '{key_path}': segment '{segment}' is not a "
+                "nested object (leaf value); use a path without extra segments."
+            )
         current = current[part]
     current[parts[-1]] = value
 

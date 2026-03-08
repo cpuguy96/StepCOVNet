@@ -625,16 +625,18 @@ class TrainersTest(unittest.TestCase):
             self.assertIsNotNone(history)
 
     def test_backward_compatibility_run_arrow_train(self):
-        """Test that old run_arrow_train API still works (backward compatibility)."""
+        """Test that run_arrow_train with model_params dict (nested format) still works."""
         with tempfile.TemporaryDirectory() as temp_dir:
             callback_root_dir = os.path.join(temp_dir, "callbacks")
             model_output_dir = os.path.join(temp_dir, "models")
-            # Use old API with kwargs
             model, history = trainers.run_arrow_train(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
                 batch_size=1,
-                model_params={"num_layers": 1},
+                model_params={
+                    "model_type": "transformer",
+                    "transformer": {"num_layers": 1},
+                },
                 take_count=1,
                 epoch=1,
                 callback_root_dir=callback_root_dir,
@@ -770,7 +772,6 @@ class ExperimentNameHelperTests(unittest.TestCase):
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "transformer",
-                "snippet_half_frames": 5,
                 "transformer": {
                     "num_layers": 2,
                     "d_model": 256,
@@ -796,16 +797,14 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("num_heads_8", name)
         self.assertIn("ff_dim_512", name)
         self.assertIn("dropout_0_2", name)
-        self.assertIn("snippets_half_5", name)
         self.assertIn("chart_val_aux_0_3", name)
         self.assertIn("diversity_aux_0_4", name)
 
-    def test_get_arrow_experiment_name_includes_use_interval_when_true(self):
-        """_get_arrow_experiment_name with use_interval=True includes 'use_interval' in the name."""
+    def test_get_arrow_experiment_name_transformer_includes_architecture_parts(self):
+        """_get_arrow_experiment_name with transformer config includes ARROW and architecture parts."""
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "transformer",
-                "use_interval": True,
                 "transformer": {
                     "num_layers": 1,
                     "d_model": 128,
@@ -821,16 +820,15 @@ class ExperimentNameHelperTests(unittest.TestCase):
             model_output_dir="out",
         )
         name = trainers._get_arrow_experiment_name(model_config, run_config)
-        self.assertIn("use_interval", name)
         self.assertIn("ARROW", name)
         self.assertIn("transformer", name)
+        self.assertIn("att_layers_1", name)
 
-    def test_get_arrow_experiment_name_omits_use_interval_when_false(self):
-        """_get_arrow_experiment_name with use_interval=False does not include 'use_interval'."""
+    def test_get_arrow_experiment_name_omits_use_interval(self):
+        """_get_arrow_experiment_name does not include 'use_interval' (input options are on dataset config)."""
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "transformer",
-                "use_interval": False,
                 "transformer": {
                     "num_layers": 1,
                     "d_model": 128,
@@ -868,13 +866,11 @@ class ExperimentNameHelperTests(unittest.TestCase):
         loaded = config.ArrowDatasetConfig.from_dict(d)
         self.assertEqual(loaded.interval_encoding, config.IntervalEncoding.LOG)
 
-    def test_get_arrow_experiment_name_includes_use_step_index_and_use_beat_phase(self):
-        """Config with use_step_index and use_beat_phase includes them in experiment name."""
+    def test_get_arrow_experiment_name_transformer_minimal(self):
+        """Minimal transformer config produces a valid experiment name with ARROW and architecture."""
         model_config = config.ArrowModelConfig.from_dict(
             {
                 "model_type": "transformer",
-                "use_step_index": True,
-                "use_beat_phase": True,
                 "transformer": {"num_layers": 1, "d_model": 64},
             }
         )
@@ -882,8 +878,10 @@ class ExperimentNameHelperTests(unittest.TestCase):
             epoch=1, take_count=1, model_output_dir="out"
         )
         name = trainers._get_arrow_experiment_name(model_config, run_config)
-        self.assertIn("use_step_index", name)
-        self.assertIn("use_beat_phase", name)
+        self.assertIn("ARROW", name)
+        self.assertIn("transformer", name)
+        self.assertIn("att_layers_1", name)
+        self.assertIn("d_model_64", name)
 
     def test_get_arrow_experiment_name_mlp_includes_hidden_dims_and_dropout(self):
         """_get_arrow_experiment_name with model_type=mlp includes mlp_* and dropout (mlp branch)."""

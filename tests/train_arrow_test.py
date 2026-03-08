@@ -140,6 +140,7 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             )
         self.assertEqual(result.model.model_type, "lstm")
         self.assertIsNotNone(result.model.lstm)
+        assert result.model.lstm is not None
         self.assertEqual(result.model.lstm.units, 64)
         self.assertEqual(result.model.lstm.num_layers, 2)
 
@@ -287,7 +288,11 @@ class TrainArrowModelTypeMlpTest(unittest.TestCase):
         self.assertEqual(model_config.model_type, "mlp")
         self.assertIsNotNone(model_config.mlp)
         self.assertEqual(model_config.mlp.dropout_rate, 0.0)
-        models.build_arrow_model_from_config(model_config)
+        models.build_arrow_model_from_config(
+            model_config,
+            models.ArrowInputOptions(),
+            models.ArrowOutputOptions(),
+        )
 
     def test_model_type_mlp_with_dropout_rate_produces_valid_config(self):
         """With --set model.model_type=mlp and model.mlp.dropout_rate=0.25, model is buildable."""
@@ -301,7 +306,11 @@ class TrainArrowModelTypeMlpTest(unittest.TestCase):
         self.assertEqual(model_config.model_type, "mlp")
         self.assertIsNotNone(model_config.mlp)
         self.assertEqual(model_config.mlp.dropout_rate, 0.25)
-        models.build_arrow_model_from_config(model_config)
+        models.build_arrow_model_from_config(
+            model_config,
+            models.ArrowInputOptions(),
+            models.ArrowOutputOptions(),
+        )
 
     def test_model_type_transformer_with_dropout_rate_unchanged(self):
         """With model_type=transformer and model.transformer.dropout_rate=0.3, transformer gets dropout."""
@@ -399,7 +408,11 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.lstm.units, 64)
         self.assertEqual(model_config.lstm.num_layers, 2)
         self.assertEqual(model_config.lstm.dropout_rate, 0.1)
-        models.build_arrow_model_from_config(model_config)
+        models.build_arrow_model_from_config(
+            model_config,
+            models.ArrowInputOptions(),
+            models.ArrowOutputOptions(),
+        )
 
     def test_lstm_bidirectional_override_builds(self):
         """--set model.lstm.bidirectional=true results in bidirectional True and model builds."""
@@ -420,7 +433,11 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertIsNotNone(model_config.lstm)
         assert model_config.lstm is not None
         self.assertTrue(model_config.lstm.bidirectional)
-        models.build_arrow_model_from_config(model_config)
+        models.build_arrow_model_from_config(
+            model_config,
+            models.ArrowInputOptions(),
+            models.ArrowOutputOptions(),
+        )
 
     def test_model_type_gru_with_overrides_produces_valid_config(self):
         """--set model.model_type=gru and model.gru.* produces buildable config."""
@@ -442,7 +459,11 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(model_config.gru.units, 64)
         self.assertEqual(model_config.gru.num_layers, 2)
         self.assertEqual(model_config.gru.dropout_rate, 0.1)
-        models.build_arrow_model_from_config(model_config)
+        models.build_arrow_model_from_config(
+            model_config,
+            models.ArrowInputOptions(),
+            models.ArrowOutputOptions(),
+        )
 
     def test_gru_bidirectional_override_builds(self):
         """--set model.gru.bidirectional=true results in bidirectional True and model builds."""
@@ -463,10 +484,14 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertIsNotNone(model_config.gru)
         assert model_config.gru is not None
         self.assertTrue(model_config.gru.bidirectional)
-        models.build_arrow_model_from_config(model_config)
+        models.build_arrow_model_from_config(
+            model_config,
+            models.ArrowInputOptions(),
+            models.ArrowOutputOptions(),
+        )
 
     def test_snippet_half_frames_override(self):
-        """--set dataset.snippet_half_frames and model.snippet_half_frames update both (via single key)."""
+        """--set dataset.snippet_half_frames updates dataset config."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _minimal_config_path(tmpdir)
             args = _make_args(path, [])
@@ -479,34 +504,29 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
             base = config.ArrowExperimentConfig.from_json(path)
             result = train_arrow.apply_overrides_from_cli(
                 base,
-                ["dataset.snippet_half_frames=5", "model.snippet_half_frames=5"],
+                ["dataset.snippet_half_frames=5"],
             )
         self.assertEqual(result.dataset.snippet_half_frames, 5)
-        self.assertEqual(result.model.snippet_half_frames, 5)
 
     def test_config_file_with_snippet_half_frames_override(self):
-        """With --config, --set dataset.snippet_half_frames and model.snippet_half_frames update both."""
+        """With --config, --set dataset.snippet_half_frames updates dataset config."""
         with tempfile.TemporaryDirectory() as tmpdir:
             json_path = os.path.join(tmpdir, "c.json")
             cfg = config.ArrowExperimentConfig(
                 dataset=config.ArrowDatasetConfig(
                     data_dir=tmpdir, val_data_dir=tmpdir, snippet_half_frames=0
                 ),
-                model=config.ArrowModelConfig.from_dict({"snippet_half_frames": 0}),
+                model=config.ArrowModelConfig(),
                 run=config.ArrowRunConfig(
                     epoch=1, take_count=1, model_output_dir=tmpdir
                 ),
             )
             cfg.to_json(json_path)
-            args = _make_args(
-                json_path,
-                ["dataset.snippet_half_frames=3", "model.snippet_half_frames=3"],
-            )
+            args = _make_args(json_path, ["dataset.snippet_half_frames=3"])
             _run_mock, dataset_config, model_config, _rc = (
                 _run_train_arrow_main_with_run_config(args)
             )
         self.assertEqual(dataset_config.snippet_half_frames, 3)
-        self.assertEqual(model_config.snippet_half_frames, 3)
 
     def test_run_config_cli_overrides(self):
         """--set run.* applies epoch, take_count, val_take_count, paths, aux weights, lr."""
