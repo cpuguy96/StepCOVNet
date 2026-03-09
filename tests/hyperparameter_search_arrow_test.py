@@ -1305,6 +1305,7 @@ class WorkersOptionTest(unittest.TestCase):
                         "base_config": "configs/arrow_baseline.json",
                         "search_space": {"model.transformer.dropout_rate": [0.0]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
+                        "sweep_output_dir": os.path.join(tmpdir, "sweep_out"),
                     },
                     f,
                 )
