@@ -247,6 +247,12 @@ def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
     model.<that_type>.* overrides (plus dataset.*, run.*). This yields valid
     combinations when sweeping over architectures without creating a full
     Cartesian product that filter_valid_model_combinations would drop.
+
+    Args:
+        search_space: Mapping of dotted override keys to lists of candidate values.
+
+    Returns:
+        List of override dictionaries, one per expanded hyperparameter combination.
     """
     model_type_key = "model.model_type"
     if model_type_key not in search_space:
