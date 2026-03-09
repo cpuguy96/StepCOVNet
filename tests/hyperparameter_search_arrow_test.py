@@ -774,6 +774,27 @@ class ForbiddenKeysValidationTest(unittest.TestCase):
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("forbidden", str(ctx.exception).lower())
 
+    def test_load_sweep_config_allows_snippet_half_frames_search_space_keys(self):
+        """snippet_half_frames keys are no longer treated as forbidden search-space entries."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "sweep.json")
+            _write_json(
+                path,
+                {
+                    **_minimal_inline_experiment_config(),
+                    "search_space": {
+                        "dataset.snippet_half_frames": [0, 5],
+                        "model.snippet_half_frames": [0, 5],
+                    },
+                    "optimize": {"metric": "val_loss", "mode": "min"},
+                },
+            )
+            data = hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertEqual(
+                data["search_space"]["dataset.snippet_half_frames"], [0, 5]
+            )
+            self.assertEqual(data["search_space"]["model.snippet_half_frames"], [0, 5])
+
 
 class SweepCombinationValidationTest(unittest.TestCase):
     """Fresh sweeps validate all expanded combinations before training starts."""
@@ -1115,6 +1136,39 @@ class SelectBestRunWithValidityGateTest(unittest.TestCase):
         call_str = " ".join(str(c) for c in mock_print.call_args_list)
         self.assertIn("validity gate", call_str.lower())
         self.assertIn("WARNING", call_str)
+
+    def test_gate_missing_validity_metric_falls_back_to_main_metric(self):
+        """When no validity metric is present in results, fallback uses the main optimize metric."""
+        results = [
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.0,
+                "best_val_arrow_dist_match": 0.9,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 1.8,
+                "best_val_arrow_dist_match": 0.7,
+            },
+        ]
+        sweep_save = self._sweep_save({"min_fraction": 0.95})
+        with mock.patch("builtins.print") as mock_print:
+            idx, gate_info = (
+                hyperparameter_search_arrow._select_best_run_with_validity_gate(
+                    results, sweep_save
+                )
+            )
+        self.assertEqual(idx, 1)
+        assert gate_info is not None
+        self.assertEqual(gate_info["validity_metric"], "(auto)")
+        self.assertEqual(gate_info["min_fraction"], 0.95)
+        self.assertEqual(gate_info["n_passed"], 0)
+        self.assertEqual(gate_info["n_total"], 2)
+        self.assertTrue(gate_info["used_fallback"])
+        mock_print.assert_called()
+        call_str = " ".join(str(c) for c in mock_print.call_args_list)
+        self.assertIn("no validity metric found", call_str.lower())
+        self.assertIn("main optimize metric", call_str.lower())
 
 
 class IsBetterThanTest(unittest.TestCase):
