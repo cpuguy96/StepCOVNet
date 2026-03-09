@@ -164,6 +164,11 @@ def load_sweep_config(path: str) -> dict[str, Any]:
                     "sweep config validity_gate.validity_metric must be a string "
                     f"when set, got {type(vg['validity_metric']).__name__}"
                 )
+            if not vg["validity_metric"].strip():
+                raise ValueError(
+                    "sweep config validity_gate.validity_metric must be a non-empty "
+                    "string when set"
+                )
         if "optimize_metric" in vg and vg["optimize_metric"] is not None:
             if not isinstance(vg["optimize_metric"], str):
                 raise ValueError(

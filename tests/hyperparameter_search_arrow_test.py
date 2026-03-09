@@ -37,6 +37,12 @@ def _run_sweep_script(*args):
 class SweepConfigLoadingTest(unittest.TestCase):
     """Sweep config loading: valid and invalid keys."""
 
+    def _write_sweep_config(self, tmpdir, data):
+        path = os.path.join(tmpdir, "sweep_config.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        return path
+
     def test_load_valid_sweep_config(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(
@@ -216,8 +222,9 @@ class SweepConfigLoadingTest(unittest.TestCase):
 
     def test_load_accepts_validity_gate(self):
         """Sweep config with validity_gate (min_fraction and optional fields) loads."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
                     "base_config": "configs/arrow_baseline.json",
                     "search_space": {"run.epoch": [1]},
@@ -229,10 +236,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
                         "optimize_mode": "max",
                     },
                 },
-                f,
             )
-            path = f.name
-        try:
             data = hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("validity_gate", data)
             self.assertEqual(data["validity_gate"]["min_fraction"], 0.95)
@@ -244,53 +248,63 @@ class SweepConfigLoadingTest(unittest.TestCase):
                 data["validity_gate"]["optimize_metric"], "val_arrow_dist_match"
             )
             self.assertEqual(data["validity_gate"]["optimize_mode"], "max")
-        finally:
-            os.unlink(path)
 
     def test_load_validity_gate_requires_min_fraction(self):
         """validity_gate without min_fraction raises."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
                     "base_config": "configs/arrow_baseline.json",
                     "search_space": {"run.epoch": [1]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "validity_gate": {},
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("min_fraction", str(ctx.exception))
-        finally:
-            os.unlink(path)
 
     def test_load_validity_gate_min_fraction_range(self):
         """validity_gate.min_fraction must be in [0, 1]."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
                     "base_config": "configs/arrow_baseline.json",
                     "search_space": {"run.epoch": [1]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "validity_gate": {"min_fraction": 1.5},
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("min_fraction", str(ctx.exception))
-        finally:
-            os.unlink(path)
+
+    def test_load_validity_gate_rejects_empty_validity_metric(self):
+        """validity_gate.validity_metric must be non-empty when set."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
+                {
+                    "base_config": "configs/arrow_baseline.json",
+                    "search_space": {"run.epoch": [1]},
+                    "optimize": {"metric": "val_loss", "mode": "min"},
+                    "validity_gate": {
+                        "min_fraction": 0.95,
+                        "validity_metric": "",
+                    },
+                },
+            )
+            with self.assertRaises(ValueError) as ctx:
+                hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertIn("validity_metric", str(ctx.exception))
 
     def test_load_validity_gate_invalid_mode(self):
         """validity_gate.optimize_mode must be min or max when set."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
                     "base_config": "configs/arrow_baseline.json",
                     "search_space": {"run.epoch": [1]},
@@ -300,15 +314,10 @@ class SweepConfigLoadingTest(unittest.TestCase):
                         "optimize_mode": "invalid",
                     },
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("optimize_mode", str(ctx.exception))
-        finally:
-            os.unlink(path)
 
 
 class GridExpansionTest(unittest.TestCase):
