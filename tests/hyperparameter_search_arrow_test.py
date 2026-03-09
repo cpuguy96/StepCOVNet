@@ -933,6 +933,15 @@ class ResolveValidityMetricTest(unittest.TestCase):
         key = hyperparameter_search_arrow._resolve_validity_metric([result], None)
         self.assertEqual(key, "best_val_chart_validity_pass_rate_0_99")
 
+    def test_auto_detect_prefers_highest_pass_rate_threshold(self):
+        """Auto-detect chooses the strictest pass-rate threshold when multiple exist."""
+        result = {
+            "best_val_chart_validity_pass_rate_0_95": 1.0,
+            "best_val_chart_validity_pass_rate_0_99": 0.8,
+        }
+        key = hyperparameter_search_arrow._resolve_validity_metric([result], None)
+        self.assertEqual(key, "best_val_chart_validity_pass_rate_0_99")
+
     def test_auto_detect_fallback_chart_validity(self):
         """When no pass_rate key, use best_val_chart_validity."""
         result = {"best_val_chart_validity": 0.95, "best_val_loss": 0.5}

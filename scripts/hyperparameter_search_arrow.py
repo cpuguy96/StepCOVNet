@@ -565,7 +565,7 @@ def _resolve_validity_metric(
         k for k in keys if k.startswith("best_val_chart_validity_pass_rate_")
     ]
     if pass_rate_keys:
-        return min(pass_rate_keys)
+        return max(pass_rate_keys)
     if "best_val_chart_validity" in keys:
         return "best_val_chart_validity"
     return None
