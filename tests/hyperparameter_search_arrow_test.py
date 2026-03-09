@@ -242,6 +242,33 @@ class GridExpansionTest(unittest.TestCase):
         self.assertEqual(combinations[0], {"model.transformer.num_layers": 1})
         self.assertEqual(combinations[1], {"model.transformer.num_layers": 2})
 
+    def test_expand_grid_multi_model_type_only_matching_block_per_combo(self):
+        """With multiple model.model_type values, each combo has only that type's model block keys."""
+        search_space = {
+            "model.model_type": ["tcn", "gru"],
+            "model.tcn.filters": [64, 128],
+            "model.gru.units": [32],
+            "run.epoch": [1],
+        }
+        combinations = hyperparameter_search_arrow.expand_grid(search_space)
+        # tcn: 2 filters * 1 epoch = 2; gru: 1 units * 1 epoch = 1 → 3 total
+        self.assertEqual(len(combinations), 3)
+        tcn_combos = [c for c in combinations if c.get("model.model_type") == "tcn"]
+        gru_combos = [c for c in combinations if c.get("model.model_type") == "gru"]
+        self.assertEqual(len(tcn_combos), 2)
+        self.assertEqual(len(gru_combos), 1)
+        for c in tcn_combos:
+            self.assertIn("model.tcn.filters", c)
+            self.assertNotIn("model.gru.units", c)
+        for c in gru_combos:
+            self.assertIn("model.gru.units", c)
+            self.assertNotIn("model.tcn.filters", c)
+        self.assertEqual(
+            {c["model.tcn.filters"] for c in tcn_combos},
+            {64, 128},
+        )
+        self.assertEqual(gru_combos[0]["model.gru.units"], 32)
+
 
 class FilterValidModelCombinationsTest(unittest.TestCase):
     """filter_valid_model_combinations: only keep combos where model.<block>.* matches model_type."""

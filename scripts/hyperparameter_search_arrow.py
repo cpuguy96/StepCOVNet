@@ -192,14 +192,45 @@ def _rebuild_combinations_from_saved(
     return full_combinations[:max_runs] if max_runs is not None else full_combinations
 
 
-def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
-    """Build all combinations from search_space (Cartesian product)."""
+def _expand_grid_simple(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
+    """Cartesian product of all keys in search_space."""
     keys = list(search_space.keys())
     value_lists = [search_space[k] for k in keys]
     combinations = []
     for combo in itertools.product(*value_lists):
         combinations.append(dict(zip(keys, combo, strict=False)))
     return combinations
+
+
+def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
+    """Build all combinations from search_space.
+
+    When search_space contains "model.model_type" with multiple values, expands
+    per model type: each combination includes only model.model_type and
+    model.<that_type>.* overrides (plus dataset.*, run.*). This yields valid
+    combinations when sweeping over architectures without creating a full
+    Cartesian product that filter_valid_model_combinations would drop.
+    """
+    model_type_key = "model.model_type"
+    if model_type_key not in search_space:
+        return _expand_grid_simple(search_space)
+    model_type_values = search_space[model_type_key]
+    if not isinstance(model_type_values, list) or len(model_type_values) <= 1:
+        return _expand_grid_simple(search_space)
+    result = []
+    for mt in model_type_values:
+        sub_space = {}
+        for k, v in search_space.items():
+            if k == model_type_key:
+                sub_space[k] = [mt]
+            elif k.startswith("model.") and k != model_type_key:
+                parts = k.split(".")
+                if len(parts) >= 2 and parts[1] == mt:
+                    sub_space[k] = v
+            else:
+                sub_space[k] = v
+        result.extend(_expand_grid_simple(sub_space))
+    return result
 
 
 def filter_valid_model_combinations(
