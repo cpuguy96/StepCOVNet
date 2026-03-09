@@ -436,6 +436,45 @@ class GridExpansionTest(unittest.TestCase):
         )
         self.assertEqual(gru_combos[0]["model.gru.units"], 32)
 
+    def test_expand_grid_multi_model_type_keeps_global_model_keys(self):
+        """Global model.<param> keys are included for every multi-model combination."""
+        search_space = {
+            "model.model_type": ["tcn", "gru"],
+            "model.learning_rate": [0.001, 0.01],
+            "model.tcn.filters": [64],
+            "model.gru.units": [32],
+            "run.epoch": [1],
+        }
+        combinations = hyperparameter_search_arrow.expand_grid(search_space)
+        self.assertEqual(len(combinations), 4)
+        expected = [
+            {
+                "model.model_type": "tcn",
+                "model.learning_rate": 0.001,
+                "model.tcn.filters": 64,
+                "run.epoch": 1,
+            },
+            {
+                "model.model_type": "tcn",
+                "model.learning_rate": 0.01,
+                "model.tcn.filters": 64,
+                "run.epoch": 1,
+            },
+            {
+                "model.model_type": "gru",
+                "model.learning_rate": 0.001,
+                "model.gru.units": 32,
+                "run.epoch": 1,
+            },
+            {
+                "model.model_type": "gru",
+                "model.learning_rate": 0.01,
+                "model.gru.units": 32,
+                "run.epoch": 1,
+            },
+        ]
+        self.assertEqual(combinations, expected)
+
 
 class FilterValidModelCombinationsTest(unittest.TestCase):
     """filter_valid_model_combinations: only keep combos where model.<block>.* matches model_type."""

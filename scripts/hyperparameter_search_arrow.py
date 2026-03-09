@@ -268,7 +268,10 @@ def expand_grid(search_space: dict[str, list[Any]]) -> list[dict[str, Any]]:
                 sub_space[k] = [mt]
             elif k.startswith("model.") and k != model_type_key:
                 parts = k.split(".")
-                if len(parts) >= 2 and parts[1] == mt:
+                if len(parts) >= 3:
+                    if parts[1] == mt:
+                        sub_space[k] = v
+                else:
                     sub_space[k] = v
             else:
                 sub_space[k] = v
