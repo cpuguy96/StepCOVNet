@@ -3,7 +3,7 @@ r"""Hyperparameter search for the ARROW model.
 Runs multiple training jobs from a sweep config. Supports grid search (all
 combinations or first N) or random search (random subset of combinations).
 Enforces val_take_count=-1 and batch_size=1. epoch and take_count can be set
-in the base config or swept via search_space (run.epoch, run.take_count).
+in the sweep config or swept via search_space (run.epoch, run.take_count).
 Records metrics per run and writes results plus best_config.json.
 
 Training jobs can run in parallel with --workers. Each run writes to its own
@@ -46,13 +46,13 @@ if _PROJECT_ROOT not in sys.path:
 from stepcovnet import config, trainers  # noqa: E402
 
 PARSER = argparse.ArgumentParser(
-    description="Run ARROW hyperparameter search (grid or random). epoch and take_count configurable via base config or search_space."
+    description="Run ARROW hyperparameter search (grid or random). epoch and take_count configurable via sweep config or search_space."
 )
 PARSER.add_argument(
     "--sweep_config",
     type=str,
     default=None,
-    help="Path to sweep JSON (base_config, search_space, optimize). Required for a new sweep; do not set when using --resume_from.",
+    help="Path to sweep JSON (dataset, model, run, search_space, optimize). Required for a new sweep; do not set when using --resume_from.",
 )
 PARSER.add_argument(
     "--search",
@@ -88,12 +88,10 @@ PARSER.add_argument(
 )
 
 
-# Keys that must not be overridden by the search space (fixed or from base only).
+# Keys that must not be overridden by the search space (fixed by the sweep runner).
 _FORBIDDEN_OVERRIDE_KEYS = frozenset(
     {
         "dataset.batch_size",
-        "dataset.snippet_half_frames",
-        "model.snippet_half_frames",
         "run.val_take_count",
         "run.show_model_summary",
         "run.fit_verbose",
@@ -111,12 +109,19 @@ def load_sweep_config(path: str) -> dict[str, Any]:
         data = json.load(f)
     if not isinstance(data, dict):
         raise ValueError("sweep config must be a JSON object")
-    if "base_config" not in data:
-        raise ValueError("sweep config must contain 'base_config'")
+    for required_key in ("dataset", "model", "run"):
+        if required_key not in data:
+            raise ValueError(f"sweep config must contain '{required_key}'")
     if "search_space" not in data:
         raise ValueError("sweep config must contain 'search_space'")
     if "optimize" not in data:
         raise ValueError("sweep config must contain 'optimize'")
+    try:
+        config.ArrowExperimentConfig.from_dict(data)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            f"invalid inline arrow experiment config in sweep config: {exc}"
+        ) from exc
     opt = data["optimize"]
     if not isinstance(opt, dict) or "metric" not in opt or "mode" not in opt:
         raise ValueError("sweep config 'optimize' must have 'metric' and 'mode'")
@@ -576,7 +581,6 @@ def _print_sweep_header(
     sweep_output_dir: str,
     optimize_metric: str,
     optimize_mode: str,
-    base_config_path: str,
     search: str = "grid",
     full_grid_size: int | None = None,
 ) -> None:
@@ -586,7 +590,6 @@ def _print_sweep_header(
     print("=" * width)
     print("  ARROW Hyperparameter Sweep")
     print("=" * width)
-    print(f"  Base config:    {base_config_path}")
     print(f"  Output dir:    {sweep_output_dir}")
     print(f"  Search:        {search}")
     if (
@@ -708,7 +711,6 @@ class _SweepContext:
 
     Attributes:
         base_config: Loaded ArrowExperimentConfig used as the base for overrides.
-        base_path: Path to the base config file.
         combinations: List of override dicts (one per run).
         sweep_output_dir: Directory where sweep results are written.
         sweep_save: Dict of sweep metadata for resume (saved to disk).
@@ -721,7 +723,6 @@ class _SweepContext:
 
     __slots__ = (
         "base_config",
-        "base_path",
         "combinations",
         "sweep_output_dir",
         "sweep_save",
@@ -736,7 +737,6 @@ class _SweepContext:
         self,
         *,
         base_config: Any,
-        base_path: str,
         combinations: list[dict[str, Any]],
         sweep_output_dir: str,
         sweep_save: dict[str, Any],
@@ -747,7 +747,6 @@ class _SweepContext:
         pending: list[tuple[int, dict[str, Any]]],
     ) -> None:
         self.base_config = base_config
-        self.base_path = base_path
         self.combinations = combinations
         self.sweep_output_dir = sweep_output_dir
         self.sweep_save = sweep_save
@@ -765,10 +764,7 @@ def _setup_resume(resume_from: str) -> _SweepContext | None:
     if not os.path.isdir(resume_from):
         PARSER.error(f"--resume_from directory does not exist: {resume_from}")
     sweep_save, results_list = _load_resume_state(resume_from)
-    base_path = sweep_save["base_config"]
-    if not os.path.isabs(base_path):
-        base_path = os.path.join(_PROJECT_ROOT, base_path)
-    base_config = config.ArrowExperimentConfig.from_json(base_path)
+    base_config = config.ArrowExperimentConfig.from_dict(sweep_save)
     combinations = _rebuild_combinations_from_saved(sweep_save)
     if len(results_list) < len(combinations):
         results_list.extend([None] * (len(combinations) - len(results_list)))
@@ -798,7 +794,6 @@ def _setup_resume(resume_from: str) -> _SweepContext | None:
     print(f"Resume: {len(completed)} runs already done, {len(pending)} remaining.\n")
     return _SweepContext(
         base_config=base_config,
-        base_path=base_path,
         combinations=combinations,
         sweep_output_dir=resume_from,
         sweep_save=sweep_save,
@@ -853,10 +848,7 @@ def _finish_sweep_early(
 def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
     """Load sweep config, build combinations, create output dir, save sweep_config.json."""
     sweep = load_sweep_config(args.sweep_config)
-    base_path = sweep["base_config"]
-    if not os.path.isabs(base_path):
-        base_path = os.path.join(_PROJECT_ROOT, base_path)
-    base_config = config.ArrowExperimentConfig.from_json(base_path)
+    base_config = config.ArrowExperimentConfig.from_dict(sweep)
     effective_search = (
         args.search if args.search is not None else sweep.get("search") or "grid"
     )
@@ -906,7 +898,7 @@ def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
     model_output_dir = os.path.join(sweep_output_dir, "models")
     os.makedirs(callback_root_dir, exist_ok=True)
     os.makedirs(model_output_dir, exist_ok=True)
-    sweep_save = {**sweep, "base_config": base_path}
+    sweep_save = dict(sweep)
     sweep_save["_effective_search"] = effective_search
     if effective_seed is not None:
         sweep_save["_effective_seed"] = effective_seed
@@ -914,7 +906,6 @@ def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
         json.dump(sweep_save, f, indent=2)
     return _SweepContext(
         base_config=base_config,
-        base_path=base_path,
         combinations=combinations,
         sweep_output_dir=sweep_output_dir,
         sweep_save=sweep_save,
@@ -941,7 +932,6 @@ def _run_pending(ctx: _SweepContext, workers: int) -> None:
         sweep_output_dir=ctx.sweep_output_dir,
         optimize_metric=optimize_metric,
         optimize_mode=optimize_mode,
-        base_config_path=ctx.base_path,
         search=ctx.effective_search,
         full_grid_size=(
             len(ctx.full_combinations) if ctx.effective_search == "random" else None

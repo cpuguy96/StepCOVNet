@@ -1,5 +1,7 @@
+import concurrent.futures
 import json
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -24,6 +26,60 @@ _PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
 
+def _minimal_inline_experiment_config(
+    model_output_dir="models",
+    callback_root_dir="callbacks",
+):
+    return {
+        "dataset": {
+            "data_dir": TEST_DATA_DIR,
+            "val_data_dir": TEST_DATA_DIR,
+            "batch_size": 1,
+        },
+        "model": {
+            "model_type": "transformer",
+            "transformer": {
+                "num_layers": 1,
+                "d_model": 128,
+                "num_heads": 4,
+                "ff_dim": 512,
+                "dropout_rate": 0.0,
+            },
+        },
+        "run": {
+            "epoch": 2,
+            "take_count": 2,
+            "model_output_dir": model_output_dir,
+            "callback_root_dir": callback_root_dir,
+            "model_name": "arrow_test_model",
+            "seed": 42,
+        },
+    }
+
+
+def _minimal_sweep_config(
+    sweep_output_dir,
+    *,
+    search_space=None,
+    optimize=None,
+    extra=None,
+):
+    data = {
+        **_minimal_inline_experiment_config(),
+        "search_space": search_space or {"model.transformer.dropout_rate": [0.0]},
+        "optimize": optimize or {"metric": "val_loss", "mode": "min"},
+        "sweep_output_dir": sweep_output_dir,
+    }
+    if extra:
+        data.update(extra)
+    return data
+
+
+def _write_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
 def _run_sweep_script(*args):
     """Run the sweep script as a subprocess. Returns the completed process."""
     return subprocess.run(
@@ -39,28 +95,25 @@ class SweepConfigLoadingTest(unittest.TestCase):
 
     def _write_sweep_config(self, tmpdir, data):
         path = os.path.join(tmpdir, "sweep_config.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
+        _write_json(path, data)
         return path
 
     def test_load_valid_sweep_config(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {
                         "model.transformer.dropout_rate": [0.0, 0.1],
                         "run.chart_validity_aux_weight": [0.0],
                     },
                     "optimize": {"metric": "val_loss", "mode": "min"},
                 },
-                f,
             )
-            path = f.name
-        try:
             data = hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIsInstance(data, dict)
-            self.assertEqual(data["base_config"], "configs/arrow_baseline.json")
+            self.assertEqual(data["dataset"]["data_dir"], TEST_DATA_DIR)
             self.assertEqual(
                 data["search_space"]["model.transformer.dropout_rate"], [0.0, 0.1]
             )
@@ -69,121 +122,95 @@ class SweepConfigLoadingTest(unittest.TestCase):
             )
             self.assertEqual(data["optimize"]["metric"], "val_loss")
             self.assertEqual(data["optimize"]["mode"], "min")
-        finally:
-            os.unlink(path)
 
-    def test_load_rejects_missing_base_config(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
-                {
-                    "search_space": {"model.transformer.dropout_rate": [0.0]},
-                    "optimize": {"metric": "val_loss", "mode": "min"},
-                },
-                f,
-            )
-            path = f.name
-        try:
-            with self.assertRaises(ValueError) as ctx:
-                hyperparameter_search_arrow.load_sweep_config(path)
-            self.assertIn("base_config", str(ctx.exception))
-        finally:
-            os.unlink(path)
+    def test_load_rejects_missing_required_inline_config_section(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for missing_key in ("dataset", "model", "run"):
+                with self.subTest(missing_key=missing_key):
+                    data = {
+                        **_minimal_inline_experiment_config(),
+                        "search_space": {"model.transformer.dropout_rate": [0.0]},
+                        "optimize": {"metric": "val_loss", "mode": "min"},
+                    }
+                    del data[missing_key]
+                    path = self._write_sweep_config(tmpdir, data)
+                    with self.assertRaises(ValueError) as ctx:
+                        hyperparameter_search_arrow.load_sweep_config(path)
+                    self.assertIn(missing_key, str(ctx.exception))
 
     def test_load_rejects_missing_optimize(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"model.transformer.dropout_rate": [0.0]},
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("optimize", str(ctx.exception))
-        finally:
-            os.unlink(path)
 
     def test_load_rejects_invalid_optimize_mode(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"model.transformer.dropout_rate": [0.0]},
                     "optimize": {"metric": "val_loss", "mode": "invalid"},
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("mode", str(ctx.exception))
-        finally:
-            os.unlink(path)
 
     def test_load_rejects_forbidden_key_run_val_take_count(self):
         """run.val_take_count is fixed; cannot be in search_space."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"run.val_take_count": [1, 2]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("forbidden", str(ctx.exception).lower())
-        finally:
-            os.unlink(path)
 
     def test_load_accepts_search_grid_and_random(self):
         """Sweep config may contain 'search': 'grid' or 'random'."""
         for search_val in ("grid", "random"):
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            ) as f:
-                json.dump(
+            with tempfile.TemporaryDirectory() as tmpdir:
+                path = self._write_sweep_config(
+                    tmpdir,
                     {
-                        "base_config": "configs/arrow_baseline.json",
+                        **_minimal_inline_experiment_config(),
                         "search_space": {"model.transformer.dropout_rate": [0.0]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "search": search_val,
                     },
-                    f,
                 )
-                path = f.name
-            try:
                 data = hyperparameter_search_arrow.load_sweep_config(path)
                 self.assertEqual(data["search"], search_val)
-            finally:
-                os.unlink(path)
 
     def test_load_rejects_invalid_search(self):
         """Sweep config 'search' must be 'grid' or 'random'."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_sweep_config(
+                tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"model.transformer.dropout_rate": [0.0]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "search": "monte_carlo",
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("search", str(ctx.exception))
-        finally:
-            os.unlink(path)
 
     def test_load_accepts_optional_workers(self):
         """Sweep config may include optional 'workers' (int >= 1)."""
@@ -192,7 +219,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             with open(path, "w") as f:
                 json.dump(
                     {
-                        "base_config": "configs/arrow_baseline.json",
+                        **_minimal_inline_experiment_config(),
                         "search_space": {"model.transformer.dropout_rate": [0.0]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "workers": 4,
@@ -209,7 +236,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             with open(path, "w") as f:
                 json.dump(
                     {
-                        "base_config": "configs/arrow_baseline.json",
+                        **_minimal_inline_experiment_config(),
                         "search_space": {"model.transformer.dropout_rate": [0.0]},
                         "optimize": {"metric": "val_loss", "mode": "min"},
                         "workers": 0,
@@ -226,7 +253,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = self._write_sweep_config(
                 tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"run.epoch": [1]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "validity_gate": {
@@ -255,7 +282,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = self._write_sweep_config(
                 tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"run.epoch": [1]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "validity_gate": {},
@@ -271,7 +298,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = self._write_sweep_config(
                 tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"run.epoch": [1]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "validity_gate": {"min_fraction": 1.5},
@@ -287,7 +314,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = self._write_sweep_config(
                 tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"run.epoch": [1]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "validity_gate": {
@@ -306,7 +333,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             path = self._write_sweep_config(
                 tmpdir,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"run.epoch": [1]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                     "validity_gate": {
@@ -733,22 +760,19 @@ class ForbiddenKeysValidationTest(unittest.TestCase):
     """run.val_take_count and other fixed keys cannot be in search_space."""
 
     def test_load_sweep_config_rejects_run_val_take_count_in_search_space(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "sweep.json")
+            _write_json(
+                path,
                 {
-                    "base_config": "configs/arrow_baseline.json",
+                    **_minimal_inline_experiment_config(),
                     "search_space": {"run.val_take_count": [1, 2]},
                     "optimize": {"metric": "val_loss", "mode": "min"},
                 },
-                f,
             )
-            path = f.name
-        try:
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("forbidden", str(ctx.exception).lower())
-        finally:
-            os.unlink(path)
 
 
 class BestRunSelectionTest(unittest.TestCase):
@@ -1061,37 +1085,15 @@ class EndToEndMinimalTest(unittest.TestCase):
     """One combination, real test data dir; results and best_config written."""
 
     def test_one_run_produces_results_and_best_config(self):
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {
-                            "model.transformer.dropout_rate": [0.0],
-                        },
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
-                    },
-                    f,
-                )
-            # Override base config to use test data dir and take_count=2 (fixed across runs)
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={"model.transformer.dropout_rate": [0.0]},
+                ),
+            )
 
             result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
@@ -1116,37 +1118,18 @@ class RandomSearchTest(unittest.TestCase):
 
     def test_random_search_samples_subset_and_saves_seed(self):
         """With --search=random --max_runs=2 --seed=42, exactly 2 runs are executed and sweep_config records seed."""
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {
-                            "model.transformer.dropout_rate": [0.0, 0.1],
-                            "run.chart_validity_aux_weight": [0.0, 0.3],
-                        },
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={
+                        "model.transformer.dropout_rate": [0.0, 0.1],
+                        "run.chart_validity_aux_weight": [0.0, 0.3],
                     },
-                    f,
-                )
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+                ),
+            )
 
             result = _run_sweep_script(
                 "--sweep_config",
@@ -1182,40 +1165,19 @@ class RandomSearchTest(unittest.TestCase):
 
     def test_search_from_config_when_cli_omitted(self):
         """Sweep config 'search': 'random' is used when --search is not passed."""
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {
-                            "model.transformer.dropout_rate": [0.0, 0.1],
-                            "run.chart_validity_aux_weight": [0.0, 0.3],
-                        },
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
-                        "search": "random",
-                        "max_runs": 2,
-                        "seed": 42,
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={
+                        "model.transformer.dropout_rate": [0.0, 0.1],
+                        "run.chart_validity_aux_weight": [0.0, 0.3],
                     },
-                    f,
-                )
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+                    extra={"search": "random", "max_runs": 2, "seed": 42},
+                ),
+            )
 
             # Do not pass --search; config "search": "random" must be used
             result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
@@ -1240,7 +1202,6 @@ class RandomSearchTest(unittest.TestCase):
         }
         full = hyperparameter_search_arrow.expand_grid(search_space)
         self.assertEqual(len(full), 6)
-        import random
 
         random.seed(99)
         first = random.sample(full, 3)
@@ -1259,16 +1220,13 @@ class ResumeSweepTest(unittest.TestCase):
             resume_dir = os.path.join(temp_dir, "resume_dir")
             os.makedirs(resume_dir, exist_ok=True)
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": "configs/arrow_baseline.json",
-                        "search_space": {"model.transformer.dropout_rate": [0.0]},
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": temp_dir,
-                    },
-                    f,
-                )
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    temp_dir,
+                    search_space={"model.transformer.dropout_rate": [0.0]},
+                ),
+            )
             result = _run_sweep_script(
                 "--resume_from",
                 os.path.abspath(resume_dir),
@@ -1282,19 +1240,7 @@ class ResumeSweepTest(unittest.TestCase):
 
     def test_resume_from_partial_sweep_dir_runs_remaining(self):
         """With a sweep dir containing sweep_config.json and partial results.json, --resume_from runs only missing runs."""
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-
             resume_dir = os.path.join(temp_dir, "sweep_resume")
             os.makedirs(resume_dir, exist_ok=True)
             os.makedirs(os.path.join(resume_dir, "models"), exist_ok=True)
@@ -1303,7 +1249,7 @@ class ResumeSweepTest(unittest.TestCase):
             search_space = {"model.transformer.dropout_rate": [0.0, 0.1]}
             combinations = hyperparameter_search_arrow.expand_grid(search_space)
             sweep_config = {
-                "base_config": os.path.abspath(base_config_override),
+                **_minimal_inline_experiment_config(),
                 "search_space": search_space,
                 "optimize": {"metric": "val_loss", "mode": "min"},
                 "_effective_search": "grid",
@@ -1347,16 +1293,13 @@ class WorkersOptionTest(unittest.TestCase):
         """--workers=0 causes main to call parser.error and exit."""
         with tempfile.TemporaryDirectory() as tmpdir:
             sweep_path = os.path.join(tmpdir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": "configs/arrow_baseline.json",
-                        "search_space": {"model.transformer.dropout_rate": [0.0]},
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(tmpdir, "sweep_out"),
-                    },
-                    f,
-                )
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(tmpdir, "sweep_out"),
+                    search_space={"model.transformer.dropout_rate": [0.0]},
+                ),
+            )
             with (
                 mock.patch(
                     "sys.argv",
@@ -1379,8 +1322,6 @@ class WorkersOptionTest(unittest.TestCase):
 
     def test_workers_two_uses_parallel_path(self):
         """With --workers=2 and 2 grid points, executor receives 2 submit() calls and results are collected."""
-        from concurrent.futures import Future
-
         submitted_futures = []
 
         class FakeExecutor:
@@ -1396,41 +1337,22 @@ class WorkersOptionTest(unittest.TestCase):
 
             def submit(self, fn, *args):
                 run_index, overrides = args[0], args[1]
-                fut = Future()
+                fut = concurrent.futures.Future()
                 fut.set_result(
                     (run_index, {"best_val_loss": 0.5 - run_index * 0.1}, overrides)
                 )
                 submitted_futures.append(fut)
                 return fut
 
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {"model.transformer.dropout_rate": [0.0, 0.1]},
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
-                    },
-                    f,
-                )
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={"model.transformer.dropout_rate": [0.0, 0.1]},
+                ),
+            )
 
             with (
                 mock.patch.object(
@@ -1464,8 +1386,6 @@ class WorkersOptionTest(unittest.TestCase):
 
     def test_workers_from_sweep_config_when_cli_omitted(self):
         """When --workers is not passed, workers from sweep config is used."""
-        from concurrent.futures import Future
-
         captured_max_workers = []
 
         class FakeExecutor:
@@ -1480,42 +1400,23 @@ class WorkersOptionTest(unittest.TestCase):
 
             def submit(self, fn, *args):
                 run_index, overrides = args[0], args[1]
-                fut = Future()
+                fut = concurrent.futures.Future()
                 fut.set_result((run_index, {"best_val_loss": 0.5}, overrides))
                 return fut
 
             def as_completed(self, futures):
                 return iter(futures)
 
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {"model.transformer.dropout_rate": [0.0]},
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
-                        "workers": 3,
-                    },
-                    f,
-                )
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={"model.transformer.dropout_rate": [0.0]},
+                    extra={"workers": 3},
+                ),
+            )
 
             def make_executor(*args, **kwargs):
                 return FakeExecutor(*args, **kwargs)
@@ -1545,8 +1446,6 @@ class WorkersOptionTest(unittest.TestCase):
 
     def test_workers_defaults_to_one_when_omitted_from_cli_and_config(self):
         """When --workers is not passed and sweep config has no 'workers', default to 1."""
-        from concurrent.futures import Future
-
         captured_max_workers = []
 
         class FakeExecutor:
@@ -1561,41 +1460,22 @@ class WorkersOptionTest(unittest.TestCase):
 
             def submit(self, fn, *args):
                 run_index, overrides = args[0], args[1]
-                fut = Future()
+                fut = concurrent.futures.Future()
                 fut.set_result((run_index, {"best_val_loss": 0.5}, overrides))
                 return fut
 
             def as_completed(self, futures):
                 return iter(futures)
 
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {"model.transformer.dropout_rate": [0.0]},
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
-                    },
-                    f,
-                )
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={"model.transformer.dropout_rate": [0.0]},
+                ),
+            )
 
             def make_executor(*args, **kwargs):
                 return FakeExecutor(*args, **kwargs)
@@ -1625,15 +1505,9 @@ class WorkersOptionTest(unittest.TestCase):
 
     def test_resume_with_invalid_workers_type_exits_with_validation_error(self):
         """When resuming, if sweep_config.json has non-integer workers (e.g. string), main exits with clear error."""
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
-        base_config_path = os.path.abspath(base_config_path)
         with tempfile.TemporaryDirectory() as tmpdir:
             sweep_config = {
-                "base_config": base_config_path,
+                **_minimal_inline_experiment_config(),
                 "search_space": {"model.transformer.dropout_rate": [0.0]},
                 "optimize": {"metric": "val_loss", "mode": "min"},
                 "workers": "2",
@@ -1666,8 +1540,6 @@ class WorkersOptionTest(unittest.TestCase):
 
     def test_new_best_printed_when_run_has_best_val_metric_so_far(self):
         """When a run has the best optimize metric seen so far, 'NEW BEST' is printed."""
-        from concurrent.futures import Future
-
         submitted_futures = []
         # Run 0: 0.5, run 1: 0.3 (best), run 2: 0.4
         metrics_by_run = {0: 0.5, 1: 0.3, 2: 0.4}
@@ -1685,7 +1557,7 @@ class WorkersOptionTest(unittest.TestCase):
 
             def submit(self, fn, *args):
                 run_index, overrides = args[0], args[1]
-                fut = Future()
+                fut = concurrent.futures.Future()
                 fut.set_result(
                     (
                         run_index,
@@ -1696,36 +1568,16 @@ class WorkersOptionTest(unittest.TestCase):
                 submitted_futures.append(fut)
                 return fut
 
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {
-                            "model.transformer.dropout_rate": [0.0, 0.1, 0.2],
-                        },
-                        "optimize": {"metric": "val_main_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
-                    },
-                    f,
-                )
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={"model.transformer.dropout_rate": [0.0, 0.1, 0.2]},
+                    optimize={"metric": "val_main_loss", "mode": "min"},
+                ),
+            )
 
             # Complete in order: run 1 first (best 0.3), then run 0 (0.5), then run 2 (0.4).
             # So we should see exactly one "NEW BEST" for run 1.
@@ -1850,34 +1702,15 @@ class SweepVerbosityTest(unittest.TestCase):
 
     def test_sweep_passes_quiet_verbosity_to_trainer(self):
         """Sweep saves config with show_model_summary=False and fit_verbose=0."""
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
-        )
-        if not os.path.isfile(base_config_path):
-            self.skipTest("configs/arrow_baseline.json not found")
         with tempfile.TemporaryDirectory() as temp_dir:
             sweep_path = os.path.join(temp_dir, "sweep.json")
-            with open(sweep_path, "w") as f:
-                json.dump(
-                    {
-                        "base_config": base_config_path,
-                        "search_space": {"model.transformer.dropout_rate": [0.0]},
-                        "optimize": {"metric": "val_loss", "mode": "min"},
-                        "sweep_output_dir": os.path.join(temp_dir, "sweep_out"),
-                    },
-                    f,
-                )
-            base = config.ArrowExperimentConfig.from_json(base_config_path)
-            base.dataset.data_dir = TEST_DATA_DIR
-            base.dataset.val_data_dir = TEST_DATA_DIR
-            base.run.take_count = 2
-            base_config_override = os.path.join(temp_dir, "base_arrow.json")
-            base.to_json(base_config_override)
-            with open(sweep_path) as f:
-                sweep_data = json.load(f)
-            sweep_data["base_config"] = base_config_override
-            with open(sweep_path, "w") as f:
-                json.dump(sweep_data, f)
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    os.path.join(temp_dir, "sweep_out"),
+                    search_space={"model.transformer.dropout_rate": [0.0]},
+                ),
+            )
 
             result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
