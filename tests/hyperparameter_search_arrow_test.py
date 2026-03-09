@@ -775,6 +775,91 @@ class ForbiddenKeysValidationTest(unittest.TestCase):
             self.assertIn("forbidden", str(ctx.exception).lower())
 
 
+class SweepCombinationValidationTest(unittest.TestCase):
+    """Fresh sweeps validate all expanded combinations before training starts."""
+
+    def test_main_rejects_invalid_full_grid_before_random_sampling(self):
+        """Random search validates the whole grid before sampling or launching workers."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_output_dir = os.path.join(temp_dir, "sweep_out")
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    sweep_output_dir,
+                    search_space={
+                        "run.epoch": [101, 10],
+                        "run.warmup_epochs": [100],
+                    },
+                    extra={"search": "random", "max_runs": 1, "seed": 7},
+                ),
+            )
+            with (
+                mock.patch.object(
+                    hyperparameter_search_arrow.random,
+                    "sample",
+                    return_value=[{"run.epoch": 101, "run.warmup_epochs": 100}],
+                ) as sample_mock,
+                mock.patch.object(
+                    hyperparameter_search_arrow.futures,
+                    "ProcessPoolExecutor",
+                ) as executor_mock,
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--sweep_config",
+                        sweep_path,
+                        "--search",
+                        "random",
+                        "--max_runs",
+                        "1",
+                        "--seed",
+                        "7",
+                    ],
+                ),
+            ):
+                with self.assertRaises(ValueError) as ctx:
+                    hyperparameter_search_arrow.main()
+            self.assertIn("warmup_epochs", str(ctx.exception))
+            sample_mock.assert_not_called()
+            executor_mock.assert_not_called()
+            self.assertFalse(os.path.exists(sweep_output_dir))
+
+    def test_main_rejects_mismatched_model_block_before_training(self):
+        """Fresh setup fails fast when search_space targets a different model block."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sweep_output_dir = os.path.join(temp_dir, "sweep_out")
+            sweep_path = os.path.join(temp_dir, "sweep.json")
+            _write_json(
+                sweep_path,
+                _minimal_sweep_config(
+                    sweep_output_dir,
+                    search_space={"model.gru.units": [64]},
+                ),
+            )
+            with (
+                mock.patch.object(
+                    hyperparameter_search_arrow.futures,
+                    "ProcessPoolExecutor",
+                ) as executor_mock,
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "hyperparameter_search_arrow",
+                        "--sweep_config",
+                        sweep_path,
+                    ],
+                ),
+            ):
+                with self.assertRaises(ValueError) as ctx:
+                    hyperparameter_search_arrow.main()
+            self.assertIn("model.gru.units", str(ctx.exception))
+            self.assertIn("model_type", str(ctx.exception))
+            executor_mock.assert_not_called()
+            self.assertFalse(os.path.exists(sweep_output_dir))
+
+
 class BestRunSelectionTest(unittest.TestCase):
     """Best run selection by optimize.metric and optimize.mode."""
 

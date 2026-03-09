@@ -318,6 +318,79 @@ def filter_valid_model_combinations(
     return result
 
 
+def _validate_model_specific_combinations(
+    combinations: list[dict[str, Any]],
+    default_model_type: str,
+) -> None:
+    """Raise when expanded combinations target the wrong model params block.
+
+    Args:
+        combinations: Expanded override dictionaries to validate.
+        default_model_type: Model type used when a combination does not override it.
+    """
+    invalid: list[tuple[int, dict[str, Any], str, list[str]]] = []
+    for index, combo in enumerate(combinations):
+        effective_model_type = combo.get("model.model_type", default_model_type)
+        mismatched_keys = []
+        for key in combo:
+            if not key.startswith("model.") or key == "model.model_type":
+                continue
+            parts = key.split(".")
+            if len(parts) >= 3 and parts[1] != effective_model_type:
+                mismatched_keys.append(key)
+        if mismatched_keys:
+            invalid.append((index, combo, effective_model_type, mismatched_keys))
+    if not invalid:
+        return
+    lines = ["sweep config generated invalid model-specific combination(s):"]
+    for index, combo, effective_model_type, mismatched_keys in invalid[:5]:
+        shown_keys = ", ".join(repr(key) for key in mismatched_keys[:3])
+        lines.append(
+            f"  run {index + 1}: effective model_type {effective_model_type!r} "
+            f"does not match override key(s) {shown_keys}"
+        )
+        for line in _format_overrides(combo).splitlines():
+            lines.append(f"    {line}")
+        extra_key_count = len(mismatched_keys) - 3
+        if extra_key_count > 0:
+            lines.append(f"    ... plus {extra_key_count} more mismatched key(s)")
+    remaining = len(invalid) - 5
+    if remaining > 0:
+        lines.append(f"  ... plus {remaining} more invalid combination(s)")
+    raise ValueError("\n".join(lines))
+
+
+def _validate_expanded_combinations(
+    base_config: config.ArrowExperimentConfig,
+    combinations: list[dict[str, Any]],
+) -> None:
+    """Raise when any expanded override set produces an invalid experiment config.
+
+    Args:
+        base_config: Base config loaded from the sweep config.
+        combinations: Expanded override dictionaries to validate.
+    """
+    if not combinations:
+        raise ValueError("sweep config did not produce any combinations to run")
+    invalid: list[tuple[int, dict[str, Any], str]] = []
+    for index, overrides in enumerate(combinations):
+        try:
+            apply_overrides(base_config, overrides)
+        except (KeyError, TypeError, ValueError) as exc:
+            invalid.append((index, overrides, str(exc)))
+    if not invalid:
+        return
+    lines = ["sweep config generated invalid override combination(s):"]
+    for index, overrides, error in invalid[:5]:
+        lines.append(f"  run {index + 1}: {error}")
+        for line in _format_overrides(overrides).splitlines():
+            lines.append(f"    {line}")
+    remaining = len(invalid) - 5
+    if remaining > 0:
+        lines.append(f"  ... plus {remaining} more invalid combination(s)")
+    raise ValueError("\n".join(lines))
+
+
 def _set_nested(d: dict[str, Any], key_path: str, value: Any) -> None:
     """Set a possibly nested key (e.g. 'transformer.num_layers') in d, creating dicts as needed.
 
@@ -859,16 +932,13 @@ def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
         PARSER.error(f"max_runs must be > 0 when set (got {max_runs})")
     search_space = sweep["search_space"]
     full_combinations = expand_grid(search_space)
-    raw_count = len(full_combinations)
+    _validate_model_specific_combinations(
+        full_combinations, base_config.model.model_type
+    )
     full_combinations = filter_valid_model_combinations(
         full_combinations, base_config.model.model_type
     )
-    excluded = raw_count - len(full_combinations)
-    if excluded > 0:
-        print(
-            f"Filtered to {len(full_combinations)} valid model-specific combinations "
-            f"({excluded} excluded)."
-        )
+    _validate_expanded_combinations(base_config, full_combinations)
     effective_seed = args.seed if args.seed is not None else sweep.get("seed")
     if effective_search == "random":
         if effective_seed is not None:
