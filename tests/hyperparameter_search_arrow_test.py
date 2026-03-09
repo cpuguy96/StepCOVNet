@@ -214,6 +214,102 @@ class SweepConfigLoadingTest(unittest.TestCase):
                 hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIn("workers", str(ctx.exception))
 
+    def test_load_accepts_validity_gate(self):
+        """Sweep config with validity_gate (min_fraction and optional fields) loads."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(
+                {
+                    "base_config": "configs/arrow_baseline.json",
+                    "search_space": {"run.epoch": [1]},
+                    "optimize": {"metric": "val_loss", "mode": "min"},
+                    "validity_gate": {
+                        "min_fraction": 0.95,
+                        "validity_metric": "val_chart_validity_pass_rate_0_99",
+                        "optimize_metric": "val_arrow_dist_match",
+                        "optimize_mode": "max",
+                    },
+                },
+                f,
+            )
+            path = f.name
+        try:
+            data = hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertIn("validity_gate", data)
+            self.assertEqual(data["validity_gate"]["min_fraction"], 0.95)
+            self.assertEqual(
+                data["validity_gate"]["validity_metric"],
+                "val_chart_validity_pass_rate_0_99",
+            )
+            self.assertEqual(
+                data["validity_gate"]["optimize_metric"], "val_arrow_dist_match"
+            )
+            self.assertEqual(data["validity_gate"]["optimize_mode"], "max")
+        finally:
+            os.unlink(path)
+
+    def test_load_validity_gate_requires_min_fraction(self):
+        """validity_gate without min_fraction raises."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(
+                {
+                    "base_config": "configs/arrow_baseline.json",
+                    "search_space": {"run.epoch": [1]},
+                    "optimize": {"metric": "val_loss", "mode": "min"},
+                    "validity_gate": {},
+                },
+                f,
+            )
+            path = f.name
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertIn("min_fraction", str(ctx.exception))
+        finally:
+            os.unlink(path)
+
+    def test_load_validity_gate_min_fraction_range(self):
+        """validity_gate.min_fraction must be in [0, 1]."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(
+                {
+                    "base_config": "configs/arrow_baseline.json",
+                    "search_space": {"run.epoch": [1]},
+                    "optimize": {"metric": "val_loss", "mode": "min"},
+                    "validity_gate": {"min_fraction": 1.5},
+                },
+                f,
+            )
+            path = f.name
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertIn("min_fraction", str(ctx.exception))
+        finally:
+            os.unlink(path)
+
+    def test_load_validity_gate_invalid_mode(self):
+        """validity_gate.optimize_mode must be min or max when set."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(
+                {
+                    "base_config": "configs/arrow_baseline.json",
+                    "search_space": {"run.epoch": [1]},
+                    "optimize": {"metric": "val_loss", "mode": "min"},
+                    "validity_gate": {
+                        "min_fraction": 0.95,
+                        "optimize_mode": "invalid",
+                    },
+                },
+                f,
+            )
+            path = f.name
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                hyperparameter_search_arrow.load_sweep_config(path)
+            self.assertIn("optimize_mode", str(ctx.exception))
+        finally:
+            os.unlink(path)
+
 
 class GridExpansionTest(unittest.TestCase):
     """Grid expansion: number of combinations and structure."""
@@ -241,6 +337,68 @@ class GridExpansionTest(unittest.TestCase):
         self.assertEqual(len(combinations), 2)
         self.assertEqual(combinations[0], {"model.transformer.num_layers": 1})
         self.assertEqual(combinations[1], {"model.transformer.num_layers": 2})
+
+    def test_expand_grid_without_model_type_falls_back_to_simple_grid(self):
+        """Without model.model_type, expand_grid delegates to the simple Cartesian product."""
+        search_space = {
+            "model.tcn.filters": [64, 128],
+            "run.epoch": [1],
+        }
+        with mock.patch.object(
+            hyperparameter_search_arrow,
+            "_expand_grid_simple",
+            wraps=hyperparameter_search_arrow._expand_grid_simple,
+        ) as mock_expand:
+            combinations = hyperparameter_search_arrow.expand_grid(search_space)
+        mock_expand.assert_called_once_with(search_space)
+        self.assertEqual(
+            combinations,
+            [
+                {"model.tcn.filters": 64, "run.epoch": 1},
+                {"model.tcn.filters": 128, "run.epoch": 1},
+            ],
+        )
+
+    def test_expand_grid_single_model_type_falls_back_to_simple_grid(self):
+        """A single model.model_type value uses the simple Cartesian product path."""
+        search_space = {
+            "model.model_type": ["tcn"],
+            "model.tcn.filters": [64, 128],
+            "run.epoch": [1, 2],
+        }
+        with mock.patch.object(
+            hyperparameter_search_arrow,
+            "_expand_grid_simple",
+            wraps=hyperparameter_search_arrow._expand_grid_simple,
+        ) as mock_expand:
+            combinations = hyperparameter_search_arrow.expand_grid(search_space)
+        mock_expand.assert_called_once_with(search_space)
+        self.assertEqual(len(combinations), 4)
+        self.assertEqual(
+            combinations,
+            [
+                {
+                    "model.model_type": "tcn",
+                    "model.tcn.filters": 64,
+                    "run.epoch": 1,
+                },
+                {
+                    "model.model_type": "tcn",
+                    "model.tcn.filters": 64,
+                    "run.epoch": 2,
+                },
+                {
+                    "model.model_type": "tcn",
+                    "model.tcn.filters": 128,
+                    "run.epoch": 1,
+                },
+                {
+                    "model.model_type": "tcn",
+                    "model.tcn.filters": 128,
+                    "run.epoch": 2,
+                },
+            ],
+        )
 
     def test_expand_grid_multi_model_type_only_matching_block_per_combo(self):
         """With multiple model.model_type values, each combo has only that type's model block keys."""
@@ -575,6 +733,231 @@ class BestRunSelectionTest(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             hyperparameter_search_arrow.select_best_run([], "val_loss", "min")
         self.assertIn("empty", str(ctx.exception))
+
+
+class ResolveValidityMetricTest(unittest.TestCase):
+    """_resolve_validity_metric: explicit metric or auto-detect from result keys."""
+
+    def test_explicit_metric_returns_best_key(self):
+        """When validity_metric is set, return best_<metric>."""
+        result = {"best_val_chart_validity_pass_rate_0_99": 1.0}
+        key = hyperparameter_search_arrow._resolve_validity_metric(
+            [result], "val_chart_validity_pass_rate_0_99"
+        )
+        self.assertEqual(key, "best_val_chart_validity_pass_rate_0_99")
+
+    def test_auto_detect_prefers_pass_rate(self):
+        """Auto-detect prefers best_val_chart_validity_pass_rate_* over best_val_chart_validity."""
+        result = {
+            "best_val_chart_validity": 0.9,
+            "best_val_chart_validity_pass_rate_0_99": 1.0,
+        }
+        key = hyperparameter_search_arrow._resolve_validity_metric([result], None)
+        self.assertEqual(key, "best_val_chart_validity_pass_rate_0_99")
+
+    def test_auto_detect_fallback_chart_validity(self):
+        """When no pass_rate key, use best_val_chart_validity."""
+        result = {"best_val_chart_validity": 0.95, "best_val_loss": 0.5}
+        key = hyperparameter_search_arrow._resolve_validity_metric([result], None)
+        self.assertEqual(key, "best_val_chart_validity")
+
+    def test_auto_detect_empty_results_returns_none(self):
+        """Empty results returns None."""
+        key = hyperparameter_search_arrow._resolve_validity_metric([], None)
+        self.assertIsNone(key)
+
+    def test_auto_detect_no_validity_key_returns_none(self):
+        """When no validity key in results, return None."""
+        result = {"best_val_loss": 0.5, "best_val_acc": 0.8}
+        key = hyperparameter_search_arrow._resolve_validity_metric([result], None)
+        self.assertIsNone(key)
+
+
+class SelectBestRunWithValidityGateTest(unittest.TestCase):
+    """_select_best_run_with_validity_gate: filter by validity then optimize by metric."""
+
+    def _sweep_save(self, validity_gate=None):
+        out = {"optimize": {"metric": "val_main_loss", "mode": "min"}}
+        if validity_gate is not None:
+            out["validity_gate"] = validity_gate
+        return out
+
+    def test_no_gate_same_as_select_best_run(self):
+        """Without validity_gate, returns same index as select_best_run by main metric."""
+        results = [
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.5,
+                "best_val_arrow_dist_match": 0.8,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.0,
+                "best_val_arrow_dist_match": 0.7,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.2,
+                "best_val_arrow_dist_match": 0.9,
+            },
+        ]
+        sweep_save = self._sweep_save()
+        idx, gate_info = (
+            hyperparameter_search_arrow._select_best_run_with_validity_gate(
+                results, sweep_save
+            )
+        )
+        self.assertEqual(idx, 1)
+        self.assertIsNone(gate_info)
+
+    def test_gate_all_pass_best_by_secondary_metric(self):
+        """When all runs pass the gate, best is by gate's optimize_metric (max arrow_dist_match)."""
+        results = [
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.5,
+                "best_val_arrow_dist_match": 0.8,
+                "best_val_chart_validity_pass_rate_0_99": 1.0,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.0,
+                "best_val_arrow_dist_match": 0.95,
+                "best_val_chart_validity_pass_rate_0_99": 1.0,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.2,
+                "best_val_arrow_dist_match": 0.85,
+                "best_val_chart_validity_pass_rate_0_99": 0.98,
+            },
+        ]
+        sweep_save = self._sweep_save(
+            {
+                "min_fraction": 0.95,
+                "validity_metric": "val_chart_validity_pass_rate_0_99",
+                "optimize_metric": "val_arrow_dist_match",
+                "optimize_mode": "max",
+            }
+        )
+        idx, gate_info = (
+            hyperparameter_search_arrow._select_best_run_with_validity_gate(
+                results, sweep_save
+            )
+        )
+        self.assertEqual(idx, 1)
+        assert gate_info is not None
+        self.assertFalse(gate_info["used_fallback"])
+        self.assertEqual(gate_info["n_passed"], 3)
+        self.assertEqual(gate_info["n_total"], 3)
+
+    def test_gate_some_pass_best_among_passing(self):
+        """When only some runs pass, best is the one with highest arrow_dist_match among passing."""
+        results = [
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.5,
+                "best_val_arrow_dist_match": 0.9,
+                "best_val_chart_validity_pass_rate_0_99": 0.8,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.2,
+                "best_val_arrow_dist_match": 0.85,
+                "best_val_chart_validity_pass_rate_0_99": 1.0,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.0,
+                "best_val_arrow_dist_match": 0.95,
+                "best_val_chart_validity_pass_rate_0_99": 0.97,
+            },
+        ]
+        sweep_save = self._sweep_save(
+            {
+                "min_fraction": 0.95,
+                "validity_metric": "val_chart_validity_pass_rate_0_99",
+                "optimize_metric": "val_arrow_dist_match",
+                "optimize_mode": "max",
+            }
+        )
+        idx, gate_info = (
+            hyperparameter_search_arrow._select_best_run_with_validity_gate(
+                results, sweep_save
+            )
+        )
+        self.assertEqual(idx, 2)
+        assert gate_info is not None
+        self.assertFalse(gate_info["used_fallback"])
+        self.assertEqual(gate_info["n_passed"], 2)
+
+    def test_gate_none_pass_fallback(self):
+        """When no run passes the gate, fall back to main optimize metric and set used_fallback."""
+        results = [
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.0,
+                "best_val_arrow_dist_match": 0.9,
+                "best_val_chart_validity_pass_rate_0_99": 0.5,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.5,
+                "best_val_arrow_dist_match": 0.95,
+                "best_val_chart_validity_pass_rate_0_99": 0.4,
+            },
+        ]
+        sweep_save = self._sweep_save(
+            {
+                "min_fraction": 0.95,
+                "validity_metric": "val_chart_validity_pass_rate_0_99",
+                "optimize_metric": "val_arrow_dist_match",
+                "optimize_mode": "max",
+            }
+        )
+        idx, gate_info = (
+            hyperparameter_search_arrow._select_best_run_with_validity_gate(
+                results, sweep_save
+            )
+        )
+        self.assertEqual(idx, 0)
+        assert gate_info is not None
+        self.assertTrue(gate_info["used_fallback"])
+        self.assertEqual(gate_info["n_passed"], 0)
+
+    def test_gate_none_pass_fallback_prints_warning(self):
+        """When no run passes, fallback selects by main metric; capture print for warning."""
+        results = [
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.0,
+                "best_val_chart_validity_pass_rate_0_99": 0.5,
+            },
+            {
+                "overrides": {},
+                "best_val_main_loss": 2.5,
+                "best_val_chart_validity_pass_rate_0_99": 0.4,
+            },
+        ]
+        sweep_save = self._sweep_save(
+            {
+                "min_fraction": 0.99,
+                "validity_metric": "val_chart_validity_pass_rate_0_99",
+            }
+        )
+        with mock.patch("builtins.print") as mock_print:
+            idx, gate_info = (
+                hyperparameter_search_arrow._select_best_run_with_validity_gate(
+                    results, sweep_save
+                )
+            )
+        self.assertEqual(idx, 0)
+        assert gate_info is not None
+        self.assertTrue(gate_info["used_fallback"])
+        mock_print.assert_called()
+        call_str = " ".join(str(c) for c in mock_print.call_args_list)
+        self.assertIn("validity gate", call_str.lower())
+        self.assertIn("WARNING", call_str)
 
 
 class IsBetterThanTest(unittest.TestCase):

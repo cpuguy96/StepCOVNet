@@ -144,6 +144,38 @@ def load_sweep_config(path: str) -> dict[str, Any]:
             raise ValueError(
                 f"sweep config 'workers' must be an integer >= 1, got {w!r}"
             )
+    if "validity_gate" in data:
+        vg = data["validity_gate"]
+        if not isinstance(vg, dict):
+            raise ValueError(
+                "sweep config 'validity_gate' must be a JSON object when set"
+            )
+        if "min_fraction" not in vg:
+            raise ValueError("sweep config 'validity_gate' must contain 'min_fraction'")
+        mf = vg["min_fraction"]
+        if not isinstance(mf, (int, float)) or not (0.0 <= mf <= 1.0):
+            raise ValueError(
+                "sweep config validity_gate.min_fraction must be a number in [0, 1], "
+                f"got {mf!r}"
+            )
+        if "validity_metric" in vg and vg["validity_metric"] is not None:
+            if not isinstance(vg["validity_metric"], str):
+                raise ValueError(
+                    "sweep config validity_gate.validity_metric must be a string "
+                    f"when set, got {type(vg['validity_metric']).__name__}"
+                )
+        if "optimize_metric" in vg and vg["optimize_metric"] is not None:
+            if not isinstance(vg["optimize_metric"], str):
+                raise ValueError(
+                    "sweep config validity_gate.optimize_metric must be a string "
+                    f"when set, got {type(vg['optimize_metric']).__name__}"
+                )
+        if "optimize_mode" in vg and vg["optimize_mode"] is not None:
+            if vg["optimize_mode"] not in ("min", "max"):
+                raise ValueError(
+                    f"sweep config validity_gate.optimize_mode must be 'min' or 'max', "
+                    f"got {vg['optimize_mode']!r}"
+                )
     return data
 
 
@@ -421,6 +453,100 @@ def select_best_run(
     return int(max(range(len(results)), key=lambda i: results[i][best_key]))
 
 
+def _resolve_validity_metric(
+    results: list[dict[str, Any]],
+    explicit_metric: str | None,
+) -> str | None:
+    """Return the best_* key used for validity gating, or None if not found.
+
+    If explicit_metric is set (e.g. 'val_chart_validity_pass_rate_0_99'), return
+    'best_' + explicit_metric. Otherwise auto-detect from the first result's keys:
+    prefer any key matching best_val_chart_validity_pass_rate_*, else
+    best_val_chart_validity.
+    """
+    if explicit_metric is not None:
+        return f"best_{explicit_metric}"
+    if not results:
+        return None
+    keys = list(results[0].keys())
+    pass_rate_keys = [
+        k for k in keys if k.startswith("best_val_chart_validity_pass_rate_")
+    ]
+    if pass_rate_keys:
+        return min(pass_rate_keys)
+    if "best_val_chart_validity" in keys:
+        return "best_val_chart_validity"
+    return None
+
+
+def _select_best_run_with_validity_gate(
+    results: list[dict[str, Any]],
+    sweep_save: dict[str, Any],
+) -> tuple[int, dict[str, Any] | None]:
+    """Return (best_run_index, gate_info).
+
+    If validity_gate is not in sweep_save, returns select_best_run by main optimize
+    metric and gate_info=None. Otherwise filters to runs with validity >= min_fraction,
+    selects best among them by gate's optimize_metric/mode (default val_arrow_dist_match
+    max). If no run passes the gate, falls back to main optimize and gate_info includes
+    used_fallback=True.
+    """
+    optimize = sweep_save["optimize"]
+    main_metric = optimize["metric"]
+    main_mode = optimize["mode"]
+    vg = sweep_save.get("validity_gate")
+    if not vg:
+        idx = select_best_run(results, main_metric, main_mode)
+        return (idx, None)
+    min_fraction = float(vg["min_fraction"])
+    validity_metric = vg.get("validity_metric")
+    best_validity_key = _resolve_validity_metric(results, validity_metric)
+    if best_validity_key is None:
+        idx = select_best_run(results, main_metric, main_mode)
+        print(
+            "  WARNING: validity_gate set but no validity metric found in results; "
+            "selecting by main optimize metric."
+        )
+        return (
+            idx,
+            {
+                "validity_metric": validity_metric or "(auto)",
+                "min_fraction": min_fraction,
+                "n_passed": 0,
+                "n_total": len(results),
+                "used_fallback": True,
+            },
+        )
+    valid_indices = [
+        i
+        for i in range(len(results))
+        if results[i].get(best_validity_key, 0.0) >= min_fraction
+    ]
+    gate_metric = vg.get("optimize_metric") or "val_arrow_dist_match"
+    gate_mode = vg.get("optimize_mode") or "max"
+    validity_metric_name = validity_metric or best_validity_key.replace("best_", "", 1)
+    gate_info = {
+        "validity_metric": validity_metric_name,
+        "min_fraction": min_fraction,
+        "n_passed": len(valid_indices),
+        "n_total": len(results),
+        "used_fallback": False,
+        "optimize_metric": gate_metric,
+        "optimize_mode": gate_mode,
+    }
+    if valid_indices:
+        valid_results = [results[i] for i in valid_indices]
+        best_in_valid = select_best_run(valid_results, gate_metric, gate_mode)
+        return (valid_indices[best_in_valid], gate_info)
+    idx = select_best_run(results, main_metric, main_mode)
+    print(
+        "  WARNING: No run met validity gate "
+        f"({best_validity_key} >= {min_fraction}); selecting by main optimize metric."
+    )
+    gate_info["used_fallback"] = True
+    return (idx, gate_info)
+
+
 def _format_overrides(overrides: dict[str, Any]) -> str:
     """Format overrides as aligned key: value lines."""
     if not overrides:
@@ -520,10 +646,17 @@ def _print_sweep_summary(
     optimize_mode: str,
     results_path: str,
     best_config_path: str,
+    gate_info: dict[str, Any] | None = None,
 ) -> None:
     """Print final summary with best run and file paths."""
     width = 60
-    best_key = f"best_{optimize_metric}"
+    if gate_info and not gate_info.get("used_fallback"):
+        display_metric = gate_info["optimize_metric"]
+        display_mode = gate_info["optimize_mode"]
+    else:
+        display_metric = optimize_metric
+        display_mode = optimize_mode
+    best_key = f"best_{display_metric}"
     best_val = results[best_idx][best_key]
 
     print()
@@ -531,9 +664,17 @@ def _print_sweep_summary(
     print("  SWEEP COMPLETE")
     print("=" * width)
     print()
+    if gate_info:
+        print(
+            f"  Validity gate: {gate_info['n_passed']} of {gate_info['n_total']} runs "
+            f"passed ({gate_info['validity_metric']} >= {gate_info['min_fraction']})"
+        )
+        if gate_info.get("used_fallback"):
+            print("  (No run met gate; best run selected by main optimize metric.)")
+        print()
     print("  Best run:")
     print(f"    Index:    {best_idx + 1} (of {len(results)})")
-    print(f"    Optimize: {optimize_mode} {optimize_metric}")
+    print(f"    Optimize: {display_mode} {display_metric}")
     print(f"    {best_key}: {best_val:.6f}")
     print("    Overrides:")
     for k, v in sorted(best_overrides.items()):
@@ -668,7 +809,7 @@ def _finish_sweep_early(
     results: list[dict[str, Any]] = [
         results_by_index[i] for i in range(len(combinations))
     ]
-    best_idx = select_best_run(results, optimize_metric, optimize_mode)
+    best_idx, gate_info = _select_best_run_with_validity_gate(results, sweep_save)
     best_overrides = results[best_idx]["overrides"]
     best_config = apply_overrides(base_config, best_overrides)
     callback_root_dir = os.path.join(sweep_output_dir, "callbacks")
@@ -691,6 +832,7 @@ def _finish_sweep_early(
         optimize_mode=optimize_mode,
         results_path=results_path,
         best_config_path=best_config_path,
+        gate_info=gate_info,
     )
 
 
@@ -848,7 +990,7 @@ def _write_final_results_and_best(ctx: _SweepContext) -> None:
         json.dump(results, f, indent=2)
     optimize_metric = ctx.sweep_save["optimize"]["metric"]
     optimize_mode = ctx.sweep_save["optimize"]["mode"]
-    best_idx = select_best_run(results, optimize_metric, optimize_mode)
+    best_idx, gate_info = _select_best_run_with_validity_gate(results, ctx.sweep_save)
     best_overrides = results[best_idx]["overrides"]
     best_config = apply_overrides(ctx.base_config, best_overrides)
     callback_root_dir = os.path.join(ctx.sweep_output_dir, "callbacks")
@@ -870,6 +1012,7 @@ def _write_final_results_and_best(ctx: _SweepContext) -> None:
         optimize_mode=optimize_mode,
         results_path=results_path,
         best_config_path=best_config_path,
+        gate_info=gate_info,
     )
 
 
