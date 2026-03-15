@@ -293,6 +293,121 @@ class DatasetsTest(unittest.TestCase):
         self.assertGreaterEqual(float(mask.shape[0]), 1)
         self.assertGreaterEqual(float(mask.shape[1]), 1)
 
+    def test_create_arrow_dataset_timing_jitter_values_in_range(self):
+        """With timing_jitter_sigma > 0, timing_input and step_index_input stay in [0, 1]."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            timing_jitter_sigma=0.05,
+            use_step_index=True,
+        )
+        for batch_features, _ in ds.take(3):
+            timing = batch_features["timing_input"].numpy()
+            step_idx = batch_features["step_index_input"].numpy()
+            self.assertTrue(
+                np.all((timing >= 0) & (timing <= 1)),
+                msg="timing_input should be in [0, 1] after jitter",
+            )
+            self.assertTrue(
+                np.all((step_idx >= 0) & (step_idx <= 1)),
+                msg="step_index_input should be in [0, 1] after jitter",
+            )
+
+    def test_create_arrow_dataset_timing_jitter_interval_shape_and_recomputed(self):
+        """With use_interval=True, interval_input matches timing shape; callback unit test covers recomputation."""
+        ds_no_jitter = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            batch_size=1,
+            use_interval=True,
+            interval_encoding=config.IntervalEncoding.DEFAULT,
+            timing_jitter_sigma=0.0,
+        )
+        for batch_features, _ in ds_no_jitter.take(2):
+            timing = batch_features["timing_input"].numpy()
+            interval_batch = batch_features["interval_input"].numpy()
+            self.assertEqual(
+                timing.shape,
+                interval_batch.shape,
+                msg="interval_input should have same shape as timing_input",
+            )
+            for b in range(timing.shape[0]):
+                t = timing[b].flatten()
+                interval_flat = interval_batch[b].flatten()
+                if len(t) == 0:
+                    continue
+                expected = datasets.normalized_intervals_from_times(t)
+                np.testing.assert_allclose(
+                    interval_flat,
+                    expected,
+                    rtol=1e-5,
+                    atol=1e-5,
+                    err_msg="interval_input should match recomputed from timing (no jitter)",
+                )
+
+    def test_create_arrow_dataset_timing_jitter_off_deterministic(self):
+        """With timing_jitter_sigma=0, reading the same sample twice yields identical values."""
+        ds = datasets.create_arrow_dataset(TEST_DATA_DIR, timing_jitter_sigma=0.0)
+        batch1 = next(iter(ds))
+        batch2 = next(iter(ds))
+        feats1, cols1 = batch1
+        feats2, cols2 = batch2
+        np.testing.assert_array_almost_equal(
+            feats1.numpy(),
+            feats2.numpy(),
+            decimal=5,
+            err_msg="Same sample without jitter should match across iterators",
+        )
+        np.testing.assert_array_equal(cols1.numpy(), cols2.numpy())
+
+    def test_create_arrow_dataset_timing_jitter_stochastic_per_epoch(self):
+        """With timing_jitter_sigma > 0, same sample read twice yields different timing (uncached jitter)."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            timing_jitter_sigma=0.03,
+        )
+        batch1 = next(iter(ds))
+        batch2 = next(iter(ds))
+        times1 = batch1[0].numpy()
+        times2 = batch2[0].numpy()
+        self.assertFalse(
+            np.allclose(times1, times2),
+            msg="Jittered dataset should yield different timing when same sample is read twice",
+        )
+
+    def test_apply_timing_jitter_py_callback_recomputes_intervals_from_jittered_timing(
+        self,
+    ):
+        """_apply_timing_jitter_py_callback with use_interval recomputes interval_input from jittered times."""
+        np.random.seed(42)
+        timing = np.array([[0.0], [0.25], [0.5], [0.75], [1.0]], dtype=np.float32)
+        cols = np.array([1, 2, 1, 2, 1], dtype=np.int32)
+        feats = {
+            "timing_input": timing,
+            "interval_input": np.array(
+                [[0.0], [0.33], [0.33], [0.33], [0.33]], dtype=np.float32
+            ),
+        }
+        out, out_cols = datasets._apply_timing_jitter_py_callback(
+            feats,
+            cols,
+            sigma=0.02,
+            use_dict=True,
+            use_interval=True,
+            interval_encoding=config.IntervalEncoding.DEFAULT,
+            use_step_index=False,
+        )
+        self.assertIsInstance(out, dict)
+        self.assertIn("timing_input", out)
+        self.assertIn("interval_input", out)
+        t_flat = out["timing_input"].flatten()
+        expected_interval = datasets.normalized_intervals_from_times(t_flat)
+        np.testing.assert_allclose(
+            out["interval_input"].flatten(),
+            expected_interval,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        np.testing.assert_array_equal(out_cols, cols)
+
     def test_load_arrow_pair_py_callback_returns_aux_interval_mask_when_requested(self):
         """_load_arrow_pair_py_callback with use_aux_interval_target=True returns 9-tuple including aux_interval_mask."""
         _, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)

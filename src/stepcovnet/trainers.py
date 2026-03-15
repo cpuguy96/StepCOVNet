@@ -162,26 +162,28 @@ def _get_onset_experiment_name(
 
 
 def _get_arrow_experiment_name(
-    model_config: config.ArrowModelConfig,
-    run_config: config.ArrowRunConfig,
+    experiment_config: config.ArrowExperimentConfig,
 ) -> str:
     """Generate a descriptive experiment name from hyperparameters.
 
     Creates a human-readable name that encodes key training and model
     configuration parameters for arrow classification experiments.
-    All distinguishing model and run fields are provided by the configs'
-    get_experiment_name_parts() so that different configs yield different names.
+    All distinguishing model, run, and dataset fields are provided by the
+    configs' get_experiment_name_parts() so that different configs yield different names.
 
     Args:
-        model_config: Model configuration (architecture and input options).
-        run_config: Run configuration (take, aux weights, loss options).
+        experiment_config: Full arrow experiment configuration (dataset, model, run).
 
     Returns:
         String experiment name, e.g. "ARROW-transformer-take_all-att_layers_1-...".
     """
+    model_config = experiment_config.model
+    run_config = experiment_config.run
+    dataset_config = experiment_config.dataset
     parts = ["ARROW", model_config.model_type]
     parts.extend(model_config.get_experiment_name_parts())
     parts.extend(run_config.get_experiment_name_parts())
+    parts.extend(dataset_config.get_experiment_name_parts())
     return "-".join(parts)
 
 
@@ -531,6 +533,7 @@ def run_arrow_train_from_config(
         use_step_index=dataset_config.use_step_index,
         use_beat_phase=dataset_config.use_beat_phase,
         use_aux_interval_target=dataset_config.use_aux_interval_target,
+        timing_jitter_sigma=dataset_config.timing_jitter_sigma,
     )
 
     val_dataset = datasets.create_arrow_dataset(
@@ -542,6 +545,7 @@ def run_arrow_train_from_config(
         use_step_index=dataset_config.use_step_index,
         use_beat_phase=dataset_config.use_beat_phase,
         use_aux_interval_target=dataset_config.use_aux_interval_target,
+        timing_jitter_sigma=0.0,
     )
 
     if dataset_provides_aux:
@@ -569,10 +573,7 @@ def run_arrow_train_from_config(
         train_dataset = train_dataset.map(_prepare_aux_batch)
         val_dataset = val_dataset.map(_prepare_aux_batch)
 
-    experiment_name = _get_arrow_experiment_name(
-        model_config=model_config,
-        run_config=run_config,
-    )
+    experiment_name = _get_arrow_experiment_name(experiment_config)
 
     input_options = models.ArrowInputOptions(
         snippet_half_frames=dataset_config.snippet_half_frames,

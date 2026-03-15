@@ -741,6 +741,194 @@ def _arrow_use_dict_output(
     )
 
 
+_ORDER_EPS = 1e-6
+
+
+def _apply_timing_jitter_py_callback(
+    features: dict[str, np.ndarray] | np.ndarray,
+    cols: np.ndarray,
+    sigma: float,
+    use_dict: bool,
+    use_interval: bool,
+    interval_encoding: config.IntervalEncoding,
+    use_step_index: bool,
+) -> tuple[dict[str, np.ndarray] | np.ndarray, np.ndarray]:
+    """Apply Gaussian jitter to timing/step-index inputs and recompute intervals from jittered times.
+
+    Used only during training; called from an uncached map so each epoch sees new noise.
+    Jittered values are clipped to [0, 1] and timing order is enforced so intervals stay non-negative.
+
+    Args:
+        features: Either a dict of (n_steps, 1) arrays or a single (n_steps, 1) times array.
+        cols: (n_steps,) column labels, returned unchanged.
+        sigma: Gaussian std for jitter in [0, 1]; applied to timing_input and step_index_input.
+        use_dict: True if features is a dict.
+        use_interval: True if interval inputs are present and should be recomputed from jittered times.
+        interval_encoding: How intervals are encoded (DEFAULT, LOG, MULTI).
+        use_step_index: True if step_index_input is present and should be jittered.
+
+    Returns:
+        (features_jittered, cols) with same structure as input.
+
+    Raises:
+        ValueError: If interval encoding is invalid.
+    """
+    if sigma <= 0:
+        return features, cols
+
+    def _jitter_and_clip(arr: np.ndarray) -> np.ndarray:
+        out = arr.astype(np.float64).flatten()
+        noise = np.random.default_rng().normal(0, sigma, size=out.shape)
+        out = np.clip(out + noise, 0.0, 1.0)
+        return out.astype(np.float32).reshape(arr.shape)
+
+    def _enforce_order(times: np.ndarray) -> np.ndarray:
+        t = times.astype(np.float64).flatten()
+        for i in range(1, len(t)):
+            t[i] = max(t[i], t[i - 1] + _ORDER_EPS)
+        return np.clip(t, 0.0, 1.0).astype(np.float32).reshape(times.shape)
+
+    if not use_dict:
+        times = np.asarray(features, dtype=np.float32)
+        jittered = _jitter_and_clip(times)
+        jittered = _enforce_order(jittered)
+        return jittered, cols
+
+    out = dict(features)
+    timing = np.asarray(out["timing_input"], dtype=np.float32)
+    jittered_timing = _jitter_and_clip(timing)
+    jittered_timing = _enforce_order(jittered_timing)
+    out["timing_input"] = jittered_timing
+
+    if use_step_index and "step_index_input" in out:
+        out["step_index_input"] = _jitter_and_clip(
+            np.asarray(out["step_index_input"], dtype=np.float32)
+        )
+
+    has_interval = (
+        use_interval or "interval_input" in out or "interval_log_input" in out
+    )
+    if has_interval:
+        t_flat = jittered_timing.flatten()
+        if interval_encoding == config.IntervalEncoding.DEFAULT:
+            intervals = normalized_intervals_from_times(t_flat)
+            out["interval_input"] = np.expand_dims(intervals, axis=-1)
+        elif interval_encoding == config.IntervalEncoding.LOG:
+            intervals = log_normalized_intervals_from_times(t_flat)
+            out["interval_log_input"] = np.expand_dims(intervals, axis=-1)
+        elif interval_encoding == config.IntervalEncoding.MULTI:
+            interval_log = log_normalized_intervals_from_times(t_flat)
+            interval_next = next_interval_normalized_from_times(t_flat)
+            out["interval_log_input"] = np.expand_dims(interval_log, axis=-1)
+            out["interval_next_input"] = np.expand_dims(interval_next, axis=-1)
+        else:
+            raise ValueError(f"Invalid interval encoding: {interval_encoding}")
+
+    return out, cols
+
+
+# Order of optional dict keys for jitter map flatten/unflatten (must match TF map).
+_JITTER_OPTIONAL_KEYS = [
+    "step_index_input",
+    "interval_input",
+    "interval_log_input",
+    "interval_next_input",
+    "beat_phase_input",
+    "snippet_input",
+    "aux_interval_target",
+    "aux_interval_mask",
+]
+
+
+def _apply_timing_jitter_tf_map(
+    features: tf.Tensor | dict[str, tf.Tensor],
+    cols: tf.Tensor,
+    sigma: float,
+    use_dict_output: bool,
+    use_interval: bool,
+    interval_encoding: config.IntervalEncoding,
+    use_step_index: bool,
+    n_frames_window: int,
+) -> tuple[tf.Tensor | dict[str, tf.Tensor], tf.Tensor]:
+    """Apply timing/step-index jitter via py_function; used only when sigma > 0 after cache."""
+    # Flatten inputs so tf.py_function gets one list of tensors: [timing, cols, ...optional keys].
+    empty_01 = tf.constant([], shape=(0, 1), dtype=tf.float32)
+    empty_snippet = tf.zeros((0, n_frames_window, _N_MELS), dtype=tf.float32)
+
+    def _default_tf(key: str) -> tf.Tensor:
+        return empty_snippet if key == "snippet_input" else empty_01
+
+    timing_t = features["timing_input"] if use_dict_output else features
+    flat = [timing_t, cols] + [
+        features.get(k, _default_tf(k)) if use_dict_output else _default_tf(k)
+        for k in _JITTER_OPTIONAL_KEYS
+    ]
+
+    def _py_jitter(
+        timing_t: tf.Tensor, cols_t: tf.Tensor, *optional_t: tf.Tensor
+    ) -> tuple:
+        # arrs[0]=timing, arrs[1]=cols, arrs[2:]=optionals in _JITTER_OPTIONAL_KEYS order.
+        empty_01_np = np.array([], dtype=np.float32).reshape(0, 1)
+        empty_snippet_np = np.zeros((0, n_frames_window, _N_MELS), dtype=np.float32)
+
+        def _empty(key: str) -> np.ndarray:
+            return empty_snippet_np if key == "snippet_input" else empty_01_np
+
+        arrs = [timing_t.numpy(), cols_t.numpy()] + [t.numpy() for t in optional_t]
+        # arrs[2] is step_index; empty means non-dict path (timing tensor only).
+        if arrs[2].size == 0:
+            feats_out, cols_out = _apply_timing_jitter_py_callback(
+                arrs[0],
+                arrs[1],
+                sigma,
+                False,
+                use_interval,
+                interval_encoding,
+                use_step_index,
+            )
+            return (feats_out, cols_out) + tuple(
+                _empty(k) for k in _JITTER_OPTIONAL_KEYS
+            )
+        # Dict path: build feature dict, jitter, then return flat list again.
+        feats_dict: dict[str, np.ndarray] = {"timing_input": arrs[0]}
+        for i, key in enumerate(_JITTER_OPTIONAL_KEYS):
+            if arrs[i + 2].size > 0:
+                feats_dict[key] = arrs[i + 2]
+        feats_out, cols_out = _apply_timing_jitter_py_callback(
+            feats_dict,
+            arrs[1],
+            sigma,
+            True,
+            use_interval,
+            interval_encoding,
+            use_step_index,
+        )
+        return (feats_out["timing_input"], cols_out) + tuple(
+            feats_out.get(k, _empty(k)) for k in _JITTER_OPTIONAL_KEYS
+        )
+
+    res = tf.py_function(  # type: ignore[misc]
+        _py_jitter,
+        flat,
+        (tf.float32, tf.int32) + (tf.float32,) * len(_JITTER_OPTIONAL_KEYS),
+    )
+    out_timing = tf.ensure_shape(res[0], flat[0].shape)
+    out_cols = tf.ensure_shape(res[1], flat[1].shape)
+    if use_dict_output:
+        out_dict: dict[str, tf.Tensor] = {"timing_input": out_timing}
+        for i, key in enumerate(_JITTER_OPTIONAL_KEYS):
+            if key in features:
+                t = res[i + 2]
+                t = (
+                    tf.ensure_shape(t, (None, n_frames_window, _N_MELS))
+                    if key == "snippet_input"
+                    else tf.ensure_shape(t, (None, 1))
+                )
+                out_dict[key] = t
+        return out_dict, out_cols
+    return out_timing, out_cols
+
+
 def _process_arrow_pair_tf_map(
     audio_path_t: tf.Tensor,
     chart_path_t: tf.Tensor,
@@ -898,11 +1086,14 @@ def create_arrow_dataset(
     use_step_index: bool = False,
     use_beat_phase: bool = False,
     use_aux_interval_target: bool = False,
+    timing_jitter_sigma: float = 0.0,
 ) -> tf.data.Dataset:
     """Creates a TensorFlow dataset for arrow prediction.
 
     Step times are always normalized (critical for training and inference).
     Sequences are padded to constants.MAX_STEPS so batches have fixed shape (required for XLA).
+    When timing_jitter_sigma > 0, Gaussian jitter is applied to timing/step-index after cache
+    (uncached map) so each epoch sees new noise; validation should use timing_jitter_sigma=0.
 
     Args:
         data_dir: Directory containing audio and chart files.
@@ -914,6 +1105,8 @@ def create_arrow_dataset(
         use_step_index: If True, include step_index_input (normalized position in sequence).
         use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
         use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
+        timing_jitter_sigma: If > 0, add Gaussian jitter to timing/step-index inputs (training only).
+            0 disables jitter. Apply 0 for validation.
 
     Returns:
         Dataset yielding (dict of inputs/targets, cols) when any extra feature is used,
@@ -950,6 +1143,21 @@ def create_arrow_dataset(
         use_beat_phase,
         use_aux_interval_target,
     )
+
+    if timing_jitter_sigma > 0:
+        ds = ds.map(
+            lambda feats, c: _apply_timing_jitter_tf_map(
+                feats,
+                c,
+                timing_jitter_sigma,
+                use_dict_output,
+                use_interval,
+                interval_encoding,
+                use_step_index,
+                n_frames_window,
+            ),
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
 
     if batch_size > 1:
         if use_dict_output:

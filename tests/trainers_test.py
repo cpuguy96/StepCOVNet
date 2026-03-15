@@ -777,26 +777,29 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("unet_dilations_custom", name_str)
 
     def test_get_arrow_experiment_name_includes_snippets_and_aux_weights(self):
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "transformer",
-                "transformer": {
-                    "num_layers": 2,
-                    "d_model": 256,
-                    "num_heads": 8,
-                    "ff_dim": 512,
-                    "dropout_rate": 0.2,
-                },
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "transformer",
+                    "transformer": {
+                        "num_layers": 2,
+                        "d_model": 256,
+                        "num_heads": 8,
+                        "ff_dim": 512,
+                        "dropout_rate": 0.2,
+                    },
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=-1,
+                model_output_dir="out",
+                chart_validity_aux_weight=0.3,
+                diversity_aux_weight=0.4,
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=-1,
-            model_output_dir="out",
-            chart_validity_aux_weight=0.3,
-            diversity_aux_weight=0.4,
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("ARROW", name)
         self.assertIn("transformer", name)
         self.assertIn("take_all", name)
@@ -810,49 +813,81 @@ class ExperimentNameHelperTests(unittest.TestCase):
 
     def test_get_arrow_experiment_name_transformer_includes_architecture_parts(self):
         """_get_arrow_experiment_name with transformer config includes ARROW and architecture parts."""
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "transformer",
-                "transformer": {
-                    "num_layers": 1,
-                    "d_model": 128,
-                    "num_heads": 4,
-                    "ff_dim": 256,
-                    "dropout_rate": 0.0,
-                },
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "transformer",
+                    "transformer": {
+                        "num_layers": 1,
+                        "d_model": 128,
+                        "num_heads": 4,
+                        "ff_dim": 256,
+                        "dropout_rate": 0.0,
+                    },
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=5,
+                model_output_dir="out",
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=5,
-            model_output_dir="out",
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("ARROW", name)
         self.assertIn("transformer", name)
         self.assertIn("att_layers_1", name)
 
     def test_get_arrow_experiment_name_omits_use_interval(self):
         """_get_arrow_experiment_name does not include 'use_interval' (input options are on dataset config)."""
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "transformer",
+                    "transformer": {
+                        "num_layers": 1,
+                        "d_model": 128,
+                        "num_heads": 4,
+                        "ff_dim": 256,
+                        "dropout_rate": 0.0,
+                    },
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=5,
+                model_output_dir="out",
+            ),
+        )
+        name = trainers._get_arrow_experiment_name(exp)
+        self.assertNotIn("use_interval", name)
+
+    def test_get_arrow_experiment_name_includes_timing_jitter_when_enabled(self):
+        """_get_arrow_experiment_name includes timing_jitter part when dataset_config.timing_jitter_sigma > 0."""
         model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "transformer",
-                "transformer": {
-                    "num_layers": 1,
-                    "d_model": 128,
-                    "num_heads": 4,
-                    "ff_dim": 256,
-                    "dropout_rate": 0.0,
-                },
-            }
+            {"model_type": "transformer", "transformer": {}}
         )
         run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=5,
-            model_output_dir="out",
+            epoch=1, take_count=5, model_output_dir="out"
         )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
-        self.assertNotIn("use_interval", name)
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(
+                data_dir="d", val_data_dir="v", timing_jitter_sigma=0.02
+            ),
+            model=model_config,
+            run=run_config,
+        )
+        name = trainers._get_arrow_experiment_name(exp)
+        self.assertIn("timing_jitter", name)
+        self.assertIn("0_02", name)
+        exp_no_jitter = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=model_config,
+            run=run_config,
+        )
+        name_no_jitter = trainers._get_arrow_experiment_name(exp_no_jitter)
+        self.assertNotIn("timing_jitter", name_no_jitter)
 
     def test_get_arrow_experiment_name_differing_only_in_interval_encoding_differ(self):
         """Dataset configs differing only in interval_encoding are distinct; round-trip preserves enum."""
@@ -876,16 +911,17 @@ class ExperimentNameHelperTests(unittest.TestCase):
 
     def test_get_arrow_experiment_name_transformer_minimal(self):
         """Minimal transformer config produces a valid experiment name with ARROW and architecture."""
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "transformer",
-                "transformer": {"num_layers": 1, "d_model": 64},
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "transformer",
+                    "transformer": {"num_layers": 1, "d_model": 64},
+                }
+            ),
+            run=config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir="out"),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1, take_count=1, model_output_dir="out"
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("ARROW", name)
         self.assertIn("transformer", name)
         self.assertIn("att_layers_1", name)
@@ -893,21 +929,24 @@ class ExperimentNameHelperTests(unittest.TestCase):
 
     def test_get_arrow_experiment_name_mlp_includes_hidden_dims_and_dropout(self):
         """_get_arrow_experiment_name with model_type=mlp includes mlp_* and dropout (mlp branch)."""
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "mlp",
-                "mlp": {
-                    "hidden_dims": [256, 128],
-                    "dropout_rate": 0.1,
-                },
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "mlp",
+                    "mlp": {
+                        "hidden_dims": [256, 128],
+                        "dropout_rate": 0.1,
+                    },
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=10,
+                model_output_dir="out",
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=10,
-            model_output_dir="out",
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("ARROW", name)
         self.assertIn("mlp", name)
         self.assertIn("take_10", name)
@@ -916,18 +955,21 @@ class ExperimentNameHelperTests(unittest.TestCase):
 
     def test_get_arrow_experiment_name_lstm_includes_units_and_dropout(self):
         """_get_arrow_experiment_name with model_type=lstm includes lstm_* and dropout."""
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "lstm",
-                "lstm": {"units": 64, "num_layers": 2, "dropout_rate": 0.1},
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "lstm",
+                    "lstm": {"units": 64, "num_layers": 2, "dropout_rate": 0.1},
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=10,
+                model_output_dir="out",
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=10,
-            model_output_dir="out",
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("ARROW", name)
         self.assertIn("lstm", name)
         self.assertIn("take_10", name)
@@ -938,40 +980,46 @@ class ExperimentNameHelperTests(unittest.TestCase):
 
     def test_get_arrow_experiment_name_lstm_bidirectional_includes_bidir(self):
         """_get_arrow_experiment_name with lstm.bidirectional=True includes lstm_bidir."""
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "lstm",
-                "lstm": {
-                    "units": 64,
-                    "num_layers": 2,
-                    "dropout_rate": 0.1,
-                    "bidirectional": True,
-                },
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "lstm",
+                    "lstm": {
+                        "units": 64,
+                        "num_layers": 2,
+                        "dropout_rate": 0.1,
+                        "bidirectional": True,
+                    },
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=10,
+                model_output_dir="out",
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=10,
-            model_output_dir="out",
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("lstm_bidir", name)
         self.assertIn("lstm_units_64", name)
 
     def test_get_arrow_experiment_name_gru_includes_units_and_dropout(self):
         """_get_arrow_experiment_name with model_type=gru includes gru_* and dropout."""
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "gru",
-                "gru": {"units": 64, "num_layers": 2, "dropout_rate": 0.1},
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "gru",
+                    "gru": {"units": 64, "num_layers": 2, "dropout_rate": 0.1},
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=10,
+                model_output_dir="out",
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=10,
-            model_output_dir="out",
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("ARROW", name)
         self.assertIn("gru", name)
         self.assertIn("take_10", name)
@@ -982,42 +1030,48 @@ class ExperimentNameHelperTests(unittest.TestCase):
 
     def test_get_arrow_experiment_name_gru_bidirectional_includes_bidir(self):
         """_get_arrow_experiment_name with gru.bidirectional=True includes gru_bidir."""
-        model_config = config.ArrowModelConfig.from_dict(
-            {
-                "model_type": "gru",
-                "gru": {
-                    "units": 64,
-                    "num_layers": 2,
-                    "dropout_rate": 0.1,
-                    "bidirectional": True,
-                },
-            }
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig.from_dict(
+                {
+                    "model_type": "gru",
+                    "gru": {
+                        "units": 64,
+                        "num_layers": 2,
+                        "dropout_rate": 0.1,
+                        "bidirectional": True,
+                    },
+                }
+            ),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=10,
+                model_output_dir="out",
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=10,
-            model_output_dir="out",
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("gru_bidir", name)
         self.assertIn("gru_units_64", name)
 
     def test_get_arrow_experiment_name_uses_only_active_model_type(self):
         """When both transformer and mlp blocks are set, name uses only active model_type (no duplicate/conflicting params)."""
         # Simulate e.g. loading transformer config then overriding --model_type mlp without clearing transformer
-        model_config = config.ArrowModelConfig(
-            model_type="mlp",
-            transformer=config.TransformerArrowParams(
-                num_layers=2, d_model=128, num_heads=4, ff_dim=512, dropout_rate=0.0
+        exp = config.ArrowExperimentConfig(
+            dataset=config.ArrowDatasetConfig(data_dir="d", val_data_dir="v"),
+            model=config.ArrowModelConfig(
+                model_type="mlp",
+                transformer=config.TransformerArrowParams(
+                    num_layers=2, d_model=128, num_heads=4, ff_dim=512, dropout_rate=0.0
+                ),
+                mlp=config.MLPArrowParams(hidden_dims=[64, 32], dropout_rate=0.1),
             ),
-            mlp=config.MLPArrowParams(hidden_dims=[64, 32], dropout_rate=0.1),
+            run=config.ArrowRunConfig(
+                epoch=1,
+                take_count=5,
+                model_output_dir="out",
+            ),
         )
-        run_config = config.ArrowRunConfig(
-            epoch=1,
-            take_count=5,
-            model_output_dir="out",
-        )
-        name = trainers._get_arrow_experiment_name(model_config, run_config)
+        name = trainers._get_arrow_experiment_name(exp)
         self.assertIn("ARROW-mlp", name)
         self.assertIn("mlp_64_32", name)
         self.assertIn("dropout_0_1", name)

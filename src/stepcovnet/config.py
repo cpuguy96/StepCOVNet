@@ -84,6 +84,8 @@ class ArrowDatasetConfig(_DictSerializableMixin):
         use_step_index: If True, include step index (position in sequence) as an input.
         use_beat_phase: If True, include beat/phase features (BPM from chart txt).
         use_aux_interval_target: If True, include aux_interval_target (next-step interval) in batch for auxiliary loss.
+        timing_jitter_sigma: If > 0, add Gaussian jitter to timing/step-index inputs during training only;
+            magnitude in [0, 1] (e.g. 0.01). 0 disables jitter.
     """
 
     data_dir: str
@@ -95,6 +97,7 @@ class ArrowDatasetConfig(_DictSerializableMixin):
     use_step_index: bool = False
     use_beat_phase: bool = False
     use_aux_interval_target: bool = False
+    timing_jitter_sigma: float = 0.0
 
     def __post_init__(self) -> None:
         """Normalize interval_encoding from string to enum when loaded from dict/JSON."""
@@ -108,6 +111,15 @@ class ArrowDatasetConfig(_DictSerializableMixin):
         d = dataclasses.asdict(self)  # type: ignore[arg-type]
         d["interval_encoding"] = self.interval_encoding.value
         return d
+
+    def get_experiment_name_parts(self) -> list[str]:
+        """Return experiment name fragments for dataset-level options (e.g. timing jitter)."""
+        parts: list[str] = []
+        if self.timing_jitter_sigma > 0:
+            parts.append(
+                f"timing_jitter_{str(self.timing_jitter_sigma).replace('.', '_')}"
+            )
+        return parts
 
     @classmethod
     def from_dict(cls, data: dict) -> ArrowDatasetConfig:

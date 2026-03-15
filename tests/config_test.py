@@ -128,6 +128,30 @@ class ArrowDatasetConfigTest(unittest.TestCase):
                 {"data_dir": "d", "val_data_dir": "v", "interval_encoding": "invalid"}
             )
 
+    def test_timing_jitter_sigma_default_and_round_trip(self):
+        """timing_jitter_sigma defaults to 0 and round-trips in as_dict/from_dict."""
+        cfg = config.ArrowDatasetConfig(data_dir="d", val_data_dir="v")
+        self.assertEqual(cfg.timing_jitter_sigma, 0.0)
+        cfg_jitter = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", timing_jitter_sigma=0.02
+        )
+        d = cfg_jitter.as_dict()
+        self.assertEqual(d["timing_jitter_sigma"], 0.02)
+        loaded = config.ArrowDatasetConfig.from_dict(d)
+        self.assertEqual(loaded.timing_jitter_sigma, 0.02)
+
+    def test_get_experiment_name_parts_timing_jitter(self):
+        """get_experiment_name_parts returns timing_jitter token when sigma > 0, empty when 0."""
+        cfg_off = config.ArrowDatasetConfig(data_dir="d", val_data_dir="v")
+        self.assertEqual(cfg_off.get_experiment_name_parts(), [])
+        cfg_on = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", timing_jitter_sigma=0.02
+        )
+        parts = cfg_on.get_experiment_name_parts()
+        self.assertEqual(len(parts), 1)
+        self.assertIn("timing_jitter", parts[0])
+        self.assertIn("0_02", parts[0])
+
 
 class OnsetModelConfigTest(unittest.TestCase):
     def test_create_with_defaults(self):
