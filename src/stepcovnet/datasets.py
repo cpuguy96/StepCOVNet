@@ -916,8 +916,10 @@ def _apply_timing_jitter_tf_map(
     if use_dict_output:
         out_dict: dict[str, tf.Tensor] = {"timing_input": out_timing}
         for i, key in enumerate(_JITTER_OPTIONAL_KEYS):
-            if key in features:
-                t = res[i + 2]
+            t = res[i + 2]
+            # Include keys that were present in the original features dict OR
+            # were created by the jitter callback (non-empty tensor).
+            if key in features or t.shape[0] != 0:
                 t = (
                     tf.ensure_shape(t, (None, n_frames_window, _N_MELS))
                     if key == "snippet_input"
