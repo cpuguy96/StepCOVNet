@@ -751,13 +751,11 @@ def _apply_timing_jitter_py_callback(
     use_dict: bool,
     use_interval: bool,
     interval_encoding: config.IntervalEncoding,
-    use_step_index: bool,
 ) -> tuple[dict[str, np.ndarray] | np.ndarray, np.ndarray]:
     """Apply Gaussian jitter to timing_input and recompute intervals from jittered times.
 
     Used only during training; called from an uncached map so each epoch sees new noise.
     Jittered values are clipped to [0, 1] and timing order is enforced so intervals stay non-negative.
-    step_index_input, if present, is passed through unchanged.
 
     Args:
         features: Either a dict of (n_steps, 1) arrays or a single (n_steps, 1) times array.
@@ -766,7 +764,6 @@ def _apply_timing_jitter_py_callback(
         use_dict: True if features is a dict.
         use_interval: True if interval inputs are present and should be recomputed from jittered times.
         interval_encoding: How intervals are encoded (DEFAULT, LOG, MULTI).
-        use_step_index: True if step_index_input is present (passed through unchanged).
 
     Returns:
         (features_jittered, cols) with same structure as input.
@@ -846,7 +843,6 @@ def _apply_timing_jitter_tf_map(
     use_dict_output: bool,
     use_interval: bool,
     interval_encoding: config.IntervalEncoding,
-    use_step_index: bool,
     n_frames_window: int,
 ) -> tuple[tf.Tensor | dict[str, tf.Tensor], tf.Tensor]:
     """Apply timing jitter via py_function; used only when sigma > 0 after cache."""
@@ -883,7 +879,6 @@ def _apply_timing_jitter_tf_map(
                 False,
                 use_interval,
                 interval_encoding,
-                use_step_index,
             )
             return (feats_out, cols_out) + tuple(
                 _empty(k) for k in _JITTER_OPTIONAL_KEYS
@@ -900,7 +895,6 @@ def _apply_timing_jitter_tf_map(
             True,
             use_interval,
             interval_encoding,
-            use_step_index,
         )
         return (feats_out["timing_input"], cols_out) + tuple(
             feats_out.get(k, _empty(k)) for k in _JITTER_OPTIONAL_KEYS
@@ -1154,7 +1148,6 @@ def create_arrow_dataset(
                 use_dict_output,
                 use_interval,
                 interval_encoding,
-                use_step_index,
                 n_frames_window,
             ),
             num_parallel_calls=tf.data.AUTOTUNE,

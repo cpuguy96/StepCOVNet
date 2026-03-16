@@ -426,7 +426,6 @@ class DatasetsTest(unittest.TestCase):
             use_dict=True,
             use_interval=True,
             interval_encoding=config.IntervalEncoding.DEFAULT,
-            use_step_index=False,
         )
         self.assertIsInstance(out, dict)
         self.assertIn("timing_input", out)
@@ -455,7 +454,6 @@ class DatasetsTest(unittest.TestCase):
             use_dict=False,
             use_interval=False,
             interval_encoding=config.IntervalEncoding.DEFAULT,
-            use_step_index=False,
         )
         if not isinstance(out, np.ndarray):
             self.fail("expected ndarray from non-dict path")
@@ -472,28 +470,6 @@ class DatasetsTest(unittest.TestCase):
                 msg="Times must be non-decreasing after _enforce_order",
             )
         np.testing.assert_array_equal(out_cols, cols)
-
-    def test_apply_timing_jitter_py_callback_step_index_unchanged(self):
-        """_apply_timing_jitter_py_callback leaves step_index_input unchanged (jitter applies only to timing)."""
-        np.random.seed(456)
-        timing = np.array([[0.0], [0.25], [0.5], [0.75], [1.0]], dtype=np.float32)
-        step_idx = np.array([[0.0], [0.25], [0.5], [0.75], [1.0]], dtype=np.float32)
-        cols = np.array([1, 2, 1, 2, 1], dtype=np.int32)
-        feats = {"timing_input": timing, "step_index_input": step_idx}
-        out, _ = datasets._apply_timing_jitter_py_callback(
-            feats,
-            cols,
-            sigma=0.05,
-            use_dict=True,
-            use_interval=False,
-            interval_encoding=config.IntervalEncoding.DEFAULT,
-            use_step_index=True,
-        )
-        np.testing.assert_array_equal(
-            out["step_index_input"],
-            step_idx,
-            err_msg="step_index_input must be passed through unchanged",
-        )
 
     def test_apply_timing_jitter_py_callback_log_encoding_recomputes_interval_log(
         self,
@@ -513,7 +489,6 @@ class DatasetsTest(unittest.TestCase):
             use_dict=True,
             use_interval=True,
             interval_encoding=config.IntervalEncoding.LOG,
-            use_step_index=False,
         )
         t_flat = out["timing_input"].flatten()
         expected = datasets.log_normalized_intervals_from_times(t_flat)
@@ -544,7 +519,6 @@ class DatasetsTest(unittest.TestCase):
             use_dict=True,
             use_interval=True,
             interval_encoding=config.IntervalEncoding.MULTI,
-            use_step_index=False,
         )
         t_flat = out["timing_input"].flatten()
         expected_log = datasets.log_normalized_intervals_from_times(t_flat)
@@ -581,7 +555,6 @@ class DatasetsTest(unittest.TestCase):
             use_dict=True,
             use_interval=False,
             interval_encoding=config.IntervalEncoding.MULTI,
-            use_step_index=False,
         )
         t_flat = out["timing_input"].flatten()
         expected_log = datasets.log_normalized_intervals_from_times(t_flat)
@@ -614,7 +587,6 @@ class DatasetsTest(unittest.TestCase):
                 use_dict=True,
                 use_interval=True,
                 interval_encoding=bad_encoding,  # type: ignore[arg-type]
-                use_step_index=False,
             )
         self.assertIn("Invalid interval encoding", str(ctx.exception))
 
