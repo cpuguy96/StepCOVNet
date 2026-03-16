@@ -806,7 +806,10 @@ def _apply_timing_jitter_py_callback(
         )
 
     has_interval = (
-        use_interval or "interval_input" in out or "interval_log_input" in out
+        use_interval
+        or "interval_input" in out
+        or "interval_log_input" in out
+        or "interval_next_input" in out
     )
     if has_interval:
         t_flat = jittered_timing.flatten()

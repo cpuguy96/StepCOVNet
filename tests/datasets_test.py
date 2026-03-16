@@ -408,6 +408,161 @@ class DatasetsTest(unittest.TestCase):
         )
         np.testing.assert_array_equal(out_cols, cols)
 
+    def test_apply_timing_jitter_py_callback_non_dict_path_jitters_and_enforces_order(
+        self,
+    ):
+        """_apply_timing_jitter_py_callback with use_dict=False jitters timing array and enforces order."""
+        np.random.seed(123)
+        timing = np.array([[0.0], [0.2], [0.5], [0.8], [1.0]], dtype=np.float32)
+        cols = np.array([1, 2, 1, 2, 1], dtype=np.int32)
+        out, out_cols = datasets._apply_timing_jitter_py_callback(
+            timing,
+            cols,
+            sigma=0.02,
+            use_dict=False,
+            use_interval=False,
+            interval_encoding=config.IntervalEncoding.DEFAULT,
+            use_step_index=False,
+        )
+        if not isinstance(out, np.ndarray):
+            self.fail("expected ndarray from non-dict path")
+        self.assertEqual(out.shape, timing.shape)
+        self.assertTrue(
+            np.all((out >= 0) & (out <= 1)),
+            msg="Jittered times should stay in [0, 1]",
+        )
+        t_flat = out.flatten()
+        for i in range(1, len(t_flat)):
+            self.assertGreaterEqual(
+                t_flat[i],
+                t_flat[i - 1],
+                msg="Times must be non-decreasing after _enforce_order",
+            )
+        np.testing.assert_array_equal(out_cols, cols)
+
+    def test_apply_timing_jitter_py_callback_log_encoding_recomputes_interval_log(
+        self,
+    ):
+        """_apply_timing_jitter_py_callback with LOG encoding recomputes interval_log_input from jittered times."""
+        np.random.seed(44)
+        timing = np.array([[0.0], [0.25], [0.5], [0.75], [1.0]], dtype=np.float32)
+        cols = np.array([1, 2, 1, 2, 1], dtype=np.int32)
+        feats = {
+            "timing_input": timing,
+            "interval_log_input": np.zeros((5, 1), dtype=np.float32),
+        }
+        out, out_cols = datasets._apply_timing_jitter_py_callback(
+            feats,
+            cols,
+            sigma=0.02,
+            use_dict=True,
+            use_interval=True,
+            interval_encoding=config.IntervalEncoding.LOG,
+            use_step_index=False,
+        )
+        t_flat = out["timing_input"].flatten()
+        expected = datasets.log_normalized_intervals_from_times(t_flat)
+        np.testing.assert_allclose(
+            out["interval_log_input"].flatten(),
+            expected,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        np.testing.assert_array_equal(out_cols, cols)
+
+    def test_apply_timing_jitter_py_callback_multi_encoding_recomputes_both_intervals(
+        self,
+    ):
+        """_apply_timing_jitter_py_callback with MULTI encoding recomputes interval_log and interval_next from jittered times."""
+        np.random.seed(55)
+        timing = np.array([[0.0], [0.2], [0.5], [0.8], [1.0]], dtype=np.float32)
+        cols = np.array([1, 2, 1, 2, 1], dtype=np.int32)
+        feats = {
+            "timing_input": timing,
+            "interval_log_input": np.zeros((5, 1), dtype=np.float32),
+            "interval_next_input": np.zeros((5, 1), dtype=np.float32),
+        }
+        out, out_cols = datasets._apply_timing_jitter_py_callback(
+            feats,
+            cols,
+            sigma=0.02,
+            use_dict=True,
+            use_interval=True,
+            interval_encoding=config.IntervalEncoding.MULTI,
+            use_step_index=False,
+        )
+        t_flat = out["timing_input"].flatten()
+        expected_log = datasets.log_normalized_intervals_from_times(t_flat)
+        expected_next = datasets.next_interval_normalized_from_times(t_flat)
+        np.testing.assert_allclose(
+            out["interval_log_input"].flatten(),
+            expected_log,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        np.testing.assert_allclose(
+            out["interval_next_input"].flatten(),
+            expected_next,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        np.testing.assert_array_equal(out_cols, cols)
+
+    def test_apply_timing_jitter_py_callback_interval_next_input_alone_triggers_recompute(
+        self,
+    ):
+        """With only interval_next_input in dict (no interval_log), MULTI encoding still recomputes from jittered times."""
+        np.random.seed(66)
+        timing = np.array([[0.0], [0.3], [0.6], [1.0]], dtype=np.float32)
+        cols = np.array([1, 2, 1, 2], dtype=np.int32)
+        feats = {
+            "timing_input": timing,
+            "interval_next_input": np.ones((4, 1), dtype=np.float32),
+        }
+        out, _ = datasets._apply_timing_jitter_py_callback(
+            feats,
+            cols,
+            sigma=0.02,
+            use_dict=True,
+            use_interval=False,
+            interval_encoding=config.IntervalEncoding.MULTI,
+            use_step_index=False,
+        )
+        t_flat = out["timing_input"].flatten()
+        expected_log = datasets.log_normalized_intervals_from_times(t_flat)
+        expected_next = datasets.next_interval_normalized_from_times(t_flat)
+        np.testing.assert_allclose(
+            out["interval_log_input"].flatten(),
+            expected_log,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        np.testing.assert_allclose(
+            out["interval_next_input"].flatten(),
+            expected_next,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+
+    def test_apply_timing_jitter_py_callback_invalid_interval_encoding_raises(self):
+        """_apply_timing_jitter_py_callback raises ValueError for unsupported interval encoding when intervals present."""
+        timing = np.array([[0.0], [0.5], [1.0]], dtype=np.float32)
+        cols = np.array([1, 2, 1], dtype=np.int32)
+        feats = {"timing_input": timing, "interval_input": np.zeros((3, 1))}
+        bad_encoding = object()
+
+        with self.assertRaises(ValueError) as ctx:
+            datasets._apply_timing_jitter_py_callback(
+                feats,
+                cols,
+                sigma=0.01,
+                use_dict=True,
+                use_interval=True,
+                interval_encoding=bad_encoding,  # type: ignore[arg-type]
+                use_step_index=False,
+            )
+        self.assertIn("Invalid interval encoding", str(ctx.exception))
+
     def test_load_arrow_pair_py_callback_returns_aux_interval_mask_when_requested(self):
         """_load_arrow_pair_py_callback with use_aux_interval_target=True returns 9-tuple including aux_interval_mask."""
         _, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
