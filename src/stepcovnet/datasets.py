@@ -753,19 +753,20 @@ def _apply_timing_jitter_py_callback(
     interval_encoding: config.IntervalEncoding,
     use_step_index: bool,
 ) -> tuple[dict[str, np.ndarray] | np.ndarray, np.ndarray]:
-    """Apply Gaussian jitter to timing/step-index inputs and recompute intervals from jittered times.
+    """Apply Gaussian jitter to timing_input and recompute intervals from jittered times.
 
     Used only during training; called from an uncached map so each epoch sees new noise.
     Jittered values are clipped to [0, 1] and timing order is enforced so intervals stay non-negative.
+    step_index_input, if present, is passed through unchanged.
 
     Args:
         features: Either a dict of (n_steps, 1) arrays or a single (n_steps, 1) times array.
         cols: (n_steps,) column labels, returned unchanged.
-        sigma: Gaussian std for jitter in [0, 1]; applied to timing_input and step_index_input.
+        sigma: Gaussian std for jitter in [0, 1]; applied to timing_input only.
         use_dict: True if features is a dict.
         use_interval: True if interval inputs are present and should be recomputed from jittered times.
         interval_encoding: How intervals are encoded (DEFAULT, LOG, MULTI).
-        use_step_index: True if step_index_input is present and should be jittered.
+        use_step_index: True if step_index_input is present (passed through unchanged).
 
     Returns:
         (features_jittered, cols) with same structure as input.
@@ -799,11 +800,6 @@ def _apply_timing_jitter_py_callback(
     jittered_timing = _jitter_and_clip(timing)
     jittered_timing = _enforce_order(jittered_timing)
     out["timing_input"] = jittered_timing
-
-    if use_step_index and "step_index_input" in out:
-        out["step_index_input"] = _jitter_and_clip(
-            np.asarray(out["step_index_input"], dtype=np.float32)
-        )
 
     has_interval = (
         use_interval
@@ -853,7 +849,7 @@ def _apply_timing_jitter_tf_map(
     use_step_index: bool,
     n_frames_window: int,
 ) -> tuple[tf.Tensor | dict[str, tf.Tensor], tf.Tensor]:
-    """Apply timing/step-index jitter via py_function; used only when sigma > 0 after cache."""
+    """Apply timing jitter via py_function; used only when sigma > 0 after cache."""
     # Flatten inputs so tf.py_function gets one list of tensors: [timing, cols, ...optional keys].
     empty_01 = tf.constant([], shape=(0, 1), dtype=tf.float32)
     empty_snippet = tf.zeros((0, n_frames_window, _N_MELS), dtype=tf.float32)
@@ -1095,7 +1091,7 @@ def create_arrow_dataset(
 
     Step times are always normalized (critical for training and inference).
     Sequences are padded to constants.MAX_STEPS so batches have fixed shape (required for XLA).
-    When timing_jitter_sigma > 0, Gaussian jitter is applied to timing/step-index after cache
+    When timing_jitter_sigma > 0, Gaussian jitter is applied to timing_input after cache
     (uncached map) so each epoch sees new noise; validation should use timing_jitter_sigma=0.
 
     Args:
@@ -1108,7 +1104,7 @@ def create_arrow_dataset(
         use_step_index: If True, include step_index_input (normalized position in sequence).
         use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
         use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
-        timing_jitter_sigma: If > 0, add Gaussian jitter to timing/step-index inputs (training only).
+        timing_jitter_sigma: If > 0, add Gaussian jitter to timing_input (training only).
             0 disables jitter. Apply 0 for validation.
 
     Returns:

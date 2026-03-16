@@ -473,6 +473,28 @@ class DatasetsTest(unittest.TestCase):
             )
         np.testing.assert_array_equal(out_cols, cols)
 
+    def test_apply_timing_jitter_py_callback_step_index_unchanged(self):
+        """_apply_timing_jitter_py_callback leaves step_index_input unchanged (jitter applies only to timing)."""
+        np.random.seed(456)
+        timing = np.array([[0.0], [0.25], [0.5], [0.75], [1.0]], dtype=np.float32)
+        step_idx = np.array([[0.0], [0.25], [0.5], [0.75], [1.0]], dtype=np.float32)
+        cols = np.array([1, 2, 1, 2, 1], dtype=np.int32)
+        feats = {"timing_input": timing, "step_index_input": step_idx}
+        out, _ = datasets._apply_timing_jitter_py_callback(
+            feats,
+            cols,
+            sigma=0.05,
+            use_dict=True,
+            use_interval=False,
+            interval_encoding=config.IntervalEncoding.DEFAULT,
+            use_step_index=True,
+        )
+        np.testing.assert_array_equal(
+            out["step_index_input"],
+            step_idx,
+            err_msg="step_index_input must be passed through unchanged",
+        )
+
     def test_apply_timing_jitter_py_callback_log_encoding_recomputes_interval_log(
         self,
     ):

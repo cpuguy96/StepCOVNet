@@ -84,7 +84,7 @@ class ArrowDatasetConfig(_DictSerializableMixin):
         use_step_index: If True, include step index (position in sequence) as an input.
         use_beat_phase: If True, include beat/phase features (BPM from chart txt).
         use_aux_interval_target: If True, include aux_interval_target (next-step interval) in batch for auxiliary loss.
-        timing_jitter_sigma: If > 0, add Gaussian jitter to timing/step-index inputs during training only;
+        timing_jitter_sigma: If > 0, add Gaussian jitter to timing_input during training only;
             magnitude in [0, 1] (e.g. 0.01). 0 disables jitter.
     """
 
