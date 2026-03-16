@@ -878,8 +878,8 @@ def _apply_timing_jitter_tf_map(
             return empty_snippet_np if key == "snippet_input" else empty_01_np
 
         arrs = [timing_t.numpy(), cols_t.numpy()] + [t.numpy() for t in optional_t]
-        # arrs[2] is step_index; empty means non-dict path (timing tensor only).
-        if arrs[2].size == 0:
+        # Dict vs non-dict must follow use_dict_output: step_index can be empty while intervals/other optionals exist.
+        if not use_dict_output:
             feats_out, cols_out = _apply_timing_jitter_py_callback(
                 arrs[0],
                 arrs[1],

@@ -373,6 +373,39 @@ class DatasetsTest(unittest.TestCase):
             msg="Jittered dataset should yield different timing when same sample is read twice",
         )
 
+    def test_create_arrow_dataset_timing_jitter_with_interval_recomputes_intervals(
+        self,
+    ):
+        """With jitter and use_interval=True, interval_input is recomputed from jittered timing (TF map path)."""
+        ds = datasets.create_arrow_dataset(
+            TEST_DATA_DIR,
+            batch_size=1,
+            use_interval=True,
+            interval_encoding=config.IntervalEncoding.DEFAULT,
+            timing_jitter_sigma=0.02,
+        )
+        for batch_features, _ in ds.take(3):
+            timing = batch_features["timing_input"].numpy()
+            interval_batch = batch_features["interval_input"].numpy()
+            self.assertEqual(
+                timing.shape,
+                interval_batch.shape,
+                msg="interval_input should have same shape as timing_input",
+            )
+            for b in range(timing.shape[0]):
+                t = timing[b].flatten()
+                interval_flat = interval_batch[b].flatten()
+                if len(t) == 0:
+                    continue
+                expected = datasets.normalized_intervals_from_times(t)
+                np.testing.assert_allclose(
+                    interval_flat,
+                    expected,
+                    rtol=1e-5,
+                    atol=1e-5,
+                    err_msg="interval_input must match recomputed from jittered timing",
+                )
+
     def test_apply_timing_jitter_py_callback_recomputes_intervals_from_jittered_timing(
         self,
     ):
