@@ -7,7 +7,7 @@ dataset for training.
 
 import os
 import pathlib
-from typing import Any
+from typing import Any, cast
 
 import librosa
 import numpy as np
@@ -91,57 +91,10 @@ def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def _parse_step_chart(
-    chart_path: str, binary_timings: bool = False
-) -> tuple[np.ndarray, np.ndarray]:
-    """Parse StepMania .sm file to extract step timings and note encodings.
-
-    Args:
-        chart_path: Path to the StepMania .sm file.
-        binary_timings: If True, returns 0 for all note encodings, effectively
-                        treating the output as binary (step vs. no step).
-
-    Returns:
-        A tuple containing an array of step timings and an array of note encodings.
-    """
-    with open(chart_path) as f:
-        f.readline()  # TITLE
-        _ = float(f.readline().removeprefix("BPM").strip())  # BPM
-        f.readline()  # NOTES
-        difficulty_level = f.readline().strip().lower().split(" ")[1]
-        _ = _DIFFICULTY_MAP.get(difficulty_level, 2)
-        times = []
-        cols = []
-        for line in f:
-            if line.startswith("DIFFICULTY"):
-                # TODO: Read off of multiple difficulties
-                break
-            # TODO: Use the type of note played and not just the presence
-            arrows, timing = line.strip().split(" ")
-            times.append(float(timing))
-            if binary_timings:
-                cols.append(0)
-            else:
-                cols.append(_base4_to_int(arrows))
-
-    return np.array(times), np.array(cols, dtype=np.int32)
-
-
-def _parse_step_chart_with_bpm(
-    chart_path: str, binary_timings: bool = False
-) -> tuple[np.ndarray, np.ndarray, float]:
-    """Parse StepMania .sm file; return step times, note encodings, and BPM.
-
-    Used when BPM is needed (e.g. beat_phase). Same format as _parse_step_chart
-    plus BPM in beats per minute.
-
-    Args:
-        chart_path: Path to the StepMania .sm file.
-        binary_timings: If True, returns 0 for all note encodings.
-
-    Returns:
-        (times, cols, bpm): times and cols as in _parse_step_chart; bpm as float.
-    """
+def _parse_step_chart_impl(
+    chart_path: str, binary_timings: bool, return_bpm: bool
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, float]:
+    """Parse StepMania .sm file; return times, cols, and optionally BPM."""
     with open(chart_path) as f:
         f.readline()  # TITLE
         bpm_line = f.readline()
@@ -160,7 +113,50 @@ def _parse_step_chart_with_bpm(
                 cols.append(0)
             else:
                 cols.append(_base4_to_int(arrows))
-    return np.array(times), np.array(cols, dtype=np.int32), bpm
+    times_arr = np.array(times)
+    cols_arr = np.array(cols, dtype=np.int32)
+    if return_bpm:
+        return times_arr, cols_arr, bpm
+    return times_arr, cols_arr
+
+
+def _parse_step_chart(
+    chart_path: str, binary_timings: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
+    """Parse StepMania .sm file to extract step timings and note encodings.
+
+    Args:
+        chart_path: Path to the StepMania .sm file.
+        binary_timings: If True, returns 0 for all note encodings, effectively
+                        treating the output as binary (step vs. no step).
+
+    Returns:
+        A tuple containing an array of step timings and an array of note encodings.
+    """
+    out = _parse_step_chart_impl(chart_path, binary_timings, return_bpm=False)
+    return out[0], out[1]
+
+
+def _parse_step_chart_with_bpm(
+    chart_path: str, binary_timings: bool = False
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Parse StepMania .sm file; return step times, note encodings, and BPM.
+
+    Used when BPM is needed (e.g. beat_phase). Same format as _parse_step_chart
+    plus BPM in beats per minute.
+
+    Args:
+        chart_path: Path to the StepMania .sm file.
+        binary_timings: If True, returns 0 for all note encodings.
+
+    Returns:
+        (times, cols, bpm): times and cols as in _parse_step_chart; bpm as float.
+    """
+    result = cast(
+        tuple[np.ndarray, np.ndarray, float],
+        _parse_step_chart_impl(chart_path, binary_timings, return_bpm=True),
+    )
+    return result[0], result[1], result[2]
 
 
 def normalized_intervals_from_times(times_seconds: np.ndarray) -> np.ndarray:

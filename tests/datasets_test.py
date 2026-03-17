@@ -999,6 +999,33 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsInstance(bpm, float)
         self.assertGreater(bpm, 0)
 
+    def test_parse_step_chart_binary_timings(self):
+        """_parse_step_chart with binary_timings=True returns cols all zeros."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "chart.txt")
+            with open(path, "w") as f:
+                f.write("TITLE X\nBPM 120.0\nNOTES\nDIFFICULTY Challenge\n")
+                f.write("1000 0.0\n0100 0.5\n0010 1.0\n")
+            times, cols = datasets._parse_step_chart(path, binary_timings=True)
+            self.assertEqual(len(times), 3)
+            self.assertEqual(len(cols), 3)
+            self.assertTrue(np.all(cols == 0))
+
+    def test_parse_step_chart_with_bpm_binary_timings(self):
+        """_parse_step_chart_with_bpm with binary_timings=True returns cols all zeros and BPM."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "chart.txt")
+            with open(path, "w") as f:
+                f.write("TITLE Y\nBPM 135.5\nNOTES\nDIFFICULTY Hard\n")
+                f.write("0001 0.25\n1000 0.75\n")
+            times, cols, bpm = datasets._parse_step_chart_with_bpm(
+                path, binary_timings=True
+            )
+            self.assertEqual(len(times), 2)
+            self.assertEqual(len(cols), 2)
+            self.assertTrue(np.all(cols == 0))
+            self.assertAlmostEqual(bpm, 135.5)
+
     def test_audio_to_spectrogram_resample_branch(self):
         """Cover the sr != _TARGET_SR resample path in audio_to_spectrogram."""
         audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
