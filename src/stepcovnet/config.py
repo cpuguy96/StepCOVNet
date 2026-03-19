@@ -119,6 +119,8 @@ class ArrowDatasetConfig(_DictSerializableMixin):
             parts.append(
                 f"timing_jitter_{str(self.timing_jitter_sigma).replace('.', '_')}"
             )
+        if self.snippet_half_frames > 0:
+            parts.append(f"snippets_{self.snippet_half_frames}")
         return parts
 
     @classmethod

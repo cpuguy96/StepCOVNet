@@ -152,6 +152,14 @@ class ArrowDatasetConfigTest(unittest.TestCase):
         self.assertIn("timing_jitter", parts[0])
         self.assertIn("0_02", parts[0])
 
+    def test_get_experiment_name_parts_snippet_half_frames(self):
+        cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", snippet_half_frames=5
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertEqual(len(parts), 1)
+        self.assertIn("snippets_5", parts[0])
+
 
 class OnsetModelConfigTest(unittest.TestCase):
     def test_create_with_defaults(self):
