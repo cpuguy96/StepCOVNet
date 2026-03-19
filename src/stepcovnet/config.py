@@ -121,6 +121,12 @@ class ArrowDatasetConfig(_DictSerializableMixin):
             )
         if self.snippet_half_frames > 0:
             parts.append(f"snippets_{self.snippet_half_frames}")
+        if self.use_step_index:
+            parts.append("step_index")
+        if self.use_interval:
+            parts.append(f"interval_{self.interval_encoding.value}")
+        if self.use_beat_phase:
+            parts.append("beat_phase")
         return parts
 
     @classmethod

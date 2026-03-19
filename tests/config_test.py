@@ -160,6 +160,33 @@ class ArrowDatasetConfigTest(unittest.TestCase):
         self.assertEqual(len(parts), 1)
         self.assertIn("snippets_5", parts[0])
 
+    def test_get_experiment_name_parts_use_interval(self):
+        cfg = config.ArrowDatasetConfig(
+            data_dir="d",
+            val_data_dir="v",
+            use_interval=True,
+            interval_encoding=config.IntervalEncoding.LOG,
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertEqual(len(parts), 1)
+        self.assertIn("interval_log", parts[0])
+
+    def test_get_experiment_name_parts_use_step_index(self):
+        cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", use_step_index=True
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertEqual(len(parts), 1)
+        self.assertIn("step_index", parts[0])
+
+    def test_get_experiment_name_parts_use_beat_phase(self):
+        cfg = config.ArrowDatasetConfig(
+            data_dir="d", val_data_dir="v", use_beat_phase=True
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertEqual(len(parts), 1)
+        self.assertIn("beat_phase", parts[0])
+
 
 class OnsetModelConfigTest(unittest.TestCase):
     def test_create_with_defaults(self):
