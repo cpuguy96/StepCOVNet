@@ -576,12 +576,14 @@ class ArrowRunConfig(RunConfig):
                 )
 
     def get_experiment_name_parts(self) -> list[str]:
-        """Return experiment name fragments for run-level options (take, aux weights, loss)."""
+        """Return experiment name fragments for run-level options (take, warmup, aux weights, loss)."""
         parts: list[str] = []
         if self.take_count == -1:
             parts.append("take_all")
         else:
             parts.append(f"take_{self.take_count}")
+        if self.warmup_epochs > 0:
+            parts.append(f"warmup_epochs_{self.warmup_epochs}")
         if self.chart_validity_aux_weight > 0:
             parts.append(
                 f"chart_val_aux_{str(self.chart_validity_aux_weight).replace('.', '_')}"

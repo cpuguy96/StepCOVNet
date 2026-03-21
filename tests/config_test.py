@@ -995,6 +995,28 @@ class ArrowRunConfigTest(unittest.TestCase):
         self.assertNotIn("label_smooth", parts)
         self.assertNotIn("aux_interval", parts)
 
+    def test_get_experiment_name_parts_includes_warmup_epochs_when_set(self):
+        """get_experiment_name_parts includes warmup_epochs token when > 0."""
+        cfg = config.ArrowRunConfig(
+            epoch=5,
+            take_count=1,
+            model_output_dir="out",
+            warmup_epochs=2,
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertIn("warmup_epochs_2", parts)
+
+    def test_get_experiment_name_parts_omits_warmup_epochs_when_zero(self):
+        """get_experiment_name_parts omits warmup_epochs token when warmup_epochs == 0."""
+        cfg = config.ArrowRunConfig(
+            epoch=5,
+            take_count=1,
+            model_output_dir="out",
+            warmup_epochs=0,
+        )
+        parts = cfg.get_experiment_name_parts()
+        self.assertNotIn("warmup_epochs_0", parts)
+
     def test_chart_validity_rejection_defaults(self):
         """chart_validity_rejection_* default to None, 10.0, 50.0."""
         cfg = config.ArrowRunConfig(epoch=1, take_count=1, model_output_dir="out")
