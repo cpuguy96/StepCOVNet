@@ -309,6 +309,7 @@ def build_unet_wavenet_model(
     kernel_size: int = 3,
     dropout_rate: float = 0.0,
     model_name: str = "",
+    input_features: int | None = None,
 ) -> keras.Model:
     """Builds a U-Net style WaveNet for multi-scale rhythmic analysis.
 
@@ -328,6 +329,7 @@ def build_unet_wavenet_model(
         kernel_size: The size of the convolutional kernel.
         dropout_rate: The dropout rate for regularization.
         model_name: The name of the model.
+        input_features: Number of input feature channels per time step. Defaults to N_MELS.
 
     Returns:
         A Keras Model instance.
@@ -335,7 +337,8 @@ def build_unet_wavenet_model(
     if dilation_rates is None:
         dilation_rates = [1, 2, 4, 8]
 
-    inputs = keras.Input(shape=(None, constants.N_MELS), name="input_features")
+    n_features = input_features if input_features is not None else constants.N_MELS
+    inputs = keras.Input(shape=(None, n_features), name="input_features")
     x = inputs
 
     encoder_outputs = []

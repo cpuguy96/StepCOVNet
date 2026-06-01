@@ -98,6 +98,7 @@ def _get_onset_experiment_name(
     use_gaussian_target: bool,
     gaussian_sigma: float,
     model_params: config.OnsetModelConfig,
+    feature_source: config.FeatureSource = config.FeatureSource.MEL,
 ) -> str:
     """Generate a descriptive experiment name from hyperparameters.
 
@@ -118,6 +119,9 @@ def _get_onset_experiment_name(
         "ONSET-take_{N}-sigma_{X}-temporal_augment-spec_augment-unet_filters_{N}-..."
     """
     parts = ["ONSET"]
+
+    if feature_source == config.FeatureSource.MERT:
+        parts.append("mert")
 
     if take_count == -1:
         parts.append("take_all")
@@ -324,6 +328,9 @@ def run_train_from_config(
         should_apply_spec_augment=dataset_config.should_apply_spec_augment,
         use_gaussian_target=dataset_config.use_gaussian_target,
         gaussian_sigma=dataset_config.gaussian_sigma,
+        feature_source=dataset_config.feature_source,
+        mert_features_dir=dataset_config.mert_features_dir,
+        n_features=config.resolve_onset_input_features(dataset_config, model_config),
     )
 
     val_dataset = datasets.create_dataset(
@@ -332,6 +339,9 @@ def run_train_from_config(
         apply_temporal_augment=False,
         should_apply_spec_augment=False,
         use_gaussian_target=False,
+        feature_source=dataset_config.feature_source,
+        mert_features_dir=dataset_config.mert_features_dir,
+        n_features=config.resolve_onset_input_features(dataset_config, model_config),
     )
 
     experiment_name = _get_onset_experiment_name(
@@ -341,8 +351,10 @@ def run_train_from_config(
         use_gaussian_target=dataset_config.use_gaussian_target,
         gaussian_sigma=dataset_config.gaussian_sigma,
         model_params=model_config,
+        feature_source=dataset_config.feature_source,
     )
 
+    input_features = config.resolve_onset_input_features(dataset_config, model_config)
     model = models.build_unet_wavenet_model(
         model_name=run_config.model_name or experiment_name,
         initial_filters=model_config.initial_filters,
@@ -350,6 +362,7 @@ def run_train_from_config(
         dilation_rates=model_config.dilation_rates,
         kernel_size=model_config.kernel_size,
         dropout_rate=model_config.dropout_rate,
+        input_features=input_features,
     )
 
     if run_config.show_model_summary:

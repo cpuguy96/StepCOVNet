@@ -13,6 +13,8 @@ import json
 import os
 from typing import Any, get_args, get_origin, get_type_hints
 
+from stepcovnet import constants
+
 
 class IntervalEncoding(enum.StrEnum):
     """How to encode inter-step interval as model input.
@@ -25,6 +27,17 @@ class IntervalEncoding(enum.StrEnum):
     DEFAULT = "default"
     LOG = "log"
     MULTI = "multi"
+
+
+class FeatureSource(enum.StrEnum):
+    """Audio feature representation for onset model training and inference.
+
+    MEL: Librosa log-mel spectrogram (default).
+    MERT: Precomputed MERT hidden states loaded from ``.mert.npy`` files.
+    """
+
+    MEL = "mel"
+    MERT = "mert"
 
 
 class _DictSerializableMixin:
@@ -56,6 +69,9 @@ class OnsetDatasetConfig(_DictSerializableMixin):
         should_apply_spec_augment: Whether to apply spectrogram augmentation during training.
         use_gaussian_target: Whether to use Gaussian targets instead of binary targets.
         gaussian_sigma: Standard deviation for Gaussian target distribution.
+        feature_source: Feature representation (FeatureSource.MEL or FeatureSource.MERT).
+        mert_features_dir: Directory containing precomputed ``.mert.npy`` files when
+            feature_source is MERT. When empty, features are loaded beside each audio file.
     """
 
     data_dir: str
@@ -65,6 +81,30 @@ class OnsetDatasetConfig(_DictSerializableMixin):
     should_apply_spec_augment: bool = False
     use_gaussian_target: bool = False
     gaussian_sigma: float = 1.0
+    feature_source: FeatureSource = FeatureSource.MEL
+    mert_features_dir: str = ""
+
+    def __post_init__(self) -> None:
+        """Normalize feature_source from string to enum when loaded from dict/JSON."""
+        if isinstance(self.feature_source, str):
+            object.__setattr__(
+                self, "feature_source", FeatureSource(self.feature_source)
+            )
+
+    def as_dict(self) -> dict:
+        """Convert to dict for JSON; feature_source serialized as string."""
+        d = dataclasses.asdict(self)  # type: ignore[arg-type]
+        d["feature_source"] = self.feature_source.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> OnsetDatasetConfig:
+        """Create from dict; feature_source accepted as string or enum."""
+        kwargs = dict(data)
+        kwargs["feature_source"] = FeatureSource(
+            kwargs.get("feature_source", FeatureSource.MEL)
+        )
+        return cls(**kwargs)
 
 
 @dataclasses.dataclass
@@ -149,6 +189,8 @@ class OnsetModelConfig(_DictSerializableMixin):
         dilation_rates: List of dilation factors for convolutions within each level.
         kernel_size: Size of convolutional kernels.
         dropout_rate: Dropout rate for regularization.
+        input_features: Width of the input feature vector per time step. When None,
+            defaults to 128 for mel features or 1024 for MERT (see resolve_onset_input_features).
     """
 
     initial_filters: int = 16
@@ -156,6 +198,27 @@ class OnsetModelConfig(_DictSerializableMixin):
     dilation_rates: list[int] = dataclasses.field(default_factory=lambda: [1, 2, 4, 8])
     kernel_size: int = 3
     dropout_rate: float = 0.0
+    input_features: int | None = None
+
+
+def resolve_onset_input_features(
+    dataset_config: OnsetDatasetConfig,
+    model_config: OnsetModelConfig,
+) -> int:
+    """Resolve U-Net input feature width from dataset and model config.
+
+    Args:
+        dataset_config: Onset dataset configuration (feature source).
+        model_config: Onset model configuration (optional explicit input_features).
+
+    Returns:
+        Number of feature channels per time step for the onset model.
+    """
+    if model_config.input_features is not None:
+        return model_config.input_features
+    if dataset_config.feature_source == FeatureSource.MERT:
+        return constants.MERT_HIDDEN_SIZE
+    return constants.N_MELS
 
 
 class ArrowParamsBase(_DictSerializableMixin):

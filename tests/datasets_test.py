@@ -8,7 +8,7 @@ from unittest import mock
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config, constants, datasets
+from stepcovnet import config, constants, datasets, ssl_features
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
@@ -36,6 +36,44 @@ def _get_one_audio_chart_pair(data_dir):
 
 
 class DatasetsTest(unittest.TestCase):
+    def test_load_onset_features_mert(self):
+        features = np.random.randn(20, constants.MERT_HIDDEN_SIZE).astype(np.float32)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_path = os.path.join(tmpdir, "song.mp3")
+            pathlib.Path(audio_path).touch()
+            np.save(ssl_features.mert_npy_path(audio_path), features)
+            with mock.patch.object(datasets, "onset_frame_count", return_value=20):
+                loaded = datasets.load_onset_features(
+                    audio_path,
+                    config.FeatureSource.MERT,
+                )
+            np.testing.assert_allclose(loaded, features)
+
+    def test_load_onset_features_mert_aligns_to_mel_frame_count(self):
+        audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
+        self.assertIsNotNone(audio_path)
+        assert audio_path is not None
+        mel_steps = datasets.onset_frame_count(audio_path)
+        mert_steps = mel_steps - 1
+        features = np.random.randn(mert_steps, constants.MERT_HIDDEN_SIZE).astype(
+            np.float32
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = ssl_features.mert_npy_path(
+                audio_path,
+                features_dir=tmpdir,
+                data_root=TEST_DATA_DIR,
+            )
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            np.save(out_path, features)
+            loaded = datasets.load_onset_features(
+                audio_path,
+                config.FeatureSource.MERT,
+                mert_features_dir=tmpdir,
+                data_root=TEST_DATA_DIR,
+            )
+        self.assertEqual(loaded.shape, (mel_steps, constants.MERT_HIDDEN_SIZE))
+
     def test_create_dataset(self):
         ds = datasets.create_dataset(TEST_DATA_DIR)
         features, targets = _first_batch(ds)
@@ -851,7 +889,9 @@ class DatasetsTest(unittest.TestCase):
         spec = np.random.randn(constants.N_MELS, 100).astype(np.float32)
         labels = np.zeros((100, 1), dtype=np.float32)
         with mock.patch("numpy.random.uniform", return_value=1.1):
-            out_spec, out_labels = datasets._temporal_augment_scipy(spec, labels)
+            out_spec, out_labels = datasets._temporal_augment_scipy(
+                spec, labels, constants.N_MELS
+            )
         self.assertEqual(out_spec.shape, spec.shape)
         self.assertEqual(out_labels.shape, labels.shape)
 
@@ -859,7 +899,9 @@ class DatasetsTest(unittest.TestCase):
         spec = np.random.randn(constants.N_MELS, 100).astype(np.float32)
         labels = np.zeros((100, 1), dtype=np.float32)
         with mock.patch("numpy.random.uniform", return_value=0.9):
-            out_spec, out_labels = datasets._temporal_augment_scipy(spec, labels)
+            out_spec, out_labels = datasets._temporal_augment_scipy(
+                spec, labels, constants.N_MELS
+            )
         self.assertEqual(out_spec.shape, spec.shape)
         self.assertEqual(out_labels.shape, labels.shape)
 
@@ -876,7 +918,13 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsNotNone(chart_path)
         assert audio_path is not None and chart_path is not None
         features, target = datasets._load_and_preprocess_paths(
-            audio_path, chart_path, use_gaussian_target=False, gaussian_sigma=1.0
+            audio_path,
+            chart_path,
+            use_gaussian_target=False,
+            gaussian_sigma=1.0,
+            feature_source=config.FeatureSource.MEL,
+            mert_features_dir="",
+            data_root="",
         )
         self.assertEqual(features.ndim, 2)
         self.assertEqual(features.shape[1], constants.N_MELS)
@@ -890,7 +938,13 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsNotNone(chart_path)
         assert audio_path is not None and chart_path is not None
         features, target = datasets._load_and_preprocess_paths(
-            audio_path, chart_path, use_gaussian_target=True, gaussian_sigma=1.5
+            audio_path,
+            chart_path,
+            use_gaussian_target=True,
+            gaussian_sigma=1.5,
+            feature_source=config.FeatureSource.MEL,
+            mert_features_dir="",
+            data_root="",
         )
         self.assertEqual(features.shape[1], constants.N_MELS)
         self.assertGreater(int(np.sum(target > 0)), 0)
@@ -898,7 +952,9 @@ class DatasetsTest(unittest.TestCase):
     def test_augment_features_numpy_no_aug(self):
         features = np.random.randn(200, constants.N_MELS).astype(np.float32)
         target = np.zeros((200, 1), dtype=np.float32)
-        out_f, out_t = datasets._augment_features_numpy(features, target, False, False)
+        out_f, out_t = datasets._augment_features_numpy(
+            features, target, False, False, constants.N_MELS
+        )
         self.assertEqual(out_f.shape, features.shape)
         self.assertEqual(out_t.shape, target.shape)
 
@@ -907,7 +963,7 @@ class DatasetsTest(unittest.TestCase):
         target = np.zeros((200, 1), dtype=np.float32)
         with mock.patch("numpy.random.uniform", return_value=1.0):
             out_f, out_t = datasets._augment_features_numpy(
-                features, target, True, True
+                features, target, True, True, constants.N_MELS
             )
         self.assertEqual(out_f.shape, features.shape)
         self.assertEqual(out_t.shape, target.shape)
@@ -924,6 +980,9 @@ class DatasetsTest(unittest.TestCase):
             cp,  # type: ignore[arg-type]
             False,
             1.0,
+            config.FeatureSource.MEL,
+            "",
+            "",
         )
         self.assertEqual(features.shape[1], constants.N_MELS)
         self.assertEqual(target.shape[1], 1)
@@ -933,7 +992,9 @@ class DatasetsTest(unittest.TestCase):
         target = np.zeros((100, 1), dtype=np.float32)
         f_t = tf.constant(features)
         t_t = tf.constant(target)
-        out_f, out_t = datasets._augment_py_callback(f_t, t_t, False, False)  # type: ignore[arg-type]
+        out_f, out_t = datasets._augment_py_callback(
+            f_t, t_t, False, False, constants.N_MELS
+        )  # type: ignore[arg-type]
         self.assertEqual(out_f.shape, features.shape)
         self.assertEqual(out_t.shape, target.shape)
 
@@ -1055,6 +1116,10 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(chart_path),  # type: ignore[arg-type]
             use_gaussian_target=False,
             gaussian_sigma=1.0,
+            feature_source=config.FeatureSource.MEL,
+            mert_features_dir="",
+            data_root=TEST_DATA_DIR,
+            n_features=constants.N_MELS,
         )
         self.assertEqual(features.shape[1], constants.N_MELS)
         self.assertEqual(target.shape[1], 1)
@@ -1068,6 +1133,7 @@ class DatasetsTest(unittest.TestCase):
             tf.constant(target),  # type: ignore[arg-type]
             apply_temporal_augment=False,
             should_apply_spec_augment=False,
+            n_features=constants.N_MELS,
         )
         self.assertEqual(aug_f.shape[1], constants.N_MELS)
         self.assertEqual(aug_t.shape[1], 1)

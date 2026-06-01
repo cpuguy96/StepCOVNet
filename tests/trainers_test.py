@@ -744,6 +744,18 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("unet_dropout_0_1", name)
         self.assertIn("unet_dilations_1_2_4", name)
 
+    def test_get_onset_experiment_name_includes_mert_feature_source(self):
+        name = trainers._get_onset_experiment_name(
+            take_count=1,
+            apply_temporal_augment=False,
+            should_apply_spec_augment=False,
+            use_gaussian_target=False,
+            gaussian_sigma=1.0,
+            model_params=config.OnsetModelConfig(),
+            feature_source=config.FeatureSource.MERT,
+        )
+        self.assertIn("mert", name)
+
     def test_get_onset_experiment_name_handles_dilation_rate_edge_cases(self):
         class _DummyOnsetModelParams:
             def __init__(self, dilation_rates):

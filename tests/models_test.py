@@ -3,7 +3,7 @@ import unittest
 import keras
 import numpy as np
 
-from stepcovnet import config, models
+from stepcovnet import config, constants, models
 
 
 class ModelTest(unittest.TestCase):
@@ -35,6 +35,17 @@ class ModelTest(unittest.TestCase):
         dummy_input = np.random.random((1, 100, 1)).astype(np.float32)
         prediction = model_instance.predict(dummy_input)
         self.assertEqual(prediction.shape, (1, 100, 256))
+
+    def test_build_unet_wavenet_model_custom_input_features(self):
+        model = models.build_unet_wavenet_model(
+            input_features=constants.MERT_HIDDEN_SIZE
+        )
+        self.assertEqual(model.input_shape, (None, None, constants.MERT_HIDDEN_SIZE))
+        dummy_input = np.random.random((1, 100, constants.MERT_HIDDEN_SIZE)).astype(
+            np.float32
+        )
+        prediction = model.predict(dummy_input)
+        self.assertEqual(prediction.shape, (1, 100, 1))
 
     def test_build_unet_wavenet_model_default_name(self):
         """Model has default name stepcovnet_ONSET when model_name is empty."""

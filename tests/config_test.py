@@ -58,6 +58,18 @@ class OnsetDatasetConfigTest(unittest.TestCase):
         self.assertTrue(cfg.apply_temporal_augment)
         self.assertFalse(cfg.should_apply_spec_augment)  # default
 
+    def test_feature_source_mert_from_dict(self):
+        data = {
+            "data_dir": "data/train",
+            "val_data_dir": "data/val",
+            "feature_source": "mert",
+            "mert_features_dir": "data/mert",
+        }
+        cfg = config.OnsetDatasetConfig.from_dict(data)
+        self.assertEqual(cfg.feature_source, config.FeatureSource.MERT)
+        self.assertEqual(cfg.mert_features_dir, "data/mert")
+        self.assertEqual(cfg.as_dict()["feature_source"], "mert")
+
 
 class ArrowDatasetConfigTest(unittest.TestCase):
     def test_create_with_required_fields(self):

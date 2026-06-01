@@ -48,6 +48,8 @@ dev = [
 ]
 gpu = ["tensorflow[and-cuda]"]
 gpu-dev = ["stepcovnet[dev,gpu]"]
+ssl = ["torch", "transformers", "accelerate"]
+ssl-dev = ["stepcovnet[dev,ssl]"]
 
 [project.urls]
 Homepage = "https://github.com/cpuguy96/StepCOVNet"

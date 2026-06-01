@@ -5,8 +5,6 @@ process them into spectrograms and target vectors, and create a TensorFlow
 dataset for training.
 """
 
-import os
-import pathlib
 from typing import Any, cast
 
 import librosa
@@ -14,9 +12,9 @@ import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
-from stepcovnet import config, constants
+from stepcovnet import config, constants, pairing, ssl_features
 
-HOP_COEFF = 0.01  # 100ms per frame
+HOP_COEFF = constants.HOP_COEFF
 
 _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge": 4}
 _N_MELS = constants.N_MELS
@@ -72,23 +70,19 @@ def _base4_to_int(base4_string: str) -> int:
 
 def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
     """Find paired audio files and StepMania chart files."""
-    pairs = []
-    for root, _, files in os.walk(data_dir):
-        audio_files = [f for f in files if f.endswith((".mp3", ".ogg", ".wav"))]
-        chart_files = [f for f in files if f.endswith(".txt")]
+    return pairing.list_audio_chart_pairs(data_dir)
 
-        # Pair files with same stem (e.g., 'song.mp3' and 'song.sm')
-        for audio_file in audio_files:
-            stem = pathlib.Path(audio_file).stem
-            matching_charts = [f for f in chart_files if f.startswith(stem)]
-            if matching_charts:
-                pairs.append(
-                    (
-                        os.path.join(root, audio_file),
-                        os.path.join(root, matching_charts[0]),
-                    )
-                )
-    return pairs
+
+def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
+    """Return paired audio and chart file paths found under a data directory.
+
+    Args:
+        data_dir: Root directory to search recursively.
+
+    Returns:
+        List of ``(audio_path, chart_path)`` tuples with matching filename stems.
+    """
+    return pairing.list_audio_chart_pairs(data_dir)
 
 
 def _parse_step_chart_impl(
@@ -349,8 +343,53 @@ def audio_to_spectrogram(audio_path: str) -> np.ndarray:
     return librosa.power_to_db(mel_spectrogram, ref=np.max)
 
 
+def onset_frame_count(audio_path: str) -> int:
+    """Return the onset model time-step count for an audio file (mel STFT grid).
+
+    Args:
+        audio_path: Path to the audio file.
+
+    Returns:
+        Number of time steps along the onset detection grid for this file.
+    """
+    return int(audio_to_spectrogram(audio_path).shape[1])
+
+
+def load_onset_features(
+    audio_path: str,
+    feature_source: config.FeatureSource,
+    mert_features_dir: str = "",
+    data_root: str = "",
+) -> np.ndarray:
+    """Load onset model input features for one audio file.
+
+    Args:
+        audio_path: Path to the audio file.
+        feature_source: FeatureSource.MEL or FeatureSource.MERT.
+        mert_features_dir: Directory of precomputed ``.mert.npy`` files (MERT only).
+        data_root: Training data root for nested MERT paths (MERT only).
+
+    Returns:
+        Feature array with shape ``(time_steps, feature_dim)``, float32.
+    """
+    if feature_source == config.FeatureSource.MERT:
+        features = ssl_features.load_mert_features(
+            audio_path,
+            mert_features_dir,
+            data_root,
+        )
+        n_frames = onset_frame_count(audio_path)
+        if features.shape[0] != n_frames:
+            features = ssl_features.resample_features_to_frame_count(features, n_frames)
+        return features
+    spec = audio_to_spectrogram(audio_path)
+    return np.transpose(spec).astype(np.float32)
+
+
 def _temporal_augment_scipy(
-    spec: np.ndarray, labels_and_features: np.ndarray
+    spec: np.ndarray,
+    labels_and_features: np.ndarray,
+    n_features: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Random time warping augmentation for spec, labels, and extra features."""
     spec = spec.numpy() if isinstance(spec, tf.Tensor) else spec  # type: ignore
@@ -366,11 +405,11 @@ def _temporal_augment_scipy(
     warp_factor = np.random.uniform(0.85, 1.15)
     new_length = int(original_length * warp_factor)
 
-    spec_resized = np.zeros((_N_MELS, new_length), dtype=spec.dtype)
+    spec_resized = np.zeros((n_features, new_length), dtype=spec.dtype)
     original_time = np.arange(original_length)
     warped_time = np.linspace(0, original_length - 1, new_length)
 
-    for bin_idx in range(_N_MELS):
+    for bin_idx in range(n_features):
         interp_func = interpolate.interp1d(
             original_time,
             spec[bin_idx, :],
@@ -491,17 +530,24 @@ def _load_and_preprocess_paths(
     chart_path: str,
     use_gaussian_target: bool,
     gaussian_sigma: float,
+    feature_source: config.FeatureSource,
+    mert_features_dir: str,
+    data_root: str,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load audio and chart, build features and target (pure Python, no TF)."""
-    spec = audio_to_spectrogram(audio_path)
-    spec_length = spec.shape[1]
+    features = load_onset_features(
+        audio_path,
+        feature_source,
+        mert_features_dir,
+        data_root,
+    )
+    spec_length = features.shape[0]
     times, cols = _parse_step_chart(chart_path, binary_timings=True)
     target = (
         _create_target_gaussian(times, cols, spec_length, gaussian_sigma)
         if use_gaussian_target
         else _create_target(times, cols, spec_length)
     )
-    features = np.transpose(spec)
     return features.astype(np.float32), target.astype(np.float32)
 
 
@@ -510,12 +556,21 @@ def _load_and_preprocess_py_callback(
     chart_path_t: tf.Tensor,
     use_gaussian_target: bool,
     gaussian_sigma: float,
+    feature_source: config.FeatureSource,
+    mert_features_dir: str,
+    data_root: str,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decode paths and delegate to _load_and_preprocess_paths (for tf.py_function)."""
     audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
     chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
     return _load_and_preprocess_paths(
-        audio_path, chart_path, use_gaussian_target, gaussian_sigma
+        audio_path,
+        chart_path,
+        use_gaussian_target,
+        gaussian_sigma,
+        feature_source,
+        mert_features_dir,
+        data_root,
     )
 
 
@@ -524,16 +579,26 @@ def _load_and_preprocess_tf_map(
     chart_path_t: tf.Tensor,
     use_gaussian_target: bool,
     gaussian_sigma: float,
+    feature_source: config.FeatureSource,
+    mert_features_dir: str,
+    data_root: str,
+    n_features: int,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Map one (audio_path, chart_path) to (features, target) tensors."""
     features, target = tf.py_function(  # type: ignore[misc]
         lambda ap, cp: _load_and_preprocess_py_callback(
-            ap, cp, use_gaussian_target, gaussian_sigma
+            ap,
+            cp,
+            use_gaussian_target,
+            gaussian_sigma,
+            feature_source,
+            mert_features_dir,
+            data_root,
         ),
         [audio_path_t, chart_path_t],
         (tf.float32, tf.float32),
     )
-    features.set_shape([None, _N_MELS])
+    features.set_shape([None, n_features])
     target.set_shape([None, _N_TARGET])
     return features, target
 
@@ -543,15 +608,18 @@ def _augment_features_numpy(
     target: np.ndarray,
     apply_temporal_augment: bool,
     should_apply_spec_augment: bool,
+    n_features: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Apply optional temporal/spec augmentation and normalize (pure Python)."""
-    spec_py = np.transpose(features[:, :_N_MELS])
+    spec_py = np.transpose(features[:, :n_features])
     combined_labels = target
     if apply_temporal_augment:
-        spec_py, combined_labels = _temporal_augment_scipy(spec_py, combined_labels)
+        spec_py, combined_labels = _temporal_augment_scipy(
+            spec_py, combined_labels, n_features
+        )
     spec_py = normalize_onset_spectrogram(spec_py.T).T
     if should_apply_spec_augment:
-        spec_py = _apply_spec_augment(spec_py, F=int(0.2 * _N_MELS))
+        spec_py = _apply_spec_augment(spec_py, F=int(0.2 * n_features))
     final_target = combined_labels[:, :_N_TARGET]
     final_features = np.transpose(spec_py)
     return final_features.astype(np.float32), final_target.astype(np.float32)
@@ -562,11 +630,12 @@ def _augment_py_callback(
     target_t: tf.Tensor,
     temp_aug: bool,
     spec_aug: bool,
+    n_features: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Convert tensors to numpy and delegate to _augment_features_numpy."""
     features = features_t.numpy()  # type: ignore[union-attr]
     target = target_t.numpy()  # type: ignore[union-attr]
-    return _augment_features_numpy(features, target, temp_aug, spec_aug)
+    return _augment_features_numpy(features, target, temp_aug, spec_aug, n_features)
 
 
 def _apply_augmentations_tf_map(
@@ -574,14 +643,17 @@ def _apply_augmentations_tf_map(
     target: tf.Tensor,
     apply_temporal_augment: bool,
     should_apply_spec_augment: bool,
+    n_features: int,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Map (features, target) to augmented (features, target) tensors."""
     aug_features, aug_target = tf.py_function(  # type: ignore[misc]
-        _augment_py_callback,
-        [features, target, apply_temporal_augment, should_apply_spec_augment],
+        lambda f, t: _augment_py_callback(
+            f, t, apply_temporal_augment, should_apply_spec_augment, n_features
+        ),
+        [features, target],
         (tf.float32, tf.float32),
     )
-    aug_features.set_shape([None, _N_MELS])
+    aug_features.set_shape([None, n_features])
     aug_target.set_shape([None, _N_TARGET])
     return aug_features, aug_target
 
@@ -1021,12 +1093,21 @@ def create_dataset(
     should_apply_spec_augment: bool = False,
     use_gaussian_target: bool = False,
     gaussian_sigma: float = 1.0,
+    feature_source: config.FeatureSource = config.FeatureSource.MEL,
+    mert_features_dir: str = "",
+    n_features: int | None = None,
 ) -> tf.data.Dataset:
     """
     Creates a TensorFlow dataset pipeline with a proper caching strategy.
     Deterministic preprocessing is cached, while random augmentations are applied
     on the fly in each epoch.
     """
+    if n_features is None:
+        if feature_source == config.FeatureSource.MERT:
+            n_features = constants.MERT_HIDDEN_SIZE
+        else:
+            n_features = _N_MELS
+
     pairs = _load_and_pair_files(data_dir)
     if not pairs:
         raise ValueError("No audio-chart pairs found.")
@@ -1034,7 +1115,14 @@ def create_dataset(
     ds = tf.data.Dataset.from_tensor_slices(pairs)
     ds = ds.map(
         lambda p: _load_and_preprocess_tf_map(
-            p[0], p[1], use_gaussian_target, gaussian_sigma
+            p[0],
+            p[1],
+            use_gaussian_target,
+            gaussian_sigma,
+            feature_source,
+            mert_features_dir,
+            data_dir,
+            n_features,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
@@ -1045,6 +1133,7 @@ def create_dataset(
             target,
             apply_temporal_augment,
             should_apply_spec_augment,
+            n_features,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
@@ -1053,8 +1142,8 @@ def create_dataset(
         ds = ds.padded_batch(
             batch_size,
             padded_shapes=(
-                ((None, _N_MELS)),  # Spectrogram (mel bands x time)
-                (None, 1),  # Target (time x columns)
+                ((None, n_features)),
+                (None, 1),
             ),
             padding_values=(
                 (0.0),
