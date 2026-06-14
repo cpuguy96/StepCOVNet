@@ -135,4 +135,25 @@ dmypy.json
 
 **/*data/
 .vscode/
-.cursor/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**/
+!.cursor/rules/
+!.cursor/rules/**/
+
+# Local MERT / WSL experimentation
+e2e_mert/
+experiments/
+venv-wsl/
+models_wsl/
+docs/onset_events_plan.md
+configs/compare_*.json
+configs/local_*.json
+configs/onset_mert_baseline.json
+scripts/benchmark_mert_overfit.py
+scripts/check_wsl_tf_gpu.py
+scripts/compare_mel_mert_onset.py
+scripts/probe_onset_event_sample_rate.py
+scripts/wsl_*.sh
+src/stepcovnet/wsl_gpu.py
+tests/wsl_gpu_test.py

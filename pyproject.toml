@@ -68,7 +68,7 @@ namespaces = false
 # Pytest Configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-v --tb=short --cov=stepcovnet --cov=scripts"
+addopts = "-v --tb=short --import-mode=importlib --cov=stepcovnet --cov=scripts"
 testpaths = ["tests"]
 python_files = ["*_test.py"]
 filterwarnings = [
