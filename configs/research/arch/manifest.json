@@ -1,0 +1,18 @@
+{
+  "description": "Architecture smoke suite: max 20 train songs, 50 epochs, Gaussian targets, post-hoc event-F1 export.",
+  "baseline_micro_f1": 0.633,
+  "baseline_ref": "EXP-20260609-03",
+  "session_best_micro_f1": 0.683,
+  "session_best_ref": "EXP-20260609-12",
+  "configs": [
+    "configs/research/arch/unet_baseline_10train_50ep.json",
+    "configs/research/arch/tcn_10train_50ep.json",
+    "configs/research/arch/bilstm_10train_50ep.json",
+    "configs/research/arch/transformer_10train_50ep.json",
+    "configs/research/arch/unet_depth1_wide_10train_50ep.json",
+    "configs/research/arch/unet_dilation_long_10train_50ep.json",
+    "configs/research/arch/unet_kernel5_10train_50ep.json",
+    "configs/research/arch/gaussian_sigma05_10train_50ep.json",
+    "configs/research/arch/tcn_20train_50ep.json"
+  ]
+}

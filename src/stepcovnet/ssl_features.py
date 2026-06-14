@@ -20,6 +20,7 @@ DEFAULT_MERT_MODEL = "m-a-p/MERT-v1-330M"
 DEFAULT_MERT_LAYER = 6
 MERT_FILE_SUFFIX = ".mert.npy"
 MERT_CHUNK_SECONDS = 30.0
+MIN_MERT_CHUNK_SAMPLES = 400
 
 
 def mert_npy_path(
@@ -281,10 +282,12 @@ def extract_mert_features_from_audio(
         waveform = waveform / peak
 
     model, processor = _load_mert_model(model_name, device)
-    chunk_samples = max(1, int(round(chunk_seconds * MERT_SAMPLE_RATE)))
+    chunk_samples = max(MIN_MERT_CHUNK_SAMPLES, int(round(chunk_seconds * MERT_SAMPLE_RATE)))
     chunks: list[np.ndarray] = []
     for start in range(0, waveform.size, chunk_samples):
         chunk = waveform[start : start + chunk_samples]
+        if 0 < chunk.size < MIN_MERT_CHUNK_SAMPLES:
+            chunk = np.pad(chunk, (0, MIN_MERT_CHUNK_SAMPLES - chunk.size))
         chunks.append(
             _mert_hidden_states_for_chunk(
                 chunk,

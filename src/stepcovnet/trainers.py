@@ -1,14 +1,26 @@
 """Launches the main training loop to train a new StepCovNet model."""
 
 import datetime
+import json
 import logging
 import math
 import os
+import pathlib
 
 import keras
 import tensorflow as tf
 
-from stepcovnet import config, datasets, losses, metrics, models
+from stepcovnet import (
+    config,
+    datasets,
+    dense_overfit_eval,
+    losses,
+    metrics,
+    models,
+    reproducibility,
+)
+
+ONSET_CHECKPOINT_MONITOR = "val_onset_f1_score"
 
 
 def _get_tb_callback(root_dir: str, callback_name: str):
@@ -62,7 +74,11 @@ def _get_ckpt_callback(
 
 
 def _get_callbacks(
-    root_dir: str, monitor_metric: str, monitor_mode: str, experiment_name: str = ""
+    root_dir: str,
+    monitor_metric: str,
+    monitor_mode: str,
+    experiment_name: str = "",
+    early_stopping_patience: int = 0,
 ) -> tuple[list[keras.callbacks.Callback], str]:
     """Get training callbacks and return the callback name.
 
@@ -75,6 +91,7 @@ def _get_callbacks(
         monitor_metric: Metric name to monitor for checkpointing.
         monitor_mode: Mode for monitoring ('min' or 'max').
         experiment_name: Optional experiment name to append to the callback name.
+        early_stopping_patience: Epochs without improvement before stopping; 0 disables.
 
     Returns:
         Tuple containing:
@@ -85,10 +102,21 @@ def _get_callbacks(
     callback_name = now.strftime("%Y%m%d-%H%M%S")
     if experiment_name:
         callback_name = callback_name + "-" + experiment_name
-    return [
+    training_callbacks = [
         _get_tb_callback(root_dir, callback_name),
         _get_ckpt_callback(root_dir, callback_name, monitor_metric, monitor_mode),
-    ], callback_name
+    ]
+    if early_stopping_patience > 0:
+        training_callbacks.append(
+            keras.callbacks.EarlyStopping(
+                monitor=monitor_metric,
+                mode=monitor_mode,
+                patience=early_stopping_patience,
+                restore_best_weights=True,
+                verbose=1,
+            )
+        )
+    return training_callbacks, callback_name
 
 
 def _get_onset_experiment_name(
@@ -122,6 +150,8 @@ def _get_onset_experiment_name(
 
     if feature_source == config.FeatureSource.MERT:
         parts.append("mert")
+    elif feature_source == config.FeatureSource.WAVEFORM:
+        parts.append("waveform")
 
     if take_count == -1:
         parts.append("take_all")
@@ -138,29 +168,44 @@ def _get_onset_experiment_name(
     if should_apply_spec_augment:
         parts.append("spec_augment")
 
+    arch = model_params.onset_architecture
+    parts.append(arch.value)
+
     initial_filters = model_params.initial_filters
     depth = model_params.depth
     kernel_size = model_params.kernel_size
     dropout_rate = model_params.dropout_rate
     dilation_rates = model_params.dilation_rates
 
-    parts.append(f"unet_filters_{initial_filters}")
-    parts.append(f"unet_depth_{depth}")
-    parts.append(f"unet_kernel_size_{kernel_size}")
-    parts.append(f"unet_dropout_{str(dropout_rate).replace('.', '_')}")
+    parts.append(f"filters_{initial_filters}")
+    parts.append(f"dropout_{str(dropout_rate).replace('.', '_')}")
 
-    # Make dilation rates robust to missing or non-iterable values.
-    # When using a dict without 'dilation_rates', we want the literal
-    # 'N_A' instead of joining over characters of the default string.
-    if dilation_rates is None:
-        dilation_str = "N_A"
-    elif isinstance(dilation_rates, list | tuple):
-        dilation_str = "_".join(map(str, dilation_rates))
+    if arch == config.OnsetArchitecture.BILSTM:
+        parts.append(f"bilstm_depth_{depth}")
+        parts.append(f"bilstm_units_{model_params.recurrent_units}")
+    elif arch == config.OnsetArchitecture.TRANSFORMER:
+        parts.append(f"tfm_layers_{model_params.transformer_layers}")
+        parts.append(f"tfm_heads_{model_params.transformer_heads}")
+    elif arch == config.OnsetArchitecture.TCN:
+        parts.append(f"tcn_blocks_{model_params.tcn_blocks}")
+        parts.append(f"kernel_{kernel_size}")
+        if dilation_rates is None:
+            dilation_str = "N_A"
+        elif isinstance(dilation_rates, list | tuple):
+            dilation_str = "_".join(map(str, dilation_rates))
+        else:
+            dilation_str = str(dilation_rates)
+        parts.append(f"dilations_{dilation_str}")
     else:
-        # Fall back to simple string conversion for any other type.
-        dilation_str = str(dilation_rates)
-
-    parts.append(f"unet_dilations_{dilation_str}")
+        parts.append(f"depth_{depth}")
+        parts.append(f"kernel_{kernel_size}")
+        if dilation_rates is None:
+            dilation_str = "N_A"
+        elif isinstance(dilation_rates, list | tuple):
+            dilation_str = "_".join(map(str, dilation_rates))
+        else:
+            dilation_str = str(dilation_rates)
+        parts.append(f"dilations_{dilation_str}")
 
     return "-".join(parts)
 
@@ -191,17 +236,166 @@ def _get_arrow_experiment_name(
     return "-".join(parts)
 
 
-def _write_model(model: keras.Model, model_output_dir: str):
-    """Saves the trained Keras model to the specified directory.
+def _list_monitored_checkpoints(
+    callback_root_dir: str,
+    monitor_metric: str,
+) -> list[str]:
+    """Return all monitored checkpoint paths under a callback root, sorted by path."""
+    models_root = os.path.join(callback_root_dir, "models")
+    if not os.path.isdir(models_root):
+        return []
+    prefix = f"{monitor_metric.upper()}-"
+    paths: list[str] = []
+    for root, _dirs, files in os.walk(models_root):
+        for name in files:
+            if not name.startswith(prefix) or not name.endswith(".keras"):
+                continue
+            value_text = name[len(prefix) : -len(".keras")]
+            try:
+                float(value_text)
+            except ValueError:
+                continue
+            paths.append(os.path.join(root, name))
+    return sorted(paths)
 
-    Args:
-        model: The trained Keras model instance.
-        model_output_dir: Directory path where the model file will be saved.
+
+def _monitored_checkpoint_value(path: str, monitor_metric: str) -> float:
+    """Parse the monitored metric value encoded in a checkpoint filename."""
+    prefix = f"{monitor_metric.upper()}-"
+    name = os.path.basename(path)
+    return float(name[len(prefix) : -len(".keras")])
+
+
+def _latest_monitored_checkpoint(
+    callback_root_dir: str,
+    monitor_metric: str,
+) -> str | None:
+    """Return the checkpoint with the best monitored metric under a callback root."""
+    paths = _list_monitored_checkpoints(callback_root_dir, monitor_metric)
+    if not paths:
+        return None
+    return max(
+        paths,
+        key=lambda path: _monitored_checkpoint_value(path, monitor_metric),
+    )
+
+
+def _write_model(
+    model: keras.Model,
+    model_output_dir: str,
+    *,
+    callback_root_dir: str = "",
+    monitor_metric: str = ONSET_CHECKPOINT_MONITOR,
+):
+    """Save the trained Keras model to the specified directory.
+
+    When ``callback_root_dir`` contains a monitored checkpoint, that model is
+    saved instead of the final-epoch weights.
     """
     filepath = os.path.join(model_output_dir, model.name + ".keras")
-    logging.info(f"Saving trained model to {filepath}")
     os.makedirs(model_output_dir, exist_ok=True)
+    best_path = _latest_monitored_checkpoint(callback_root_dir, monitor_metric)
+    if best_path is not None:
+        logging.info("Saving best checkpoint from %s to %s", best_path, filepath)
+        best_model = keras.models.load_model(best_path, compile=False)
+        best_model.save(filepath=filepath)
+        return
+    logging.info("Saving trained model to %s", filepath)
     model.save(filepath=filepath)
+
+
+POST_HOC_EVENT_F1_REPORT_NAME = "event_f1_sweep.json"
+
+
+def _select_best_event_f1_checkpoint(
+    dataset_config: config.OnsetDatasetConfig,
+    model_config: config.OnsetModelConfig,
+    run_config: config.RunConfig,
+    *,
+    monitor_metric: str = ONSET_CHECKPOINT_MONITOR,
+) -> dict | None:
+    """Sweep every saved checkpoint and threshold for best validation event F1.
+
+    Returns a report dict describing the best (checkpoint, threshold) pair and the
+    per-checkpoint sweeps, or None when no monitored checkpoints exist.
+    """
+    checkpoint_paths = _list_monitored_checkpoints(
+        run_config.callback_root_dir,
+        monitor_metric,
+    )
+    if not checkpoint_paths:
+        return None
+    thresholds = tuple(run_config.post_hoc_event_f1_thresholds)
+    per_checkpoint: list[dict] = []
+    best_entry: dict | None = None
+    for checkpoint_path in checkpoint_paths:
+        checkpoint_model = keras.models.load_model(checkpoint_path, compile=False)
+        sweep = dense_overfit_eval.sweep_thresholds_dense_val_event_f1(
+            checkpoint_model,
+            dataset_config,
+            model_config,
+            thresholds=thresholds,
+            min_onset_distance_ms=run_config.min_onset_distance_ms,
+            tolerance_sec=run_config.tolerance_sec,
+        )
+        entry = {"checkpoint": checkpoint_path, **sweep}
+        per_checkpoint.append(entry)
+        if (
+            best_entry is None
+            or entry["best_micro_event_f1"] > best_entry["best_micro_event_f1"]
+        ):
+            best_entry = entry
+    assert best_entry is not None
+    return {
+        "best_checkpoint": best_entry["checkpoint"],
+        "best_threshold": best_entry["best_threshold"],
+        "best_micro_event_f1": best_entry["best_micro_event_f1"],
+        "monitor_metric": monitor_metric,
+        "per_checkpoint": per_checkpoint,
+    }
+
+
+def _export_best_event_f1_checkpoint(
+    model: keras.Model,
+    dataset_config: config.OnsetDatasetConfig,
+    model_config: config.OnsetModelConfig,
+    run_config: config.RunConfig,
+    *,
+    monitor_metric: str = ONSET_CHECKPOINT_MONITOR,
+) -> dict | None:
+    """Export the event-F1-optimal checkpoint and write its sweep report.
+
+    Overrides the frame-F1 model file under ``model_output_dir`` with the
+    checkpoint that maximizes validation peak-pick event F1. Returns the report
+    dict (also written to ``event_f1_sweep.json``), or None when no checkpoints
+    are available to sweep.
+    """
+    report = _select_best_event_f1_checkpoint(
+        dataset_config,
+        model_config,
+        run_config,
+        monitor_metric=monitor_metric,
+    )
+    if report is None:
+        return None
+    os.makedirs(run_config.model_output_dir, exist_ok=True)
+    filepath = os.path.join(run_config.model_output_dir, model.name + ".keras")
+    best_model = keras.models.load_model(report["best_checkpoint"], compile=False)
+    best_model.save(filepath=filepath)
+    report_path = os.path.join(
+        run_config.model_output_dir,
+        POST_HOC_EVENT_F1_REPORT_NAME,
+    )
+    with open(report_path, "w", encoding="utf-8") as report_file:
+        json.dump(report, report_file, indent=2)
+    logging.info(
+        "Post-hoc event-F1 export: %s @ thr=%s (micro F1 %.5f) -> %s",
+        report["best_checkpoint"],
+        report["best_threshold"],
+        report["best_micro_event_f1"],
+        filepath,
+    )
+    return report
 
 
 def _save_config(
@@ -259,6 +453,7 @@ def _build_experiment_callbacks(
         monitor_metric=monitor_metric,
         monitor_mode=monitor_mode,
         experiment_name=experiment_name,
+        early_stopping_patience=getattr(run_config, "early_stopping_patience", 0),
     )
     _save_config(experiment_config, run_config.callback_root_dir, callback_name)
     return training_callbacks
@@ -270,6 +465,7 @@ def _fit_and_save_model(
     val_dataset,
     run_config: config.RunConfig | config.ArrowRunConfig,
     callbacks: list[keras.callbacks.Callback],
+    monitor_metric: str,
 ) -> keras.callbacks.History:
     """Run model.fit with common settings, then persist the trained model.
 
@@ -279,13 +475,11 @@ def _fit_and_save_model(
         val_dataset: Validation dataset.
         run_config: Training run configuration (onset or arrow).
         callbacks: List of callbacks to pass to model.fit.
+        monitor_metric: Validation metric used for best-checkpoint selection.
 
     Returns:
         Training history object from model.fit.
     """
-    if run_config.seed is not None:
-        tf.random.set_seed(run_config.seed)
-
     val_data = val_dataset.take(run_config.val_take_count)
     train_history = model.fit(
         train_dataset.take(run_config.take_count),
@@ -295,9 +489,40 @@ def _fit_and_save_model(
         verbose=run_config.fit_verbose,  # type: ignore[arg-type]
     )
 
-    _write_model(model, run_config.model_output_dir)
+    _write_model(
+        model,
+        run_config.model_output_dir,
+        callback_root_dir=run_config.callback_root_dir,
+        monitor_metric=monitor_metric,
+    )
 
     return train_history
+
+
+def build_onset_dense_compile_metrics(
+    run_config: config.RunConfig,
+) -> list[keras.metrics.Metric]:
+    """Return Keras metrics compiled for dense onset training."""
+    return [
+        keras.metrics.BinaryAccuracy(name="acc"),
+        keras.metrics.Precision(name="prec"),
+        keras.metrics.Recall(name="rec"),
+        keras.metrics.AUC(curve="PR", name="pr_auc"),
+        keras.metrics.AUC(name="auc"),
+        metrics.OnsetF1Metric(tolerance=2, threshold=0.5),
+    ]
+
+
+def _build_dense_val_event_f1_callback(
+    val_dataset: tf.data.Dataset,
+    run_config: config.RunConfig,
+) -> dense_overfit_eval.DenseValEventF1Callback:
+    return dense_overfit_eval.DenseValEventF1Callback(
+        val_dataset,
+        confidence_threshold=run_config.confidence_threshold,
+        tolerance_sec=run_config.tolerance_sec,
+        min_onset_distance_ms=run_config.min_onset_distance_ms,
+    )
 
 
 def run_train_from_config(
@@ -321,6 +546,31 @@ def run_train_from_config(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
+    if run_config.seed is not None:
+        reproducibility.apply_training_seed(run_config.seed)
+
+    if dataset_config.max_train_songs != -1:
+        all_train_pairs = datasets.select_song_pairs(
+            datasets.list_audio_chart_pairs(dataset_config.data_dir),
+            max_songs=-1,
+        )
+        selected_train_pairs = datasets.select_song_pairs(
+            all_train_pairs,
+            max_songs=dataset_config.max_train_songs,
+            seed=run_config.seed,
+        )
+        selected_stems = sorted(
+            pathlib.Path(audio_path).stem for audio_path, _ in selected_train_pairs
+        )
+        logging.info(
+            "Training on %d of %d songs (max_train_songs=%d, seed=%s): %s",
+            len(selected_train_pairs),
+            len(all_train_pairs),
+            dataset_config.max_train_songs,
+            run_config.seed,
+            ", ".join(selected_stems),
+        )
+
     train_dataset = datasets.create_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
@@ -331,6 +581,8 @@ def run_train_from_config(
         feature_source=dataset_config.feature_source,
         mert_features_dir=dataset_config.mert_features_dir,
         n_features=config.resolve_onset_input_features(dataset_config, model_config),
+        max_songs=dataset_config.max_train_songs,
+        song_selection_seed=run_config.seed,
     )
 
     val_dataset = datasets.create_dataset(
@@ -355,15 +607,22 @@ def run_train_from_config(
     )
 
     input_features = config.resolve_onset_input_features(dataset_config, model_config)
-    model = models.build_unet_wavenet_model(
-        model_name=run_config.model_name or experiment_name,
-        initial_filters=model_config.initial_filters,
-        depth=model_config.depth,
-        dilation_rates=model_config.dilation_rates,
-        kernel_size=model_config.kernel_size,
-        dropout_rate=model_config.dropout_rate,
-        input_features=input_features,
-    )
+    if config.uses_waveform_model_input(dataset_config):
+        model = models.build_unet_wavenet_from_waveform_model(
+            model_name=run_config.model_name or experiment_name,
+            initial_filters=model_config.initial_filters,
+            depth=model_config.depth,
+            dilation_rates=model_config.dilation_rates,
+            kernel_size=model_config.kernel_size,
+            dropout_rate=model_config.dropout_rate,
+            frontend_filters=model_config.waveform_frontend_filters,
+        )
+    else:
+        model = models.build_onset_dense_model(
+            model_config,
+            model_name=run_config.model_name or experiment_name,
+            input_features=input_features,
+        )
 
     if run_config.show_model_summary:
         model.summary()
@@ -376,14 +635,7 @@ def run_train_from_config(
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=1e-3),  # type: ignore
         loss=loss,
-        metrics=[
-            keras.metrics.BinaryAccuracy(name="acc"),
-            keras.metrics.Precision(name="prec"),
-            keras.metrics.Recall(name="rec"),
-            keras.metrics.AUC(curve="PR", name="pr_auc"),
-            keras.metrics.AUC(name="auc"),
-            metrics.OnsetF1Metric(tolerance=2, threshold=0.5),
-        ],
+        metrics=build_onset_dense_compile_metrics(run_config),
     )
 
     experiment_config = config.OnsetExperimentConfig(
@@ -392,10 +644,19 @@ def run_train_from_config(
     training_callbacks = _build_experiment_callbacks(
         run_config=run_config,
         experiment_name=experiment_name,
-        monitor_metric="val_pr_auc",
+        monitor_metric=ONSET_CHECKPOINT_MONITOR,
         monitor_mode="max",
         experiment_config=experiment_config,
     )
+    # DenseValEventF1Callback runs an extra full val pass with model.predict each epoch
+    # (~30-45 s/epoch on 100-train; ~1.6x wall time vs frame-F1-only). Disabled for
+    # faster scaling runs; report peak-pick event F1 post-hoc via eval_dense_onset.py.
+    # val_data = val_dataset.take(run_config.val_take_count)
+    # event_f1_callback = _build_dense_val_event_f1_callback(val_data, run_config)
+    # if training_callbacks:
+    #     training_callbacks.insert(1, event_f1_callback)
+    # else:
+    #     training_callbacks = [event_f1_callback]
 
     train_history = _fit_and_save_model(
         model=model,
@@ -403,7 +664,21 @@ def run_train_from_config(
         val_dataset=val_dataset,
         run_config=run_config,
         callbacks=training_callbacks,
+        monitor_metric=ONSET_CHECKPOINT_MONITOR,
     )
+
+    if run_config.post_hoc_event_f1_export and run_config.callback_root_dir:
+        _export_best_event_f1_checkpoint(
+            model,
+            dataset_config,
+            model_config,
+            run_config,
+            monitor_metric=ONSET_CHECKPOINT_MONITOR,
+        )
+
+    saved_path = os.path.join(run_config.model_output_dir, model.name + ".keras")
+    if os.path.isfile(saved_path):
+        model = keras.models.load_model(saved_path, compile=False)
 
     return model, train_history
 
@@ -535,6 +810,9 @@ def run_arrow_train_from_config(
     dataset_config = experiment_config.dataset
     model_config = experiment_config.model
     run_config = experiment_config.run
+    if run_config.seed is not None:
+        reproducibility.apply_training_seed(run_config.seed)
+
     dataset_provides_aux = dataset_config.use_aux_interval_target
     use_aux_interval = dataset_provides_aux and run_config.aux_interval_weight > 0
     train_dataset = datasets.create_arrow_dataset(
@@ -685,6 +963,7 @@ def run_arrow_train_from_config(
         val_dataset=val_dataset,
         run_config=run_config,
         callbacks=lr_callbacks + training_callbacks,
+        monitor_metric=monitor_metric,
     )
 
     return model, train_history

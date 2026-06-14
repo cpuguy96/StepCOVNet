@@ -1,3 +1,4 @@
+import builtins
 import concurrent.futures
 import json
 import os
@@ -384,6 +385,7 @@ class GridExpansionTest(unittest.TestCase):
             hyperparameter_search_arrow,
             "_expand_grid_simple",
             wraps=hyperparameter_search_arrow._expand_grid_simple,
+            autospec=True,
         ) as mock_expand:
             combinations = hyperparameter_search_arrow.expand_grid(search_space)
         mock_expand.assert_called_once_with(search_space)
@@ -406,6 +408,7 @@ class GridExpansionTest(unittest.TestCase):
             hyperparameter_search_arrow,
             "_expand_grid_simple",
             wraps=hyperparameter_search_arrow._expand_grid_simple,
+            autospec=True,
         ) as mock_expand:
             combinations = hyperparameter_search_arrow.expand_grid(search_space)
         mock_expand.assert_called_once_with(search_space)
@@ -820,13 +823,16 @@ class SweepCombinationValidationTest(unittest.TestCase):
                     hyperparameter_search_arrow.random,
                     "sample",
                     return_value=[{"run.epoch": 101, "run.warmup_epochs": 100}],
+                    autospec=True,
                 ) as sample_mock,
                 mock.patch.object(
                     hyperparameter_search_arrow.futures,
                     "ProcessPoolExecutor",
+                    autospec=True,
                 ) as executor_mock,
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
@@ -863,9 +869,11 @@ class SweepCombinationValidationTest(unittest.TestCase):
                 mock.patch.object(
                     hyperparameter_search_arrow.futures,
                     "ProcessPoolExecutor",
+                    autospec=True,
                 ) as executor_mock,
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
@@ -1132,7 +1140,7 @@ class SelectBestRunWithValidityGateTest(unittest.TestCase):
                 "validity_metric": "val_chart_validity_pass_rate_0_99",
             }
         )
-        with mock.patch("builtins.print") as mock_print:
+        with mock.patch.object(builtins, "print", autospec=True) as mock_print:
             idx, gate_info = (
                 hyperparameter_search_arrow._select_best_run_with_validity_gate(
                     results, sweep_save
@@ -1161,7 +1169,7 @@ class SelectBestRunWithValidityGateTest(unittest.TestCase):
             },
         ]
         sweep_save = self._sweep_save({"min_fraction": 0.95})
-        with mock.patch("builtins.print") as mock_print:
+        with mock.patch.object(builtins, "print", autospec=True) as mock_print:
             idx, gate_info = (
                 hyperparameter_search_arrow._select_best_run_with_validity_gate(
                     results, sweep_save
@@ -1449,8 +1457,9 @@ class WorkersOptionTest(unittest.TestCase):
                 ),
             )
             with (
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
@@ -1507,9 +1516,11 @@ class WorkersOptionTest(unittest.TestCase):
                     hyperparameter_search_arrow.futures,
                     "ProcessPoolExecutor",
                     return_value=FakeExecutor(),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
@@ -1575,8 +1586,9 @@ class WorkersOptionTest(unittest.TestCase):
                     "ProcessPoolExecutor",
                     side_effect=make_executor,
                 ),
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
@@ -1634,8 +1646,9 @@ class WorkersOptionTest(unittest.TestCase):
                     "ProcessPoolExecutor",
                     side_effect=make_executor,
                 ),
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
@@ -1665,8 +1678,9 @@ class WorkersOptionTest(unittest.TestCase):
             with open(os.path.join(tmpdir, "results.json"), "w") as f:
                 json.dump([], f)
             with (
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--resume_from",
@@ -1747,15 +1761,17 @@ class WorkersOptionTest(unittest.TestCase):
                     hyperparameter_search_arrow.futures,
                     "ProcessPoolExecutor",
                     return_value=FakeExecutor(),
+                    autospec=True,
                 ),
                 mock.patch.object(
                     hyperparameter_search_arrow.futures,
                     "as_completed",
                     side_effect=ordered_as_completed,
                 ),
-                mock.patch("builtins.print", side_effect=capture_print),
-                mock.patch(
-                    "sys.argv",
+                mock.patch.object(builtins, "print", side_effect=capture_print),
+                mock.patch.object(
+                    sys,
+                    "argv",
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",

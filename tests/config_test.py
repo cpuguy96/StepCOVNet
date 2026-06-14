@@ -70,6 +70,50 @@ class OnsetDatasetConfigTest(unittest.TestCase):
         self.assertEqual(cfg.mert_features_dir, "data/mert")
         self.assertEqual(cfg.as_dict()["feature_source"], "mert")
 
+    def test_feature_source_waveform_from_dict(self):
+        data = {
+            "data_dir": "data/train",
+            "val_data_dir": "data/val",
+            "feature_source": "waveform",
+        }
+        cfg = config.OnsetDatasetConfig.from_dict(data)
+        self.assertEqual(cfg.feature_source, config.FeatureSource.WAVEFORM)
+
+    def test_max_train_songs_default_minus_one(self):
+        cfg = config.OnsetDatasetConfig(data_dir="data/train", val_data_dir="data/val")
+        self.assertEqual(cfg.max_train_songs, -1)
+
+    def test_max_train_songs_from_dict(self):
+        data = {
+            "data_dir": "data/train",
+            "val_data_dir": "data/val",
+            "max_train_songs": 20,
+        }
+        cfg = config.OnsetDatasetConfig.from_dict(data)
+        self.assertEqual(cfg.max_train_songs, 20)
+        self.assertEqual(cfg.as_dict()["max_train_songs"], 20)
+
+    def test_max_train_songs_zero_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            config.OnsetDatasetConfig(
+                data_dir="data/train",
+                val_data_dir="data/val",
+                max_train_songs=0,
+            )
+        self.assertIn("max_train_songs", str(ctx.exception))
+
+    def test_resolve_onset_input_features_waveform(self):
+        dataset_cfg = config.OnsetDatasetConfig(
+            data_dir="data/train",
+            val_data_dir="data/val",
+            feature_source=config.FeatureSource.WAVEFORM,
+        )
+        model_cfg = config.OnsetModelConfig(waveform_frontend_filters=48)
+        self.assertEqual(
+            config.resolve_onset_input_features(dataset_cfg, model_cfg),
+            48,
+        )
+
 
 class ArrowDatasetConfigTest(unittest.TestCase):
     def test_create_with_required_fields(self):
@@ -201,6 +245,30 @@ class ArrowDatasetConfigTest(unittest.TestCase):
 
 
 class OnsetModelConfigTest(unittest.TestCase):
+    def test_onset_architecture_defaults_to_unet_wavenet(self):
+        cfg = config.OnsetModelConfig()
+        self.assertEqual(
+            cfg.onset_architecture,
+            config.OnsetArchitecture.UNET_WAVENET,
+        )
+
+    def test_onset_architecture_roundtrip(self):
+        cfg = config.OnsetModelConfig(
+            onset_architecture=config.OnsetArchitecture.TCN,
+            tcn_blocks=3,
+        )
+        restored = config.OnsetModelConfig.from_dict(cfg.as_dict())
+        self.assertEqual(restored.onset_architecture, config.OnsetArchitecture.TCN)
+        self.assertEqual(restored.tcn_blocks, 3)
+
+    def test_transformer_rejects_indivisible_heads(self):
+        with self.assertRaises(ValueError):
+            config.OnsetModelConfig(
+                onset_architecture=config.OnsetArchitecture.TRANSFORMER,
+                initial_filters=30,
+                transformer_heads=4,
+            )
+
     def test_create_with_defaults(self):
         """Test creating config with default values."""
         cfg = config.OnsetModelConfig()
@@ -710,6 +778,10 @@ class RunConfigTest(unittest.TestCase):
         self.assertEqual(cfg.model_output_dir, "out")
         self.assertEqual(cfg.callback_root_dir, "")  # default
         self.assertIsNone(cfg.seed)  # default
+        self.assertEqual(cfg.confidence_threshold, 0.05)
+        self.assertEqual(cfg.tolerance_sec, 0.02)
+        self.assertEqual(cfg.min_onset_distance_ms, 50.0)
+        self.assertEqual(cfg.early_stopping_patience, 25)
 
     def test_create_with_all_fields(self):
         """Test creating config with all fields."""
@@ -811,6 +883,22 @@ class RunConfigTest(unittest.TestCase):
         self.assertTrue(cfg.show_model_summary)
         self.assertEqual(cfg.fit_verbose, 1)
 
+    def test_run_config_rejects_invalid_dense_eval_fields(self):
+        with self.assertRaises(ValueError):
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                confidence_threshold=1.5,
+            )
+        with self.assertRaises(ValueError):
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                early_stopping_patience=-1,
+            )
+
     def test_show_model_summary_explicit(self):
         """show_model_summary can be set to False."""
         cfg = config.RunConfig(
@@ -862,6 +950,50 @@ class RunConfigTest(unittest.TestCase):
         cfg = config.RunConfig.from_dict(data)
         self.assertFalse(cfg.show_model_summary)
         self.assertEqual(cfg.fit_verbose, 0)
+
+    def test_post_hoc_event_f1_defaults(self):
+        """Post-hoc event-F1 export defaults to disabled with a standard grid."""
+        cfg = config.RunConfig(epoch=1, take_count=1, model_output_dir="out")
+        self.assertFalse(cfg.post_hoc_event_f1_export)
+        self.assertEqual(cfg.post_hoc_event_f1_thresholds[0], 0.05)
+        self.assertEqual(cfg.post_hoc_event_f1_thresholds[-1], 0.5)
+
+    def test_post_hoc_event_f1_roundtrip(self):
+        """from_dict/as_dict preserve post-hoc event-F1 settings."""
+        data = {
+            "epoch": 1,
+            "take_count": 1,
+            "model_output_dir": "out",
+            "post_hoc_event_f1_export": True,
+            "post_hoc_event_f1_thresholds": [0.2, 0.35],
+        }
+        cfg = config.RunConfig.from_dict(data)
+        self.assertTrue(cfg.post_hoc_event_f1_export)
+        self.assertEqual(cfg.post_hoc_event_f1_thresholds, [0.2, 0.35])
+        self.assertEqual(cfg.as_dict()["post_hoc_event_f1_thresholds"], [0.2, 0.35])
+
+    def test_post_hoc_event_f1_rejects_empty_when_enabled(self):
+        """Enabling export with an empty threshold grid raises ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                post_hoc_event_f1_export=True,
+                post_hoc_event_f1_thresholds=[],
+            )
+        self.assertIn("post_hoc_event_f1_thresholds", str(ctx.exception))
+
+    def test_post_hoc_event_f1_rejects_out_of_range_threshold(self):
+        """Threshold values outside [0, 1] raise ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            config.RunConfig(
+                epoch=1,
+                take_count=1,
+                model_output_dir="out",
+                post_hoc_event_f1_thresholds=[0.2, 1.5],
+            )
+        self.assertIn("post_hoc_event_f1_thresholds", str(ctx.exception))
 
 
 class ArrowRunConfigTest(unittest.TestCase):
@@ -981,9 +1113,7 @@ class ArrowRunConfigTest(unittest.TestCase):
 
     def test_get_experiment_name_parts_take_all(self):
         """get_experiment_name_parts returns take_all when take_count is -1."""
-        cfg = config.ArrowRunConfig(
-            epoch=1, take_count=-1, model_output_dir="out"
-        )
+        cfg = config.ArrowRunConfig(epoch=1, take_count=-1, model_output_dir="out")
         parts = cfg.get_experiment_name_parts()
         self.assertIn("take_all", parts)
 

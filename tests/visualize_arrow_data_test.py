@@ -1,5 +1,3 @@
-"""Tests for correlation metrics and aggregation in visualize_arrow_data script."""
-
 import os
 import sys
 import unittest

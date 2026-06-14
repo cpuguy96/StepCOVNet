@@ -7,6 +7,15 @@ from stepcovnet import config, constants, models
 
 
 class ModelTest(unittest.TestCase):
+    def test_build_unet_wavenet_from_waveform_model_output_shape(self):
+        hop = constants.WAVEFORM_SAMPLES_PER_FRAME
+        n_frames = 10
+        model = models.build_unet_wavenet_from_waveform_model(frontend_filters=16)
+        self.assertEqual(model.input_shape, (None, None))
+        waveform = np.zeros((1, n_frames * hop), dtype=np.float32)
+        prediction = model.predict(waveform, verbose=0)
+        self.assertEqual(prediction.shape, (1, n_frames, 1))
+
     def test_build_unet_wavenet_model(self):
         model_instance = models.build_unet_wavenet_model()
 
@@ -576,6 +585,68 @@ class ModelTest(unittest.TestCase):
         dummy_input = np.random.random((1, 20, 1)).astype(np.float32)
         out = model.predict(dummy_input)
         self.assertEqual(out.shape, (1, 20, 256))
+
+
+class OnsetArchitectureModelTest(unittest.TestCase):
+    def test_build_tcn_onset_model_output_shape(self):
+        model = models.build_tcn_onset_model(
+            input_features=constants.MERT_HIDDEN_SIZE,
+            tcn_blocks=2,
+        )
+        dummy_input = np.random.random(
+            (1, 100, constants.MERT_HIDDEN_SIZE),
+        ).astype(np.float32)
+        prediction = model.predict(dummy_input, verbose=0)
+        self.assertEqual(prediction.shape, (1, 100, 1))
+
+    def test_build_bilstm_onset_model_output_shape(self):
+        model = models.build_bilstm_onset_model(
+            input_features=constants.MERT_HIDDEN_SIZE,
+            depth=1,
+            recurrent_units=32,
+        )
+        dummy_input = np.random.random(
+            (1, 100, constants.MERT_HIDDEN_SIZE),
+        ).astype(np.float32)
+        prediction = model.predict(dummy_input, verbose=0)
+        self.assertEqual(prediction.shape, (1, 100, 1))
+
+    def test_build_transformer_onset_model_output_shape(self):
+        model = models.build_transformer_onset_model(
+            input_features=constants.MERT_HIDDEN_SIZE,
+            initial_filters=64,
+            transformer_layers=1,
+            transformer_heads=4,
+        )
+        dummy_input = np.random.random(
+            (1, 100, constants.MERT_HIDDEN_SIZE),
+        ).astype(np.float32)
+        prediction = model.predict(dummy_input, verbose=0)
+        self.assertEqual(prediction.shape, (1, 100, 1))
+
+    def test_build_onset_dense_model_dispatches_architecture(self):
+        for arch in (
+            config.OnsetArchitecture.UNET_WAVENET,
+            config.OnsetArchitecture.TCN,
+            config.OnsetArchitecture.BILSTM,
+            config.OnsetArchitecture.TRANSFORMER,
+        ):
+            model_config = config.OnsetModelConfig(
+                onset_architecture=arch,
+                input_features=64,
+                initial_filters=64,
+                depth=1,
+                tcn_blocks=1,
+                transformer_layers=1,
+                transformer_heads=4,
+                recurrent_units=32,
+            )
+            model = models.build_onset_dense_model(model_config, input_features=64)
+            prediction = model.predict(
+                np.random.random((1, 50, 64)).astype(np.float32),
+                verbose=0,
+            )
+            self.assertEqual(prediction.shape, (1, 50, 1))
 
 
 class PositionalEncodingTest(unittest.TestCase):

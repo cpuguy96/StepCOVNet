@@ -89,6 +89,7 @@ def main(argv: list[str] | None = None) -> None:
     os.makedirs(args.output_dir, exist_ok=True)
     extracted = 0
     skipped = 0
+    failed: list[str] = []
     for audio_path, _chart_path in pairs:
         output_path = ssl_features.mert_npy_path(
             audio_path,
@@ -99,20 +100,28 @@ def main(argv: list[str] | None = None) -> None:
             skipped += 1
             continue
         print(f"Extracting {audio_path} -> {output_path}")
-        ssl_features.extract_and_save_mert_features(
-            audio_path,
-            output_path,
-            model_name=args.model_name,
-            layer=args.layer,
-            device=args.device,
-            chunk_seconds=args.chunk_seconds,
-        )
+        try:
+            ssl_features.extract_and_save_mert_features(
+                audio_path,
+                output_path,
+                model_name=args.model_name,
+                layer=args.layer,
+                device=args.device,
+                chunk_seconds=args.chunk_seconds,
+            )
+        except Exception as exc:
+            print(f"FAILED {audio_path}: {exc}")
+            failed.append(audio_path)
+            continue
         extracted += 1
 
     print(
         f"Done. Extracted {extracted} file(s)"
         + (f", skipped {skipped} existing." if skipped else ".")
+        + (f" Failed {len(failed)}." if failed else "")
     )
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

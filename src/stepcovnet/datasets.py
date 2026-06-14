@@ -73,6 +73,32 @@ def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
     return pairing.list_audio_chart_pairs(data_dir)
 
 
+def select_song_pairs(
+    pairs: list[tuple[str, str]],
+    max_songs: int = -1,
+    seed: int | None = None,
+) -> list[tuple[str, str]]:
+    """Select a reproducible subset of audio/chart pairs for training.
+
+    Pairs are sorted by audio path, shuffled with ``seed``, then truncated to
+    ``max_songs``.
+
+    Args:
+        pairs: Full list of ``(audio_path, chart_path)`` tuples.
+        max_songs: Maximum songs to keep (-1 for all).
+        seed: Random seed for shuffling before truncation.
+
+    Returns:
+        Selected pairs (all pairs when ``max_songs`` is -1 or exceeds pair count).
+    """
+    if max_songs == -1 or len(pairs) <= max_songs:
+        return list(pairs)
+    ordered = sorted(pairs, key=lambda pair: pair[0])
+    rng = np.random.default_rng(seed)
+    shuffled_indices = rng.permutation(len(ordered))
+    return [ordered[index] for index in shuffled_indices[:max_songs]]
+
+
 def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
     """Return paired audio and chart file paths found under a data directory.
 
@@ -343,6 +369,40 @@ def audio_to_spectrogram(audio_path: str) -> np.ndarray:
     return librosa.power_to_db(mel_spectrogram, ref=np.max)
 
 
+def _load_mono_waveform(audio_path: str) -> np.ndarray:
+    """Load peak-normalized mono audio at the onset model sample rate."""
+    y, sr = librosa.load(audio_path, sr=_TARGET_SR, mono=True)
+    if sr != _TARGET_SR:
+        y = librosa.resample(y, orig_sr=sr, target_sr=_TARGET_SR)
+    peak = np.max(np.abs(y))
+    if peak > 0:
+        y = y / peak
+    return np.asarray(y, dtype=np.float32)
+
+
+def load_onset_waveform(audio_path: str) -> np.ndarray:
+    """Load a waveform trimmed/padded to the dense-onset mel frame grid.
+
+    The returned length is ``onset_frame_count(audio_path) * WAVEFORM_SAMPLES_PER_FRAME``
+    so a strided Conv1D frontend with that hop produces one embedding per target frame.
+
+    Args:
+        audio_path: Path to the audio file.
+
+    Returns:
+        One-dimensional float32 waveform.
+    """
+    y = _load_mono_waveform(audio_path)
+    n_frames = onset_frame_count(audio_path)
+    hop = constants.WAVEFORM_SAMPLES_PER_FRAME
+    total = n_frames * hop
+    if y.size < total:
+        y = np.pad(y, (0, total - y.size))
+    else:
+        y = y[:total]
+    return y.astype(np.float32)
+
+
 def onset_frame_count(audio_path: str) -> int:
     """Return the onset model time-step count for an audio file (mel STFT grid).
 
@@ -365,13 +425,16 @@ def load_onset_features(
 
     Args:
         audio_path: Path to the audio file.
-        feature_source: FeatureSource.MEL or FeatureSource.MERT.
+        feature_source: FeatureSource.MEL, MERT, or WAVEFORM.
         mert_features_dir: Directory of precomputed ``.mert.npy`` files (MERT only).
         data_root: Training data root for nested MERT paths (MERT only).
 
     Returns:
-        Feature array with shape ``(time_steps, feature_dim)``, float32.
+        Feature array with shape ``(time_steps, feature_dim)`` for mel/MERT, or
+        one-dimensional waveform for WAVEFORM.
     """
+    if feature_source == config.FeatureSource.WAVEFORM:
+        return load_onset_waveform(audio_path)
     if feature_source == config.FeatureSource.MERT:
         features = ssl_features.load_mert_features(
             audio_path,
@@ -541,7 +604,10 @@ def _load_and_preprocess_paths(
         mert_features_dir,
         data_root,
     )
-    spec_length = features.shape[0]
+    if feature_source == config.FeatureSource.WAVEFORM:
+        spec_length = features.size // constants.WAVEFORM_SAMPLES_PER_FRAME
+    else:
+        spec_length = features.shape[0]
     times, cols = _parse_step_chart(chart_path, binary_timings=True)
     target = (
         _create_target_gaussian(times, cols, spec_length, gaussian_sigma)
@@ -598,7 +664,26 @@ def _load_and_preprocess_tf_map(
         [audio_path_t, chart_path_t],
         (tf.float32, tf.float32),
     )
-    features.set_shape([None, n_features])
+    return _set_loaded_feature_shapes(
+        features,
+        target,
+        feature_source=feature_source,
+        n_features=n_features,
+    )
+
+
+def _set_loaded_feature_shapes(
+    features: tf.Tensor,
+    target: tf.Tensor,
+    *,
+    feature_source: config.FeatureSource,
+    n_features: int,
+) -> tuple[tf.Tensor, tf.Tensor]:
+    """Apply static shape hints after loading one (features, target) pair."""
+    if feature_source == config.FeatureSource.WAVEFORM:
+        features.set_shape([None])
+    else:
+        features.set_shape([None, n_features])
     target.set_shape([None, _N_TARGET])
     return features, target
 
@@ -611,6 +696,8 @@ def _augment_features_numpy(
     n_features: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Apply optional temporal/spec augmentation and normalize (pure Python)."""
+    if features.ndim == 1:
+        return features.astype(np.float32), target.astype(np.float32)
     spec_py = np.transpose(features[:, :n_features])
     combined_labels = target
     if apply_temporal_augment:
@@ -644,6 +731,7 @@ def _apply_augmentations_tf_map(
     apply_temporal_augment: bool,
     should_apply_spec_augment: bool,
     n_features: int,
+    feature_source: config.FeatureSource,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Map (features, target) to augmented (features, target) tensors."""
     aug_features, aug_target = tf.py_function(  # type: ignore[misc]
@@ -653,9 +741,12 @@ def _apply_augmentations_tf_map(
         [features, target],
         (tf.float32, tf.float32),
     )
-    aug_features.set_shape([None, n_features])
-    aug_target.set_shape([None, _N_TARGET])
-    return aug_features, aug_target
+    return _set_loaded_feature_shapes(
+        aug_features,
+        aug_target,
+        feature_source=feature_source,
+        n_features=n_features,
+    )
 
 
 def _load_arrow_pair_py_callback(
@@ -1096,6 +1187,8 @@ def create_dataset(
     feature_source: config.FeatureSource = config.FeatureSource.MEL,
     mert_features_dir: str = "",
     n_features: int | None = None,
+    max_songs: int = -1,
+    song_selection_seed: int | None = None,
 ) -> tf.data.Dataset:
     """
     Creates a TensorFlow dataset pipeline with a proper caching strategy.
@@ -1108,7 +1201,11 @@ def create_dataset(
         else:
             n_features = _N_MELS
 
-    pairs = _load_and_pair_files(data_dir)
+    pairs = select_song_pairs(
+        _load_and_pair_files(data_dir),
+        max_songs=max_songs,
+        seed=song_selection_seed,
+    )
     if not pairs:
         raise ValueError("No audio-chart pairs found.")
 
@@ -1134,15 +1231,21 @@ def create_dataset(
             apply_temporal_augment,
             should_apply_spec_augment,
             n_features,
+            feature_source,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
     if batch_size > 1:
+        feature_pad_shape = (
+            (None,)
+            if feature_source == config.FeatureSource.WAVEFORM
+            else (None, n_features)
+        )
         ds = ds.padded_batch(
             batch_size,
             padded_shapes=(
-                ((None, n_features)),
+                feature_pad_shape,
                 (None, 1),
             ),
             padding_values=(

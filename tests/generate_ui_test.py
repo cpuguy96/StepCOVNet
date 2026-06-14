@@ -1,11 +1,10 @@
-"""Unit tests for the generator UI script (scripts/generate_ui.py)."""
-
 import io
 import os
 import queue
 import sys
 import tempfile
 import tkinter as tk
+from tkinter import filedialog, messagebox
 import unittest
 from unittest import mock
 
@@ -166,21 +165,29 @@ class RunGenerationTest(unittest.TestCase):
             output_path = os.path.join(tmpdir, "output.txt")
             result_queue = queue.Queue()
             with (
-                mock.patch(
-                    "generate_ui.pretrained.resolve_onset_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_onset_model_path",
                     side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.pretrained.resolve_arrow_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_arrow_model_path",
                     side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.keras.models.load_model",
+                mock.patch.object(
+                    generate_ui.keras.models,
+                    "load_model",
                     return_value=mock.MagicMock(),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.generator.generate_output_data",
+                mock.patch.object(
+                    generate_ui.generator,
+                    "generate_output_data",
                     return_value=mock_output_data,
+                    autospec=True,
                 ),
             ):
                 generate_ui._run_generation(
@@ -210,20 +217,29 @@ class RunGenerationTest(unittest.TestCase):
             output_path = os.path.join(tmpdir, "output.txt")
             result_queue = queue.Queue()
             with (
-                mock.patch(
-                    "generate_ui.pretrained.resolve_onset_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_onset_model_path",
                     side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.pretrained.resolve_arrow_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_arrow_model_path",
                     side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
+                mock.patch.object(
+                    generate_ui.keras.models,
+                    "load_model",
+                    return_value=mock.MagicMock(),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.generator.generate_output_data",
+                mock.patch.object(
+                    generate_ui.generator,
+                    "generate_output_data",
                     return_value=mock_output_data,
+                    autospec=True,
                 ) as mock_gen,
             ):
                 generate_ui._run_generation(
@@ -255,20 +271,29 @@ class RunGenerationTest(unittest.TestCase):
             output_path = os.path.join(tmpdir, "output.txt")
             result_queue = queue.Queue()
             with (
-                mock.patch(
-                    "generate_ui.pretrained.resolve_onset_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_onset_model_path",
                     side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.pretrained.resolve_arrow_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_arrow_model_path",
                     side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
+                mock.patch.object(
+                    generate_ui.keras.models,
+                    "load_model",
+                    return_value=mock.MagicMock(),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.generator.generate_output_data",
+                mock.patch.object(
+                    generate_ui.generator,
+                    "generate_output_data",
                     return_value=mock_output_data,
+                    autospec=True,
                 ),
             ):
                 generate_ui._run_generation(
@@ -296,16 +321,19 @@ class RunGenerationTest(unittest.TestCase):
         """When load_model raises, queue receives (False, error_message)."""
         result_queue = queue.Queue()
         with (
-            mock.patch(
-                "generate_ui.pretrained.resolve_onset_model_path",
+            mock.patch.object(
+                generate_ui.pretrained,
+                "resolve_onset_model_path",
                 side_effect=lambda p: p or "/resolved/onset.keras",
             ),
-            mock.patch(
-                "generate_ui.pretrained.resolve_arrow_model_path",
+            mock.patch.object(
+                generate_ui.pretrained,
+                "resolve_arrow_model_path",
                 side_effect=lambda p: p or "/resolved/arrow.keras",
             ),
-            mock.patch(
-                "generate_ui.keras.models.load_model",
+            mock.patch.object(
+                generate_ui.keras.models,
+                "load_model",
                 side_effect=OSError("No such file"),
             ),
         ):
@@ -329,19 +357,25 @@ class RunGenerationTest(unittest.TestCase):
         """When generate_output_data raises, queue receives (False, error_message)."""
         result_queue = queue.Queue()
         with (
-            mock.patch(
-                "generate_ui.pretrained.resolve_onset_model_path",
+            mock.patch.object(
+                generate_ui.pretrained,
+                "resolve_onset_model_path",
                 side_effect=lambda p: p or "/resolved/onset.keras",
             ),
-            mock.patch(
-                "generate_ui.pretrained.resolve_arrow_model_path",
+            mock.patch.object(
+                generate_ui.pretrained,
+                "resolve_arrow_model_path",
                 side_effect=lambda p: p or "/resolved/arrow.keras",
             ),
-            mock.patch(
-                "generate_ui.keras.models.load_model", return_value=mock.MagicMock()
+            mock.patch.object(
+                generate_ui.keras.models,
+                "load_model",
+                return_value=mock.MagicMock(),
+                autospec=True,
             ),
-            mock.patch(
-                "generate_ui.generator.generate_output_data",
+            mock.patch.object(
+                generate_ui.generator,
+                "generate_output_data",
                 side_effect=ValueError("Failed to predict any onsets"),
             ),
         ):
@@ -372,21 +406,29 @@ class RunGenerationTest(unittest.TestCase):
             arrow_resolved = os.path.join(tmpdir, "arrow.keras")
             result_queue = queue.Queue()
             with (
-                mock.patch(
-                    "generate_ui.pretrained.resolve_onset_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_onset_model_path",
                     return_value=onset_resolved,
+                    autospec=True,
                 ) as m_resolve_onset,
-                mock.patch(
-                    "generate_ui.pretrained.resolve_arrow_model_path",
+                mock.patch.object(
+                    generate_ui.pretrained,
+                    "resolve_arrow_model_path",
                     return_value=arrow_resolved,
+                    autospec=True,
                 ) as m_resolve_arrow,
-                mock.patch(
-                    "generate_ui.keras.models.load_model",
+                mock.patch.object(
+                    generate_ui.keras.models,
+                    "load_model",
                     return_value=mock.MagicMock(),
+                    autospec=True,
                 ),
-                mock.patch(
-                    "generate_ui.generator.generate_output_data",
+                mock.patch.object(
+                    generate_ui.generator,
+                    "generate_output_data",
                     return_value=mock_output_data,
+                    autospec=True,
                 ),
             ):
                 generate_ui._run_generation(
@@ -485,8 +527,8 @@ class CloseBehaviorTest(unittest.TestCase):
     def test_on_close_calls_quit_and_destroy(self):
         """_on_close sets _closing, calls root.quit() and root.destroy()."""
         with (
-            mock.patch.object(self.root, "quit") as m_quit,
-            mock.patch.object(self.root, "destroy") as m_destroy,
+            mock.patch.object(self.root, "quit", autospec=True) as m_quit,
+            mock.patch.object(self.root, "destroy", autospec=True) as m_destroy,
         ):
             self.app._on_close()
         self.assertTrue(self.app._closing)
@@ -497,9 +539,9 @@ class CloseBehaviorTest(unittest.TestCase):
         """_on_close cancels pending after() callback so mainloop can exit."""
         self.app._poll_after_id = "fake_after_id"
         with (
-            mock.patch.object(self.root, "after_cancel") as m_cancel,
-            mock.patch.object(self.root, "quit"),
-            mock.patch.object(self.root, "destroy"),
+            mock.patch.object(self.root, "after_cancel", autospec=True) as m_cancel,
+            mock.patch.object(self.root, "quit", autospec=True),
+            mock.patch.object(self.root, "destroy", autospec=True),
         ):
             self.app._on_close()
         m_cancel.assert_called_once_with("fake_after_id")
@@ -514,8 +556,8 @@ class CloseBehaviorTest(unittest.TestCase):
                 "after_cancel",
                 side_effect=tk.TclError("invalid command name"),
             ),
-            mock.patch.object(self.root, "quit") as m_quit,
-            mock.patch.object(self.root, "destroy") as m_destroy,
+            mock.patch.object(self.root, "quit", autospec=True) as m_quit,
+            mock.patch.object(self.root, "destroy", autospec=True) as m_destroy,
         ):
             self.app._on_close()
         self.assertIsNone(self.app._poll_after_id)
@@ -525,8 +567,8 @@ class CloseBehaviorTest(unittest.TestCase):
     def test_on_close_idempotent(self):
         """_on_close does nothing if already closing (avoids double destroy)."""
         with (
-            mock.patch.object(self.root, "quit") as m_quit,
-            mock.patch.object(self.root, "destroy") as m_destroy,
+            mock.patch.object(self.root, "quit", autospec=True) as m_quit,
+            mock.patch.object(self.root, "destroy", autospec=True) as m_destroy,
         ):
             self.app._on_close()
             m_quit.reset_mock()
@@ -538,7 +580,7 @@ class CloseBehaviorTest(unittest.TestCase):
     def test_poll_result_does_not_reschedule_when_closing(self):
         """_poll_result does not schedule another poll when _closing is True."""
         self.app._closing = True
-        with mock.patch.object(self.root, "after") as m_after:
+        with mock.patch.object(self.root, "after", autospec=True) as m_after:
             self.app._poll_result()
         m_after.assert_not_called()
 
@@ -552,9 +594,11 @@ class BrowseCallbacksTest(unittest.TestCase):
 
     def test_browse_audio_sets_path_and_default_output_not_same_as_audio(self):
         """Default output is stepcovnet_chart_basename.txt when output was empty (prefix so stemming won't match)."""
-        with mock.patch(
-            "tkinter.filedialog.askopenfilename",
+        with mock.patch.object(
+            filedialog,
+            "askopenfilename",
             return_value="C:/music/song.mp3",
+            autospec=True,
         ):
             self.app.browse_audio()
         self.assertEqual(self.app.audio_path_var.get(), "C:/music/song.mp3")
@@ -566,9 +610,11 @@ class BrowseCallbacksTest(unittest.TestCase):
     def test_browse_audio_default_output_uses_song_title_when_set(self):
         """When song title is set, default output filename is stepcovnet_chart_ + song title (sanitized)."""
         self.app.song_title_var.set("My Song")
-        with mock.patch(
-            "tkinter.filedialog.askopenfilename",
+        with mock.patch.object(
+            filedialog,
+            "askopenfilename",
             return_value="C:/music/anything.ogg",
+            autospec=True,
         ):
             self.app.browse_audio()
         self.assertEqual(
@@ -587,57 +633,71 @@ class BrowseCallbacksTest(unittest.TestCase):
 
     def test_browse_audio_does_not_overwrite_output_when_set(self):
         self.app.output_path_var.set("C:/out/custom.txt")
-        with mock.patch(
-            "tkinter.filedialog.askopenfilename",
+        with mock.patch.object(
+            filedialog,
+            "askopenfilename",
             return_value="C:/music/song.mp3",
+            autospec=True,
         ):
             self.app.browse_audio()
         self.assertEqual(self.app.output_path_var.get(), "C:/out/custom.txt")
 
     def test_browse_audio_cancelled_does_nothing(self):
-        with mock.patch(
-            "tkinter.filedialog.askopenfilename",
+        with mock.patch.object(
+            filedialog,
+            "askopenfilename",
             return_value="",
+            autospec=True,
         ):
             self.app.browse_audio()
         self.assertEqual(self.app.audio_path_var.get(), "")
 
     def test_browse_onset_sets_path(self):
-        with mock.patch(
-            "tkinter.filedialog.askopenfilename",
+        with mock.patch.object(
+            filedialog,
+            "askopenfilename",
             return_value="/path/to/onset.keras",
+            autospec=True,
         ):
             self.app.browse_onset()
         self.assertEqual(self.app.onset_model_var.get(), "/path/to/onset.keras")
 
     def test_browse_onset_cancelled_does_nothing(self):
-        with mock.patch(
-            "tkinter.filedialog.askopenfilename",
+        with mock.patch.object(
+            filedialog,
+            "askopenfilename",
             return_value="",
+            autospec=True,
         ):
             self.app.browse_onset()
         self.assertEqual(self.app.onset_model_var.get(), "")
 
     def test_browse_arrow_sets_path(self):
-        with mock.patch(
-            "tkinter.filedialog.askopenfilename",
+        with mock.patch.object(
+            filedialog,
+            "askopenfilename",
             return_value="/path/to/arrow.keras",
+            autospec=True,
         ):
             self.app.browse_arrow()
         self.assertEqual(self.app.arrow_model_var.get(), "/path/to/arrow.keras")
 
     def test_browse_output_sets_path(self):
-        with mock.patch(
-            "tkinter.filedialog.asksaveasfilename",
+        with mock.patch.object(
+            filedialog,
+            "asksaveasfilename",
             return_value="/path/to/chart.txt",
+            autospec=True,
         ):
             self.app.browse_output()
         self.assertEqual(self.app.output_path_var.get(), "/path/to/chart.txt")
 
     def test_browse_output_cancelled_does_nothing(self):
-        with mock.patch(
-            "tkinter.filedialog.asksaveasfilename",
+        with mock.patch.object(
+            filedialog,
+            "asksaveasfilename",
             return_value="",
+            autospec=True,
         ):
             self.app.browse_output()
         self.assertEqual(self.app.output_path_var.get(), "")
@@ -656,7 +716,9 @@ class SetStatusTest(unittest.TestCase):
         self.assertEqual(self.app.status_var.get(), "Processing…")
 
     def test_set_status_calls_update_idletasks(self):
-        with mock.patch.object(self.app.status_label, "update_idletasks") as m_update:
+        with mock.patch.object(
+            self.app.status_label, "update_idletasks", autospec=True
+        ) as m_update:
             self.app.set_status("Done")
         m_update.assert_called_once()
 
@@ -670,7 +732,7 @@ class RunClickedTest(unittest.TestCase):
 
     def test_run_clicked_validation_failure_shows_messagebox(self):
         self.app.audio_path_var.set("")
-        with mock.patch("tkinter.messagebox.showerror") as m_showerror:
+        with mock.patch.object(messagebox, "showerror", autospec=True) as m_showerror:
             self.app.run_clicked()
         m_showerror.assert_called_once()
         self.assertEqual(
@@ -692,12 +754,16 @@ class RunClickedTest(unittest.TestCase):
             after_cbs.append((ms, cb))
 
         with (
-            mock.patch.object(self.root, "after", side_effect=capture_after),
-            mock.patch(
-                "generate_ui._run_generation",
+            mock.patch.object(
+                self.root, "after", side_effect=capture_after, autospec=True
+            ),
+            mock.patch.object(
+                generate_ui,
+                "_run_generation",
                 side_effect=lambda **kw: kw["result_queue"].put(
                     ("generation", True, "/out.txt")
                 ),
+                autospec=True,
             ),
         ):
             self.app.run_clicked()
@@ -718,13 +784,13 @@ class PollResultTest(unittest.TestCase):
         self.addCleanup(self.root.destroy)
 
     def test_poll_result_empty_reschedules(self):
-        with mock.patch.object(self.root, "after") as m_after:
+        with mock.patch.object(self.root, "after", autospec=True) as m_after:
             self.app._poll_result()
         m_after.assert_called_once_with(100, self.app._poll_result)
 
     def test_poll_result_generation_success_enables_btn_sets_status_shows_info(self):
         self.app.result_queue.put(("generation", True, "C:/out/chart.txt"))
-        with mock.patch("tkinter.messagebox.showinfo") as m_showinfo:
+        with mock.patch.object(messagebox, "showinfo", autospec=True) as m_showinfo:
             self.app._poll_result()
         self.assertEqual(self.app.run_btn["state"], tk.NORMAL)
         self.assertEqual(self.app.status_var.get(), "Saved to C:/out/chart.txt")
@@ -733,7 +799,7 @@ class PollResultTest(unittest.TestCase):
 
     def test_poll_result_generation_failure_sets_error_status_shows_showerror(self):
         self.app.result_queue.put(("generation", False, "Load error"))
-        with mock.patch("tkinter.messagebox.showerror") as m_showerror:
+        with mock.patch.object(messagebox, "showerror", autospec=True) as m_showerror:
             self.app._poll_result()
         self.assertEqual(self.app.run_btn["state"], tk.NORMAL)
         self.assertEqual(self.app.status_var.get(), "Error")
@@ -744,7 +810,7 @@ class PollResultTest(unittest.TestCase):
         self.app.refresh_cache_btn.config(state=tk.DISABLED)
         self.app.clear_cache_btn.config(state=tk.DISABLED)
         self.app.result_queue.put(("cache", True, "Cache cleared."))
-        with mock.patch("tkinter.messagebox.showinfo") as m_showinfo:
+        with mock.patch.object(messagebox, "showinfo", autospec=True) as m_showinfo:
             self.app._poll_result()
         self.assertEqual(self.app.refresh_cache_btn["state"], tk.NORMAL)
         self.assertEqual(self.app.clear_cache_btn["state"], tk.NORMAL)
@@ -756,7 +822,7 @@ class PollResultTest(unittest.TestCase):
         self.app.refresh_cache_btn.config(state=tk.DISABLED)
         self.app.clear_cache_btn.config(state=tk.DISABLED)
         self.app.result_queue.put(("cache", False, "Network error"))
-        with mock.patch("tkinter.messagebox.showerror") as m_showerror:
+        with mock.patch.object(messagebox, "showerror", autospec=True) as m_showerror:
             self.app._poll_result()
         self.assertEqual(self.app.refresh_cache_btn["state"], tk.NORMAL)
         self.assertEqual(self.app.clear_cache_btn["state"], tk.NORMAL)
@@ -785,7 +851,9 @@ class AddRowTest(unittest.TestCase):
 
     def test_add_row_with_browse_creates_button(self):
         var = tk.StringVar()
-        with mock.patch("tkinter.filedialog.askopenfilename", return_value=""):
+        with mock.patch.object(
+            filedialog, "askopenfilename", return_value="", autospec=True
+        ):
             ent = self.app._add_row("File:", var, self.app.browse_audio)
         self.assertEqual(ent["state"], "readonly")
         frames = [
@@ -822,8 +890,12 @@ class CacheButtonsTest(unittest.TestCase):
             after_cbs.append((ms, cb))
 
         with (
-            mock.patch("generate_ui.pretrained.refresh_model_cache") as m_refresh,
-            mock.patch.object(self.root, "after", side_effect=capture_after),
+            mock.patch.object(
+                generate_ui.pretrained, "refresh_model_cache", autospec=True
+            ) as m_refresh,
+            mock.patch.object(
+                self.root, "after", side_effect=capture_after, autospec=True
+            ),
         ):
             self.app.refresh_cache_clicked()
         self.assertEqual(self.app.refresh_cache_btn["state"], tk.DISABLED)
@@ -841,8 +913,12 @@ class CacheButtonsTest(unittest.TestCase):
             after_cbs.append((ms, cb))
 
         with (
-            mock.patch("generate_ui.pretrained.clear_model_cache") as m_clear,
-            mock.patch.object(self.root, "after", side_effect=capture_after),
+            mock.patch.object(
+                generate_ui.pretrained, "clear_model_cache", autospec=True
+            ) as m_clear,
+            mock.patch.object(
+                self.root, "after", side_effect=capture_after, autospec=True
+            ),
         ):
             self.app.clear_cache_clicked()
         self.assertEqual(self.app.refresh_cache_btn["state"], tk.DISABLED)
@@ -853,8 +929,10 @@ class CacheButtonsTest(unittest.TestCase):
 
     def test_refresh_cache_worker_puts_success_on_queue(self):
         with (
-            mock.patch("generate_ui.pretrained.refresh_model_cache"),
-            mock.patch("tkinter.messagebox.showinfo") as m_showinfo,
+            mock.patch.object(
+                generate_ui.pretrained, "refresh_model_cache", autospec=True
+            ),
+            mock.patch.object(messagebox, "showinfo", autospec=True) as m_showinfo,
         ):
             self.app.refresh_cache_clicked()
             self.app.result_queue.put(("cache", True, "Models refreshed."))
@@ -864,8 +942,10 @@ class CacheButtonsTest(unittest.TestCase):
 
     def test_clear_cache_worker_puts_success_on_queue(self):
         with (
-            mock.patch("generate_ui.pretrained.clear_model_cache"),
-            mock.patch("tkinter.messagebox.showinfo") as m_showinfo,
+            mock.patch.object(
+                generate_ui.pretrained, "clear_model_cache", autospec=True
+            ),
+            mock.patch.object(messagebox, "showinfo", autospec=True) as m_showinfo,
         ):
             self.app.clear_cache_clicked()
             self.app.result_queue.put(("cache", True, "Cache cleared."))
@@ -883,14 +963,18 @@ class CanvasHandlersTest(unittest.TestCase):
 
     def test_on_canvas_configure_updates_window_width(self):
         self.root.update_idletasks()
-        with mock.patch.object(self.app.canvas, "itemconfig") as m_itemconfig:
+        with mock.patch.object(
+            self.app.canvas, "itemconfig", autospec=True
+        ) as m_itemconfig:
             self.app._on_canvas_configure(mock.MagicMock(width=300))
             m_itemconfig.assert_called()
             call_kw = m_itemconfig.call_args[1]
             self.assertEqual(call_kw.get("width"), 300)
 
     def test_on_mousewheel_scrolls(self):
-        with mock.patch.object(self.app.canvas, "yview_scroll") as m_scroll:
+        with mock.patch.object(
+            self.app.canvas, "yview_scroll", autospec=True
+        ) as m_scroll:
             self.app._on_mousewheel(mock.MagicMock(delta=120))
         m_scroll.assert_called_once_with(-1, "units")
 
@@ -924,7 +1008,7 @@ class MainEntryTest(unittest.TestCase):
 
     def test_main_creates_app_and_runs_mainloop(self):
         try:
-            with mock.patch("tkinter.Tk.mainloop"):
+            with mock.patch.object(tk.Tk, "mainloop", autospec=True):
                 generate_ui.main()
             if tk._default_root is not None:
                 tk._default_root.destroy()
@@ -1010,7 +1094,9 @@ class EnsureStderrStdoutForFrozenTest(unittest.TestCase):
         try:
             sys.stdout = None
             sys.stderr = None
-            with mock.patch("generate_ui.atexit.register") as m_register:
+            with mock.patch.object(
+                generate_ui.atexit, "register", autospec=True
+            ) as m_register:
                 generate_ui._ensure_stdout_stderr_for_frozen()
             m_register.assert_called_once_with(
                 generate_ui._close_stdout_stderr_fallbacks
@@ -1056,7 +1142,7 @@ class SingleInstanceTest(unittest.TestCase):
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
-            mock.patch("generate_ui.ctypes.windll", create=True) as m_windll,
+            mock.patch.object(generate_ui.ctypes, "windll", create=True) as m_windll,
         ):
             m_windll.kernel32 = mock_kernel
             result = generate_ui._try_single_instance_win32()
@@ -1073,7 +1159,7 @@ class SingleInstanceTest(unittest.TestCase):
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
-            mock.patch("generate_ui.ctypes.windll", create=True) as m_windll,
+            mock.patch.object(generate_ui.ctypes, "windll", create=True) as m_windll,
         ):
             m_windll.kernel32 = mock_kernel
             m_windll.user32 = mock_user
@@ -1094,7 +1180,7 @@ class SingleInstanceTest(unittest.TestCase):
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
-            mock.patch("generate_ui.ctypes.windll", create=True) as m_windll,
+            mock.patch.object(generate_ui.ctypes, "windll", create=True) as m_windll,
         ):
             m_windll.kernel32 = mock_kernel
             m_windll.user32 = mock_user
@@ -1116,10 +1202,16 @@ class MainBlockTest(unittest.TestCase):
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
-            mock.patch("generate_ui.multiprocessing.freeze_support") as m_freeze,
-            mock.patch("generate_ui._ensure_stdout_stderr_for_frozen") as m_ensure_io,
-            mock.patch("generate_ui._try_single_instance_win32") as m_single,
-            mock.patch("generate_ui.main") as m_main,
+            mock.patch.object(
+                generate_ui.multiprocessing, "freeze_support", autospec=True
+            ) as m_freeze,
+            mock.patch.object(
+                generate_ui, "_ensure_stdout_stderr_for_frozen", autospec=True
+            ) as m_ensure_io,
+            mock.patch.object(
+                generate_ui, "_try_single_instance_win32", autospec=True
+            ) as m_single,
+            mock.patch.object(generate_ui, "main", autospec=True) as m_main,
         ):
             if getattr(sys, "frozen", False) and sys.platform == "win32":
                 generate_ui.multiprocessing.freeze_support()
@@ -1133,7 +1225,9 @@ class MainBlockTest(unittest.TestCase):
 
     def test_main_block_does_not_call_freeze_support_when_not_frozen(self):
         """When not frozen, freeze_support() is not called."""
-        with mock.patch("generate_ui.multiprocessing.freeze_support") as m_freeze:
+        with mock.patch.object(
+            generate_ui.multiprocessing, "freeze_support", autospec=True
+        ) as m_freeze:
             if getattr(sys, "frozen", False) and sys.platform == "win32":
                 generate_ui.multiprocessing.freeze_support()
         m_freeze.assert_not_called()

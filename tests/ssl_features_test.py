@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+import librosa
 import numpy as np
 
 from stepcovnet import config, constants, datasets, ssl_features
@@ -85,20 +86,26 @@ class SslFeaturesTest(unittest.TestCase):
         mock_model = mock.Mock()
         mock_processor = mock.Mock()
         with (
-            mock.patch("librosa.load", return_value=(fake_waveform, 24000)),
+            mock.patch.object(
+                librosa, "load", return_value=(fake_waveform, 24000), autospec=True
+            ),
             mock.patch.object(
                 ssl_features,
                 "_load_mert_model",
                 return_value=(mock_model, mock_processor),
+                autospec=True,
             ),
             mock.patch.object(
                 ssl_features,
                 "_mert_hidden_states_for_chunk",
                 return_value=fake_hidden,
+                autospec=True,
             ),
-            mock.patch(
-                "stepcovnet.datasets.onset_frame_count",
+            mock.patch.object(
+                datasets,
+                "onset_frame_count",
                 return_value=100,
+                autospec=True,
             ),
         ):
             out = ssl_features.extract_mert_features_from_audio("/fake/song.mp3")
@@ -112,6 +119,7 @@ class SslFeaturesTest(unittest.TestCase):
                 ssl_features,
                 "extract_mert_features_from_audio",
                 return_value=np.ones((5, constants.MERT_HIDDEN_SIZE), dtype=np.float32),
+                autospec=True,
             ):
                 written = ssl_features.extract_and_save_mert_features(
                     "/fake/song.mp3",
@@ -152,25 +160,68 @@ class SslFeaturesTest(unittest.TestCase):
         chunk_a = np.ones((5, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
         chunk_b = np.ones((5, constants.MERT_HIDDEN_SIZE), dtype=np.float32) * 2.0
         with (
-            mock.patch("librosa.load", return_value=(fake_waveform, 24000)),
+            mock.patch.object(
+                librosa, "load", return_value=(fake_waveform, 24000), autospec=True
+            ),
             mock.patch.object(
                 ssl_features,
                 "_load_mert_model",
                 return_value=(mock.Mock(), mock.Mock()),
+                autospec=True,
             ),
             mock.patch.object(
                 ssl_features,
                 "_mert_hidden_states_for_chunk",
                 side_effect=[chunk_a, chunk_b],
+                autospec=True,
             ),
-            mock.patch(
-                "stepcovnet.datasets.onset_frame_count",
+            mock.patch.object(
+                datasets,
+                "onset_frame_count",
                 return_value=200,
+                autospec=True,
             ),
         ):
             out = ssl_features.extract_mert_features_from_audio("/fake/song.mp3")
         self.assertEqual(out.shape[0], 200)
         self.assertEqual(out.shape[1], constants.MERT_HIDDEN_SIZE)
+
+    def test_extract_mert_features_pads_short_final_chunk(self):
+        chunk_samples = int(
+            ssl_features.MERT_CHUNK_SECONDS * ssl_features.MERT_SAMPLE_RATE
+        )
+        fake_waveform = np.random.randn(chunk_samples + 1).astype(np.float32)
+        chunk_sizes: list[int] = []
+
+        def capture_chunk(waveform, **_kwargs):
+            chunk_sizes.append(int(waveform.size))
+            return np.zeros((1, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
+
+        with (
+            mock.patch.object(
+                librosa, "load", return_value=(fake_waveform, 24000), autospec=True
+            ),
+            mock.patch.object(
+                ssl_features,
+                "_load_mert_model",
+                return_value=(mock.Mock(), mock.Mock()),
+                autospec=True,
+            ),
+            mock.patch.object(
+                ssl_features,
+                "_mert_hidden_states_for_chunk",
+                side_effect=capture_chunk,
+            ),
+            mock.patch.object(
+                datasets,
+                "onset_frame_count",
+                return_value=200,
+                autospec=True,
+            ),
+        ):
+            ssl_features.extract_mert_features_from_audio("/fake/song.mp3")
+        self.assertEqual(len(chunk_sizes), 2)
+        self.assertGreaterEqual(chunk_sizes[1], ssl_features.MIN_MERT_CHUNK_SAMPLES)
 
     def test_require_ssl_deps_import_error(self):
         import builtins
@@ -182,13 +233,15 @@ class SslFeaturesTest(unittest.TestCase):
                 raise ImportError("no torch")
             return real_import(name, globals, locals, fromlist, level)
 
-        with mock.patch("builtins.__import__", side_effect=fake_import):
+        with mock.patch.object(builtins, "__import__", side_effect=fake_import):
             with self.assertRaises(ImportError):
                 ssl_features._require_ssl_deps()
 
     def test_extract_mert_features_from_audio_empty_raises(self):
         with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
-            with mock.patch("librosa.load", return_value=(np.array([]), 24000)):
+            with mock.patch.object(
+                librosa, "load", return_value=(np.array([]), 24000), autospec=True
+            ):
                 with self.assertRaises(ValueError):
                     ssl_features.extract_mert_features_from_audio(tmp.name)
 

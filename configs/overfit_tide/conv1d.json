@@ -1,0 +1,44 @@
+{
+  "dataset": {
+    "data_dir": "data/v2/train",
+    "val_data_dir": "data/v2/train",
+    "test_data_dir": "data/v2/test",
+    "batch_size": 1,
+    "max_audio_seconds": 300,
+    "n_max_onsets": 1024,
+    "max_steps_per_chart": 1024,
+    "target_sample_rate": 44100,
+    "truncate_long_audio": true,
+    "apply_audio_augment": false,
+    "overfit_audio_path": "data/v2/test/tide.ogg",
+    "overfit_chart_path": "data/v2/test/tide.txt",
+    "mert_features_dir": "",
+    "data_root": "data/v2/test"
+  },
+  "model": {
+    "frontend": "conv1d",
+    "encoder": {
+      "initial_filters": 16,
+      "depth": 1,
+      "dilation_rates": [1, 2, 4, 8],
+      "kernel_size": 3,
+      "dropout_rate": 0.0
+    },
+    "num_queries": 1024,
+    "embed_dim": 64,
+    "decoder_layers": 2
+  },
+  "run": {
+    "epochs": 50,
+    "overfit_one_song": true,
+    "pipeline_check_shortcuts": false,
+    "tolerance_sec": 0.02,
+    "confidence_threshold": 0.5,
+    "min_onset_distance_ms": 50,
+    "lambda_cls": 5.0,
+    "lambda_time": 20.0,
+    "model_output_dir": "",
+    "callback_root_dir": "callbacks/overfit_tide/conv1d",
+    "seed": 42
+  }
+}

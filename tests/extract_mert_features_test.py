@@ -38,12 +38,14 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                     wsl_gpu,
                     "maybe_dispatch_for_mert_extract",
                     return_value=False,
+                    autospec=True,
                 ),
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(
                     ssl_features,
                     "extract_and_save_mert_features",
                     return_value=os.path.join(out_dir, "song.mert.npy"),
+                    autospec=True,
                 ) as mock_extract,
             ):
                 extract_mert_features.main(argv)
@@ -62,6 +64,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                     wsl_gpu,
                     "maybe_dispatch_for_mert_extract",
                     return_value=False,
+                    autospec=True,
                 ),
                 mock.patch.object(sys, "argv", argv),
             ):
@@ -100,13 +103,15 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                     wsl_gpu,
                     "maybe_dispatch_for_mert_extract",
                     return_value=False,
+                    autospec=True,
                 ),
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(
                     ssl_features,
                     "extract_and_save_mert_features",
+                    autospec=True,
                 ) as mock_extract,
-                mock.patch("sys.stdout", stdout),
+                mock.patch.object(sys, "stdout", stdout),
             ):
                 extract_mert_features.main(argv)
             mock_extract.assert_not_called()

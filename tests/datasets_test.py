@@ -42,7 +42,9 @@ class DatasetsTest(unittest.TestCase):
             audio_path = os.path.join(tmpdir, "song.mp3")
             pathlib.Path(audio_path).touch()
             np.save(ssl_features.mert_npy_path(audio_path), features)
-            with mock.patch.object(datasets, "onset_frame_count", return_value=20):
+            with mock.patch.object(
+                datasets, "onset_frame_count", return_value=20, autospec=True
+            ):
                 loaded = datasets.load_onset_features(
                     audio_path,
                     config.FeatureSource.MERT,
@@ -74,6 +76,32 @@ class DatasetsTest(unittest.TestCase):
             )
         self.assertEqual(loaded.shape, (mel_steps, constants.MERT_HIDDEN_SIZE))
 
+    def test_load_onset_waveform_matches_mel_frame_grid(self):
+        audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
+        self.assertIsNotNone(audio_path)
+        assert audio_path is not None
+        n_frames = datasets.onset_frame_count(audio_path)
+        waveform = datasets.load_onset_waveform(audio_path)
+        self.assertEqual(waveform.ndim, 1)
+        self.assertEqual(
+            waveform.size,
+            n_frames * constants.WAVEFORM_SAMPLES_PER_FRAME,
+        )
+
+    def test_create_waveform_dataset(self):
+        ds = datasets.create_dataset(
+            TEST_DATA_DIR,
+            feature_source=config.FeatureSource.WAVEFORM,
+            n_features=32,
+        )
+        features, targets = _first_batch(ds)
+        self.assertEqual(features.shape[0], 1)
+        self.assertEqual(
+            features.shape[1],
+            targets.shape[1] * constants.WAVEFORM_SAMPLES_PER_FRAME,
+        )
+        self.assertEqual(targets.shape[2], 1)
+
     def test_create_dataset(self):
         ds = datasets.create_dataset(TEST_DATA_DIR)
         features, targets = _first_batch(ds)
@@ -93,6 +121,64 @@ class DatasetsTest(unittest.TestCase):
             with self.subTest(create_fn=create_fn.__name__):
                 with self.assertRaises(ValueError):
                     create_fn("")
+
+    def test_select_song_pairs_returns_all_when_max_songs_minus_one(self):
+        pairs = [("a.ogg", "a.txt"), ("b.ogg", "b.txt")]
+        selected = datasets.select_song_pairs(pairs, max_songs=-1, seed=7)
+        self.assertEqual(selected, pairs)
+
+    def test_select_song_pairs_reproducible_with_seed(self):
+        pairs = [(f"song_{index}.ogg", f"song_{index}.txt") for index in range(10)]
+        first = datasets.select_song_pairs(pairs, max_songs=3, seed=42)
+        second = datasets.select_song_pairs(pairs, max_songs=3, seed=42)
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 3)
+
+    def test_select_song_pairs_seed_changes_selection(self):
+        pairs = [(f"song_{index}.ogg", f"song_{index}.txt") for index in range(10)]
+        first = datasets.select_song_pairs(pairs, max_songs=3, seed=1)
+        second = datasets.select_song_pairs(pairs, max_songs=3, seed=2)
+        self.assertNotEqual(first, second)
+
+    def test_create_dataset_max_songs_limits_pairs(self):
+        test_data_dir = os.path.join(os.path.dirname(__file__), "testdata")
+        audio_path, chart_path = _get_one_audio_chart_pair(test_data_dir)
+        self.assertIsNotNone(audio_path)
+        assert audio_path is not None
+        assert chart_path is not None
+        mel_features = datasets.load_onset_features(
+            audio_path,
+            config.FeatureSource.MEL,
+        )
+        n_steps = mel_features.shape[0]
+        mert_array = np.random.randn(n_steps, constants.MERT_HIDDEN_SIZE).astype(
+            np.float32
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mert_dir = os.path.join(tmpdir, "mert")
+            for index in range(4):
+                stem = f"song_{index}"
+                song_dir = os.path.join(tmpdir, stem)
+                os.makedirs(song_dir, exist_ok=True)
+                shutil.copy2(audio_path, os.path.join(song_dir, f"{stem}.ogg"))
+                shutil.copy2(chart_path, os.path.join(song_dir, f"{stem}.txt"))
+                out_path = ssl_features.mert_npy_path(
+                    os.path.join(song_dir, f"{stem}.ogg"),
+                    features_dir=mert_dir,
+                    data_root=tmpdir,
+                )
+                os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                np.save(out_path, mert_array)
+            ds = datasets.create_dataset(
+                tmpdir,
+                feature_source=config.FeatureSource.MERT,
+                mert_features_dir=mert_dir,
+                n_features=constants.MERT_HIDDEN_SIZE,
+                max_songs=2,
+                song_selection_seed=99,
+            )
+            batch_count = sum(1 for _ in ds)
+            self.assertEqual(batch_count, 2)
 
     def test_create_arrow_dataset(self):
         ds = datasets.create_arrow_dataset(TEST_DATA_DIR)
@@ -888,7 +974,7 @@ class DatasetsTest(unittest.TestCase):
     def test_temporal_augment_scipy_warp_longer(self):
         spec = np.random.randn(constants.N_MELS, 100).astype(np.float32)
         labels = np.zeros((100, 1), dtype=np.float32)
-        with mock.patch("numpy.random.uniform", return_value=1.1):
+        with mock.patch.object(np.random, "uniform", return_value=1.1, autospec=True):
             out_spec, out_labels = datasets._temporal_augment_scipy(
                 spec, labels, constants.N_MELS
             )
@@ -898,7 +984,7 @@ class DatasetsTest(unittest.TestCase):
     def test_temporal_augment_scipy_warp_shorter(self):
         spec = np.random.randn(constants.N_MELS, 100).astype(np.float32)
         labels = np.zeros((100, 1), dtype=np.float32)
-        with mock.patch("numpy.random.uniform", return_value=0.9):
+        with mock.patch.object(np.random, "uniform", return_value=0.9, autospec=True):
             out_spec, out_labels = datasets._temporal_augment_scipy(
                 spec, labels, constants.N_MELS
             )
@@ -961,7 +1047,7 @@ class DatasetsTest(unittest.TestCase):
     def test_augment_features_numpy_temporal_and_spec(self):
         features = np.random.randn(200, constants.N_MELS).astype(np.float32)
         target = np.zeros((200, 1), dtype=np.float32)
-        with mock.patch("numpy.random.uniform", return_value=1.0):
+        with mock.patch.object(np.random, "uniform", return_value=1.0, autospec=True):
             out_f, out_t = datasets._augment_features_numpy(
                 features, target, True, True, constants.N_MELS
             )
@@ -1092,7 +1178,7 @@ class DatasetsTest(unittest.TestCase):
         audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
-        with mock.patch("stepcovnet.datasets.librosa") as mock_librosa:
+        with mock.patch.object(datasets, "librosa", autospec=True) as mock_librosa:
             y_orig = np.random.randn(44100 * 2).astype(np.float32)
             mock_librosa.load.return_value = (y_orig, 22050)
             mock_librosa.resample.return_value = np.random.randn(44100 * 2).astype(
@@ -1134,6 +1220,7 @@ class DatasetsTest(unittest.TestCase):
             apply_temporal_augment=False,
             should_apply_spec_augment=False,
             n_features=constants.N_MELS,
+            feature_source=config.FeatureSource.MEL,
         )
         self.assertEqual(aug_f.shape[1], constants.N_MELS)
         self.assertEqual(aug_t.shape[1], 1)

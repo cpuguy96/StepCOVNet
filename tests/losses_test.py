@@ -1,5 +1,3 @@
-"""Tests for stepcovnet.losses (arrow focal, label-smoothed CE, masked MSE aux interval)."""
-
 import math
 import unittest
 

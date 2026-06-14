@@ -1,5 +1,3 @@
-"""Tests for stepcovnet.pretrained (resolve model paths, download from Drive)."""
-
 import os
 import pathlib
 import tempfile
@@ -28,8 +26,10 @@ class GetDefaultModelsDirTest(unittest.TestCase):
         """When os.name is not nt, path is under Path.home() / .stepcovnet."""
         fake_home = pathlib.Path(tempfile.gettempdir()) / "fake_home"
         with (
-            mock.patch("os.name", "posix"),
-            mock.patch.object(pathlib.Path, "home", return_value=fake_home),
+            mock.patch.object(os, "name", "posix"),
+            mock.patch.object(
+                pathlib.Path, "home", return_value=fake_home, autospec=True
+            ),
         ):
             path = pretrained.get_default_models_dir()
         self.assertEqual(path.name, "models")
@@ -100,7 +100,9 @@ class DownloadZipAndExtractKerasTest(unittest.TestCase):
         """When the zip contains no .keras file, raises RuntimeError."""
         with tempfile.TemporaryDirectory() as tmpdir:
             out_path = pathlib.Path(tmpdir) / "out.keras"
-            with mock.patch("stepcovnet.pretrained.gdown.download") as mock_download:
+            with mock.patch.object(
+                pretrained.gdown, "download", autospec=True
+            ) as mock_download:
 
                 def create_zip_without_keras(url, output, **kwargs):
                     with zipfile.ZipFile(output, "w") as zf:
@@ -138,7 +140,10 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
             with open(cached, "w") as f:
                 f.write("")
             with mock.patch.object(
-                pretrained, "get_default_models_dir", return_value=pathlib.Path(tmpdir)
+                pretrained,
+                "get_default_models_dir",
+                return_value=pathlib.Path(tmpdir),
+                autospec=True,
             ):
                 result = pretrained.resolve_onset_model_path(None)
         self.assertEqual(result, cached)
@@ -151,6 +156,7 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
                     pretrained,
                     "get_default_models_dir",
                     return_value=pathlib.Path(tmpdir),
+                    autospec=True,
                 ),
                 mock.patch.object(pretrained, "DEFAULT_ONSET_DRIVE_ID", ""),
             ):
@@ -167,11 +173,16 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
                     pretrained,
                     "get_default_models_dir",
                     return_value=pathlib.Path(tmpdir),
+                    autospec=True,
                 ),
                 mock.patch.object(
-                    pretrained, "DEFAULT_ONSET_DRIVE_ID", "test_drive_id_123"
+                    pretrained,
+                    "DEFAULT_ONSET_DRIVE_ID",
+                    "test_drive_id_123",
                 ),
-                mock.patch("stepcovnet.pretrained.gdown.download") as mock_download,
+                mock.patch.object(
+                    pretrained.gdown, "download", autospec=True
+                ) as mock_download,
             ):
                 out_path = os.path.join(tmpdir, pretrained._ONSET_FILENAME)
 
@@ -195,7 +206,10 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
             with open(cached, "w") as f:
                 f.write("")
             with mock.patch.object(
-                pretrained, "get_default_models_dir", return_value=pathlib.Path(tmpdir)
+                pretrained,
+                "get_default_models_dir",
+                return_value=pathlib.Path(tmpdir),
+                autospec=True,
             ):
                 for empty in ("", "  ", "\t"):
                     result = pretrained.resolve_onset_model_path(empty)
@@ -209,9 +223,12 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
                     pretrained,
                     "get_default_models_dir",
                     return_value=pathlib.Path(tmpdir),
+                    autospec=True,
                 ),
                 mock.patch.object(pretrained, "DEFAULT_ONSET_DRIVE_ID", "id123"),
-                mock.patch("stepcovnet.pretrained.gdown.download"),  # no side_effect
+                mock.patch.object(
+                    pretrained.gdown, "download", autospec=True
+                ),  # no side_effect
             ):
                 with self.assertRaises(RuntimeError) as ctx:
                     pretrained.resolve_onset_model_path(None)
@@ -246,7 +263,10 @@ class ResolveArrowModelPathTest(unittest.TestCase):
             with open(cached, "w") as f:
                 f.write("")
             with mock.patch.object(
-                pretrained, "get_default_models_dir", return_value=pathlib.Path(tmpdir)
+                pretrained,
+                "get_default_models_dir",
+                return_value=pathlib.Path(tmpdir),
+                autospec=True,
             ):
                 result = pretrained.resolve_arrow_model_path(None)
         self.assertEqual(result, cached)
@@ -259,6 +279,7 @@ class ResolveArrowModelPathTest(unittest.TestCase):
                     pretrained,
                     "get_default_models_dir",
                     return_value=pathlib.Path(tmpdir),
+                    autospec=True,
                 ),
                 mock.patch.object(pretrained, "DEFAULT_ARROW_DRIVE_ID", ""),
             ):
@@ -275,9 +296,12 @@ class ResolveArrowModelPathTest(unittest.TestCase):
                     pretrained,
                     "get_default_models_dir",
                     return_value=pathlib.Path(tmpdir),
+                    autospec=True,
                 ),
                 mock.patch.object(pretrained, "DEFAULT_ARROW_DRIVE_ID", "arrow_id_456"),
-                mock.patch("stepcovnet.pretrained.gdown.download") as mock_download,
+                mock.patch.object(
+                    pretrained.gdown, "download", autospec=True
+                ) as mock_download,
             ):
                 out_path = os.path.join(tmpdir, pretrained._ARROW_FILENAME)
 
@@ -302,9 +326,10 @@ class ResolveArrowModelPathTest(unittest.TestCase):
                     pretrained,
                     "get_default_models_dir",
                     return_value=pathlib.Path(tmpdir),
+                    autospec=True,
                 ),
                 mock.patch.object(pretrained, "DEFAULT_ARROW_DRIVE_ID", "id456"),
-                mock.patch("stepcovnet.pretrained.gdown.download"),
+                mock.patch.object(pretrained.gdown, "download", autospec=True),
             ):
                 with self.assertRaises(RuntimeError) as ctx:
                     pretrained.resolve_arrow_model_path(None)
@@ -326,7 +351,10 @@ class ClearModelCacheTest(unittest.TestCase):
             onset_path.write_text("onset")
             arrow_path.write_text("arrow")
             with mock.patch.object(
-                pretrained, "get_default_models_dir", return_value=cache_dir
+                pretrained,
+                "get_default_models_dir",
+                return_value=cache_dir,
+                autospec=True,
             ):
                 pretrained.clear_model_cache()
             self.assertFalse(onset_path.exists())
@@ -338,7 +366,10 @@ class ClearModelCacheTest(unittest.TestCase):
             cache_dir = pathlib.Path(tmpdir) / "nonexistent"
             self.assertFalse(cache_dir.exists())
             with mock.patch.object(
-                pretrained, "get_default_models_dir", return_value=cache_dir
+                pretrained,
+                "get_default_models_dir",
+                return_value=cache_dir,
+                autospec=True,
             ):
                 pretrained.clear_model_cache()
 
@@ -347,7 +378,10 @@ class ClearModelCacheTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = pathlib.Path(tmpdir)
             with mock.patch.object(
-                pretrained, "get_default_models_dir", return_value=cache_dir
+                pretrained,
+                "get_default_models_dir",
+                return_value=cache_dir,
+                autospec=True,
             ):
                 pretrained.clear_model_cache()
             self.assertEqual(list(cache_dir.iterdir()), [])
@@ -360,7 +394,10 @@ class ClearModelCacheTest(unittest.TestCase):
             other_path = cache_dir / "other.keras"
             other_path.write_text("other")
             with mock.patch.object(
-                pretrained, "get_default_models_dir", return_value=cache_dir
+                pretrained,
+                "get_default_models_dir",
+                return_value=cache_dir,
+                autospec=True,
             ):
                 pretrained.clear_model_cache()
             self.assertFalse((cache_dir / pretrained._ONSET_FILENAME).exists())
@@ -380,17 +417,22 @@ class RefreshModelCacheTest(unittest.TestCase):
             resolved = str(cache_dir / "resolved.keras")
             with (
                 mock.patch.object(
-                    pretrained, "get_default_models_dir", return_value=cache_dir
+                    pretrained,
+                    "get_default_models_dir",
+                    return_value=cache_dir,
+                    autospec=True,
                 ),
                 mock.patch.object(
                     pretrained,
                     "resolve_onset_model_path",
                     return_value=resolved,
+                    autospec=True,
                 ) as m_onset,
                 mock.patch.object(
                     pretrained,
                     "resolve_arrow_model_path",
                     return_value=resolved,
+                    autospec=True,
                 ) as m_arrow,
             ):
                 pretrained.refresh_model_cache()
@@ -405,7 +447,10 @@ class RefreshModelCacheTest(unittest.TestCase):
             cache_dir = pathlib.Path(tmpdir)
             with (
                 mock.patch.object(
-                    pretrained, "get_default_models_dir", return_value=cache_dir
+                    pretrained,
+                    "get_default_models_dir",
+                    return_value=cache_dir,
+                    autospec=True,
                 ),
                 mock.patch.object(pretrained, "DEFAULT_ONSET_DRIVE_ID", ""),
             ):

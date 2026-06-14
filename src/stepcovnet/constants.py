@@ -6,6 +6,9 @@ TARGET_SR = 44100
 # Onset frame spacing in seconds (10 ms at 44.1 kHz with default hop_length)
 HOP_COEFF = 0.01
 
+# Samples per dense-onset frame when using raw waveform input (441 @ 44.1 kHz, 10 ms hop)
+WAVEFORM_SAMPLES_PER_FRAME = int(round(TARGET_SR * HOP_COEFF))
+
 # Number of Mel bands to generate
 N_MELS = 128
 

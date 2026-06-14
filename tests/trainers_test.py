@@ -1,4 +1,5 @@
 import contextlib
+import json
 import os
 import tempfile
 import typing
@@ -6,9 +7,10 @@ import unittest
 from unittest import mock
 
 import keras
+import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config, datasets, losses, models, trainers
+from stepcovnet import config, datasets, dense_overfit_eval, losses, models, trainers
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
 
@@ -197,6 +199,295 @@ class TrainersTest(unittest.TestCase):
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
 
+    def test_latest_monitored_checkpoint_picks_highest_onset_f1_score(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = os.path.join(tmp, "models", "run1")
+            os.makedirs(run_dir)
+            low_path = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras")
+            high_path = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.99000.keras")
+            for path in (low_path, high_path):
+                with open(path, "wb") as checkpoint_file:
+                    checkpoint_file.write(b"")
+            selected = trainers._latest_monitored_checkpoint(
+                tmp, trainers.ONSET_CHECKPOINT_MONITOR
+            )
+            self.assertEqual(selected, high_path)
+
+    def test_list_monitored_checkpoints_returns_all_sorted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = os.path.join(tmp, "models", "run1")
+            os.makedirs(run_dir)
+            paths = [
+                os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.20000.keras"),
+                os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras"),
+                os.path.join(run_dir, "VAL_ONSET_F1_SCORE-notanumber.keras"),
+                os.path.join(run_dir, "not_a_checkpoint.keras"),
+            ]
+            for path in paths:
+                with open(path, "wb") as checkpoint_file:
+                    checkpoint_file.write(b"")
+            listed = trainers._list_monitored_checkpoints(
+                tmp, trainers.ONSET_CHECKPOINT_MONITOR
+            )
+            self.assertEqual(
+                listed,
+                sorted(
+                    [
+                        os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras"),
+                        os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.20000.keras"),
+                    ]
+                ),
+            )
+
+    def test_list_monitored_checkpoints_empty_when_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(
+                trainers._list_monitored_checkpoints(
+                    tmp, trainers.ONSET_CHECKPOINT_MONITOR
+                ),
+                [],
+            )
+
+    def test_select_best_event_f1_checkpoint_uses_event_f1_not_frame_f1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = os.path.join(tmp, "callbacks", "models", "run1")
+            os.makedirs(run_dir)
+            low_frame = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras")
+            high_frame = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.20000.keras")
+            for path in (low_frame, high_frame):
+                with open(path, "wb") as checkpoint_file:
+                    checkpoint_file.write(b"")
+            dataset_config, model_config, run_config = _make_onset_configs(
+                os.path.join(tmp, "models"),
+                run_kwargs={
+                    "callback_root_dir": os.path.join(tmp, "callbacks"),
+                    "post_hoc_event_f1_thresholds": [0.2, 0.35],
+                },
+            )
+
+            # Sorted checkpoint order: [0.10000, 0.20000]; give the lower-frame
+            # checkpoint the higher event F1 to prove event F1 drives selection.
+            sweeps = [
+                {"best_threshold": 0.35, "best_micro_event_f1": 0.8},
+                {"best_threshold": 0.2, "best_micro_event_f1": 0.5},
+            ]
+            with (
+                mock.patch.object(
+                    trainers.keras.models,
+                    "load_model",
+                    return_value=mock.Mock(),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    trainers.dense_overfit_eval,
+                    "sweep_thresholds_dense_val_event_f1",
+                    side_effect=sweeps,
+                    autospec=True,
+                ),
+            ):
+                report = trainers._select_best_event_f1_checkpoint(
+                    dataset_config, model_config, run_config
+                )
+            self.assertEqual(report["best_checkpoint"], low_frame)
+            self.assertEqual(report["best_threshold"], 0.35)
+            self.assertEqual(report["best_micro_event_f1"], 0.8)
+            self.assertEqual(len(report["per_checkpoint"]), 2)
+
+    def test_select_best_event_f1_checkpoint_none_without_checkpoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_config, model_config, run_config = _make_onset_configs(
+                os.path.join(tmp, "models"),
+                run_kwargs={"callback_root_dir": os.path.join(tmp, "callbacks")},
+            )
+            self.assertIsNone(
+                trainers._select_best_event_f1_checkpoint(
+                    dataset_config, model_config, run_config
+                )
+            )
+
+    def test_export_best_event_f1_checkpoint_writes_model_and_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = os.path.join(tmp, "callbacks", "models", "run1")
+            os.makedirs(run_dir)
+            best_ckpt = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.15000.keras")
+            with open(best_ckpt, "wb") as checkpoint_file:
+                checkpoint_file.write(b"")
+            model_output_dir = os.path.join(tmp, "models")
+            dataset_config, model_config, run_config = _make_onset_configs(
+                model_output_dir,
+                run_kwargs={
+                    "callback_root_dir": os.path.join(tmp, "callbacks"),
+                    "post_hoc_event_f1_thresholds": [0.2],
+                },
+            )
+            stub_model = mock.Mock()
+            stub_model.name = "dense_model"
+            best_model = mock.Mock()
+
+            def _save(filepath):
+                with open(filepath, "wb") as out_file:
+                    out_file.write(b"saved")
+
+            best_model.save.side_effect = _save
+            with (
+                mock.patch.object(
+                    trainers.keras.models,
+                    "load_model",
+                    return_value=best_model,
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    trainers.dense_overfit_eval,
+                    "sweep_thresholds_dense_val_event_f1",
+                    return_value={
+                        "best_threshold": 0.2,
+                        "best_micro_event_f1": 0.7,
+                    },
+                    autospec=True,
+                ),
+            ):
+                report = trainers._export_best_event_f1_checkpoint(
+                    stub_model, dataset_config, model_config, run_config
+                )
+            self.assertIsNotNone(report)
+            exported = os.path.join(model_output_dir, "dense_model.keras")
+            self.assertTrue(os.path.isfile(exported))
+            report_path = os.path.join(
+                model_output_dir, trainers.POST_HOC_EVENT_F1_REPORT_NAME
+            )
+            self.assertTrue(os.path.isfile(report_path))
+            with open(report_path, encoding="utf-8") as report_file:
+                written = json.load(report_file)
+            self.assertEqual(written["best_checkpoint"], best_ckpt)
+            self.assertEqual(written["best_threshold"], 0.2)
+
+    def test_export_best_event_f1_checkpoint_none_without_checkpoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_config, model_config, run_config = _make_onset_configs(
+                os.path.join(tmp, "models"),
+                run_kwargs={"callback_root_dir": os.path.join(tmp, "callbacks")},
+            )
+            stub_model = mock.Mock()
+            stub_model.name = "dense_model"
+            self.assertIsNone(
+                trainers._export_best_event_f1_checkpoint(
+                    stub_model, dataset_config, model_config, run_config
+                )
+            )
+
+    def test_run_train_from_config_invokes_post_hoc_export_when_enabled(self):
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_onset_configs(
+                model_output_dir,
+                dataset_kwargs={
+                    "batch_size": 1,
+                    "use_gaussian_target": True,
+                    "gaussian_sigma": 1.0,
+                },
+                model_kwargs={
+                    "initial_filters": 8,
+                    "depth": 1,
+                    "dilation_rates": [1, 2],
+                },
+                run_kwargs={
+                    "epoch": 1,
+                    "take_count": 1,
+                    "callback_root_dir": callback_root_dir,
+                    "post_hoc_event_f1_export": True,
+                },
+            )
+            with mock.patch.object(
+                trainers,
+                "_export_best_event_f1_checkpoint",
+                autospec=True,
+            ) as export_mock:
+                trainers.run_train_from_config(dataset_config, model_config, run_config)
+            export_mock.assert_called_once()
+
+    def test_run_train_from_config_skips_post_hoc_export_when_disabled(self):
+        with _temp_model_and_callback_dirs(with_callbacks=True) as (
+            model_output_dir,
+            callback_root_dir,
+        ):
+            dataset_config, model_config, run_config = _make_onset_configs(
+                model_output_dir,
+                dataset_kwargs={"batch_size": 1},
+                model_kwargs={
+                    "initial_filters": 8,
+                    "depth": 1,
+                    "dilation_rates": [1, 2],
+                },
+                run_kwargs={
+                    "epoch": 1,
+                    "take_count": 1,
+                    "callback_root_dir": callback_root_dir,
+                },
+            )
+            with mock.patch.object(
+                trainers,
+                "_export_best_event_f1_checkpoint",
+                autospec=True,
+            ) as export_mock:
+                trainers.run_train_from_config(dataset_config, model_config, run_config)
+            export_mock.assert_not_called()
+
+    def test_onset_checkpoint_callback_monitors_frame_f1(self):
+        callback = trainers._get_ckpt_callback(
+            "/tmp/cb",
+            "run1",
+            trainers.ONSET_CHECKPOINT_MONITOR,
+            "max",
+        )
+        self.assertEqual(callback.monitor, trainers.ONSET_CHECKPOINT_MONITOR)
+        self.assertIn("VAL_ONSET_F1_SCORE", callback.filepath)
+
+    def test_build_onset_dense_compile_metrics_keeps_frame_f1(self):
+        run_config = config.RunConfig(
+            epoch=1,
+            take_count=1,
+            model_output_dir="out",
+            confidence_threshold=0.05,
+        )
+        metric_names = [
+            metric.name
+            for metric in trainers.build_onset_dense_compile_metrics(run_config)
+        ]
+        self.assertIn("onset_f1_score", metric_names)
+        self.assertNotIn("dense_event_onset_f1", metric_names)
+
+    def test_dense_val_event_f1_callback_logs_monitor_metric(self):
+        features = np.zeros((1, 50, 128), dtype=np.float32)
+        y_true = np.zeros((1, 50, 1), dtype=np.float32)
+        y_true[0, 10, 0] = 1.0
+        y_pred = np.zeros((1, 50, 1), dtype=np.float32)
+        y_pred[0, 10, 0] = 0.9
+        stub_model = mock.Mock()
+        stub_model.predict.return_value = y_pred
+        val_ds = tf.data.Dataset.from_tensor_slices((features, y_true)).batch(1)
+        callback = dense_overfit_eval.DenseValEventF1Callback(
+            val_ds,
+            confidence_threshold=0.5,
+        )
+        callback.set_model(stub_model)
+        logs: dict[str, float] = {}
+        callback.on_epoch_end(0, logs)
+        self.assertIn("val_dense_event_onset_f1", logs)
+        self.assertEqual(logs["val_dense_event_onset_f1"], 1.0)
+
+    def test_get_callbacks_adds_early_stopping_when_patience_set(self):
+        callbacks, _ = trainers._get_callbacks(
+            "/tmp/cb",
+            trainers.ONSET_CHECKPOINT_MONITOR,
+            "max",
+            early_stopping_patience=10,
+        )
+        self.assertEqual(len(callbacks), 3)
+        self.assertIsInstance(callbacks[2], keras.callbacks.EarlyStopping)
+        self.assertEqual(callbacks[2].patience, 10)
+
     def test_run_train_from_config_saves_model_with_explicit_model_name(self):
         """Saved model file and model.name use run_config.model_name when set."""
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
@@ -307,11 +598,13 @@ class TrainersTest(unittest.TestCase):
                 run_kwargs={"fit_verbose": 2},
             )
             with (
-                mock.patch(
-                    "stepcovnet.trainers.models.build_arrow_model_from_config",
+                mock.patch.object(
+                    models,
+                    "build_arrow_model_from_config",
                     return_value=mock_model,
+                    autospec=True,
                 ),
-                mock.patch("stepcovnet.trainers._write_model"),
+                mock.patch.object(trainers, "_write_model", autospec=True),
             ):
                 trainers.run_arrow_train_from_config(exp)
         mock_model.fit.assert_called_once()
@@ -333,11 +626,13 @@ class TrainersTest(unittest.TestCase):
                 run_kwargs={"show_model_summary": False},
             )
             with (
-                mock.patch(
-                    "stepcovnet.trainers.models.build_arrow_model_from_config",
+                mock.patch.object(
+                    models,
+                    "build_arrow_model_from_config",
                     return_value=mock_model,
+                    autospec=True,
                 ),
-                mock.patch("stepcovnet.trainers._write_model"),
+                mock.patch.object(trainers, "_write_model", autospec=True),
             ):
                 trainers.run_arrow_train_from_config(exp)
         mock_model.summary.assert_not_called()
@@ -358,11 +653,13 @@ class TrainersTest(unittest.TestCase):
                 run_kwargs={"show_model_summary": True},
             )
             with (
-                mock.patch(
-                    "stepcovnet.trainers.models.build_arrow_model_from_config",
+                mock.patch.object(
+                    models,
+                    "build_arrow_model_from_config",
                     return_value=mock_model,
+                    autospec=True,
                 ),
-                mock.patch("stepcovnet.trainers._write_model"),
+                mock.patch.object(trainers, "_write_model", autospec=True),
             ):
                 trainers.run_arrow_train_from_config(exp)
         mock_model.summary.assert_called_once()
@@ -738,11 +1035,12 @@ class ExperimentNameHelperTests(unittest.TestCase):
         self.assertIn("sigma_1_5", name)
         self.assertIn("temporal_augment", name)
         self.assertIn("spec_augment", name)
-        self.assertIn("unet_filters_32", name)
-        self.assertIn("unet_depth_3", name)
-        self.assertIn("unet_kernel_size_5", name)
-        self.assertIn("unet_dropout_0_1", name)
-        self.assertIn("unet_dilations_1_2_4", name)
+        self.assertIn("unet_wavenet", name)
+        self.assertIn("filters_32", name)
+        self.assertIn("depth_3", name)
+        self.assertIn("kernel_5", name)
+        self.assertIn("dropout_0_1", name)
+        self.assertIn("dilations_1_2_4", name)
 
     def test_get_onset_experiment_name_includes_mert_feature_source(self):
         name = trainers._get_onset_experiment_name(
@@ -756,15 +1054,32 @@ class ExperimentNameHelperTests(unittest.TestCase):
         )
         self.assertIn("mert", name)
 
+    def test_get_onset_experiment_name_includes_waveform_feature_source(self):
+        name = trainers._get_onset_experiment_name(
+            take_count=1,
+            apply_temporal_augment=False,
+            should_apply_spec_augment=False,
+            use_gaussian_target=False,
+            gaussian_sigma=1.0,
+            model_params=config.OnsetModelConfig(),
+            feature_source=config.FeatureSource.WAVEFORM,
+        )
+        self.assertIn("waveform", name)
+
     def test_get_onset_experiment_name_handles_dilation_rate_edge_cases(self):
         class _DummyOnsetModelParams:
             def __init__(self, dilation_rates):
                 base = config.OnsetModelConfig()
+                self.onset_architecture = base.onset_architecture
                 self.initial_filters = base.initial_filters
                 self.depth = base.depth
                 self.kernel_size = base.kernel_size
                 self.dropout_rate = base.dropout_rate
                 self.dilation_rates = dilation_rates
+                self.recurrent_units = base.recurrent_units
+                self.transformer_layers = base.transformer_layers
+                self.transformer_heads = base.transformer_heads
+                self.tcn_blocks = base.tcn_blocks
 
         params_none = _DummyOnsetModelParams(dilation_rates=None)
         name_none = trainers._get_onset_experiment_name(
@@ -775,7 +1090,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
             gaussian_sigma=0.0,
             model_params=typing.cast(config.OnsetModelConfig, params_none),
         )
-        self.assertIn("unet_dilations_N_A", name_none)
+        self.assertIn("dilations_N_A", name_none)
 
         params_str = _DummyOnsetModelParams(dilation_rates="custom")
         name_str = trainers._get_onset_experiment_name(
@@ -786,7 +1101,7 @@ class ExperimentNameHelperTests(unittest.TestCase):
             gaussian_sigma=0.0,
             model_params=typing.cast(config.OnsetModelConfig, params_str),
         )
-        self.assertIn("unet_dilations_custom", name_str)
+        self.assertIn("dilations_custom", name_str)
 
     def test_get_arrow_experiment_name_includes_snippets_and_aux_weights(self):
         exp = config.ArrowExperimentConfig(
@@ -1446,9 +1761,11 @@ class ArrowLossTests(unittest.TestCase):
                 "gru": {"units": 32, "num_layers": 1, "dropout_rate": 0.0},
             }
         )
-        with mock.patch(
-            "stepcovnet.trainers.datasets.create_arrow_dataset",
+        with mock.patch.object(
+            datasets,
+            "create_arrow_dataset",
             wraps=datasets.create_arrow_dataset,
+            autospec=True,
         ) as create_ds:
             with _temp_model_and_callback_dirs(with_callbacks=False) as (
                 model_output_dir,

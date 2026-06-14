@@ -302,6 +302,293 @@ def _crop_to_match(inputs):
     return tensor_to_crop[:, :target_length, :]
 
 
+def _build_unet_wavenet_stack(
+    x: keras.KerasTensor,
+    *,
+    initial_filters: int,
+    depth: int,
+    dilation_rates: list[int],
+    kernel_size: int,
+    dropout_rate: float,
+) -> keras.KerasTensor:
+    """Run the U-Net WaveNet encoder/decoder on ``(batch, time, features)``."""
+    encoder_outputs = []
+
+    for i in range(depth):
+        level_prefix = f"encoder_level_{i}"
+        current_filters = initial_filters * (2**i)
+
+        x = keras.layers.Conv1D(
+            filters=current_filters, kernel_size=1, name=f"{level_prefix}_projection"
+        )(x)
+
+        for rate in dilation_rates:
+            x, _ = _wavenet_residual_block(
+                x,
+                current_filters,
+                current_filters,
+                rate,
+                kernel_size,
+                f"{level_prefix}_{rate}",
+            )
+
+        encoder_outputs.append(x)
+
+        x = keras.layers.Conv1D(
+            filters=initial_filters * (2 ** (i + 1)),
+            kernel_size=3,
+            strides=2,
+            padding="same",
+            name=f"{level_prefix}_downsample",
+        )(x)
+
+    bottleneck_prefix = "bottleneck"
+    bottleneck_filters = initial_filters * (2**depth)
+    x = keras.layers.Conv1D(
+        filters=bottleneck_filters,
+        kernel_size=1,
+        name=f"{bottleneck_prefix}_projection",
+    )(x)
+    for rate in dilation_rates:
+        x, _ = _wavenet_residual_block(
+            x,
+            bottleneck_filters,
+            bottleneck_filters,
+            rate,
+            kernel_size,
+            f"{bottleneck_prefix}_{rate}",
+        )
+
+    x = keras.layers.Dropout(dropout_rate, name=f"{bottleneck_prefix}_dropout")(x)
+
+    for i in reversed(range(depth)):
+        level_prefix = f"decoder_level_{i}"
+        current_filters = initial_filters * (2**i)
+
+        x = keras.layers.Conv1DTranspose(
+            filters=current_filters,
+            kernel_size=3,
+            strides=2,
+            padding="same",
+            name=f"{level_prefix}_upsample",
+        )(x)
+
+        skip_connection = encoder_outputs[i]
+
+        x = keras.layers.Lambda(_crop_to_match, name=f"{level_prefix}_crop_to_match")(
+            [x, skip_connection]
+        )
+
+        x = keras.layers.Concatenate(name=f"{level_prefix}_concat_skip")(
+            [x, skip_connection]
+        )
+
+        x = keras.layers.Conv1D(
+            filters=current_filters,
+            kernel_size=1,
+            name=f"{level_prefix}_post_concat_projection",
+        )(x)
+
+        x = keras.layers.Dropout(dropout_rate, name=f"{level_prefix}_dropout")(x)
+
+        for rate in dilation_rates:
+            x, _ = _wavenet_residual_block(
+                x,
+                current_filters,
+                current_filters,
+                rate,
+                kernel_size,
+                f"{level_prefix}_{rate}",
+            )
+
+    return _build_dense_onset_output_head(x, dropout_rate=dropout_rate)
+
+
+def _build_dense_onset_output_head(
+    x: keras.KerasTensor,
+    *,
+    dropout_rate: float = 0.0,
+) -> keras.KerasTensor:
+    """Shared per-frame sigmoid onset probability head."""
+    x = keras.layers.Dropout(dropout_rate, name="pre_output_dropout")(x)
+    x = keras.layers.Conv1D(
+        filters=16, kernel_size=1, activation="gelu", name="output_conv_1"
+    )(x)
+    return keras.layers.Conv1D(
+        filters=1, kernel_size=1, activation="sigmoid", name="output_sigmoid"
+    )(x)
+
+
+def _onset_model_name(model_name: str) -> str:
+    base = "stepcovnet_ONSET"
+    if model_name:
+        return f"{base}-{model_name}"
+    return base
+
+
+def build_tcn_onset_model(
+    initial_filters: int = 16,
+    dilation_rates: list[int] | None = None,
+    kernel_size: int = 3,
+    dropout_rate: float = 0.0,
+    tcn_blocks: int = 4,
+    model_name: str = "",
+    input_features: int | None = None,
+) -> keras.Model:
+    """Temporal convolution network for dense frame onset detection (no U-Net skips)."""
+    if dilation_rates is None:
+        dilation_rates = [1, 2, 4, 8]
+
+    n_features = input_features if input_features is not None else constants.N_MELS
+    inputs = keras.Input(shape=(None, n_features), name="input_features")
+    x = keras.layers.Conv1D(
+        filters=initial_filters,
+        kernel_size=1,
+        name="tcn_input_projection",
+    )(inputs)
+    for block_idx in range(tcn_blocks):
+        for rate in dilation_rates:
+            x, _ = _wavenet_residual_block(
+                x,
+                initial_filters,
+                initial_filters,
+                rate,
+                kernel_size,
+                f"tcn_block_{block_idx}_{rate}",
+            )
+        x = keras.layers.Dropout(
+            dropout_rate,
+            name=f"tcn_block_{block_idx}_dropout",
+        )(x)
+    outputs = _build_dense_onset_output_head(x, dropout_rate=dropout_rate)
+    return keras.Model(
+        inputs=inputs,
+        outputs=outputs,
+        name=_onset_model_name(model_name),
+    )
+
+
+def build_bilstm_onset_model(
+    initial_filters: int = 16,
+    depth: int = 2,
+    dropout_rate: float = 0.0,
+    recurrent_units: int = 128,
+    model_name: str = "",
+    input_features: int | None = None,
+) -> keras.Model:
+    """BiLSTM stack over per-frame features for dense onset detection."""
+    n_features = input_features if input_features is not None else constants.N_MELS
+    inputs = keras.Input(shape=(None, n_features), name="input_features")
+    x = keras.layers.Conv1D(
+        filters=initial_filters,
+        kernel_size=1,
+        name="bilstm_input_projection",
+    )(inputs)
+    for layer_idx in range(depth):
+        x = keras.layers.Bidirectional(
+            keras.layers.LSTM(
+                recurrent_units,
+                return_sequences=True,
+                name=f"bilstm_{layer_idx}",
+            ),
+            name=f"bilstm_bidir_{layer_idx}",
+        )(x)
+        x = keras.layers.Dropout(
+            dropout_rate,
+            name=f"bilstm_dropout_{layer_idx}",
+        )(x)
+    outputs = _build_dense_onset_output_head(x, dropout_rate=dropout_rate)
+    return keras.Model(
+        inputs=inputs,
+        outputs=outputs,
+        name=_onset_model_name(model_name),
+    )
+
+
+def build_transformer_onset_model(
+    initial_filters: int = 64,
+    transformer_layers: int = 2,
+    transformer_heads: int = 4,
+    dropout_rate: float = 0.0,
+    model_name: str = "",
+    input_features: int | None = None,
+) -> keras.Model:
+    """Lightweight transformer encoder over per-frame SSL features."""
+    n_features = input_features if input_features is not None else constants.N_MELS
+    inputs = keras.Input(shape=(None, n_features), name="input_features")
+    x = keras.layers.Conv1D(
+        filters=initial_filters,
+        kernel_size=1,
+        name="transformer_input_projection",
+    )(inputs)
+    ff_dim = max(initial_filters * 4, 128)
+    for layer_idx in range(transformer_layers):
+        x = _transformer_encoder(
+            x,
+            d_model=initial_filters,
+            num_heads=transformer_heads,
+            ff_dim=ff_dim,
+            dropout_rate=dropout_rate,
+            name=f"onset_transformer_{layer_idx}",
+        )
+    outputs = _build_dense_onset_output_head(x, dropout_rate=dropout_rate)
+    return keras.Model(
+        inputs=inputs,
+        outputs=outputs,
+        name=_onset_model_name(model_name),
+    )
+
+
+def build_onset_dense_model(
+    model_config: config.OnsetModelConfig,
+    *,
+    model_name: str = "",
+    input_features: int | None = None,
+) -> keras.Model:
+    """Build a dense frame onset model from ``OnsetModelConfig``."""
+    arch = model_config.onset_architecture
+    n_features = (
+        input_features if input_features is not None else model_config.input_features
+    )
+    if arch == config.OnsetArchitecture.TCN:
+        return build_tcn_onset_model(
+            initial_filters=model_config.initial_filters,
+            dilation_rates=model_config.dilation_rates,
+            kernel_size=model_config.kernel_size,
+            dropout_rate=model_config.dropout_rate,
+            tcn_blocks=model_config.tcn_blocks,
+            model_name=model_name,
+            input_features=n_features,
+        )
+    if arch == config.OnsetArchitecture.BILSTM:
+        return build_bilstm_onset_model(
+            initial_filters=model_config.initial_filters,
+            depth=model_config.depth,
+            dropout_rate=model_config.dropout_rate,
+            recurrent_units=model_config.recurrent_units,
+            model_name=model_name,
+            input_features=n_features,
+        )
+    if arch == config.OnsetArchitecture.TRANSFORMER:
+        return build_transformer_onset_model(
+            initial_filters=model_config.initial_filters,
+            transformer_layers=model_config.transformer_layers,
+            transformer_heads=model_config.transformer_heads,
+            dropout_rate=model_config.dropout_rate,
+            model_name=model_name,
+            input_features=n_features,
+        )
+    return build_unet_wavenet_model(
+        initial_filters=model_config.initial_filters,
+        depth=model_config.depth,
+        dilation_rates=model_config.dilation_rates,
+        kernel_size=model_config.kernel_size,
+        dropout_rate=model_config.dropout_rate,
+        model_name=model_name,
+        input_features=n_features,
+    )
+
+
 def build_unet_wavenet_model(
     initial_filters: int = 16,
     depth: int = 2,
@@ -339,132 +626,86 @@ def build_unet_wavenet_model(
 
     n_features = input_features if input_features is not None else constants.N_MELS
     inputs = keras.Input(shape=(None, n_features), name="input_features")
-    x = inputs
-
-    encoder_outputs = []
-
-    # --- Encoder Path (Downsampling) ---
-    for i in range(depth):
-        level_prefix = f"encoder_level_{i}"
-        current_filters = initial_filters * (2**i)
-
-        # Project input to the current filter size if necessary
-        x = keras.layers.Conv1D(
-            filters=current_filters, kernel_size=1, name=f"{level_prefix}_projection"
-        )(x)
-
-        # Apply a few WaveNet blocks at this resolution
-        for rate in dilation_rates:
-            x, _ = _wavenet_residual_block(
-                x,
-                current_filters,
-                current_filters,
-                rate,
-                kernel_size,
-                f"{level_prefix}_{rate}",
-            )
-
-        encoder_outputs.append(x)
-
-        # Downsample for the next level using a strided convolution
-        x = keras.layers.Conv1D(
-            filters=initial_filters * (2 ** (i + 1)),
-            kernel_size=3,
-            strides=2,
-            padding="same",
-            name=f"{level_prefix}_downsample",
-        )(x)
-
-    # --- Bottleneck ---
-    bottleneck_prefix = "bottleneck"
-    bottleneck_filters = initial_filters * (2**depth)
-    x = keras.layers.Conv1D(
-        filters=bottleneck_filters,
-        kernel_size=1,
-        name=f"{bottleneck_prefix}_projection",
-    )(x)
-    for rate in dilation_rates:
-        x, _ = _wavenet_residual_block(
-            x,
-            bottleneck_filters,
-            bottleneck_filters,
-            rate,
-            kernel_size,
-            f"{bottleneck_prefix}_{rate}",
-        )
-
-    # The bottleneck contains the most abstract, high-level features. Applying dropout
-    # here prevents the model from relying too heavily on any single abstract feature.
-    x = keras.layers.Dropout(dropout_rate, name=f"{bottleneck_prefix}_dropout")(x)
-
-    # --- Decoder Path (Upsampling) ---
-    for i in reversed(range(depth)):
-        level_prefix = f"decoder_level_{i}"
-        current_filters = initial_filters * (2**i)
-
-        # Upsample using a transposed convolution
-        x = keras.layers.Conv1DTranspose(
-            filters=current_filters,
-            kernel_size=3,
-            strides=2,
-            padding="same",
-            name=f"{level_prefix}_upsample",
-        )(x)
-
-        skip_connection = encoder_outputs[i]
-
-        # The Lambda layer takes a list of tensors as input to ensure dynamic shapes are handled correctly.
-
-        x = keras.layers.Lambda(_crop_to_match, name=f"{level_prefix}_crop_to_match")(
-            [x, skip_connection]
-        )
-
-        # Concatenate with the skip connection from the corresponding encoder level
-
-        x = keras.layers.Concatenate(name=f"{level_prefix}_concat_skip")(
-            [x, skip_connection]
-        )
-
-        # This 1x1 convolution projects it back to the expected number of filters
-
-        x = keras.layers.Conv1D(
-            filters=current_filters,
-            kernel_size=1,
-            name=f"{level_prefix}_post_concat_projection",
-        )(x)
-
-        # This is another critical location. Dropout here prevents the model from
-        # simply learning to pass-through features from the skip connection without
-        # properly integrating them with the high-level context from the decoder.
-        x = keras.layers.Dropout(dropout_rate, name=f"{level_prefix}_dropout")(x)
-
-        # Apply WaveNet blocks at this resolution to refine features
-        for rate in dilation_rates:
-            x, _ = _wavenet_residual_block(
-                x,
-                current_filters,
-                current_filters,
-                rate,
-                kernel_size,
-                f"{level_prefix}_{rate}",
-            )
-
-    # Applying dropout before the final refinement layers is a standard practice
-    # that helps regularize the final classification/regression stage.
-    x = keras.layers.Dropout(dropout_rate, name="pre_output_dropout")(x)
-
-    x = keras.layers.Conv1D(
-        filters=16, kernel_size=1, activation="gelu", name="output_conv_1"
-    )(x)
-    outputs = keras.layers.Conv1D(
-        filters=1, kernel_size=1, activation="sigmoid", name="output_sigmoid"
-    )(x)
+    outputs = _build_unet_wavenet_stack(
+        inputs,
+        initial_filters=initial_filters,
+        depth=depth,
+        dilation_rates=dilation_rates,
+        kernel_size=kernel_size,
+        dropout_rate=dropout_rate,
+    )
 
     _model_name = "stepcovnet_ONSET"
     if model_name:
         _model_name += f"-{model_name}"
 
     return keras.Model(inputs=inputs, outputs=outputs, name=_model_name)
+
+
+def build_unet_wavenet_from_waveform_model(
+    initial_filters: int = 16,
+    depth: int = 2,
+    dilation_rates: list[int] | None = None,
+    kernel_size: int = 3,
+    dropout_rate: float = 0.0,
+    model_name: str = "",
+    frontend_filters: int = 32,
+) -> keras.Model:
+    """Build a dense onset model: mono waveform in, frame-wise onset probs out.
+
+    A learned strided Conv1D frontend maps the waveform to one embedding vector
+    per ``constants.WAVEFORM_SAMPLES_PER_FRAME`` hop, aligned with the mel-based
+    dense onset grid. The embeddings feed the standard U-Net WaveNet stack.
+
+    Args:
+        initial_filters: U-Net initial filter width.
+        depth: U-Net depth.
+        dilation_rates: WaveNet dilation rates per level.
+        kernel_size: Convolution kernel size.
+        dropout_rate: Dropout rate.
+        model_name: Suffix for the Keras model name.
+        frontend_filters: Output channels from the waveform frontend.
+
+    Returns:
+        Keras model with input ``waveform`` ``(batch, samples)`` and output
+        ``(batch, time, 1)`` onset probabilities.
+    """
+    if dilation_rates is None:
+        dilation_rates = [1, 2, 4, 8]
+
+    hop = constants.WAVEFORM_SAMPLES_PER_FRAME
+    waveform_input = keras.Input(shape=(None,), name="waveform", dtype=tf.float32)
+    x = keras.layers.Reshape((-1, 1), name="waveform_channel")(waveform_input)
+    x = keras.layers.Conv1D(
+        frontend_filters,
+        kernel_size=hop,
+        strides=hop,
+        padding="valid",
+        activation="gelu",
+        name="waveform_frame_embed",
+    )(x)
+    x = keras.layers.Conv1D(
+        frontend_filters,
+        kernel_size=3,
+        strides=1,
+        padding="same",
+        activation="gelu",
+        name="waveform_frame_refine",
+    )(x)
+    outputs = _build_unet_wavenet_stack(
+        x,
+        initial_filters=initial_filters,
+        depth=depth,
+        dilation_rates=dilation_rates,
+        kernel_size=kernel_size,
+        dropout_rate=dropout_rate,
+    )
+
+    _model_name = "stepcovnet_ONSET"
+    if model_name:
+        _model_name += f"-{model_name}"
+
+    return keras.Model(inputs=waveform_input, outputs=outputs, name=_model_name)
 
 
 def _build_arrow_inputs(

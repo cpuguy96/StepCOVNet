@@ -29,15 +29,26 @@ class IntervalEncoding(enum.StrEnum):
     MULTI = "multi"
 
 
+class OnsetArchitecture(enum.StrEnum):
+    """Dense frame onset model backbone."""
+
+    UNET_WAVENET = "unet_wavenet"
+    TCN = "tcn"
+    BILSTM = "bilstm"
+    TRANSFORMER = "transformer"
+
+
 class FeatureSource(enum.StrEnum):
     """Audio feature representation for onset model training and inference.
 
     MEL: Librosa log-mel spectrogram (default).
     MERT: Precomputed MERT hidden states loaded from ``.mert.npy`` files.
+    WAVEFORM: Mono waveform at ``constants.TARGET_SR`` for a learned Conv1D frontend.
     """
 
     MEL = "mel"
     MERT = "mert"
+    WAVEFORM = "waveform"
 
 
 class _DictSerializableMixin:
@@ -69,9 +80,10 @@ class OnsetDatasetConfig(_DictSerializableMixin):
         should_apply_spec_augment: Whether to apply spectrogram augmentation during training.
         use_gaussian_target: Whether to use Gaussian targets instead of binary targets.
         gaussian_sigma: Standard deviation for Gaussian target distribution.
-        feature_source: Feature representation (FeatureSource.MEL or FeatureSource.MERT).
+        feature_source: Feature representation (FeatureSource.MEL, MERT, or WAVEFORM).
         mert_features_dir: Directory containing precomputed ``.mert.npy`` files when
             feature_source is MERT. When empty, features are loaded beside each audio file.
+        max_train_songs: Maximum training songs to use (-1 for all songs under data_dir).
     """
 
     data_dir: str
@@ -83,12 +95,18 @@ class OnsetDatasetConfig(_DictSerializableMixin):
     gaussian_sigma: float = 1.0
     feature_source: FeatureSource = FeatureSource.MEL
     mert_features_dir: str = ""
+    max_train_songs: int = -1
 
     def __post_init__(self) -> None:
         """Normalize feature_source from string to enum when loaded from dict/JSON."""
         if isinstance(self.feature_source, str):
             object.__setattr__(
                 self, "feature_source", FeatureSource(self.feature_source)
+            )
+        if self.max_train_songs != -1 and self.max_train_songs < 1:
+            raise ValueError(
+                "max_train_songs must be -1 (all songs) or at least 1, "
+                f"got {self.max_train_songs}"
             )
 
     def as_dict(self) -> dict:
@@ -181,24 +199,92 @@ class ArrowDatasetConfig(_DictSerializableMixin):
 
 @dataclasses.dataclass
 class OnsetModelConfig(_DictSerializableMixin):
-    """Configuration for U-Net WaveNet model architecture.
+    """Configuration for dense frame onset model architecture.
 
     Attributes:
-        initial_filters: Number of filters in the first layer (doubles at each level).
-        depth: Number of downsampling/upsampling levels in the U-Net.
-        dilation_rates: List of dilation factors for convolutions within each level.
-        kernel_size: Size of convolutional kernels.
+        onset_architecture: Backbone type (U-Net WaveNet, TCN, BiLSTM, or Transformer).
+        initial_filters: Channel width for conv / TCN / transformer projection.
+        depth: U-Net encoder depth, or number of stacked BiLSTM layers.
+        dilation_rates: Dilation factors for WaveNet/TCN blocks.
+        kernel_size: Convolution kernel size.
         dropout_rate: Dropout rate for regularization.
         input_features: Width of the input feature vector per time step. When None,
-            defaults to 128 for mel features or 1024 for MERT (see resolve_onset_input_features).
+            defaults to 128 for mel, 1024 for MERT, or ``waveform_frontend_filters``
+            for WAVEFORM (see resolve_onset_input_features).
+        waveform_frontend_filters: Conv1D channel width after the learned waveform
+            frontend when ``feature_source`` is WAVEFORM.
+        tcn_blocks: Number of TCN macro-blocks (each runs all ``dilation_rates``).
+        recurrent_units: Hidden size per direction for BiLSTM backbones.
+        transformer_layers: Number of transformer encoder blocks.
+        transformer_heads: Attention heads (``initial_filters`` must be divisible).
     """
 
+    onset_architecture: OnsetArchitecture = OnsetArchitecture.UNET_WAVENET
     initial_filters: int = 16
     depth: int = 2
     dilation_rates: list[int] = dataclasses.field(default_factory=lambda: [1, 2, 4, 8])
     kernel_size: int = 3
     dropout_rate: float = 0.0
     input_features: int | None = None
+    waveform_frontend_filters: int = 32
+    tcn_blocks: int = 4
+    recurrent_units: int = 128
+    transformer_layers: int = 2
+    transformer_heads: int = 4
+
+    def __post_init__(self) -> None:
+        """Validate architecture-specific parameters."""
+        if isinstance(self.onset_architecture, str):
+            object.__setattr__(
+                self,
+                "onset_architecture",
+                OnsetArchitecture(self.onset_architecture),
+            )
+        if self.depth < 1:
+            raise ValueError(f"depth must be at least 1, got {self.depth}")
+        if self.tcn_blocks < 1:
+            raise ValueError(f"tcn_blocks must be at least 1, got {self.tcn_blocks}")
+        if self.recurrent_units < 1:
+            raise ValueError(
+                f"recurrent_units must be at least 1, got {self.recurrent_units}"
+            )
+        if self.transformer_layers < 1:
+            raise ValueError(
+                f"transformer_layers must be at least 1, got {self.transformer_layers}"
+            )
+        if self.transformer_heads < 1:
+            raise ValueError(
+                f"transformer_heads must be at least 1, got {self.transformer_heads}"
+            )
+        if (
+            self.onset_architecture == OnsetArchitecture.TRANSFORMER
+            and self.initial_filters % self.transformer_heads != 0
+        ):
+            raise ValueError(
+                "initial_filters must be divisible by transformer_heads for "
+                f"transformer onset models, got {self.initial_filters} and "
+                f"{self.transformer_heads}"
+            )
+
+    def as_dict(self) -> dict:
+        """Convert to dict for JSON; onset_architecture serialized as string."""
+        d = dataclasses.asdict(self)  # type: ignore[arg-type]
+        d["onset_architecture"] = self.onset_architecture.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> OnsetModelConfig:
+        """Create config from dictionary, coercing architecture enum strings."""
+        kwargs = dict(data)
+        arch = kwargs.get("onset_architecture", OnsetArchitecture.UNET_WAVENET)
+        if isinstance(arch, str):
+            kwargs["onset_architecture"] = OnsetArchitecture(arch)
+        return cls(**kwargs)
+
+
+def uses_waveform_model_input(dataset_config: OnsetDatasetConfig) -> bool:
+    """Return True when the dense onset model consumes a 1D waveform tensor."""
+    return dataset_config.feature_source == FeatureSource.WAVEFORM
 
 
 def resolve_onset_input_features(
@@ -218,6 +304,8 @@ def resolve_onset_input_features(
         return model_config.input_features
     if dataset_config.feature_source == FeatureSource.MERT:
         return constants.MERT_HIDDEN_SIZE
+    if dataset_config.feature_source == FeatureSource.WAVEFORM:
+        return model_config.waveform_frontend_filters
     return constants.N_MELS
 
 
@@ -515,6 +603,16 @@ class RunConfig(_DictSerializableMixin):
         show_model_summary: If True, print model summary before training. Default True.
         fit_verbose: Keras model.fit verbosity: 0 (silent), 1 (progress bar), or 2 (one line per epoch).
             Default 1.
+        confidence_threshold: Peak-pick confidence threshold for dense event-F1 validation.
+        tolerance_sec: Event matching tolerance in seconds for dense event-F1 validation.
+        min_onset_distance_ms: Minimum gap between predicted peaks for dense event-F1 validation.
+        early_stopping_patience: Stop when the monitored metric stalls for this many epochs;
+            0 disables early stopping.
+        post_hoc_event_f1_export: When True and callbacks are enabled, select the saved
+            checkpoint and confidence threshold that maximize validation peak-pick event F1
+            (instead of the frame-F1 monitor's best checkpoint) and export it as the model.
+        post_hoc_event_f1_thresholds: Confidence thresholds swept per checkpoint during the
+            post-hoc event-F1 selection. Each value must be in [0, 1].
     """
 
     epoch: int
@@ -526,6 +624,25 @@ class RunConfig(_DictSerializableMixin):
     val_take_count: int = -1
     show_model_summary: bool = True
     fit_verbose: int = 1
+    confidence_threshold: float = 0.05
+    tolerance_sec: float = 0.02
+    min_onset_distance_ms: float = 50.0
+    early_stopping_patience: int = 25
+    post_hoc_event_f1_export: bool = False
+    post_hoc_event_f1_thresholds: list[float] = dataclasses.field(
+        default_factory=lambda: [
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+        ]
+    )
 
     def __post_init__(self) -> None:
         """Validate run parameters."""
@@ -543,6 +660,36 @@ class RunConfig(_DictSerializableMixin):
             )
         if self.fit_verbose not in (0, 1, 2):
             raise ValueError(f"fit_verbose must be 0, 1, or 2, got {self.fit_verbose}")
+        if self.confidence_threshold < 0.0 or self.confidence_threshold > 1.0:
+            raise ValueError(
+                "confidence_threshold must be in [0, 1], "
+                f"got {self.confidence_threshold}"
+            )
+        if self.tolerance_sec <= 0.0:
+            raise ValueError(
+                f"tolerance_sec must be positive, got {self.tolerance_sec}"
+            )
+        if self.min_onset_distance_ms < 0.0:
+            raise ValueError(
+                "min_onset_distance_ms must be non-negative, "
+                f"got {self.min_onset_distance_ms}"
+            )
+        if self.early_stopping_patience < 0:
+            raise ValueError(
+                "early_stopping_patience must be non-negative, "
+                f"got {self.early_stopping_patience}"
+            )
+        if self.post_hoc_event_f1_export and not self.post_hoc_event_f1_thresholds:
+            raise ValueError(
+                "post_hoc_event_f1_thresholds must be non-empty when "
+                "post_hoc_event_f1_export is enabled"
+            )
+        for threshold in self.post_hoc_event_f1_thresholds:
+            if threshold < 0.0 or threshold > 1.0:
+                raise ValueError(
+                    "post_hoc_event_f1_thresholds values must be in [0, 1], "
+                    f"got {threshold}"
+                )
 
 
 @dataclasses.dataclass

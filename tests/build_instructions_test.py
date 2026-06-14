@@ -1,5 +1,3 @@
-"""Tests that verify the standalone binary build instructions are correct."""
-
 import io
 import os
 import subprocess
@@ -59,8 +57,11 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
 
     def test_main_exits_1_when_spec_file_missing(self):
         """When the spec file does not exist, main() exits with 1 and prints to stderr."""
-        with mock.patch(
-            "build_generate_ui_binary.os.path.isfile", return_value=False
+        with mock.patch.object(
+            build_generate_ui_binary.os.path,
+            "isfile",
+            return_value=False,
+            autospec=True,
         ) as isfile_mock:
             stderr = io.StringIO()
             with mock.patch.object(sys, "stderr", stderr):
@@ -74,12 +75,19 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
     def test_main_propagates_subprocess_return_code(self):
         """main() exits with the same return code as the PyInstaller subprocess."""
         with (
-            mock.patch("build_generate_ui_binary.os.path.isfile", return_value=True),
-            mock.patch("build_generate_ui_binary.os.chdir"),
+            mock.patch.object(
+                build_generate_ui_binary.os.path,
+                "isfile",
+                return_value=True,
+                autospec=True,
+            ),
+            mock.patch.object(build_generate_ui_binary.os, "chdir", autospec=True),
         ):
-            with mock.patch(
-                "build_generate_ui_binary.subprocess.run",
+            with mock.patch.object(
+                build_generate_ui_binary.subprocess,
+                "run",
                 return_value=mock.MagicMock(returncode=3),
+                autospec=True,
             ) as run_mock:
                 with self.assertRaises(SystemExit) as cm:
                     build_generate_ui_binary.main()
@@ -94,12 +102,19 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
     def test_main_exits_0_on_success(self):
         """When PyInstaller succeeds, main() exits with 0."""
         with (
-            mock.patch("build_generate_ui_binary.os.path.isfile", return_value=True),
-            mock.patch("build_generate_ui_binary.os.chdir"),
+            mock.patch.object(
+                build_generate_ui_binary.os.path,
+                "isfile",
+                return_value=True,
+                autospec=True,
+            ),
+            mock.patch.object(build_generate_ui_binary.os, "chdir", autospec=True),
         ):
-            with mock.patch(
-                "build_generate_ui_binary.subprocess.run",
+            with mock.patch.object(
+                build_generate_ui_binary.subprocess,
+                "run",
                 return_value=mock.MagicMock(returncode=0),
+                autospec=True,
             ) as run_mock:
                 with self.assertRaises(SystemExit) as cm:
                     build_generate_ui_binary.main()

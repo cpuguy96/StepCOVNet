@@ -1,5 +1,3 @@
-"""Tests for scripts/train_arrow.py CLI and config resolution."""
-
 import argparse
 import os
 import sys
@@ -7,9 +5,11 @@ import tempfile
 import unittest
 from unittest import mock
 
+import keras
 import tensorflow as tf
 
 from stepcovnet import config, models
+from stepcovnet import trainers
 
 # Allow importing the script module (defer import so parse_args can be patched)
 _SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
@@ -56,9 +56,13 @@ def _run_train_arrow_main(args):
     """Import train_arrow with patched parse_args, then run main() with patched trainer. Returns (run_mock, model_config)."""
     if "train_arrow" in sys.modules:
         del sys.modules["train_arrow"]
-    with mock.patch.object(argparse.ArgumentParser, "parse_args", return_value=args):
+    with mock.patch.object(
+        argparse.ArgumentParser, "parse_args", return_value=args, autospec=True
+    ):
         import train_arrow  # noqa: E402
-    with mock.patch("stepcovnet.trainers.run_arrow_train_from_config") as run_mock:
+    with mock.patch.object(
+        trainers, "run_arrow_train_from_config", autospec=True
+    ) as run_mock:
         train_arrow.main()
     (experiment_config,) = run_mock.call_args[0]
     return run_mock, experiment_config.model
@@ -68,9 +72,13 @@ def _run_train_arrow_main_with_run_config(args):
     """Run main() and return (run_mock, dataset_config, model_config, run_config)."""
     if "train_arrow" in sys.modules:
         del sys.modules["train_arrow"]
-    with mock.patch.object(argparse.ArgumentParser, "parse_args", return_value=args):
+    with mock.patch.object(
+        argparse.ArgumentParser, "parse_args", return_value=args, autospec=True
+    ):
         import train_arrow  # noqa: E402
-    with mock.patch("stepcovnet.trainers.run_arrow_train_from_config") as run_mock:
+    with mock.patch.object(
+        trainers, "run_arrow_train_from_config", autospec=True
+    ) as run_mock:
         train_arrow.main()
     (experiment_config,) = run_mock.call_args[0]
     return (
@@ -92,7 +100,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -112,7 +123,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -131,7 +145,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -157,7 +174,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -172,7 +192,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -199,7 +222,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -217,7 +243,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -237,7 +266,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with mock.patch.object(
-            argparse.ArgumentParser, "parse_args", return_value=_make_args(None)
+            argparse.ArgumentParser,
+            "parse_args",
+            return_value=_make_args(None),
+            autospec=True,
         ):
             import train_arrow  # noqa: E402
         d = {}
@@ -252,7 +284,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with mock.patch.object(
-            argparse.ArgumentParser, "parse_args", return_value=_make_args(None)
+            argparse.ArgumentParser,
+            "parse_args",
+            return_value=_make_args(None),
+            autospec=True,
         ):
             import train_arrow  # noqa: E402
         d = {"run": {"epoch": 10}}
@@ -267,7 +302,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with mock.patch.object(
-            argparse.ArgumentParser, "parse_args", return_value=_make_args(None)
+            argparse.ArgumentParser,
+            "parse_args",
+            return_value=_make_args(None),
+            autospec=True,
         ):
             import train_arrow  # noqa: E402
         d = {"run": {"epoch": None}}
@@ -284,7 +322,10 @@ class ApplyOverridesFromCliTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -517,7 +558,10 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             base = config.ArrowExperimentConfig.from_json(path)
@@ -595,7 +639,10 @@ class TrainArrowValidationTest(unittest.TestCase):
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with mock.patch.object(
-            argparse.ArgumentParser, "parse_args", return_value=args
+            argparse.ArgumentParser,
+            "parse_args",
+            return_value=args,
+            autospec=True,
         ):
             import train_arrow  # noqa: E402
         with self.assertRaises(SystemExit):
@@ -617,7 +664,10 @@ class TrainArrowValidationTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             with self.assertRaises(SystemExit):
@@ -641,7 +691,10 @@ class TrainArrowValidationTest(unittest.TestCase):
             if "train_arrow" in sys.modules:
                 del sys.modules["train_arrow"]
             with mock.patch.object(
-                argparse.ArgumentParser, "parse_args", return_value=args
+                argparse.ArgumentParser,
+                "parse_args",
+                return_value=args,
+                autospec=True,
             ):
                 import train_arrow  # noqa: E402
             with self.assertRaises(SystemExit):
@@ -660,15 +713,21 @@ class TrainArrowGpuBlockTest(unittest.TestCase):
             args = _make_args(path)
             with (
                 mock.patch.object(
-                    argparse.ArgumentParser, "parse_args", return_value=args
+                    argparse.ArgumentParser,
+                    "parse_args",
+                    return_value=args,
+                    autospec=True,
                 ),
                 mock.patch.object(
                     tf.config,
                     "list_physical_devices",
                     return_value=["GPU:0"],
+                    autospec=True,
                 ),
-                mock.patch.object(tf.config.optimizer, "set_jit"),
-                mock.patch("keras.mixed_precision.set_global_policy"),
+                mock.patch.object(tf.config.optimizer, "set_jit", autospec=True),
+                mock.patch.object(
+                    keras.mixed_precision, "set_global_policy", autospec=True
+                ),
             ):
                 import train_arrow  # noqa: E402
         self.assertTrue(hasattr(train_arrow, "main"))
