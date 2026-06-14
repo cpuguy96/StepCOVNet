@@ -59,7 +59,7 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(config.batch_size, 1)
         self.assertEqual(config.max_audio_seconds, 300.0)
         self.assertEqual(config.n_max_onsets, 1024)
-        self.assertEqual(config.max_steps_per_chart, 1024)
+        self.assertEqual(config.max_steps_per_chart, 2048)
         self.assertEqual(config.target_sample_rate, 44100)
 
     def test_first_valid_pair_returns_first_kept_pair(self):

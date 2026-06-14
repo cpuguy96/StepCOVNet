@@ -22,7 +22,7 @@ def _write_chart(
 
 class ChartsTest(unittest.TestCase):
     def test_max_steps_constant(self):
-        self.assertEqual(charts.MAX_STEPS_PER_CHART, 1024)
+        self.assertEqual(charts.MAX_STEPS_PER_CHART, 2048)
 
     def test_load_onset_times_inline_chart(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -70,31 +70,31 @@ class ChartsTest(unittest.TestCase):
             self.assertTrue(charts.chart_exceeds_step_cap(small_path, max_steps=0))
 
             large_path = os.path.join(tmpdir, "large.txt")
-            step_lines = [f"1000 {i * 0.01}\n" for i in range(1025)]
+            step_lines = [f"1000 {i * 0.01}\n" for i in range(2049)]
             _write_chart(large_path, step_lines)
             self.assertTrue(charts.chart_exceeds_step_cap(large_path))
-            self.assertFalse(charts.chart_exceeds_step_cap(large_path, max_steps=1025))
+            self.assertFalse(charts.chart_exceeds_step_cap(large_path, max_steps=2049))
 
     def test_load_onset_times_returns_none_when_over_cap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "large.txt")
-            step_lines = [f"1000 {i * 0.01}\n" for i in range(1025)]
+            step_lines = [f"1000 {i * 0.01}\n" for i in range(2049)]
             _write_chart(path, step_lines)
             self.assertIsNone(charts.load_onset_times(path))
             loaded = charts.load_onset_times(path, max_steps=None)
             self.assertIsNotNone(loaded)
             assert loaded is not None
-            self.assertEqual(len(loaded), 1025)
+            self.assertEqual(len(loaded), 2049)
 
     def test_load_onset_times_allows_exact_cap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "cap.txt")
-            step_lines = [f"1000 {i * 0.01}\n" for i in range(1024)]
+            step_lines = [f"1000 {i * 0.01}\n" for i in range(2048)]
             _write_chart(path, step_lines)
             loaded = charts.load_onset_times(path)
             self.assertIsNotNone(loaded)
             assert loaded is not None
-            self.assertEqual(len(loaded), 1024)
+            self.assertEqual(len(loaded), 2048)
 
     def test_load_onset_times_empty_chart(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-MAX_STEPS_PER_CHART = 1024
+MAX_STEPS_PER_CHART = 2048
 
 _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge": 4}
 
