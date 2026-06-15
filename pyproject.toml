@@ -50,6 +50,8 @@ gpu = ["tensorflow[and-cuda]"]
 gpu-dev = ["stepcovnet[dev,gpu]"]
 ssl = ["torch", "transformers", "accelerate"]
 ssl-dev = ["stepcovnet[dev,ssl]"]
+dataset-prep = ["simfile==2.1.1"]
+dataset-prep-dev = ["stepcovnet[dev,dataset-prep]"]
 
 [project.urls]
 Homepage = "https://github.com/cpuguy96/StepCOVNet"
