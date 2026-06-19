@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import json
-import os
+import pathlib
 
 from stepcovnet.dataset_prep import constants
 
@@ -20,6 +20,9 @@ class _DictSerializableMixin:
     @classmethod
     def from_dict(cls, data: dict):
         """Create config from dictionary.
+
+        Args:
+            data: Serialized field values for the dataclass.
 
         Returns:
             Instance of the config class with fields taken from data.
@@ -45,9 +48,10 @@ class PrepConfig(_DictSerializableMixin):
             ``allow_over_cap`` is True.
         export_legacy_txt: When True, write multi-block v2 ``.txt`` beside JSON.
         workers: Parallel worker count for pack processing.
-        dry_run: When True, run discovery and normalization only (O1+O2).
+        dry_run: When True, run discovery and normalization only (no pack writes).
         overwrite: When True, replace existing ``{bundle}/{id}/`` output dirs.
         allow_over_cap: When True, export charts above ``max_steps_per_chart``.
+        limit_packs: When set, process only the first N packs (sorted by path).
     """
 
     input_dir: str = constants.DEFAULT_INPUT_DIR
@@ -59,10 +63,11 @@ class PrepConfig(_DictSerializableMixin):
     dry_run: bool = False
     overwrite: bool = False
     allow_over_cap: bool = False
+    limit_packs: int | None = None
 
 
 def default_prep_config() -> PrepConfig:
-    """Return pipeline defaults from ``DATASET_PREP_PIPELINE.md`` §8.
+    """Return documented default prep settings.
 
     Returns:
         PrepConfig with documented default field values.
@@ -85,6 +90,8 @@ def validate_prep_config(config: PrepConfig) -> None:
         raise ValueError(
             f"max_steps_per_chart must be >= 1, got {config.max_steps_per_chart}"
         )
+    if config.limit_packs is not None and config.limit_packs < 1:
+        raise ValueError(f"limit_packs must be >= 1, got {config.limit_packs}")
     if config.export_mode != ExportMode.EXPORT_ALL_SINGLES:
         raise ValueError(
             f"unsupported export_mode in v1: {config.export_mode!r}; "
@@ -100,12 +107,9 @@ def load_prep_config_json(path: str) -> PrepConfig:
 
     Returns:
         Parsed PrepConfig after validation.
-
-    Raises:
-        ValueError: If the file content fails validation.
-        OSError: If the file cannot be read.
     """
-    with open(path, encoding="utf-8") as handle:
+    path_obj = pathlib.Path(path)
+    with path_obj.open(encoding="utf-8") as handle:
         data = json.load(handle)
     if "export_mode" in data and isinstance(data["export_mode"], str):
         data = dict(data)
@@ -124,9 +128,8 @@ def save_prep_config_json(config: PrepConfig, path: str) -> None:
     """
     payload = config.as_dict()
     payload["export_mode"] = str(config.export_mode)
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
+    path_obj = pathlib.Path(path)
+    path_obj.parent.mkdir(parents=True, exist_ok=True)
+    with path_obj.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
         handle.write("\n")

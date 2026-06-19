@@ -1,12 +1,11 @@
 """Tests for dataset_prep.models."""
 
 import json
-import os
+import pathlib
 import tempfile
 import unittest
 
-from stepcovnet.dataset_prep import constants
-from stepcovnet.dataset_prep import models
+from stepcovnet.dataset_prep import constants, models
 
 
 def _sample_song_pack() -> models.ParsedSongPack:
@@ -70,10 +69,10 @@ class ModelsSerializationTest(unittest.TestCase):
     def test_load_parsed_song_reads_nested_layout(self):
         pack = _sample_song_pack()
         with tempfile.TemporaryDirectory() as tmpdir:
-            out = f"{tmpdir}/itl_online_2026/expanded"
-            os.makedirs(out, exist_ok=True)
-            json_path = f"{out}/expanded.chart.json"
-            with open(json_path, "w", encoding="utf-8") as handle:
+            out = pathlib.Path(tmpdir) / "itl_online_2026" / "expanded"
+            out.mkdir(parents=True, exist_ok=True)
+            json_path = out / "expanded.chart.json"
+            with json_path.open("w", encoding="utf-8") as handle:
                 json.dump(pack.as_dict(), handle)
             loaded = models.load_parsed_song(tmpdir, "itl_online_2026", "expanded")
         self.assertEqual(loaded.normalized_bundle, "itl_online_2026")
@@ -83,32 +82,32 @@ class ModelsSerializationTest(unittest.TestCase):
         pack = _sample_song_pack()
         payload = pack.as_dict()
         payload["schema_version"] = 99
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out = f"{tmpdir}/itl_online_2026/expanded"
-            os.makedirs(out, exist_ok=True)
-            json_path = f"{out}/expanded.chart.json"
-            with open(json_path, "w", encoding="utf-8") as handle:
+        with tempfile.TemporaryDirectory() as tmpdir, self.assertRaises(ValueError):
+            out = pathlib.Path(tmpdir) / "itl_online_2026" / "expanded"
+            out.mkdir(parents=True, exist_ok=True)
+            json_path = out / "expanded.chart.json"
+            with json_path.open("w", encoding="utf-8") as handle:
                 json.dump(payload, handle)
-            with self.assertRaises(ValueError):
-                models.load_parsed_song(tmpdir, "itl_online_2026", "expanded")
+            models.load_parsed_song(tmpdir, "itl_online_2026", "expanded")
 
     def test_load_parsed_song_rejects_missing_schema_version(self):
         pack = _sample_song_pack()
         payload = pack.as_dict()
         del payload["schema_version"]
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out = f"{tmpdir}/itl_online_2026/expanded"
-            os.makedirs(out, exist_ok=True)
-            json_path = f"{out}/expanded.chart.json"
-            with open(json_path, "w", encoding="utf-8") as handle:
+        with tempfile.TemporaryDirectory() as tmpdir, self.assertRaises(ValueError):
+            out = pathlib.Path(tmpdir) / "itl_online_2026" / "expanded"
+            out.mkdir(parents=True, exist_ok=True)
+            json_path = out / "expanded.chart.json"
+            with json_path.open("w", encoding="utf-8") as handle:
                 json.dump(payload, handle)
-            with self.assertRaises(ValueError):
-                models.load_parsed_song(tmpdir, "itl_online_2026", "expanded")
+            models.load_parsed_song(tmpdir, "itl_online_2026", "expanded")
 
     def test_load_parsed_song_missing_file(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaises(FileNotFoundError):
-                models.load_parsed_song(tmpdir, "missing_bundle", "missing_id")
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            self.assertRaises(FileNotFoundError),
+        ):
+            models.load_parsed_song(tmpdir, "missing_bundle", "missing_id")
 
 
 if __name__ == "__main__":

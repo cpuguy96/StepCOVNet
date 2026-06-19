@@ -1,4 +1,4 @@
-"""``#MUSIC`` resolution and audio inference (P2)."""
+"""``#MUSIC`` resolution and audio inference."""
 
 from __future__ import annotations
 

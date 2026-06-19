@@ -21,6 +21,9 @@ class _DictSerializableMixin:
     def from_dict(cls, data: dict):
         """Create model from dictionary.
 
+        Args:
+            data: Serialized field values for the dataclass.
+
         Returns:
             Instance of the model class with fields taken from data.
         """
@@ -125,7 +128,7 @@ class ParsedSongPack(_DictSerializableMixin):
     """Canonical on-disk object written to ``{id}.chart.json``.
 
     Attributes:
-        schema_version: JSON layout version (see pipeline doc §6.3).
+        schema_version: JSON layout version for chart objects.
         normalized_bundle: Slug of source bundle folder.
         normalized_id: Slug of song within bundle.
         source_pack_relpath: Path to raw pack from input root.
@@ -201,12 +204,10 @@ def load_parsed_song(
         Parsed song pack for the given output location.
 
     Raises:
-        FileNotFoundError: If the chart JSON file does not exist.
         ValueError: If ``schema_version`` is missing or unsupported.
-        json.JSONDecodeError: If the file is not valid JSON.
     """
     path = chart_json_path(output_dir, normalized_bundle, normalized_id)
-    with open(path, encoding="utf-8") as handle:
+    with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
     version = data.get("schema_version")
     if version is None:

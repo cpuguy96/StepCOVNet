@@ -2,78 +2,75 @@
 
 import unittest
 
-import simfile.notes
-from simfile.notes import NoteType
-from simfile.notes.timed import TimedNote
-from simfile.timing import Beat
+from simfile import notes, timing
+from simfile.notes import timed
 
 from stepcovnet.dataset_prep import arrow_rows
 
 
-class _FakeNote:
-    def __init__(self, note_type, column=0, beat=0.0):
-        self.note_type = note_type
-        self.column = column
-        self.beat = Beat(beat)
-
-
 class ArrowRowsTest(unittest.TestCase):
     def test_note_type_to_arrow_char_maps_encodable_types(self):
-        self.assertEqual(arrow_rows.note_type_to_arrow_char(NoteType.TAP), "1")
-        self.assertEqual(arrow_rows.note_type_to_arrow_char(NoteType.HOLD_HEAD), "2")
-        self.assertEqual(arrow_rows.note_type_to_arrow_char(NoteType.ROLL_HEAD), "2")
-        self.assertEqual(arrow_rows.note_type_to_arrow_char(NoteType.TAIL), "3")
-        self.assertIsNone(arrow_rows.note_type_to_arrow_char(NoteType.MINE))
+        self.assertEqual(arrow_rows.note_type_to_arrow_char(notes.NoteType.TAP), "1")
+        self.assertEqual(
+            arrow_rows.note_type_to_arrow_char(notes.NoteType.HOLD_HEAD), "2"
+        )
+        self.assertEqual(
+            arrow_rows.note_type_to_arrow_char(notes.NoteType.ROLL_HEAD), "2"
+        )
+        self.assertEqual(arrow_rows.note_type_to_arrow_char(notes.NoteType.TAIL), "3")
+        self.assertIsNone(arrow_rows.note_type_to_arrow_char(notes.NoteType.MINE))
 
     def test_build_arrow_row_prefers_tail_over_hold_over_tap(self):
-        notes = [
-            simfile.notes.Note(beat=Beat(1.0), column=0, note_type=NoteType.TAP),
-            simfile.notes.Note(beat=Beat(1.0), column=0, note_type=NoteType.HOLD_HEAD),
-            simfile.notes.Note(beat=Beat(1.0), column=0, note_type=NoteType.TAIL),
+        beat_notes = [
+            notes.Note(beat=timing.Beat(1.0), column=0, note_type=notes.NoteType.TAP),
+            notes.Note(
+                beat=timing.Beat(1.0), column=0, note_type=notes.NoteType.HOLD_HEAD
+            ),
+            notes.Note(beat=timing.Beat(1.0), column=0, note_type=notes.NoteType.TAIL),
         ]
-        self.assertEqual(arrow_rows.build_arrow_row(notes), "3000")
+        self.assertEqual(arrow_rows.build_arrow_row(beat_notes), "3000")
 
     def test_build_arrow_row_drops_mine_only_beats(self):
-        notes = [
-            simfile.notes.Note(beat=Beat(1.0), column=2, note_type=NoteType.MINE),
+        beat_notes = [
+            notes.Note(beat=timing.Beat(1.0), column=2, note_type=notes.NoteType.MINE),
         ]
-        self.assertIsNone(arrow_rows.build_arrow_row(notes))
+        self.assertIsNone(arrow_rows.build_arrow_row(beat_notes))
 
     def test_build_arrow_row_keeps_tap_when_mine_on_other_column(self):
-        notes = [
-            simfile.notes.Note(beat=Beat(1.0), column=0, note_type=NoteType.TAP),
-            simfile.notes.Note(beat=Beat(1.0), column=2, note_type=NoteType.MINE),
+        beat_notes = [
+            notes.Note(beat=timing.Beat(1.0), column=0, note_type=notes.NoteType.TAP),
+            notes.Note(beat=timing.Beat(1.0), column=2, note_type=notes.NoteType.MINE),
         ]
-        self.assertEqual(arrow_rows.build_arrow_row(notes), "1000")
+        self.assertEqual(arrow_rows.build_arrow_row(beat_notes), "1000")
 
     def test_encode_timed_chart_rows_groups_beats_and_counts_stats(self):
-        timed = [
-            TimedNote(
+        timed_notes = [
+            timed.TimedNote(
                 time=1.0,
-                note=simfile.notes.Note(
-                    beat=Beat(1.0), column=0, note_type=NoteType.TAP
+                note=notes.Note(
+                    beat=timing.Beat(1.0), column=0, note_type=notes.NoteType.TAP
                 ),
             ),
-            TimedNote(
+            timed.TimedNote(
                 time=1.0,
-                note=simfile.notes.Note(
-                    beat=Beat(1.0), column=2, note_type=NoteType.MINE
+                note=notes.Note(
+                    beat=timing.Beat(1.0), column=2, note_type=notes.NoteType.MINE
                 ),
             ),
-            TimedNote(
+            timed.TimedNote(
                 time=2.0,
-                note=simfile.notes.Note(
-                    beat=Beat(2.0), column=1, note_type=NoteType.FAKE
+                note=notes.Note(
+                    beat=timing.Beat(2.0), column=1, note_type=notes.NoteType.FAKE
                 ),
             ),
-            TimedNote(
+            timed.TimedNote(
                 time=3.0,
-                note=simfile.notes.Note(
-                    beat=Beat(3.0), column=3, note_type=NoteType.TAP
+                note=notes.Note(
+                    beat=timing.Beat(3.0), column=3, note_type=notes.NoteType.TAP
                 ),
             ),
         ]
-        times_sec, rows, codes, stats = arrow_rows.encode_timed_chart_rows(timed)
+        times_sec, rows, codes, stats = arrow_rows.encode_timed_chart_rows(timed_notes)
         self.assertEqual(times_sec, [1.0, 3.0])
         self.assertEqual(rows, ["1000", "0001"])
         self.assertEqual(codes, [int("1000", 4), int("0001", 4)])
@@ -82,20 +79,20 @@ class ArrowRowsTest(unittest.TestCase):
         self.assertEqual(stats.beats_dropped_empty, 1)
 
     def test_encode_timed_chart_rows_counts_lift_notes(self):
-        timed = [
-            TimedNote(
+        timed_notes = [
+            timed.TimedNote(
                 time=1.0,
-                note=simfile.notes.Note(
-                    beat=Beat(1.0), column=0, note_type=NoteType.LIFT
+                note=notes.Note(
+                    beat=timing.Beat(1.0), column=0, note_type=notes.NoteType.LIFT
                 ),
             ),
         ]
-        _times, _rows, _codes, stats = arrow_rows.encode_timed_chart_rows(timed)
+        _times, _rows, _codes, stats = arrow_rows.encode_timed_chart_rows(timed_notes)
         self.assertEqual(stats.lift_notes_unencoded, 1)
         self.assertEqual(stats.beats_dropped_empty, 1)
 
     def test_build_arrow_row_ignores_out_of_range_columns(self):
-        notes = [
-            simfile.notes.Note(beat=Beat(1.0), column=5, note_type=NoteType.TAP),
+        beat_notes = [
+            notes.Note(beat=timing.Beat(1.0), column=5, note_type=notes.NoteType.TAP),
         ]
-        self.assertIsNone(arrow_rows.build_arrow_row(notes))
+        self.assertIsNone(arrow_rows.build_arrow_row(beat_notes))

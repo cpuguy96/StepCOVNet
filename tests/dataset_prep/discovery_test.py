@@ -1,7 +1,6 @@
 """Tests for dataset_prep.discovery."""
 
 import json
-import os
 import pathlib
 import tempfile
 import unittest
@@ -73,7 +72,8 @@ class BuildPacksManifestTest(unittest.TestCase):
         self.assertEqual(manifest.bundles[0].pack_count, 2)
         self.assertEqual(len(manifest.packs), 2)
         relpaths = {entry.pack_relpath for entry in manifest.packs}
-        self.assertIn("[12] Expanded", relpaths)
+        self.assertIn("ITL Online 2026/[12] Expanded", relpaths)
+        self.assertIn("ITL Online 2026/[07] Nightmare", relpaths)
         expanded = next(
             entry for entry in manifest.packs if entry.pack_relpath.endswith("Expanded")
         )
@@ -97,7 +97,7 @@ class BuildPacksManifestTest(unittest.TestCase):
 
     def test_build_packs_manifest_missing_input_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            missing = os.path.join(tmpdir, "missing")
+            missing = pathlib.Path(tmpdir) / "missing"
         with self.assertRaises(FileNotFoundError):
             discovery.build_packs_manifest(missing)
 
@@ -134,15 +134,38 @@ class PacksManifestIoTest(unittest.TestCase):
     def test_load_packs_manifest_rejects_missing_schema_version(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = pathlib.Path(tmpdir) / "packs_manifest.json"
-            with open(path, "w", encoding="utf-8") as handle:
+            with path.open("w", encoding="utf-8") as handle:
                 json.dump({"packs": []}, handle)
             with self.assertRaises(ValueError):
                 discovery.load_packs_manifest(path)
 
+    def test_save_packs_manifest_merges_with_existing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            out_dir = root / "output"
+            bundle_a = root / "input" / "Bundle A" / "song_a"
+            bundle_b = root / "input" / "Bundle B" / "song_b"
+            _touch(bundle_a / "a.ssc")
+            _touch(bundle_b / "b.ssc")
+
+            first = discovery.build_packs_manifest(root / "input" / "Bundle A")
+            discovery.save_packs_manifest(first, out_dir, merge=False)
+            second = discovery.build_packs_manifest(root / "input" / "Bundle B")
+            discovery.save_packs_manifest(second, out_dir, merge=True)
+            merged = discovery.load_packs_manifest(
+                discovery.packs_manifest_path(out_dir)
+            )
+
+        self.assertEqual(len(merged.packs), 2)
+        self.assertEqual(
+            {pack.pack_relpath for pack in merged.packs},
+            {"Bundle A/song_a", "Bundle B/song_b"},
+        )
+
     def test_load_packs_manifest_rejects_unsupported_schema_version(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = pathlib.Path(tmpdir) / "packs_manifest.json"
-            with open(path, "w", encoding="utf-8") as handle:
+            with path.open("w", encoding="utf-8") as handle:
                 json.dump({"schema_version": 99, "packs": []}, handle)
             with self.assertRaises(ValueError):
                 discovery.load_packs_manifest(path)

@@ -43,6 +43,8 @@ dev = [
     "pytest",
     "pytest-cov",
     "ruff",
+    "pydoclint",
+    "pyright",
     "nbmake",
     "psutil",
 ]
@@ -99,7 +101,14 @@ exclude_lines = [
 
 # Type checkers: resolve script imports from tests (e.g. import generate_ui → scripts/generate_ui.py)
 [tool.pyright]
-extraPaths = ["scripts"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = "venv"
+include = ["src/stepcovnet", "scripts"]
+extraPaths = ["scripts", "src"]
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
 
 [tool.mypy]
 mypy_path = "scripts"
@@ -118,9 +127,13 @@ select = [
     "B",      # flake8-bugbear
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
+    "N",      # pep8-naming
+    "SIM",    # flake8-simplify
+    "PTH",    # flake8-use-pathlib
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
+    "N806",   # ML/research locals (X, y, etc.) — Google allows domain conventions
 ]
 
 [tool.ruff.format]
@@ -128,3 +141,16 @@ quote-style = "double"
 
 [tool.ruff.lint.isort]
 known-first-party = ["stepcovnet"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = ["E402"]
+"tests/**/*.py" = ["E402"]
+
+# Google-style docstring lint (Args/Returns/Raises vs signatures). Run on touched packages.
+[tool.pydoclint]
+style = "google"
+require-return-section-when-returning-nothing = false
+arg-type-hints-in-docstring = false
+check-return-types = false
+allow-init-without-docstring = true
+skip-checking-short-docstrings = true

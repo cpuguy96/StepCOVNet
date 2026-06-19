@@ -1,11 +1,10 @@
-"""Beat-grouped quaternary arrow row encoding (P2)."""
+"""Beat-grouped quaternary arrow row encoding."""
 
 from __future__ import annotations
 
 import dataclasses
 
-import simfile.notes
-from simfile.notes import NoteType
+from simfile import notes
 
 _ARROW_CHAR_RANK = {"0": 0, "1": 1, "2": 2, "3": 3}
 
@@ -27,7 +26,7 @@ class EncodeChartStats:
     beats_dropped_empty: int = 0
 
 
-def note_type_to_arrow_char(note_type: NoteType) -> str | None:
+def note_type_to_arrow_char(note_type: notes.NoteType) -> str | None:
     """Map a simfile note type to a quaternary arrow character.
 
     Args:
@@ -36,21 +35,21 @@ def note_type_to_arrow_char(note_type: NoteType) -> str | None:
     Returns:
         ``1``, ``2``, or ``3`` for encodable types; ``None`` otherwise.
     """
-    if note_type == NoteType.TAP:
+    if note_type == notes.NoteType.TAP:
         return "1"
-    if note_type in (NoteType.HOLD_HEAD, NoteType.ROLL_HEAD):
+    if note_type in (notes.NoteType.HOLD_HEAD, notes.NoteType.ROLL_HEAD):
         return "2"
-    if note_type == NoteType.TAIL:
+    if note_type == notes.NoteType.TAIL:
         return "3"
     return None
 
 
-def _count_non_encodable(note_type: NoteType, stats: EncodeChartStats) -> None:
-    if note_type == NoteType.MINE:
+def _count_non_encodable(note_type: notes.NoteType, stats: EncodeChartStats) -> None:
+    if note_type == notes.NoteType.MINE:
         stats.mine_notes_unencoded += 1
-    elif note_type == NoteType.FAKE:
+    elif note_type == notes.NoteType.FAKE:
         stats.fake_notes_unencoded += 1
-    elif note_type == NoteType.LIFT:
+    elif note_type == notes.NoteType.LIFT:
         stats.lift_notes_unencoded += 1
 
 
@@ -62,17 +61,17 @@ def _apply_char_to_row(row: list[str], column: int, char: str) -> None:
         row[column] = char
 
 
-def build_arrow_row(notes: list[simfile.notes.Note]) -> str | None:
+def build_arrow_row(beat_notes: list[notes.Note]) -> str | None:
     """Merge notes on one beat into a quaternary arrow row.
 
     Args:
-        notes: All simfile notes sharing the same beat.
+        beat_notes: All simfile notes sharing the same beat.
 
     Returns:
         Four-character row, or ``None`` when the beat encodes to ``0000``.
     """
     row = ["0", "0", "0", "0"]
-    for note in notes:
+    for note in beat_notes:
         char = note_type_to_arrow_char(note.note_type)
         if char is None:
             continue
@@ -95,7 +94,7 @@ def encode_timed_chart_rows(
         ``times_sec``, ``arrow_rows``, ``column_codes``, and encoding stats.
     """
     stats = EncodeChartStats()
-    by_beat: dict[float, list[simfile.notes.Note]] = {}
+    by_beat: dict[float, list[notes.Note]] = {}
     beat_to_time: dict[float, float] = {}
 
     for timed_note in timed_notes:

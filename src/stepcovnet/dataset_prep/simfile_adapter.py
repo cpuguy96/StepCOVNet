@@ -1,4 +1,4 @@
-"""Simfile open, chart selection, and timing (P2)."""
+"""Simfile open, chart selection, and timing."""
 
 from __future__ import annotations
 
@@ -7,12 +7,18 @@ import pathlib
 
 import numpy as np
 import simfile
-from simfile.notes import NoteData
-from simfile.notes.timed import time_notes
-from simfile.timing import BeatValues, TimingData
+from simfile import notes, timing, types
+from simfile.notes import timed
 
 from stepcovnet import metrics
-from stepcovnet.dataset_prep import arrow_rows, audio_resolve, config, constants, models
+from stepcovnet.dataset_prep import (
+    arrow_rows,
+    audio_resolve,
+    config,
+    constants,
+    models,
+    pack_results,
+)
 
 
 @dataclasses.dataclass
@@ -22,7 +28,7 @@ class ChartSkip:
     Attributes:
         difficulty: Lowercase difficulty label.
         meter: Raw simfile meter.
-        reason: Skip reason code (see pipeline doc §9).
+        reason: Skip reason code for this chart.
     """
 
     difficulty: str
@@ -35,19 +41,19 @@ class ParsePackResult:
     """Outcome of parsing one raw song pack.
 
     Attributes:
-        status: Pack status code from ``constants`` (e.g. ``ok``).
-        pack: Parsed song object when ``status`` is ``ok``; otherwise ``None``.
+        reason: Skip or error code when export cannot proceed; ``None`` on success.
+        pack: Parsed song object when ``reason`` is ``None``.
         warnings: Pack-level warning codes accumulated during parse.
         chart_skips: Per-chart skip records for dance-single charts.
     """
 
-    status: str
+    reason: str | None
     pack: models.ParsedSongPack | None
     warnings: list[str]
     chart_skips: list[ChartSkip]
 
 
-def open_simfile(sim_path: str | pathlib.Path):
+def open_simfile(sim_path: str | pathlib.Path) -> types.Simfile:
     """Open a simfile with encoding retries from ``constants.ENCODING_RETRIES``.
 
     Args:
@@ -59,6 +65,7 @@ def open_simfile(sim_path: str | pathlib.Path):
     Raises:
         UnicodeDecodeError: If every encoding retry fails.
         ValueError: If simfile syntax is invalid after a successful decode.
+        FileNotFoundError: If ``sim_path`` does not exist.
     """
     path = pathlib.Path(sim_path)
     last_error: UnicodeDecodeError | None = None
@@ -71,12 +78,20 @@ def open_simfile(sim_path: str | pathlib.Path):
             return sim
         except UnicodeDecodeError as exc:
             last_error = exc
+        except Exception as exc:
+            raise ValueError(f"simfile parse failed: {path}: {exc}") from exc
     if last_error is not None:
-        raise last_error
+        raise UnicodeDecodeError(
+            last_error.encoding,
+            last_error.object,
+            last_error.start,
+            last_error.end,
+            last_error.reason,
+        ) from last_error
     raise FileNotFoundError(f"simfile not found: {path}")
 
 
-def parse_bpm_segments(sim) -> list[models.BpmSegment]:
+def parse_bpm_segments(sim: types.Simfile) -> list[models.BpmSegment]:
     """Parse simfile ``#BPMS`` into segment objects.
 
     Args:
@@ -85,7 +100,7 @@ def parse_bpm_segments(sim) -> list[models.BpmSegment]:
     Returns:
         BPM segments sorted by ``start_beat``.
     """
-    beat_values = BeatValues.from_str(sim.bpms)
+    beat_values = timing.BeatValues.from_str(sim.bpms)
     segments = [
         models.BpmSegment(start_beat=float(item.beat), bpm=float(item.value))
         for item in beat_values
@@ -94,7 +109,7 @@ def parse_bpm_segments(sim) -> list[models.BpmSegment]:
     return segments
 
 
-def parse_metadata(sim) -> models.SimfileMetadata:
+def parse_metadata(sim: types.Simfile) -> models.SimfileMetadata:
     """Parse song-level simfile tags into ``SimfileMetadata``.
 
     Args:
@@ -138,7 +153,7 @@ def normalize_difficulty(difficulty: str) -> tuple[str, str, list[str]]:
     return normalized or "custom", constants.DIFFICULTY_KIND_CUSTOM, ["custom_difficulty"]
 
 
-def is_dance_single(chart) -> bool:
+def is_dance_single(chart: types.Chart) -> bool:
     """Return True when chart stepstype is ``dance-single``.
 
     Args:
@@ -158,7 +173,7 @@ def _chart_credit(chart) -> str:
     return str(getattr(chart, "credit", None) or "").strip()
 
 
-def build_chart_summary(chart, *, num_steps: int) -> models.ChartSummary:
+def build_chart_summary(chart: types.Chart, *, num_steps: int) -> models.ChartSummary:
     """Build a ``ChartSummary`` from a simfile chart block.
 
     Args:
@@ -182,7 +197,7 @@ def build_chart_summary(chart, *, num_steps: int) -> models.ChartSummary:
     )
 
 
-def build_available_charts(sim) -> list[models.ChartSummary]:
+def build_available_charts(sim: types.Simfile) -> list[models.ChartSummary]:
     """Summarize non-dance-single charts for inventory export.
 
     Args:
@@ -239,8 +254,8 @@ def _append_encode_warnings(
 
 
 def encode_chart(
-    sim,
-    chart,
+    sim: types.Simfile,
+    chart: types.Chart,
     *,
     max_steps_per_chart: int,
     allow_over_cap: bool,
@@ -263,11 +278,11 @@ def encode_chart(
     warnings.extend(difficulty_warnings)
     meter = int(chart.meter or 0)
 
-    timing = TimingData(sim, chart)
-    note_data = NoteData(chart)
-    timed = list(time_notes(note_data, timing))
+    timing_data = timing.TimingData(sim, chart)
+    note_data = notes.NoteData(chart)
+    timed_notes = list(timed.time_notes(note_data, timing_data))
     times_sec, arrow_rows_out, column_codes, stats = arrow_rows.encode_timed_chart_rows(
-        timed
+        timed_notes
     )
     _append_encode_warnings(warnings, stats)
 
@@ -334,8 +349,8 @@ def parse_song_pack(
     Args:
         pack_dir: Raw song pack directory.
         simfile_name: Simfile basename inside the pack (from discovery).
-        normalized_bundle: Output bundle slug (P3 may rewrite).
-        normalized_id: Output song slug (P3 may rewrite).
+        normalized_bundle: Output bundle slug from normalization.
+        normalized_id: Output song slug from normalization.
         source_pack_relpath: Pack path relative to preprocess input root.
         prep_config: Optional prep settings; defaults used when omitted.
 
@@ -352,7 +367,7 @@ def parse_song_pack(
         sim = open_simfile(sim_path)
     except UnicodeDecodeError:
         return ParsePackResult(
-            status=constants.PACK_STATUS_ENCODING_ERROR,
+            reason=pack_results.REASON_ENCODING_ERROR,
             pack=None,
             warnings=warnings,
             chart_skips=chart_skips,
@@ -360,7 +375,7 @@ def parse_song_pack(
     except (OSError, ValueError) as exc:
         warnings.append(f"parse_error:{type(exc).__name__}")
         return ParsePackResult(
-            status=constants.PACK_STATUS_PARSE_ERROR,
+            reason=pack_results.REASON_PARSE_ERROR,
             pack=None,
             warnings=warnings,
             chart_skips=chart_skips,
@@ -370,7 +385,7 @@ def parse_song_pack(
         metadata = parse_metadata(sim)
     except ValueError:
         return ParsePackResult(
-            status=constants.PACK_STATUS_PARSE_ERROR,
+            reason=pack_results.REASON_PARSE_ERROR,
             pack=None,
             warnings=warnings,
             chart_skips=chart_skips,
@@ -379,7 +394,7 @@ def parse_song_pack(
     dance_single_charts = [chart for chart in sim.charts if is_dance_single(chart)]
     if not dance_single_charts:
         return ParsePackResult(
-            status=constants.PACK_STATUS_NO_DANCE_SINGLE,
+            reason=pack_results.REASON_NO_DANCE_SINGLE,
             pack=None,
             warnings=warnings,
             chart_skips=chart_skips,
@@ -393,7 +408,7 @@ def parse_song_pack(
     )
     if audio is None:
         return ParsePackResult(
-            status=constants.PACK_STATUS_NO_AUDIO,
+            reason=pack_results.REASON_NO_AUDIO,
             pack=None,
             warnings=warnings,
             chart_skips=chart_skips,
@@ -417,7 +432,7 @@ def parse_song_pack(
 
     if not exported:
         return ParsePackResult(
-            status=constants.PACK_STATUS_NO_EXPORTABLE_CHARTS,
+            reason=pack_results.REASON_NO_EXPORTABLE_CHARTS,
             pack=None,
             warnings=warnings,
             chart_skips=chart_skips,
@@ -443,7 +458,7 @@ def parse_song_pack(
         warnings=list(dict.fromkeys(warnings)),
     )
     return ParsePackResult(
-        status=constants.PACK_STATUS_OK,
+        reason=None,
         pack=pack,
         warnings=pack.warnings,
         chart_skips=chart_skips,

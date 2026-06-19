@@ -1,11 +1,11 @@
 """Tests for dataset_prep.config."""
 
 import json
+import pathlib
 import tempfile
 import unittest
 
-from stepcovnet.dataset_prep import config
-from stepcovnet.dataset_prep import constants
+from stepcovnet.dataset_prep import config, constants
 
 
 class PrepConfigTest(unittest.TestCase):
@@ -55,12 +55,12 @@ class PrepConfigTest(unittest.TestCase):
     def test_save_and_load_prep_config_json(self):
         cfg = config.PrepConfig(output_dir="data/final_data", workers=2)
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = f"{tmpdir}/prep.json"
-            config.save_prep_config_json(cfg, path)
-            with open(path, encoding="utf-8") as handle:
+            path = pathlib.Path(tmpdir) / "prep.json"
+            config.save_prep_config_json(cfg, str(path))
+            with path.open(encoding="utf-8") as handle:
                 raw = json.load(handle)
             self.assertEqual(raw["export_mode"], constants.EXPORT_MODE_ALL_SINGLES)
-            loaded = config.load_prep_config_json(path)
+            loaded = config.load_prep_config_json(str(path))
         self.assertEqual(loaded.workers, 2)
         self.assertEqual(loaded.output_dir, "data/final_data")
 

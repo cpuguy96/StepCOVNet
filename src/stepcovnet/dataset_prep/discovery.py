@@ -1,4 +1,4 @@
-"""Discover raw song packs under bundle directories (P1)."""
+"""Discover raw song packs under bundle directories."""
 
 from __future__ import annotations
 
@@ -21,6 +21,9 @@ class _DictSerializableMixin:
     @classmethod
     def from_dict(cls, data: dict):
         """Create manifest object from dictionary.
+
+        Args:
+            data: Serialized field values for the dataclass.
 
         Returns:
             Instance of the manifest class with fields taken from data.
@@ -69,7 +72,7 @@ class BundleManifestEntry(_DictSerializableMixin):
 
 @dataclasses.dataclass
 class PacksManifest(_DictSerializableMixin):
-    """Phase O1 output listing every pack to process.
+    """Discovery output listing every pack to process.
 
     Attributes:
         schema_version: Manifest layout version.
@@ -179,7 +182,7 @@ def _relpath_posix(root: pathlib.Path, path: pathlib.Path) -> str:
 
 
 def build_packs_manifest(input_dir: str | os.PathLike[str]) -> PacksManifest:
-    """Run phase O1 discovery on ``input_dir``.
+    """Discover packs under ``input_dir``.
 
     Args:
         input_dir: Multi-bundle root (e.g. ``data/raw_data``) or single bundle path.
@@ -204,9 +207,10 @@ def build_packs_manifest(input_dir: str | os.PathLike[str]) -> PacksManifest:
         source_bundle = root.name
         bundle_relpath = source_bundle
         for pack_dir in direct_packs:
+            pack_within_bundle = _relpath_posix(root, pack_dir)
             packs.append(
                 PackManifestEntry(
-                    pack_relpath=_relpath_posix(root, pack_dir),
+                    pack_relpath=f"{bundle_relpath}/{pack_within_bundle}",
                     simfile=choose_simfile(pack_dir),
                     source_bundle=source_bundle,
                     bundle_relpath=bundle_relpath,
@@ -272,21 +276,31 @@ def packs_manifest_path(output_dir: str | os.PathLike[str]) -> pathlib.Path:
 def save_packs_manifest(
     manifest: PacksManifest,
     output_dir: str | os.PathLike[str],
+    *,
+    merge: bool = True,
 ) -> pathlib.Path:
     """Write ``packs_manifest.json`` under ``output_dir``.
 
     Args:
         manifest: Discovery result to serialize.
         output_dir: Directory that receives the manifest file.
+        merge: When True, merge with an existing manifest instead of replacing it.
 
     Returns:
         Path to the written JSON file.
     """
     path = packs_manifest_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if merge and path.is_file():
+        from stepcovnet.dataset_prep import manifests
+
+        manifest = manifests.merge_packs_manifest(
+            load_packs_manifest(path),
+            manifest,
+        )
     payload = manifest.as_dict()
     payload["discovery_mode"] = str(manifest.discovery_mode)
-    with open(path, "w", encoding="utf-8") as handle:
+    with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
         handle.write("\n")
     return path
@@ -303,19 +317,25 @@ def load_packs_manifest(path: str | os.PathLike[str]) -> PacksManifest:
 
     Raises:
         ValueError: If ``schema_version`` is missing or unsupported.
-        json.JSONDecodeError: If the file is not valid JSON.
     """
-    with open(path, encoding="utf-8") as handle:
+    path_obj = pathlib.Path(path)
+    with path_obj.open(encoding="utf-8") as handle:
         data = json.load(handle)
     version = data.get("schema_version")
     if version is None:
-        raise ValueError(f"missing schema_version in {path}")
+        raise ValueError(f"missing schema_version in {path_obj}")
     if version != constants.SCHEMA_VERSION:
         raise ValueError(
-            f"unsupported schema_version {version} in {path}; "
+            f"unsupported schema_version {version} in {path_obj}; "
             f"expected {constants.SCHEMA_VERSION}"
         )
-    return PacksManifest.from_dict(data)
+    manifest = PacksManifest.from_dict(data)
+    from stepcovnet.dataset_prep import manifests
+
+    return dataclasses.replace(
+        manifest,
+        packs=[manifests.canonicalize_pack_relpath(pack) for pack in manifest.packs],
+    )
 
 
 def run_discovery(prep_config: config.PrepConfig) -> PacksManifest:
@@ -326,10 +346,6 @@ def run_discovery(prep_config: config.PrepConfig) -> PacksManifest:
 
     Returns:
         Discovery manifest also written to ``{output_dir}/packs_manifest.json``.
-
-    Raises:
-        ValueError: If prep config fails validation.
-        FileNotFoundError: If ``input_dir`` does not exist.
     """
     config.validate_prep_config(prep_config)
     manifest = build_packs_manifest(prep_config.input_dir)

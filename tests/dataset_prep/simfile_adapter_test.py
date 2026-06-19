@@ -5,7 +5,13 @@ import tempfile
 import unittest
 import unittest.mock
 
-from stepcovnet.dataset_prep import config, constants, models, simfile_adapter
+from stepcovnet.dataset_prep import (
+    config,
+    constants,
+    models,
+    pack_results,
+    simfile_adapter,
+)
 
 
 def _write_pack(
@@ -173,7 +179,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="test_song",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_OK)
+            self.assertIsNone(result.reason)
             self.assertIsNotNone(result.pack)
             pack_obj = result.pack
             assert pack_obj is not None
@@ -200,7 +206,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="bad_hold",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_NO_EXPORTABLE_CHARTS)
+            self.assertEqual(result.reason, pack_results.REASON_NO_EXPORTABLE_CHARTS)
             self.assertEqual(result.chart_skips[0].reason, constants.CHART_SKIP_INVALID_HOLDS)
 
     def test_parse_song_pack_no_dance_single(self):
@@ -233,7 +239,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="double_only",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_NO_DANCE_SINGLE)
+            self.assertEqual(result.reason, pack_results.REASON_NO_DANCE_SINGLE)
 
     def test_parse_song_pack_custom_difficulty_warning(self):
         sim_text = _single_chart_notes(
@@ -250,7 +256,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="edit_chart",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_OK)
+            self.assertIsNone(result.reason)
             assert result.pack is not None
             self.assertIn("custom_difficulty", result.pack.warnings)
             self.assertEqual(result.pack.charts[0].summary.difficulty_kind, "custom")
@@ -268,7 +274,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="no_audio",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_NO_AUDIO)
+            self.assertEqual(result.reason, pack_results.REASON_NO_AUDIO)
 
     def test_parse_song_pack_parse_error_on_empty_bpms(self):
         sim_text = _single_chart_notes("0000\n0001\n0000\n0000\n,").replace(
@@ -283,7 +289,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="no_bpms",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_PARSE_ERROR)
+            self.assertEqual(result.reason, pack_results.REASON_PARSE_ERROR)
 
     def test_parse_song_pack_over_cap_skip(self):
         notes = ",\n".join("0000\n0001\n0000\n0000" for _ in range(5))
@@ -299,7 +305,7 @@ class ParseSongPackTest(unittest.TestCase):
                 source_pack_relpath="bundle/pack",
                 prep_config=cfg,
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_NO_EXPORTABLE_CHARTS)
+            self.assertEqual(result.reason, pack_results.REASON_NO_EXPORTABLE_CHARTS)
             self.assertEqual(result.chart_skips[0].reason, constants.CHART_SKIP_OVER_CAP)
 
     def test_parse_song_pack_skips_mine_only_chart(self):
@@ -319,7 +325,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="mines_only",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_NO_EXPORTABLE_CHARTS)
+            self.assertEqual(result.reason, pack_results.REASON_NO_EXPORTABLE_CHARTS)
             self.assertEqual(result.chart_skips[0].reason, constants.CHART_SKIP_EMPTY)
 
     def test_parse_song_pack_encoding_error(self):
@@ -337,7 +343,7 @@ class ParseSongPackTest(unittest.TestCase):
                     normalized_id="encoding",
                     source_pack_relpath="bundle/pack",
                 )
-            self.assertEqual(result.status, constants.PACK_STATUS_ENCODING_ERROR)
+            self.assertEqual(result.reason, pack_results.REASON_ENCODING_ERROR)
 
     def test_parse_song_pack_parse_error_on_invalid_simfile(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -352,7 +358,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="broken",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_PARSE_ERROR)
+            self.assertEqual(result.reason, pack_results.REASON_PARSE_ERROR)
 
     def test_parse_song_pack_dedupes_custom_difficulty_warning(self):
         sim_text = (
@@ -400,7 +406,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="two_edits",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_OK)
+            self.assertIsNone(result.reason)
             assert result.pack is not None
             self.assertEqual(result.pack.warnings.count("custom_difficulty"), 1)
 
@@ -431,7 +437,7 @@ class ParseSongPackTest(unittest.TestCase):
                 normalized_id="fake_lift",
                 source_pack_relpath="bundle/pack",
             )
-            self.assertEqual(result.status, constants.PACK_STATUS_OK)
+            self.assertIsNone(result.reason)
             assert result.pack is not None
             self.assertTrue(
                 any(item.startswith("fake_notes_unencoded:") for item in result.pack.warnings)

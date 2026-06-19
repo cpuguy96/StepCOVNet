@@ -33,15 +33,6 @@ DIFFICULTY_RANK = {
 AUDIO_SOURCE_MUSIC_TAG = "music_tag"
 AUDIO_SOURCE_INFERRED = "inferred"
 
-PACK_STATUS_OK = "ok"
-PACK_STATUS_NO_DANCE_SINGLE = "no_dance_single"
-PACK_STATUS_NO_EXPORTABLE_CHARTS = "no_exportable_charts"
-PACK_STATUS_NO_AUDIO = "no_audio"
-PACK_STATUS_ENCODING_ERROR = "encoding_error"
-PACK_STATUS_PARSE_ERROR = "parse_error"
-PACK_STATUS_PENDING = "pending"
-PACK_STATUS_FAILED = "failed"
-
 CHART_SKIP_OVER_CAP = "chart_skipped_over_cap"
 CHART_SKIP_EMPTY = "chart_skipped_empty"
 CHART_SKIP_INVALID_HOLDS = "chart_skipped_invalid_holds"
