@@ -212,6 +212,17 @@ Contributions are welcome! Please follow these steps:
 
 Please ensure your code passes existing tests and linting standards.
 
+Before opening a PR, run the same checks as CI from **repository root**:
+
+```bash
+python -m pip install -e ".[dev]"
+python pre_submit.py
+```
+
+On Windows with a project venv: `venv\Scripts\python.exe pre_submit.py`
+
+Optional: `pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push` to run ruff on commit and the full suite on push.
+
 ## 🌟 Credits
 
 - **Inspiration**: [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf)

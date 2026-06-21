@@ -46,6 +46,7 @@ dev = [
     "pydoclint",
     "pyright",
     "nbmake",
+    "pre-commit",
     "psutil",
 ]
 gpu = ["tensorflow[and-cuda]"]

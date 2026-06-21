@@ -1,0 +1,28 @@
+# Local hooks mirroring .github/workflows/pre-submit.yml
+#
+# One-time setup (repo root, dev venv active):
+#   pip install pre-commit
+#   pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+#
+# Manual full CI mirror (same as GitHub Actions):
+#   venv\Scripts\python.exe pre_submit.py
+#   bash pre_submit.sh
+
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: pre-submit-full
+        name: Pre-submit checks (CI mirror)
+        entry: python pre_submit.py --skip-install
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
