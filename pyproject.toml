@@ -146,11 +146,12 @@ known-first-party = ["stepcovnet"]
 "scripts/*.py" = ["E402"]
 "tests/**/*.py" = ["E402"]
 
-# Google-style docstring lint (Args/Returns/Raises vs signatures). Run on touched packages.
+# Google-style docstring lint (Args/Raises vs signatures). Config: https://jsh9.github.io/pydoclint/config_options.html
 [tool.pydoclint]
 style = "google"
-require-return-section-when-returning-nothing = false
+# Google pyguide: types live in annotations, not duplicated in Args (pydoclint default requires both).
 arg-type-hints-in-docstring = false
+# Google pyguide: omit Returns when summary + annotation suffice; empty Returns types should not fail DOC203.
 check-return-types = false
-allow-init-without-docstring = true
-skip-checking-short-docstrings = true
+# pydoclint default=True skips any function whose docstring is summary-only (no Args/Returns/Raises).
+skip-checking-short-docstrings = false
