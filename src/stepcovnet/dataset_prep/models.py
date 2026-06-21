@@ -137,7 +137,7 @@ class ParsedSongPack(_DictSerializableMixin):
         charts: Exported ``dance-single`` charts.
         default_chart_index: Index of highest ladder-rank chart in ``charts``.
         available_charts: Summaries of non-``dance-single`` charts only.
-        audio_filename: Audio basename in output dir (keeps source extension).
+        audio_filename: Output audio basename ``{normalized_id}{ext}``.
         audio_source: ``music_tag`` or ``inferred``.
         audio_resolved_relpath: Resolved audio path within the raw pack dir.
         warnings: Machine-readable warning codes for this pack.

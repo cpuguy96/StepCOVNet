@@ -16,6 +16,7 @@ from stepcovnet.dataset_prep import (
     audio_resolve,
     config,
     constants,
+    export,
     models,
     pack_results,
 )
@@ -415,6 +416,11 @@ def parse_song_pack(
         )
     warnings.extend(audio.warnings)
 
+    output_audio = export.output_audio_filename(
+        normalized_id,
+        audio.audio_resolved_relpath,
+    )
+
     exported: list[models.ParsedChart] = []
     for chart in dance_single_charts:
         parsed_chart, chart_warnings, skip = encode_chart(
@@ -452,7 +458,7 @@ def parse_song_pack(
         charts=exported,
         default_chart_index=default_chart_index(exported),
         available_charts=build_available_charts(sim),
-        audio_filename=audio.audio_filename,
+        audio_filename=output_audio,
         audio_source=audio.audio_source,
         audio_resolved_relpath=audio.audio_resolved_relpath,
         warnings=list(dict.fromkeys(warnings)),

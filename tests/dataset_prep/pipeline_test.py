@@ -1,5 +1,6 @@
 """Tests for dataset_prep export, validate, and pipeline dry-run."""
 
+import dataclasses
 import json
 import pathlib
 import tempfile
@@ -77,6 +78,12 @@ class ValidateExportTest(unittest.TestCase):
         self.assertIn("DIFFICULTY Hard", text)
         self.assertIn("0001 1.0", text)
 
+    def test_output_audio_filename_uses_normalized_id(self):
+        self.assertEqual(
+            export.output_audio_filename("6894_12_expanded", "Expanded.ogg"),
+            "6894_12_expanded.ogg",
+        )
+
     def test_write_song_pack_creates_chart_json_and_audio(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
@@ -93,10 +100,39 @@ class ValidateExportTest(unittest.TestCase):
             )
             song_dir = out_dir / "bundle" / "test_song"
             self.assertTrue((song_dir / "test_song.chart.json").is_file())
-            self.assertTrue((song_dir / "song.ogg").is_file())
+            self.assertTrue((song_dir / "test_song.ogg").is_file())
 
 
 class PipelineDryRunTest(unittest.TestCase):
+    def test_entry_needs_processing_respects_overwrite(self):
+        exported = normalize.NameMapEntry(
+            normalized_bundle="bundle",
+            normalized_id="song",
+            output_relpath="bundle/song",
+            source_bundle="Bundle",
+            source_pack="Bundle/song",
+            source_simfile="sm.ssc",
+            title="Song",
+            artist="",
+            audio_source="music_tag",
+            result=pack_results.PACK_RESULT_EXPORTED,
+            reason=None,
+            warnings=[],
+        )
+        pending = dataclasses.replace(
+            exported,
+            result=pack_results.PACK_RESULT_PENDING,
+        )
+        skipped = dataclasses.replace(
+            exported,
+            result=pack_results.PACK_RESULT_SKIPPED,
+            reason=pack_results.REASON_NO_DANCE_SINGLE,
+        )
+        self.assertTrue(pipeline.entry_needs_processing(pending, overwrite=False))
+        self.assertFalse(pipeline.entry_needs_processing(exported, overwrite=False))
+        self.assertTrue(pipeline.entry_needs_processing(exported, overwrite=True))
+        self.assertFalse(pipeline.entry_needs_processing(skipped, overwrite=True))
+
     def test_dry_run_writes_manifests_without_pack_output(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)

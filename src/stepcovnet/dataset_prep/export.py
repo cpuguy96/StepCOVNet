@@ -85,6 +85,20 @@ def render_legacy_txt(pack: models.ParsedSongPack) -> str:
     return "\n".join(lines) + "\n"
 
 
+def output_audio_filename(normalized_id: str, source_relpath: str) -> str:
+    """Return output audio basename ``{normalized_id}{ext}``.
+
+    Args:
+        normalized_id: Output song slug.
+        source_relpath: Resolved audio path within the raw pack directory.
+
+    Returns:
+        Basename for the copied audio file in the song output directory.
+    """
+    ext = pathlib.Path(source_relpath).suffix.lower()
+    return f"{normalized_id}{ext}" if ext else normalized_id
+
+
 def song_output_dir(
     output_dir: str | os.PathLike[str],
     normalized_bundle: str,
@@ -137,6 +151,13 @@ def write_song_pack(
     audio_src = raw_pack_dir / pack.audio_resolved_relpath
     if not audio_src.is_file():
         raise FileNotFoundError(f"audio not found for pack write: {audio_src}")
+    pack = dataclasses.replace(
+        pack,
+        audio_filename=output_audio_filename(
+            pack.normalized_id,
+            pack.audio_resolved_relpath,
+        ),
+    )
     audio_dst = tmp_dir / pack.audio_filename
     shutil.copy2(audio_src, audio_dst)
 

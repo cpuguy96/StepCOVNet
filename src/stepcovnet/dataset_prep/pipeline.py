@@ -289,6 +289,25 @@ def _process_pack_entry_job(payload: dict) -> dict:
     return result.as_dict()
 
 
+def entry_needs_processing(
+    entry: normalize.NameMapEntry,
+    *,
+    overwrite: bool,
+) -> bool:
+    """Return True when a name-map row should enter the worker pool.
+
+    Args:
+        entry: Normalized pack row from the merged name map.
+        overwrite: When True, re-export rows that were already exported.
+
+    Returns:
+        True for pending rows, and for exported rows when ``overwrite`` is set.
+    """
+    if entry.result == pack_results.PACK_RESULT_PENDING:
+        return True
+    return overwrite and entry.result == pack_results.PACK_RESULT_EXPORTED
+
+
 def _merge_results(
     name_map: normalize.NameMap,
     worker_results: list[export.WorkerResult],
@@ -356,7 +375,7 @@ def run_preprocess(prep_config: config.PrepConfig) -> PreprocessReport:
             "prep_config": prep_payload,
         }
         for entry in name_map.entries
-        if entry.result == pack_results.PACK_RESULT_PENDING
+        if entry_needs_processing(entry, overwrite=prep_config.overwrite)
     ]
 
     if prep_config.workers == 1:

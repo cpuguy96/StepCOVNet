@@ -14,7 +14,7 @@ class AudioResolveResult:
     """Resolved audio file within a raw pack directory.
 
     Attributes:
-        audio_filename: Basename chosen for output copy.
+        audio_filename: Resolved source audio basename within the raw pack.
         audio_source: ``music_tag`` or ``inferred``.
         audio_resolved_relpath: Path relative to the pack directory.
         warnings: Machine-readable warning codes for inference heuristics.

@@ -188,6 +188,8 @@ class ParseSongPackTest(unittest.TestCase):
             self.assertEqual(chart.summary.num_steps, 2)
             self.assertEqual(chart.arrow_rows[0], "0001")
             self.assertEqual(chart.arrow_rows[1], "0100")
+            self.assertEqual(pack_obj.audio_filename, "test_song.ogg")
+            self.assertEqual(pack_obj.audio_resolved_relpath, "song.ogg")
 
     def test_parse_song_pack_skips_invalid_hold_chart(self):
         sim_text = _single_chart_notes(
