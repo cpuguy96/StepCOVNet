@@ -1,0 +1,21 @@
+---
+description: Log experiments and discussion in docs/research/
+globs: docs/research/**
+alwaysApply: false
+---
+
+# Research logging
+
+When work under `docs/research/` produces runs, design decisions, or durable insights — persist in the same session, not only in chat.
+
+| Artifact              | When                                    | ID                 |
+| --------------------- | --------------------------------------- | ------------------ |
+| `EXPERIMENT_LOG.md`   | Measurable / reproducible run           | `EXP-YYYYMMDD-NN`  |
+| `DISCUSSION_NOTES.md` | Design Q&A, tradeoffs, failure analysis | `NOTE-YYYYMMDD-NN` |
+| `PAPER_OUTLINE.md`    | Optional — promote paper-worthy results only | —            |
+
+**Timestamp** on every entry: `YYYY-MM-DD HH:MM:SS` from system clock at write time.
+
+**Training seeds:** `reproducibility.apply_training_seed(seed)` before model construction and dataset creation.
+
+Full workflow: [research-session-workflow skill](../../.cursor/skills/research-session-workflow/SKILL.md). Log runs in `EXPERIMENT_LOG.md`; `PAPER_OUTLINE.md` only when drafting the paper.

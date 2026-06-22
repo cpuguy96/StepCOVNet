@@ -1,0 +1,90 @@
+# Project layout
+
+**When to read:** Locating code, configs, scripts, or model artifacts. Routed from [AGENTS.md](../../AGENTS.md).
+
+---
+
+## Environment conventions
+
+Commands assume **repository root** as the working directory (clone path is arbitrary).
+
+| Workload | Executable | Notes |
+| -------- | ---------- | ----- |
+| CPU pytest, lint, `preprocess_dataset.py` | `venv\Scripts\python.exe` (Windows) | Project venv beside clone |
+| GPU train / MERT | `"${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}"` (WSL) | Standard Windows GPU path; `source scripts/wsl_gpu_env.sh` before TensorFlow. Override venv with `WSL_VENV`. |
+| GPU from Windows | `venv\Scripts\python.exe scripts/...` | Auto-dispatch via `wsl_gpu.py` — no fixed `/mnt/c/...` paths |
+| Checkpoints / callbacks | `models_wsl/`, `callbacks/` | Gitignored; paths in JSON configs are repo-relative |
+
+Shared WSL shell vars: `scripts/wsl_common.sh`. See [python-environment.mdc](../../.cursor/rules/python-environment.mdc), [state-and-paths.mdc](../../.cursor/rules/state-and-paths.mdc), and [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+
+Pre-push CI mirror: `venv\Scripts\python.exe pre_submit.py` (tracked at repo root when checked in).
+
+---
+
+## Source
+
+| Path | Contents |
+| ---- | -------- |
+| `src/stepcovnet/` | Main package (dense onset, arrows, shared utils) |
+| `src/stepcovnet/onset_events/` | Event-based onset pipeline (current research track) |
+| `src/stepcovnet/dataset_prep/` | Raw simfile → `final_data` preprocessing + `training_loader` (P9) |
+| `src/stepcovnet/pairing.py` | Audio/chart pairing; `list_training_samples` for `final_data` |
+| `src/stepcovnet/mel_onset.py` | Mel spectrogram helpers (shared by dense path; breaks import cycles) |
+| `src/stepcovnet/wsl_gpu.py` | WSL GPU bootstrap / re-exec helpers |
+
+**Onset events modules (by pipeline stage):**
+
+| Stage | Modules |
+| ----- | ------- |
+| PRE | `audio.py`, `frontend.py`, `preprocess.py`, `datasets.py` |
+| MODEL | `models.py`, `encoder.py`, `losses.py` |
+| POST | `inference.py` |
+| METRICS | `metrics.py`, `matching.py`, `diagnostics.py` |
+| Train | `trainers.py`, `config.py` |
+
+See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the full mapping.
+
+---
+
+## Scripts and configs
+
+| Path | Role |
+| ---- | ---- |
+| `scripts/` | CLI entry points (train, extract, suite runners) |
+| `scripts/preprocess_dataset.py` | Raw simfile packs → nested `data/final_data` |
+| `configs/` | JSON experiment configs |
+| `configs/overfit_tide/` | Tide single-song overfit smoke configs |
+
+**Common entry points → skill:**
+
+| Script | Skill |
+| ------ | ----- |
+| `scripts/train_onset_event.py` | [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| `scripts/run_overfit_tide_suite.py` | [tide-overfit-protocol](../../.cursor/skills/tide-overfit-protocol/SKILL.md) |
+| `scripts/run_overfit_tide_ablations.py` | [tide-ablations](../../.cursor/skills/tide-ablations/SKILL.md) |
+| `scripts/run_overfit_tide_bisection.py` | `EXP-11` — no skill yet ([skills README § Scripts without skills](../../.cursor/skills/README.md#scripts-without-skills-yet)) |
+| `scripts/debug_onset_overfit.py` | [onset-event-eval-matching](../../.cursor/skills/onset-event-eval-matching/SKILL.md) |
+
+---
+
+## Data and models
+
+| Path | Role |
+| ---- | ---- |
+| `data/v2/` | Legacy audio + `.txt` charts (train/val/test) |
+| `data/raw_data/` | Downloaded StepMania packs (input to `dataset_prep`) |
+| `data/final_data/` | Preprocessed nested output (`{bundle}/{id}/*.chart.json` + audio); **1942** chart rows locally |
+| `models_wsl/` | WSL-trained checkpoints (gitignored patterns may apply) |
+| `callbacks/` | TensorBoard / checkpoint roots |
+
+---
+
+## Docs
+
+| Path | Role |
+| ---- | ---- |
+| `docs/research/` | Lab notebook (EXP, NOTE, paper) |
+| `docs/agents/` | Agent state — [README](README.md), layout, self-journal |
+| `.cursor/skills/` | Task playbooks (procedures) |
+| `docs/onset_output_targets_planning.md` | Design planning |
+| `AGENTS.md` (repo root) | Session entry router |

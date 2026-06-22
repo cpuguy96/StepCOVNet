@@ -128,13 +128,30 @@ Train your own models using the provided scripts.
 
 #### Data Preparation
 
-**Link to training data**:
+**Legacy layout (`data/v2`):** Download pre-converted training data from
 [Google Drive](https://drive.google.com/file/d/1YszVRR82hH3nRpp5zAeLrApjiWSxtxvD/view?usp=drive_link)
+(audio + `.txt` charts in `train/` / `val/`).
 
-1. **Parse `.sm` files**: Use [`SMDataTools`](https://github.com/jhaco/SMDataTools) to convert `.sm` files into `.txt`
-   files (training data above already converted `.sm` to `.txt`).
-2. **Organize files**: Ensure audio files (`.mp3`, `.ogg`, `.wav`) and their corresponding `.txt` chart files (same
-   filename stem) are in the same directory.
+**Prepared corpus (`data/final_data`):** Raw StepMania packs under `data/raw_data/` can be
+preprocessed into nested `{bundle}/{song}/` directories with audio + `.chart.json`
+(multi-difficulty charts in one JSON). See [DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md)
+(local doc; `docs/` may be gitignored).
+
+```bash
+# Windows CPU venv from repo root:
+pip install -e ".[dataset-prep]"
+venv\Scripts\python.exe scripts\preprocess_dataset.py ^
+  --input-dir data/raw_data ^
+  --output-dir data/final_data ^
+  --workers 8
+```
+
+Training loaders discover samples via `pairing.list_training_samples(data_dir)` —
+one row per `(audio, chart.json, chart_index)`. Legacy `.txt` pairing still works
+for `data/v2`.
+
+**Manual `.sm` conversion (legacy):** Use [`SMDataTools`](https://github.com/jhaco/SMDataTools)
+to convert `.sm` files into `.txt` if not using the prep pipeline.
 
 #### Training Onset Model
 
@@ -185,19 +202,26 @@ python scripts/train_arrow.py \
 
 ```text
 stepcovnet/
-├── scripts/            # Training and generation scripts
+├── scripts/            # Training, generation, preprocess_dataset.py
 │   ├── generate.py
+│   ├── preprocess_dataset.py
 │   ├── train_onset.py
 │   └── train_arrow.py
 ├── src/
-│   └── stepcovnet/     # Core package source code
-│       ├── datasets.py # Data loading and preprocessing
-│       ├── models.py   # Model architectures (U-Net, Transformer)
-│       ├── trainers.py # Training loops
-│       └── ...
+│   └── stepcovnet/     # Core package
+│       ├── dataset_prep/   # Raw simfile → final_data (PRE)
+│       ├── onset_events/   # Event-based onset pipeline
+│       ├── datasets.py     # Data loading and preprocessing
+│       ├── pairing.py      # Audio/chart pairing for training
+│       ├── models.py       # Model architectures
+│       └── trainers.py     # Training loops
+├── data/
+│   ├── v2/             # Legacy train/val (.txt charts)
+│   ├── raw_data/       # Downloaded simfile packs
+│   └── final_data/     # Preprocessed nested output (.chart.json)
 ├── tests/              # Unit tests
-├── pyproject.toml      # Project configuration and dependencies
-└── README.md           # Project documentation
+├── pyproject.toml
+└── README.md
 ```
 
 ## 🤝 Contributing

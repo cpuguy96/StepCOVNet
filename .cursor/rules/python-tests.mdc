@@ -1,0 +1,41 @@
+﻿---
+description: Tests and coverage when changing src/, scripts/, or tests/
+globs: "{src,scripts,tests}/**/*"
+alwaysApply: false
+---
+
+# Tests and coverage
+
+When you add or modify code under `src/`, `scripts/`, or `tests/`:
+
+1. **Update tests** in `tests/` (one test module per source module: `stepcovnet/foo.py` ΓåÆ `tests/foo_test.py`).
+2. **Delta coverage** ΓÇö aim for **100%** of changed/new code via **public API** tests; high 90s only as last resort. Do not test private helpers solely for coverage.
+3. **Lint** with Ruff, pydoclint, and pyright on changed paths (`pyproject.toml` ΓÇö import order, Google docstrings, pathlib, types):
+
+```text
+venv\Scripts\python.exe -m ruff check .
+venv\Scripts\pydoclint.exe src/stepcovnet/<package>/
+venv\Scripts\pyright.exe src/stepcovnet/<package>/
+```
+
+Narrow paths to changed files/packages when appropriate. Docstring rules: [python-style.mdc](python-style.mdc).
+
+4. **Verify** with Windows venv (see [python-environment.mdc](python-environment.mdc)):
+
+```text
+venv\Scripts\python.exe -m pytest tests/ -m "not slow" --cov=stepcovnet --cov=scripts
+```
+
+Use the relevant test file when scope is narrow. Import conventions beyond Ruff: [python-style.mdc](python-style.mdc).
+
+## Test patterns
+
+**Mocks:** `from unittest import mock`; `mock.patch.object(..., autospec=True)` for callables. Omit `autospec` when replacing attributes with explicit values. Patch where imported, not dotted strings.
+
+**Temp files:** `tempfile.TemporaryDirectory()` or `NamedTemporaryFile` inside `with` (`delete=True`); never `delete=False` + manual unlink.
+
+**Duplication:** shared helpers, `@pytest.mark.parametrize`, fixtures ΓÇö avoid copy-pasted bodies.
+
+**Flat tests:** `with mock.patch("a"), mock.patch("b"):` or stacked `@mock.patch` ΓÇö avoid deep nesting.
+
+**Test module docstrings:** omit unless documenting non-obvious setup.

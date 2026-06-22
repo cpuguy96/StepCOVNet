@@ -1,0 +1,42 @@
+---
+description: Refresh repo state before routing edits; keep tracked files free of machine-specific paths
+alwaysApply: true
+---
+
+# State refresh and portable paths
+
+## When to refresh first
+
+Before edits that touch **linkages** — routing (`AGENTS.md`), README, workflows, rules, skills, WSL shell scripts, docs cross-links, gitignore allowlists, or path conventions — refresh state:
+
+1. `git status` and `git log -1 --oneline`
+2. `git ls-files` for paths you will cite or link
+3. Read target files; confirm they exist on disk (especially gitignored `docs/` and `.cursor/`)
+4. For WSL helpers: prefer `scripts/wsl_common.sh` + env vars over hardcoded clone or username paths
+
+If a linked file is missing, fix the link or create the target — do not leave broken references in **tracked** files.
+
+## Machine-specific paths (tracked files only)
+
+Use `git grep`, not workspace-wide search (gitignored local docs may contain stale paths):
+
+```text
+git grep -E "C:\\\\Users|/mnt/c/Users/"
+```
+
+Expect **no matches** in tracked files.
+
+## Windows + WSL (portable)
+
+| Workload | Pattern |
+| -------- | ------- |
+| Windows CPU | `venv\Scripts\python.exe` from repo root |
+| WSL GPU Python | `"${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}"` (Linux `$HOME`, override with `WSL_VENV`) |
+| WSL from Windows | `venv\Scripts\python.exe scripts/...` when script uses `wsl_gpu` dispatch |
+| Data / models | `data/v2`, `data/final_data`, `models_wsl/` (repo-relative) |
+
+Never hardcode `C:\Users\...` or `/mnt/c/Users/<name>/...` clone paths. WSL `$HOME/stepcovnet-venv-wsl` is a **project default venv name**, not a machine-specific Windows path.
+
+## Pre-push validation
+
+Mirror CI before push: `venv\Scripts\python.exe pre_submit.py` (see [pre-submit.yml](../../.github/workflows/pre-submit.yml)).

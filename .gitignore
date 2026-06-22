@@ -145,8 +145,18 @@ e2e_mert/
 experiments/
 
 .vscode/
-.cursor/
-docs/
+.cursor/**
+!.cursor/rules/
+!.cursor/rules/*.mdc
+!.cursor/skills/
+!.cursor/skills/**
+
+docs/**
+!docs/agents/
+!docs/agents/**
+!docs/research/
+!docs/research/**
+!docs/onset_events_plan.md
 
 # WSL-local artifacts (never commit)
 models_wsl/

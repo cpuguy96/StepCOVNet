@@ -1,0 +1,1040 @@
+# Discussion notes
+
+Insights, Q&A, and design reasoning (newest entries first) from research conversations. IDs: `NOTE-YYYYMMDD-NN`. Each entry includes **Timestamp** (`YYYY-MM-DD HH:MM:SS`, local system time at write).
+
+**Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md)
+
+## Session 2026-06-22 — P9 smoke + doc sync
+
+### NOTE-20260622-01: P9 loaders validated on full final_data
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-22 09:25:00                                                   |
+| **Topic**     | P9 training loader smoke on local `data/final_data`                   |
+
+**Context:** P9 committed (`5810ee8`); docs still described loaders as future work.
+
+**Discovery:**
+
+- `discover_training_rows` / `list_training_samples`: **1942** rows; 0 missing audio or `.chart.json`
+- Bundle breakdown: ITL 246, Mizuki 1310, Vocaloid 386 chart rows; **822** with `chart_index > 0`
+- Multi-chart indexing loads distinct step counts per index; TF onset dataset builds with GT when audio window covers chart offset (first ITL easy chart starts ~6.86s)
+
+**Implication:**
+
+- P9 **done**; **P8** (`training_index.json` + split) is the remaining gate for proper val on `final_data`
+- Synced [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2/§10/§13/§16, [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md), [project-layout.md](../agents/project-layout.md), [AGENTS.md](../../AGENTS.md), [README.md](../../README.md)
+
+**Related:** [EXP-20260622-01](EXPERIMENT_LOG.md#exp-20260622-01-p9-final_data-loader-smoke), DATASET_PREP_PIPELINE §10
+
+---
+
+## Session 2026-06-14 — design doc field rationale convention
+
+### NOTE-20260614-01: schema_version and per-field rationale in plan docs
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-14 18:01:36                                                   |
+| **Topic**     | Document field decisions in plan docs, not only chat                  |
+
+**Context:** User asked what `schema_version` is; clarified that loaders need a version contract and that each field's *why* should live in documentation.
+
+**Discovery:**
+
+- `schema_version` is an integer **contract tag** on JSON artifacts (chart, manifest, report) so loaders can branch or fail on unknown layouts; v2 planned for deferred stats (`steps_per_second`, `mine_times_sec`, §15.2/15.4).
+- Explanations like this belong in the **plan doc** as field rationale tables, not only in conversation.
+
+**Implication:**
+
+- Added [DATASET_PREP_PIPELINE.md §6.3](DATASET_PREP_PIPELINE.md#63-schema-versions-and-field-rationale) (version changelog + field tables).
+- New always-on rule [`.cursor/rules/design-doc-field-decisions.mdc`](../../.cursor/rules/design-doc-field-decisions.mdc); `research-notebook.mdc` and [docs/agents/research.md](../agents/research.md) updated.
+
+**Related:** DATASET_PREP_PIPELINE §6.3, §14, §15; AGENTS.md rules table
+
+---
+
+## Session 2026-06-10 — architecture smoke suite
+
+### NOTE-20260610-02: BiLSTM wins arch smoke; transformer OOM
+
+| Field         | Value                                                                              |
+| ------------- | ---------------------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-10 05:59:51                                                                |
+| **Topic**     | Onset backbone comparison @ 10-train / 50-ep smoke budget                          |
+
+**Context:** [EXP-20260610-01](EXPERIMENT_LOG.md#exp-20260610-01-arch-smoke-suite-manifest) — 9 configs via `run_arch_research_suite.py`, Gaussian + MERT, `post_hoc_event_f1_export`.
+
+**Discovery:**
+
+- **BiLSTM** (128 units, depth 2) leads: micro **0.677** @ thr=0.15 — +4.4 pp vs EXP-03 U-Net baseline (0.633 @ 40 ep) at comparable train size.
+- **TCN** (4 blocks, dilations 1–8) is #2: **0.664** @ 0.25; scaling to 20-train only reaches **0.657** (underfits vs 10-train TCN on this budget).
+- **U-Net** ablations cluster **0.646–0.656** — depth-1 wide best among variants; σ=0.5 peaks at thr=0.10 (0.655).
+- **Transformer** (2 layers, 4 heads, 64 filters) **OOM** on epoch 1: attention softmax `[1,4,12714,12714]` ≈ 2.4 GiB — full-sequence self-attention incompatible with ~12.7k-frame songs on current GPU without chunking/local attention.
+
+**Implication:** For dense onset @ MERT, prefer **BiLSTM or TCN** over U-Net tweaks at 10-train smoke scale. Transformer deferred until chunked attention or shorter sequences. Round-2 probes BiLSTM 20-train, TCN depth, binary vs Gaussian on BiLSTM.
+
+**Open (updated EXP-20260610-02):** BiLSTM 20-train reaches **0.680** @ 50 ep — still −0.3 pp vs EXP-12 (0.683 @ 50-train/200ep). Gap likely needs **200 ep + 50 train**, not arch swap alone.
+
+**Related:** EXP-20260610-01/02, `configs/research/arch/manifest_round2.json`, `OnsetModelConfig.onset_architecture`
+
+### NOTE-20260610-03: Round-2 BiLSTM width wins; TCN depth rejected
+
+| Field         | Value                                                                              |
+| ------------- | ---------------------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-10 11:19:14                                                                |
+| **Topic**     | BiLSTM hyperparameter follow-ups @ smoke budget                                    |
+
+**Discovery:** `recurrent_units=256` → **0.680** @ 0.25 (best overall). Binary BiLSTM **0.674** — Gaussian still +0.6 pp on same backbone. `tcn_blocks=6` → **0.655**, below blocks=4 **0.664**.
+
+**Implication:** Scale **BiLSTM 256u** to 50-train / 200ep; do not invest in deeper TCN or full-seq transformer without chunked attention.
+
+**Related:** EXP-20260610-02
+
+---
+
+## Session 2026-06-10 — auto post-hoc event-F1 export
+
+### NOTE-20260610-01: Auto post-hoc event-F1 export implemented
+
+| Field         | Value                                                                              |
+| ------------- | ---------------------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-10 01:20:52                                                                |
+| **Topic**     | Wire post-hoc checkpoint+threshold event-F1 selection into the dense onset trainer |
+
+**Context:** [NOTE-20260609-09](#note-20260609-09-frame-f1-checkpoint-mis-ranks-event-f1) and [NOTE-20260609-11](#note-20260609-11-50train-200ep-frame-export-mis-rank) showed the frame-F1 `ModelCheckpoint` monitor mis-ranks event F1: the exported peak-frame ckpt loses ~1–2 pp to a mid-train ckpt at the tuned POST threshold. Previously this required two manual scripts after every run (`sweep_val_onset_ckpts.py` + `sweep_val_threshold.py`).
+
+**Discovery / change:** Implemented the sweep inside `run_train_from_config`, opt-in via `RunConfig.post_hoc_event_f1_export` (+ `post_hoc_event_f1_thresholds`, default 0.05–0.50 grid).
+
+- `dense_overfit_eval.sweep_thresholds_dense_val_event_f1` predicts **once per val pair** and re-scores cached traces across all thresholds (cost ≈ one inference pass over val, not n_thresholds passes).
+- `trainers._select_best_event_f1_checkpoint` loads every `VAL_ONSET_F1_SCORE-*.keras` callback, sweeps thresholds, and picks the (checkpoint, threshold) with max micro event F1.
+- `trainers._export_best_event_f1_checkpoint` overwrites the exported `.keras` with that checkpoint and writes `event_f1_sweep.json` (best ckpt/threshold + per-checkpoint table) under `model_output_dir`.
+
+**Implication:** When enabled, the exported model is the event-F1-optimal checkpoint rather than the frame-F1 peak, and the winning POST threshold is recorded for eval. Default is **off** (frame-F1 export unchanged), so fast iteration runs are unaffected. **No training run yet** — feature + tests only; needs a real run to confirm it reproduces the EXP-12 0.683 selection automatically.
+
+**Related:** NOTE-20260609-09/11, EXP-20260609-11/12, `src/stepcovnet/trainers.py`, `src/stepcovnet/dense_overfit_eval.py`, `src/stepcovnet/config.py`; DECISIONS_CHECKLIST A1.
+
+---
+
+## Session 2026-06-09 — Gaussian 50-train 200ep eval
+
+### NOTE-20260609-11: 50-train 200ep frame export mis-ranks event F1
+
+| Field         | Value                                                             |
+| ------------- | ----------------------------------------------------------------- |
+| **Timestamp** | 2026-06-09 12:33:15                                               |
+| **Topic**     | Frame-F1 checkpoint export vs post-hoc event-F1 on 50-train 200ep |
+
+**Context:** EXP-20260609-12 completed 200/200 ep; canonical eval + threshold sweep + callback sweep.
+
+**Discovery:** Exported frame-F1 peak ckpt (0.79480) reaches micro 0.674 @ POST thr=0.35 (ties EXP-07). Mid-train ckpt 0.77102 reaches 0.683 @ same threshold (+0.9 pp). Frame-F1 monitor again mis-ranks event-F1 weights.
+
+**Implication:** Run post-hoc ckpt sweep at tuned POST thr before trusting exported weights.
+
+**Related:** EXP-20260609-12, EXP-20260609-07, NOTE-20260609-09
+
+---
+
+## Index
+
+| ID                                                                                              | Timestamp           | Topic                                                                   |
+| ----------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------- |
+| [NOTE-20260610-01](#note-20260610-01-auto-post-hoc-event-f1-export-implemented)                 | 2026-06-10 01:20:52 | Auto post-hoc event-F1 checkpoint+threshold export wired into trainer   |
+| [NOTE-20260609-11](#note-20260609-11-50train-200ep-frame-export-mis-rank)                       | 2026-06-09 12:33:15 | 50-train 200ep: frame peak export 0.674 vs ckpt 0.683 @ 0.35            |
+| [NOTE-20260609-10](#note-20260609-10-final-weight-export-protocol)                              | 2026-06-09 09:46:42 | Final-epoch export via `callback_root_dir=""` — 100-train protocol      |
+| [NOTE-20260609-09](#note-20260609-09-frame-f1-checkpoint-mis-ranks-event-f1)                    | 2026-06-09 09:45:12 | Mid-train frame ckpt **0.671** event F1 beats frame-F1 peak **0.654**   |
+| [NOTE-20260609-08](#note-20260609-08-callback-export-not-final-weights)                         | 2026-06-09 09:09:04 | no-ES 200ep still **0.654** — `_write_model` exports best frame ckpt    |
+| [NOTE-20260609-07](#note-20260609-07-200ep-does-not-fix-ep11-checkpoint)                        | 2026-06-09 05:01:34 | 200ep + patience 25 → identical **0.654**; frame-F1 ES blocks scale     |
+| [NOTE-20260609-06](#note-20260609-06-gaussian-100train-underperforms-smaller-runs)              | 2026-06-09 04:04:23 | 100-train Gaussian 40ep **0.654** — below 50-train; need longer train   |
+| [NOTE-20260609-05](#note-20260609-05-gaussian-50train-and-100train-rerun)                       | 2026-06-09 03:19:17 | 50-train **0.674** @ thr=0.35 — recommend 100-train Gaussian re-run     |
+| [NOTE-20260609-04](#note-20260609-04-gaussian-scaling-breakthrough)                             | 2026-06-09 02:49:21 | Gaussian 20-train **0.667** @ thr=0.25 — beats 100-train 0.635          |
+| [NOTE-20260609-03](#note-20260609-03-arch-large-small-data-collapse)                            | 2026-06-09 02:09:14 | 3.5M-param U-Net collapses on 10 songs — epoch-1 restore, F1≈flux       |
+| [NOTE-20260609-02](#note-20260609-02-gaussian-vs-binary-10train-comparison)                     | 2026-06-09 01:48:26 | Gaussian 10-train @ tuned POST beats binary (+2.4 pp); ≈100-train scale |
+| [NOTE-20260609-01](#note-20260609-01-per-checkpoint-threshold-sweep-protocol)                   | 2026-06-09 01:20:00 | Always sweep POST thr per checkpoint; 0.20 median for dense MERT        |
+| [NOTE-20260608-03](#note-20260608-03-spectral-flux-baseline-ceiling)                            | 2026-06-09 00:56:51 | Librosa flux ~32% micro F1 — far below MERT dense @ tuned POST          |
+| [NOTE-20260608-02](#note-20260608-02-100train-threshold-recalibration-breakthrough)             | 2026-06-08 00:44:14 | 100-train needs thr≈0.20 not 0.05 — +6.3 pp micro F1 (POST only)        |
+| [NOTE-20260608-01](#note-20260608-01-disable-dense-val-event-f1-callback)                       | 2026-06-08 02:00:00 | Disable in-train event F1 callback for faster dense scaling             |
+| [NOTE-20260607-06](#note-20260607-06-phase-2-100-train-scaling)                                 | 2026-06-07 20:01:00 | Phase 2: 100-train config + smoke + full run started                    |
+| [NOTE-20260607-05](#note-20260607-05-dense-train-eval-metric-alignment)                         | 2026-06-07 12:25:00 | Dense train checkpoint on peak-pick event F1 @ config threshold         |
+| [NOTE-20260607-04](#note-20260607-04-phase-1-canonical-dense-eval)                              | 2026-06-07 11:17:32 | Phase 1: uncapped GT + `eval_dense_onset.py`; dual-threshold reporting  |
+| [NOTE-20260607-03](#note-20260607-03-val-wide-threshold-sweep-test-time-threshold-ood-bottom-3) | 2026-06-07 09:57:48 | Full val threshold sweep, test-time threshold options, OOD bottom 3     |
+| [NOTE-20260607-02](#note-20260607-02-bad-val-threshold-sweep-and-feature-profiles)              | 2026-06-07 09:46:11 | EXP-21 worst val songs: threshold sweep + MERT/pred profile comparison  |
+| [NOTE-20260607-01](#note-20260607-01-onset-detection-literature-and-pipeline-options)           | 2026-06-07 05:15:00 | MIR onset literature vs StepCOVNet; viable pipeline changes             |
+| [NOTE-20260606-17](#note-20260606-17-multi-song-eval-missing-normalization)                     | 2026-06-06 17:17:55 | Per-pair dense eval skipped feature normalization                       |
+| [NOTE-20260606-16](#note-20260606-16-dense-seed-before-model-init)                              | 2026-06-06 16:54:25 | Root cause of dense tide train instability                              |
+| [NOTE-20260606-15](#note-20260606-15-timestamp-format-system-clock-at-write)                    | 2026-06-06 16:37:35 | Full timestamps from system clock; no approximate suffixes              |
+| [NOTE-20260606-14](#note-20260606-14-uniform-grid-oracle-matches-f1-plateau)                    | 2026-06-06 17:20:00 | Grid oracle ~31%; bisection closes bug hunt                             |
+| [NOTE-20260606-13](#note-20260606-13-conv1d-zero-f1--confidence-collapse-from-ordered-training) | 2026-06-06 14:12:41 | Ordered train collapsed all confidences → 0 F1 on conv1d                |
+| [NOTE-20260606-12](#note-20260606-12-hungarian-l1-training-loss-implemented)                    | 2026-06-06 14:10:00 | Training loss uses Hungarian L1 assignment                              |
+| [NOTE-20260606-11](#note-20260606-11-hungarian-matching-and-clustered-predictions)              | 2026-06-06 11:12:00 | Clustering many preds on one onset vs spread GT                         |
+| [NOTE-20260606-10](#note-20260606-10-pipeline-pre-model-post-and-metrics)                       | 2026-06-06 11:00:00 | Pipeline framing → [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) |
+| [NOTE-20260606-09](#note-20260606-09-research-notebook-experiments-plus-discussion)             | 2026-06-06 10:30:00 | Notebook covers experiments _and_ discussion                            |
+| [NOTE-20260606-08](#note-20260606-08-raw-audio-vs-mel-two-separate-difficulties)                | 2026-06-06 09:21:00 | Input representation vs output/loss are separate problems               |
+| [NOTE-20260606-07](#note-20260606-07-num_queries-vs-n_max_onsets)                               | 2026-06-06 09:18:00 | `num_queries` vs chart length; K=634 not magic                          |
+| [NOTE-20260606-06](#note-20260606-06-overfit-shortcuts-gt-refs-and-frozen-deltas)               | 2026-06-06 09:15:00 | GT query refs + frozen deltas are pipeline checks, not production       |
+| [NOTE-20260606-05](#note-20260606-05-count-from-times-not-a-separate-head)                      | 2026-06-06 09:12:00 | Count should come from times + confidence, not its own head             |
+| [NOTE-20260606-04](#note-20260606-04-gap-and-cluster-charts-break-index-alignment)              | 2026-06-06 09:09:00 | Strict index alignment fails on gap/cluster charts                      |
+| [NOTE-20260606-03](#note-20260606-03-seq2seq-goal-vs-detr-style-k-slots)                        | 2026-06-06 09:06:00 | Product goal is seq2seq; implementation uses K query slots              |
+| [NOTE-20260606-02](#note-20260606-02-train-ordered-vs-eval-hungarian)                           | 2026-06-06 09:03:00 | Training uses ordered assignment; eval uses Hungarian                   |
+| [NOTE-20260606-01](#note-20260606-01-how-event-eval-works)                                      | 2026-06-06 09:00:00 | Event eval: padding, K slots, Hungarian, TP/FP/FN                       |
+
+---
+
+## Session 2026-06-09 — autonomous onset research (continued)
+
+### NOTE-20260609-10: Final-weight export protocol
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 09:46:42 |
+
+**Topic:** How to eval epoch-200 weights for 100-train Gaussian
+
+**Context:** `_write_model` copies best `VAL_ONSET_F1_SCORE-*.keras` when `callback_root_dir` is set ([NOTE-20260609-08](DISCUSSION_NOTES.md#note-20260609-08-callback-export-not-final-weights)). Post-hoc sweep already recovered **0.671** (EXP-11); late-epoch weights untested.
+
+**Discovery:** Set `"callback_root_dir": ""` in run config — `_build_callbacks` returns empty list; `_write_model` saves in-memory final-epoch weights to `model_output_dir`. Smoke config: `configs/research/gaussian_10train_3ep_final_weights.json` (10 songs, 3 ep, no callbacks). Compare against sibling run with callbacks on same seed.
+
+**Implication:** Run `gaussian_100train_3ep_final_weights` (or clone 100-train with `callback_root_dir=""` + low epoch) when GPU free; eval with `eval_dense_onset.py` + threshold sweep. Alternative: keep callbacks and rank via `scripts/sweep_val_onset_ckpts.py`.
+
+**Related:** `src/stepcovnet/trainers.py` `_write_model`, EXP-20260609-11, EXP-20260609-12
+
+---
+
+### NOTE-20260609-09: Frame-F1 checkpoint mis-ranks event F1
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 09:45:12 |
+
+**Topic:** Post-hoc sweep recovers +1.7 pp on 100-train Gaussian
+
+**Context:** [EXP-20260609-11](EXPERIMENT_LOG.md#exp-20260609-11-gaussian-100train-callback-sweep) — nine `VAL_ONSET_F1_SCORE` checkpoints from 200ep no-ES run.
+
+**Discovery:** Exported peak-frame ckpt (`0.78830`) → **0.654** @ 0.25. Mid-training ckpt (`0.75754`) → **0.671** @ thr=0.30. Higher frame F1 does not imply higher event F1 after POST threshold tuning.
+
+**Implication:** Always sweep POST threshold per checkpoint; consider event-F1-based checkpoint selection or post-hoc callback ranking. 100-train Gaussian ceiling ~**0.671** — still below 50-train **0.674**.
+
+**Related:** EXP-20260609-10/11, NOTE-20260609-08, NOTE-20260609-01
+
+---
+
+### NOTE-20260609-08: Callback export, not final weights
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 09:09:04 |
+
+**Topic:** `early_stopping_patience=0` still yields ep11-equivalent eval
+
+**Context:** [EXP-20260609-10](EXPERIMENT_LOG.md#exp-20260609-10-gaussian-100train-200ep-no-es) — full 200-epoch train, no early stopping.
+
+**Discovery:** Eval micro F1 **0.654** @ thr=0.25 bit-identical to EXP-08/09. `trainers._write_model` loads best `VAL_ONSET_F1_SCORE-*.keras` from `callback_root_dir` (peak **0.788** @ ~ep11), ignoring final-epoch weights.
+
+**Implication:** To test late-epoch 100-train Gaussian: set `callback_root_dir=""` for final-weight export, or sweep all saved callback checkpoints with `eval_dense_onset.py`. Session best remains 50-train **0.674**.
+
+**Related:** EXP-20260609-08/09/10, `src/stepcovnet/trainers.py` `_write_model`
+
+---
+
+### NOTE-20260609-07: 200ep does not fix ep11 checkpoint
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 05:01:34 |
+
+**Topic:** Longer training cap blocked by frame-F1 early stopping
+
+**Context:** [EXP-20260609-09](EXPERIMENT_LOG.md#exp-20260609-09-gaussian-100train-200ep-early-stop-blocked) — 200 ep, patience 25 vs 40ep/patience 15 in EXP-08.
+
+**Discovery:** Both runs early-stop and restore **epoch 11**; eval micro F1 **0.654** @ thr=0.25 is bit-identical. Session best remains 50-train **0.674**.
+
+**Implication:** Epoch cap is not the bottleneck — **checkpoint metric** is. Next experiments: disable early stop for 100-train Gaussian, or checkpoint on swept event F1, or save top-N epoch weights for POST sweep.
+
+**Related:** EXP-20260609-08/09, EXP-20260609-07
+
+---
+
+### NOTE-20260609-06: Gaussian 100-train underperforms smaller runs
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 04:04:23 |
+
+**Topic:** 100-train Gaussian @ 40ep does not beat 50-train at POST-tuned eval
+
+**Context:** [EXP-20260609-08](EXPERIMENT_LOG.md#exp-20260609-08-gaussian-100train-40ep-undertrained) — early stop ep26, best **ep11**.
+
+**Discovery:** Gaussian @ optimal POST does not monotonically scale with train count under fixed 40ep / frame-F1 checkpoint:
+
+| train | best thr | micro F1  |
+| ----- | -------- | --------- |
+| 20    | 0.25     | 0.667     |
+| 50    | 0.35     | **0.674** |
+| 100   | 0.25     | 0.654     |
+
+100-train still beats binary 100-train **0.635** (+1.9 pp) but loses to mid-scale Gaussian runs.
+
+**Implication:** Frame-F1 early stopping underfits at 100 songs; rerun with **200 ep** / higher patience before concluding Gaussian scaling fails. **50-train checkpoint remains session best** for deployment experiments.
+
+**Related:** EXP-20260609-06/07/08, NOTE-20260609-05
+
+---
+
+### NOTE-20260609-05: Gaussian 50-train and 100-train re-run
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 03:19:17 |
+
+**Topic:** 50-train smoke clears 0.67 bar; queue 100-train Gaussian
+
+**Context:** [EXP-20260609-07](EXPERIMENT_LOG.md#exp-20260609-07-gaussian-50train-40ep-threshold-sweep) — early stop @ ep21 restored **epoch 6** weights.
+
+**Discovery:** Gaussian scaling @ swept optimal POST:
+
+| train      | best thr | micro F1 @ optimal | micro @ 0.05 |
+| ---------- | -------- | ------------------ | ------------ |
+| 20         | 0.25     | 0.667              | 0.642        |
+| 50         | 0.35     | **0.674**          | 0.566        |
+| 100 binary | 0.20     | 0.635              | 0.572        |
+
+50-train edges 20-train slightly (+0.7 pp) but needs higher POST thr (0.35). Raw @ 0.05 regresses — checkpoint selection (ep6) may be suboptimal for event eval.
+
+**Implication:** **Recommend full 100-train Gaussian** re-run (≥50 ep, sweep POST). Deprioritize binary 100-train as production baseline. Consider longer patience or event-F1 checkpoint for 50+ song runs.
+
+**Related:** EXP-20260609-06/07, EXP-20260608-01
+
+---
+
+### NOTE-20260609-04: Gaussian scaling breakthrough
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 02:49:21 |
+
+**Topic:** Gaussian targets scale better than binary with train size
+
+**Context:** [EXP-20260609-06](EXPERIMENT_LOG.md#exp-20260609-06-gaussian-20train-40ep-threshold-sweep) vs 10-train and 100-train baselines.
+
+**Discovery:** Gaussian train-size curve @ swept optimal POST:
+
+| train songs  | best thr | micro F1  |
+| ------------ | -------- | --------- |
+| 10           | 0.25     | 0.633     |
+| **20**       | 0.25     | **0.667** |
+| 100 (binary) | 0.20     | 0.635     |
+
+20-train Gaussian already beats 100-train binary-scale with 5× less data. Even @ fixed thr=0.05, 20-train hits **0.642**.
+
+**Implication:** Promote Gaussian as default TRAIN target; run 50-train smoke next. Revisit whether 100-train binary checkpoint is obsolete for dense onset.
+
+**Related:** EXP-20260609-03/06, EXP-20260608-01
+
+---
+
+### NOTE-20260609-03: arch_large small-data collapse
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 02:09:14 |
+
+**Topic:** Large U-Net fails on 10-song dense onset
+
+**Context:** [EXP-20260609-04](EXPERIMENT_LOG.md#exp-20260609-04-arch-large-10train-40ep-collapse) — 32 filters / depth 3 / dropout 0.1 vs baseline 16f/depth2 (229K params).
+
+**Discovery:** After epoch 1, train frame `onset_f1_score` stayed at 0; early stopping @ ep16 restored **epoch 1** checkpoint. Event eval micro F1 **0.326** @ thr=0.10 — same ballpark as librosa flux (~0.32), −28 pp vs Gaussian.
+
+**10-train comparison @ optimal POST:**
+
+| Variant    | params | best thr | micro F1  |
+| ---------- | ------ | -------- | --------- |
+| Gaussian   | 230K   | 0.25     | **0.633** |
+| Binary     | 230K   | 0.20     | 0.609     |
+| arch_large | 3.5M   | 0.10     | 0.326     |
+
+**Implication:** Capacity scaling without more data hurts; prefer Gaussian targets + modest U-Net. Do not scale arch before train-set size.
+
+**Related:** EXP-20260609-01/03/04, EXP-20260608-03
+
+---
+
+### NOTE-20260609-02: Gaussian vs binary 10-train comparison
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 01:48:26 |
+
+**Topic:** Target shape ablation at 10 songs with per-run optimal POST
+
+**Context:** [EXP-20260609-01](EXPERIMENT_LOG.md#exp-20260609-01-binary-10train-40ep-threshold-sweep) vs [EXP-20260609-03](EXPERIMENT_LOG.md#exp-20260609-03-gaussian-10train-40ep-threshold-sweep).
+
+**Discovery:** At each run's swept optimal threshold:
+
+| Target   | best thr | micro F1 @ 0.05 | micro F1 @ optimal |
+| -------- | -------- | --------------- | ------------------ |
+| Binary   | 0.20     | 0.505           | **0.609**          |
+| Gaussian | 0.25     | 0.586           | **0.633**          |
+
+Gaussian wins +2.4 pp at matched protocol; approaches 100-train ceiling (0.635) with 10× less data.
+
+**Implication:** Soft Gaussian targets may be a better TRAIN default for dense onset; arch_large run tests capacity separately.
+
+**Related:** EXP-20260609-01, EXP-20260609-03, EXP-20260608-01
+
+---
+
+### NOTE-20260609-01: Per-checkpoint threshold sweep protocol
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 01:20:00 |
+
+**Topic:** Always sweep POST confidence threshold per checkpoint
+
+**Context:** Binary 10-train eval @ fixed 0.05 gave micro **0.505**; sweep → **0.609** @ 0.20 (same median as 100-train). 75-train @ 0.20 only **0.550** — confirms 100-train **0.635** is real scaling, not universal higher-threshold trick.
+
+**Discovery:** Dense MERT checkpoints consistently peak near thr≈**0.20** on val (median per-song optimal). Fixed 0.05 systematically under-reports event F1 for larger train sets.
+
+**Implication:** Report micro F1 at swept optimal thr alongside default 0.05. Gaussian vs binary comparison must use per-run optimal thr, not shared 0.05.
+
+**Related:** [EXP-20260609-01](EXPERIMENT_LOG.md#exp-20260609-01-binary-10train-40ep-threshold-sweep), [EXP-20260609-02](EXPERIMENT_LOG.md#exp-20260609-02-75train-thr020-apples-to-apples), [EXP-20260608-01](EXPERIMENT_LOG.md#exp-20260608-01-100train-threshold-sweep-post-breakthrough)
+
+---
+
+### NOTE-20260608-03: Spectral-flux baseline ceiling
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-09 00:56:51 |
+
+**Topic:** Librosa onset-strength baseline vs dense MERT
+
+**Context:** Research direction #5 — classical spectral-flux upper bound on val subset.
+
+**Discovery:** New `scripts/eval_spectral_flux_onset.py`; 5-song val pilot with threshold sweep peaks at micro **0.317** @ thr=0.05. Dense 100-train @ thr=0.20 is **0.635** on full val — ~2× absolute F1 gap. Flux is high-recall / low-precision (many spurious peaks on game audio).
+
+**Implication:** MERT+U-Net value is not replaceable by off-the-shelf flux; tune POST on neural checkpoints instead. Full 40-song flux sweep optional for paper table.
+
+**Related:** [EXP-20260608-03](EXPERIMENT_LOG.md#exp-20260608-03-spectral-flux-baseline-5-val-songs), NOTE-20260607-01
+
+---
+
+## Session 2026-06-08 — autonomous onset research
+
+### NOTE-20260608-02: 100-train threshold recalibration breakthrough
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-08 00:44:14 |
+| **Tags**      | post, metric, train |
+
+**Context:** EXP-20260607-02 looked like a regression (micro **0.572** @ thr=0.05 vs 75-train **0.577**). User requested autonomous research on better onset approaches.
+
+**Discovery:** Val-wide threshold sweep on the **same** 100-train checkpoint (`val_threshold_sweep.json`) shows optimal global thr=**0.20** → micro event F1 **0.6349** (+6.3 pp vs 0.05). Confirmed via `eval_dense_onset.py @ 0.20`. Oracle per-song thr ceiling micro **0.6457** (median thr 0.20). The 75-train-tuned thr=0.05 does **not** transfer — 100-train logits are better calibrated at higher confidence cutoffs.
+
+**Implication:** Phase 2 scaling **did help**; we mis-reported due to fixed threshold from a different checkpoint. **Always re-sweep val threshold** after retrain or scale-up. Cheap POST win — no architecture change.
+
+**Open:** Does thr=0.20 hold on held-out test? Score-percentile calibration vs fixed thr?
+
+**Related:** [EXP-20260608-01](EXPERIMENT_LOG.md#exp-20260608-01-100train-threshold-sweep-post-breakthrough), NOTE-20260607-03, EXP-20260607-02
+
+---
+
+## Session 2026-06-08 — Disable dense val event F1 callback
+
+### NOTE-20260608-01: Disable dense val event F1 callback
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-08 02:00:00 |
+
+**Topic:** Comment out `DenseValEventF1Callback`; checkpoint on frame F1 again
+
+**Context:** Phase 2 100-train with per-epoch peak-pick event F1 added ~30–45 s/epoch (~1.6× wall time) with no evidence of training failures; user wants faster scaling runs.
+
+**Discovery:** `run_train_from_config` no longer inserts `DenseValEventF1Callback`; `ONSET_CHECKPOINT_MONITOR` reverted to **`val_onset_f1_score`**. Helper `_build_dense_val_event_f1_callback` and callback class remain for later re-enable. Report event F1 via `scripts/eval_dense_onset.py` post-hoc (EXP-21 pattern).
+
+**Smoke A/B (100-train, 3 ep, same config):** With metric **970.9 s** total (ep3 **103 s**); without metric **827.3 s** (**−144 s**, **15%**); steady ep3 **69 s** vs **103 s** (**−34 s**, **33%**). No `val_dense_event_onset_f1` in no-metric log. Artifacts: `callbacks/dense_mert_v2_100train_smoke_nometric/`.
+
+**Implication:** Scaling runs optimize frame F1 @ 0.5 during train; canonical micro event F1 @ ~0.05 is eval-only until callback cost is acceptable or optimized (e.g. every-N epochs). At ~69 s/ep steady, 200 epochs ≈ **3.8 h** vs ~**5.7 h** with callback.
+
+**Related:** `trainers.py`, [NOTE-20260607-05](#note-20260607-05-dense-train-eval-metric-alignment), `scripts/eval_dense_onset.py`
+
+---
+
+## Session 2026-06-07 — Phase 2 100-train scaling
+
+### NOTE-20260607-06: Phase 2 100-train scaling
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-07 20:01:00 |
+
+**Topic:** Phase 2 val-scale run with aligned checkpoint metric
+
+**Context:** Phase 1 established canonical eval ([EXP-20260607-01](EXPERIMENT_LOG.md#exp-20260607-01-phase-1-canonical-dense-val-eval)) and train/eval alignment ([NOTE-20260607-05](#note-20260607-05-dense-train-eval-metric-alignment)). Next scaling step before 144-train.
+
+**Discovery:** Created `configs/dense_mert_v2_100train.json` (100 songs, same arch as 75-train). 3-epoch WSL smoke confirms `val_dense_event_onset_f1` in logs and checkpoint path; ep3 smoke val **0.506** (early-training; not comparable to final eval). Full 200-ep train launched with early stopping (patience 25).
+
+**Implication:** Compare post-train `eval_dense_onset.py` micro F1 @ 0.05 against EXP-21 **0.577** bar. Success → 144-train with same config contract.
+
+**Related:** [EXP-20260607-02](EXPERIMENT_LOG.md#exp-20260607-02-dense-mert-100-train-event-f1-checkpoint), `configs/dense_mert_v2_100train.json`
+
+---
+
+## Session 2026-06-07 — Dense train/eval metric alignment
+
+### NOTE-20260607-05: Dense train/eval metric alignment
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-07 12:25:00 |
+
+**Topic:** Checkpoint and early-stop on the same peak-pick event F1 as eval
+
+**Context:** Phase 1 reported event F1 @ 0.05 but training still checkpointed on frame F1 @ 0.5.
+
+**Discovery:** Added `RunConfig.confidence_threshold` (default **0.05**), `tolerance_sec`, `min_onset_distance_ms`, `early_stopping_patience` (default **25**). Training runs `DenseValEventF1Callback` each epoch (same peak-pick path as `eval_dense_onset.py`) and checkpoints/early-stops on **`val_dense_event_onset_f1`**. Frame `onset_f1_score` remains logged as a diagnostic only.
+
+**Implication:** Phase 2 scaling runs optimize the metric we report. Set `early_stopping_patience=0` to disable early stop.
+
+**Related:** `dense_overfit_eval.py`, `trainers.py`, [DECISIONS_CHECKLIST](DECISIONS_CHECKLIST.md) A1/A3/A6
+
+---
+
+## Session 2026-06-07 — Phase 1 canonical dense eval
+
+### NOTE-20260607-04: Phase 1 canonical dense eval
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-07 11:17:32 |
+
+**Topic:** Phase 1 eval plumbing — uncapped GT and canonical script
+
+**Context:** Prior EXP-21 event eval capped charts at 1024 steps and used a manual `uncapped_gt_songs` workaround for five long val charts.
+
+**Discovery:** `build_gt_batch` now loads full chart length; `scripts/eval_dense_onset.py` wraps `eval_dense_val_event_f1` for reproducible val reports. Re-run on EXP-21 checkpoint matches old @ thr=0.5 (micro **0.450**); @ thr=0.05 micro **0.577** aligns with global sweep.
+
+**Implication:** Checkpoint on frame F1 (`val_onset_f1_score`); **report** dense track numbers at val-tuned threshold (~0.05). Safe to proceed to Phase 2 (100-train) without re-auditing GT caps.
+
+**Related:** [EXP-20260607-01](EXPERIMENT_LOG.md#exp-20260607-01-phase-1-canonical-dense-val-eval), `scripts/eval_dense_onset.py`, [DECISIONS_CHECKLIST](DECISIONS_CHECKLIST.md) A3/A6
+
+---
+
+## Session 2026-06-07 — val-wide threshold sweep and OOD (EXP-21)
+
+### NOTE-20260607-03: Val-wide threshold sweep, test-time threshold, OOD bottom 3
+
+| Field         | Value                    |
+| ------------- | ------------------------ |
+| **Timestamp** | 2026-06-07 09:57:48      |
+| **Tags**      | post, metric, model, val |
+
+**Context:** User requested full 40-song val threshold sweep (global + per-song oracle), test-time threshold guidance, and OOD analysis for bottom 3 val songs (`1_2_fanclub`, `dna`, `hakurei_shrine…`). Script: `scripts/sweep_val_threshold.py` → `models_wsl/dense_mert_v2_75train_200ep/val_threshold_sweep.json`.
+
+**Discovery:**
+
+1. **Global sweep (same grid 0.05–0.6, peak-pick POST):** Optimum at **thr=0.05** (grid floor — F1 still rising at lowest point). Mean event F1 **0.565** vs **0.437 @ 0.5** (+12.8 pp); micro F1 **0.577** vs **0.450** (+12.7 pp). Thr 0.10 is nearly tied (micro 0.575). Default 0.5 leaves substantial recall on the table.
+
+2. **Per-song oracle (upper bound):** Mean F1 **0.580**, micro F1 **0.591** — only **+1.4 pp** above global best @ 0.05. Most songs share one low global threshold; per-song tuning is a small incremental gain, not a silver bullet. Threshold distribution: median **0.05**, **21/40** songs best at 0.05, p75=0.15, max=0.45; none prefer ≥0.5.
+
+3. **Test-time threshold without GT:** Per-song oracle is **not deployable** on test (requires GT F1). Practical options ranked:
+   - **Global val-tuned threshold** — sweep on held-out val, apply fixed thr to all test songs. Cheapest; here thr≈0.05–0.10. Risk: val/test calibration drift.
+   - **Validation-set grid search on proxy metric** — if a small labeled dev set exists, same sweep; otherwise use val micro-F1 curve.
+   - **Score-distribution calibration** — set thr from predicted prob percentiles (e.g. peaks above song-level p95 of frame scores) so dense vs sparse charts self-scale. No GT per song; needs validation that percentile rule generalizes.
+   - **Metadata-conditioned threshold** — regress optimal thr from BPM, duration, step density, or MERT stats learned on val. Requires labeled val pairs per song; generalizes only if metadata→calibration relationship holds OOD.
+   - **Avoid:** tuning thr on test predictions matched to leaked GT; using train-set oracle thresholds per song ID (test IDs unseen).
+
+4. **OOD verdict for bottom 3:** All three are **not in the 75-song train subset** (seed 42) — held-out val, so zero train exposure. **MERT features are not outliers:** |z| < 1.5 for raw mean/std and per-dim variance vs 75-train distribution. Metadata mildly atypical: fanclub/hakurei shorter duration (−0.84σ), lower step density (−0.75 to −1.03σ), fewer steps (−0.92 to −1.14σ); dna BPM 200 (+1.24σ) but otherwise normal. **Pred calibration is the failure mode:** `pred_prob_at_gt_frames_mean` ≈ 0.004–0.005 vs non-GT ≈ 0.024–0.052 — model fires on wrong frames (GT inversion from NOTE-02). Threshold sweep barely helps (oracle F1 0.058 / 0.113 / 0.115). Verdict: **coverage gap + model miscalibration**, not MERT/audio OOD.
+
+**Implication:** Adopt **global thr≈0.05–0.10** as default POST for EXP-21 checkpoint (+13 pp micro F1, free). Per-song oracle ceiling ~59% micro — remaining gap needs MODEL/TRAIN (include similar val styles in train, Gaussian targets, or calibration-aware loss). Bottom 3 need train coverage or style-specific heads, not threshold or feature fixes.
+
+**Open:** Does thr=0.05 over-predict on truly unseen test? Finer grid below 0.05? Would metadata-conditioned thr beat global 0.05 on a second val fold?
+
+**Related:** [NOTE-20260607-02](#note-20260607-02-bad-val-threshold-sweep-and-feature-profiles), EXP-21, `val_threshold_sweep.json`, `investigate_bad_val.json`.
+
+---
+
+## Session 2026-06-07 — bad val case investigation (EXP-21)
+
+### NOTE-20260607-02: Bad val threshold sweep and feature profiles
+
+| Field         | Value                    |
+| ------------- | ------------------------ |
+| **Timestamp** | 2026-06-07 09:46:11      |
+| **Tags**      | post, metric, model, pre |
+
+**Context:** After EXP-21 eval (mean event F1 0.437 @ thr=0.5), user asked to investigate the 7 worst val songs via threshold sweep and MERT/audio feature comparison vs 5 best songs. Script: `scripts/investigate_bad_val_cases.py` → `models_wsl/dense_mert_v2_75train_200ep/investigate_bad_val.json`.
+
+**Discovery:**
+
+1. **Threshold 0.5 is too high globally.** Best songs peak at thr 0.10–0.20 (+8–16 pp F1). Worst songs also prefer lower thr, but gains are uneven:
+   - _Recall-fixable:_ `intersect_thunderbolt` 0.146→0.447 @ 0.05; `strobo_nights_ddrkirbys_summer_night_mix` 0.274→0.527; `the_purpose_song` 0.153→0.349; `bridge_no_one_passes` 0.188→0.297.
+   - _Not fixable by POST alone:_ `1_2_fanclub` 0.037→0.058; `dna` 0.044→0.113; `hakurei_shrine…` 0.097→0.115.
+
+2. **Three failure archetypes** (feature profiles @ thr=0.5):
+   - **GT inversion** (fanclub, dna, hakurei): `pred_prob_at_gt_frames_mean` ≈ 0.005 vs best mean 0.32; `pred_prob_at_non_gt_mean` same as best (~0.034). Model fires on wrong frames; peak count often near GT but `peak_matched_frac` 4–10%. Frame recall @ 0.5 ≈ 0.
+   - **Under-firing / recall** (intersect, purpose, bridge): MERT stats normal; model under-detects dense charts (8+ Hz). `bridge_no_one_passes` has _higher_ prob at GT (0.071) than non-GT (0.038) — signal exists, peaks too sparse.
+   - **Calibration mismatch** (strobo): strong GT alignment (`pred_prob_at_gt` 0.158 vs non-GT 0.018, frame recall 12%) but very few peaks @ 0.5; lower thr recovers to ~0.53 F1.
+
+3. **MERT input is not the differentiator.** Raw/normalized feature mean/std, step density, and chart length are similar between worst and best groups. Failure is **model calibration / generalization**, not missing or misaligned MERT cache.
+
+**Implication:** Per-song or global threshold tuning (POST) is low-cost and helps ~4/7 worst cases materially; bottom 3 need **MODEL/TRAIN** fixes (more train coverage of those styles, Gaussian targets, or fine-tuned MERT). Global micro recall 0.34 is partly POST (threshold) and partly MODEL (GT frames get low logits on hard songs). Next: val-wide threshold sweep for aggregate F1; listen to fanclub/dna/hakurei for chart/audio mismatch.
+
+**Open:** Are fanclub/dna/hakurei out-of-distribution vs 75-song train? Does per-song threshold on full val beat a single global optimum?
+
+**Related:** EXP-21 eval (`eval_val_event_f1.json`), [NOTE-20260607-01](#note-20260607-01-onset-detection-literature-and-pipeline-options), `scripts/investigate_bad_val_cases.py`.
+
+---
+
+## Session 2026-06-07 — onset detection literature
+
+### NOTE-20260607-01: Onset detection literature and pipeline options
+
+| Field         | Value                                       |
+| ------------- | ------------------------------------------- |
+| **Timestamp** | 2026-06-07 05:15:00                         |
+| **Tags**      | pre, model, post, metric, train, literature |
+
+**Context:** User asked how others solve long-audio onset detection and which pipeline stages could improve StepCOVNet beyond current dense MERT U-Net (~48% val F1 @ 50 train, EXP-20).
+
+**Discovery:** Standard MIR pipelines are **frame activation → peak picking → event list**, not threshold-every-frame. SOTA on benchmarks (OnsetDB, MAESTRO) uses TCN/CNN on mel at 10 ms + madmom-style peak picking (F1 ~0.90+). SSL encoders (MERT, wav2vec) + task head + optional multi-task (onset+pitch) are recent. Alternatives to binary frame labels: Gaussian bumps, time-to-event (TTE/TSE) density models. Seq2seq Transformers output sparse onset tokens directly (piano transcription). Our dense path skips peak picking; event path uses K-slot set prediction (~30% plateau).
+
+**Implication:** Highest ROI changes likely **POST** (peak pick + threshold sweep on frozen checkpoints) and **TRAIN targets** (Gaussian already in code, unused). Next tier: **MODEL** (TCN/Seq-U-Net, larger capacity, fine-tune MERT not frozen cache). Seq2seq is viable but larger refactor. Domain gap: game/EDM charts ≠ piano/percussion benchmarks — expect lower absolute F1; scaling train data already helps (EXP-19→20).
+
+**Open:** Does madmom-style peak picking on dense MERT logits close recall gap without retrain? Fine-tune vs frozen MERT?
+
+**Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md), EXP-19/20/21, [onset_output_targets_planning.md](../onset_output_targets_planning.md) § External literature
+
+---
+
+## Session 2026-06-06 — multi-song dense overfit
+
+### NOTE-20260606-17: Multi-song eval missing normalization
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-06 17:17:55 |
+| **Tags**      | metric, pre, dense  |
+
+**Context:** EXP-20260606-17 3-song run initially reported ~4% mean event F1 while training val F1 ~99.9%.
+
+**Discovery:** `eval_dense_event_f1` loads features through `create_dataset`, which always applies `normalize_onset_spectrogram`. `eval_dense_event_f1_for_pair` used raw `load_onset_features`. Models trained on normalized MERT inputs produce near-zero logits on raw features.
+
+**Implication:** Multi-song **did** overfit all three charts (~99.9% event F1 after fix). Adding a few songs at 100 ep does not inherently collapse metrics at N=3. Fix in `dense_overfit_eval.py`.
+
+**Related:** EXP-20260606-17, `scripts/run_dense_multi_song_overfit.py`
+
+---
+
+## Session 2026-06-06 — Training stability
+
+### NOTE-20260606-16: Dense seed must precede model init
+
+| Field         | Value                         |
+| ------------- | ----------------------------- |
+| **Timestamp** | 2026-06-06 16:54:25           |
+| **Tags**      | train, reproducibility, dense |
+
+**Context:** EXP-12 hit ~98% event F1 on tide; EXP-13/14 with same config + seed 42 stuck ~35%. User blocked further work until training is stable.
+
+**Discovery:** `run_train_from_config` built the U-Net **before** `_fit_and_save_model` called `tf.random.set_seed(42)`. Weight initialization was unseeded — effectively a lottery each run. After `reproducibility.apply_training_seed()` before model build, two 100-epoch runs are bit-identical (~95% event F1, val_pr_auc 0.991).
+
+**Implication:** EXP-13/14 rankings (MERT > mel) may still hold but MERT numbers were invalid. Re-run suite with fix. Always seed before model construction.
+
+**Related:** EXP-15, EXP-13, EXP-14, `stepcovnet/reproducibility.py`, `scripts/check_dense_mert_reproducibility.py`
+
+---
+
+## Session 2026-06-06 — Documentation conventions
+
+### NOTE-20260606-15: Timestamp format — system clock at write
+
+| Field         | Value               |
+| ------------- | ------------------- |
+| **Timestamp** | 2026-06-06 16:37:35 |
+| **Tags**      | meta, documentation |
+
+**Context:** User asked that all research timestamps use full `YYYY-MM-DD HH:MM:SS` and that agents capture the machine clock when logging — not estimated or `(approx.)` suffixes.
+
+**Discovery:** Prior rule allowed backfilled stagger times with `(approx.)`; many index rows and entries used that suffix.
+
+**Implication:** `.cursor/rules/research-notebook.mdc`, skills, templates, and agent docs now require reading system time at write (shell `Get-Date` / `date`). Strip `(approx.)` from existing entries; new logs use live clock only.
+
+**Related:** JRN-20260606-08, `research-session-workflow` skill
+
+---
+
+## Session 2026-06-06 — Formulation bisection (EXP-11)
+
+### NOTE-20260606-14: Uniform grid oracle matches F1 plateau
+
+| Field         | Value                        |
+| ------------- | ---------------------------- |
+| **Timestamp** | 2026-06-06 17:20:00          |
+| **Tags**      | formulation, overfit, oracle |
+
+**Context:** User asked whether tide ~30% F1 is a code bug before starting full val training.
+
+**Discovery:**
+
+- Baseline MERT checkpoint: **927/1024** slots conf ≥ 0.5 (mass over-firing), 233 TP, 200 Hungarian-L1 within tol.
+- **Oracle:** only **195/634** GT onsets have a uniform-grid slot within 20 ms (~31%).
+- Half-cheat A (GT refs + learn Δ): 32% F1 — anchoring helps slightly, not overfit.
+- Half-cheat B (uniform + frozen Δ): 40% F1 but **159 TP, 0 FP** — confidence-only on fixed grid tops out at oracle-like recall.
+
+**Implication:** Smoke gate failure is **formulation**, not wiring. Current head cannot memorize tide without shortcuts. Next: dense MERT control on tide, then formulation prototype.
+
+**Related:** EXP-11, `scripts/run_overfit_tide_bisection.py`, `diagnostics.oracle_uniform_grid_coverage`
+
+---
+
+## Session 2026-06-06 — Hungarian training loss and conv1d zero-F1 debug
+
+### NOTE-20260606-13: Conv1d zero F1 — confidence collapse from ordered training
+
+| Field         | Value                                                              |
+| ------------- | ------------------------------------------------------------------ |
+| **Timestamp** | 2026-06-06 14:12:41                                                |
+| **Tags**      | failure-modes, overfit, debug                                      |
+| **Related**   | EXP-20260606-07, EXP-20260606-08, `scripts/debug_onset_overfit.py` |
+
+**Context:** EXP-20260606-07 conv1d reached 0 TP / 0 FP / 634 FN after 50 ep (F1 = 0), while EXP-20260606-02 raw conv1d reached ~28% F1 at ~100 ep.
+
+**Discovery** (diagnostics on `models_wsl/overfit_tide/conv1d/onset_event_model.keras` before Hungarian retrain):
+
+| Signal                            | Value                                   |
+| --------------------------------- | --------------------------------------- |
+| Max confidence                    | **0.00023** (all slots ≪ 0.5 threshold) |
+| Ordered pairs within 20 ms        | **0 / 634**                             |
+| Hungarian L1 pairs within 20 ms   | **162 / 634**                           |
+| Hungarian eval pairs within 20 ms | **200 / 634**                           |
+
+- Pred times span the song (~0.07–128 s); times are not stuck at one point.
+- With **ordered** training, uniform grid slot _i_ → _i_-th sorted GT: **zero** pairs within tolerance → loss pushes **all** confidences toward 0.
+- Eval then has nothing above threshold → 0 TP despite ~200 time-accurate Hungarian eval pairings.
+
+**Implication:** Conv1d 0 F1 in EXP-07 is primarily a **train/eval + ordered-assignment** failure mode, not a crash or empty forward pass. Hungarian training should allow confidence to rise on the ~162–200 near matches. EXP-02’s ~28% F1 likely benefited from longer training and/or slightly different dynamics before the suite config.
+
+**Open:** ~~After EXP-08 rerun, compare conv1d F1 to EXP-07.~~ EXP-08: conv1d ~27% F1 (was 0% in EXP-07); mel ~28%; MERT ~29% at 50 ep — still no overfit.
+
+---
+
+## Session 2026-06-06 — Formulation bisection (EXP-11)
+
+---
+
+### NOTE-20260606-12: Hungarian L1 training loss implemented
+
+| Field         | Value                                           |
+| ------------- | ----------------------------------------------- |
+| **Timestamp** | 2026-06-06 14:10:00                             |
+| **Tags**      | training, design-decision                       |
+| **Related**   | `losses.py`, `matching.py`, EXP-20260606-08, A5 |
+
+**Context:** EXP-20260606-07 smoke showed weak learning; leading hypothesis was ordered train vs Hungarian eval.
+
+**Discovery:**
+
+- `_l1_training_losses` now calls `matching.assign_onset_pairs_l1` (Hungarian on raw L1 cost, no tolerance gate on pairing).
+- Confidence targets unchanged: within `tolerance_sec` → push conf toward 1; outside → toward 0; unmatched slots → 0.
+- Eval still uses tolerance-gated Hungarian (`match_onsets_numpy`).
+
+**Implication:** Training gradients follow nearest-slot pairing, aligned with eval semantics. Tide suite re-run at 50 ep compares to EXP-07.
+
+---
+
+---
+
+## Session 2026-06-06 — Pipeline architecture (pre / model / post)
+
+### NOTE-20260606-11: Hungarian matching and clustered predictions
+
+| Field         | Value                                                                      |
+| ------------- | -------------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-06 11:12:00                                                        |
+| **Tags**      | evaluation, matching, failure-modes                                        |
+| **Related**   | `matching.py`, `metrics.py`, `losses.py`, `inference.py`; NOTE-20260606-02 |
+
+**Context:** User concern — if the model learns “onset-like” audio at one time, it might fire many query slots near that single time. Would Hungarian matching still yield a high score, or would missed onsets elsewhere force predictions to spread?
+
+**Discovery — Hungarian is one-to-one:**
+
+- Build pairwise costs `|pred_i − gt_j|`. Pairs within **20 ms** tolerance get low cost; outside get a huge penalty (`1e6`).
+- Hungarian picks a **global assignment** that minimizes total cost, with **at most one pred per GT** and **at most one GT per pred**.
+- After matching, **metrics** (`metrics.py`): matched + conf ≥ threshold → TP; unmatched pred + high conf → **FP**; unmatched GT → **FN**.
+
+**Toy example — clustering fails F1:**
+
+- GT: 100 onsets spread across the song (1 s, 2 s, …).
+- Model: 50 slots at ~10.0 s (all high confidence), rest low.
+- Hungarian: **one** pred matches the GT nearest 10 s → at most **1 TP**.
+- Other 49 clustered preds: **unmatched** → if conf ≥ 0.5, **49 FP**.
+- Other 99 GT onsets: no pred within 20 ms → **99 FN**.
+- Recall ≈ 1/100, precision ≈ 1/50 → **F1 ≈ 0**. Clustering does **not** game the metric.
+
+**What _would_ raise F1:** preds **spread** so many GT each get a unique partner within tolerance (and confidence on).
+
+**Training vs eval:**
+
+- **Eval** uses Hungarian with tolerance gate (`match_onsets_numpy`).
+- **Training loss** uses Hungarian L1 without tolerance gate on assignment (`assign_onset_pairs_l1`); confidence still uses per-pair tolerance after matching.
+
+**Post-processing gap:**
+
+- `inference.predict_onsets` applies **min onset distance** (default 50 ms) after thresholding — collapses nearby preds for deployment.
+- **Val / eval F1** today uses **raw K slots** — no min-gap. Extra clustered high-conf slots count as **FP** until post-processing is added to the metric path (or model learns to suppress duplicates).
+
+**Implication:** Hungarian + F1 already penalizes “many preds, one place.” Remaining risks: duplicate preds below conf threshold; chart **clusters** still need distinct preds within tolerance.
+
+**Open:** Add optional min-gap/NMS to metric pipeline for parity with inference? Diversity or repulsion loss on query times?
+
+---
+
+## Session 2026-06-06 — Hungarian training loss and conv1d zero-F1 debug
+
+---
+
+### NOTE-20260606-10: Pipeline — pre, model, post, and metrics
+
+| Field         | Value                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-06 11:00:00                                                                                                                                                              |
+| **Tags**      | architecture, research-strategy                                                                                                                                                  |
+| **Related**   | [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) (canonical); `audio.py`, `frontend.py`, `models.py`, `inference.py`, `metrics.py`, `losses.py`; planning § problem reframed |
+
+**Context:** User’s mental model for the full onset system: audio → preprocessing → core model → raw outputs → postprocessing → final predictions → compare to GT for metrics and training feedback. Open research question: best preprocessing, best core model, best postprocessing — each swappable independently where possible.
+
+**Discovery:** The unified pipeline (PRE → MODEL → POST → METRICS → training feedback), repo mapping, ablation axes, and mermaid/ASCII diagrams live in **[PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md)**. That doc is the north star for implementation, tests, and the paper methods section.
+
+**Implication — research should isolate one stage at a time** (see architecture doc § Ablation matrix):
+
+1. **PRE** — raw vs mel vs MERT on same event head + metrics.
+2. **MODEL** — query slots vs dense vs seq2seq on same PRE where possible.
+3. **POST** — threshold / min-gap sweeps on fixed checkpoints.
+4. **METRICS / train** — matching and loss alignment with eval.
+
+The “best model in the middle” only makes sense once PRE and POST+metric contract are fixed or explicitly co-varied in a grid.
+
+**Open:** See [PIPELINE_ARCHITECTURE.md § Open design questions](PIPELINE_ARCHITECTURE.md#open-design-questions).
+
+**Next:** Log each ablation as `EXP-…` with stage tag (`pre` / `model` / `post` / `metric` / `train`); update [PAPER_OUTLINE.md](PAPER_OUTLINE.md) when results land.
+
+---
+
+---
+
+## Session 2026-06-06 — Research documentation
+
+### NOTE-20260606-09: Research notebook — experiments plus discussion
+
+| Field         | Value                                 |
+| ------------- | ------------------------------------- |
+| **Timestamp** | 2026-06-06 10:30:00                   |
+| **Tags**      | meta, workflow                        |
+| **Related**   | `.cursor/rules/research-notebook.mdc` |
+
+**Context:** User wants documentation beyond formal experiments — tracking discussions and discoveries as we go, toward a future paper.
+
+**Discovery:**
+
+- **Experiment log** = reproducible runs (what we tried, numbers, accept/reject).
+- **Discussion notes** (this file) = conversational insights, Q&A, design reasoning, open questions.
+- **Planning doc** = stable synthesis; **paper outline** = promoted claims only.
+
+**Implication:** Agent should prepend here after substantive threads, not only after GPU runs (newest entries first).
+
+---
+
+## Session 2026-06-06 — Pipeline architecture (pre / model / post)
+
+---
+
+## Session 2026-06-06 — Onset event model evaluation & design
+
+### NOTE-20260606-08: Raw audio vs mel — two separate difficulties
+
+| Field         | Value                                                                          |
+| ------------- | ------------------------------------------------------------------------------ |
+| **Timestamp** | 2026-06-06 09:21:00                                                            |
+| **Tags**      | features, open-question                                                        |
+| **Related**   | EXP-20260606-01, EXP-20260606-06, EXP-20260606-07, planning § raw audio vs mel |
+
+**Context:** Whether raw-audio event onsets are “futile” compared to mel/MERT.
+
+**Discovery:**
+
+- **Difficulty (1):** input representation — raw Conv1D vs cached mel/MERT vs mel-in-graph.
+- **Difficulty (2):** output formulation — dense frames vs K queries vs seq2seq; matching and loss.
+- Tide ~28% F1 with learnable deltas is mostly a (2) story; dense MERT val F1 ~0.36 is (1)+(2) with an **easier dense target**.
+- Raw is **harder**, not disproven; fair test is same event head + same metric, swap frontend only.
+
+**Implication:** EXP-20260606-07 (ordered train) and EXP-20260606-08 (Hungarian train) show pre-processing helps; conv1d 0% F1 in EXP-07 was ordered-assignment collapse (NOTE-13), not raw-audio failure.
+
+**Open:** Mel-in-graph vs cache-only — engineering vs learnability tradeoff.
+
+---
+
+## Session 2026-06-06 — Research documentation
+
+---
+
+### NOTE-20260606-07: `num_queries` vs `n_max_onsets`
+
+| Field         | Value                                                      |
+| ------------- | ---------------------------------------------------------- |
+| **Timestamp** | 2026-06-06 09:18:00                                        |
+| **Tags**      | architecture, config                                       |
+| **Related**   | EXP-20260606-04, `configs/onset_event_audio_baseline.json` |
+
+**Context:** Whether K must equal tide’s 634 onsets for overfit to succeed.
+
+**Discovery:**
+
+- Need **K ≥ max onsets in batch**, not **K = N** per song.
+- With GT refs + frozen deltas, K=1024 also reached F1=1.0; extra slots stayed quiet.
+- Setting K=N for one song is a convenience, not a requirement for the metric pipeline.
+
+**Implication:** Baseline config using 1024/1024 is fine; enforce `num_queries >= max_steps_per_chart`.
+
+---
+
+---
+
+### NOTE-20260606-06: Overfit shortcuts (GT refs and frozen deltas)
+
+| Field         | Value                                       |
+| ------------- | ------------------------------------------- |
+| **Timestamp** | 2026-06-06 09:15:00                         |
+| **Tags**      | overfit, design-decision                    |
+| **Related**   | EXP-20260606-03, `trainers.py`, `models.py` |
+
+**Context:** What `overfit_one_song` mode with GT-aligned refs and frozen deltas is for.
+
+**Discovery:**
+
+- **`_query_ref_normalized_from_batch`:** initializes query time logits from sorted GT (overfit only).
+- **`learn_time_delta=False`:** times are `sigmoid(ref)` only — model learns **confidence**, not timing from audio.
+- Reaching F1 = 1.0 under this setup validates **loss + metrics + training loop**, not audio→timing.
+
+**Implication:** Do not cite tide F1=1.0 as evidence the raw frontend works. Normal training uses uniform grid + learnable deltas.
+
+---
+
+---
+
+### NOTE-20260606-05: Count from times, not a separate head
+
+| Field         | Value                          |
+| ------------- | ------------------------------ |
+| **Timestamp** | 2026-06-06 09:12:00            |
+| **Tags**      | design-decision, output-format |
+| **Related**   | planning § problem reframed    |
+
+**Context:** Whether to predict onset count separately from times.
+
+**Discovery:**
+
+- Ground truth count is `N = len(times)`; times are the primary object.
+- Model should emit K slots; **count = number of slots with confidence above threshold** (after matching/dedup if needed).
+- A separate count head adds redundancy and another failure mode.
+
+**Implication:** Design reviews should treat confidence + time as the only outputs; count is derived at inference.
+
+---
+
+---
+
+### NOTE-20260606-04: Gap and cluster charts break index alignment
+
+| Field         | Value                          |
+| ------------- | ------------------------------ |
+| **Timestamp** | 2026-06-06 09:09:00            |
+| **Tags**      | failure-modes, charts          |
+| **Related**   | planning § gap/cluster example |
+
+**Context:** Why strict slot-i → i-th-GT assignment is fragile for StepMania charts.
+
+**Discovery:**
+
+- Charts have **clusters** (many steps close together) and **gaps** (long silent spans).
+- A uniform query grid spaced across the song does not align with “onset index” in time order when local density varies.
+- Hungarian eval can still match by time, but **ordered training** forces wrong pairings when the grid doesn’t match GT density.
+
+**Implication:** Prefer **time-based matching** for training, not index-based, for general charts. Tide is unusually regular on beats but still irregular in exact spacing.
+
+---
+
+---
+
+### NOTE-20260606-03: Seq2seq goal vs DETR-style K slots
+
+| Field         | Value                                               |
+| ------------- | --------------------------------------------------- |
+| **Timestamp** | 2026-06-06 09:06:00                                 |
+| **Tags**      | architecture, product                               |
+| **Related**   | planning § “Mental model: seq2seq vs what we built” |
+
+**Context:** How the natural output (variable-length sorted times) relates to the current head.
+
+**Discovery:**
+
+- **Product framing:** audio → sorted list of onset times in seconds (variable N).
+- **Implementation:** DETR-like — K learned queries each predict `(time, confidence)`; N inferred post-hoc from survivors above threshold.
+- Alternative mental model: autoregressive seq2seq emitting one time per step until EOS — not what we built.
+
+**Implication:** K must be ≥ max onsets per chart; matching strategy (ordered vs Hungarian) matters more for seq2seq-like correctness than for dense frames.
+
+**Open:** Whether seq2seq is worth a parallel prototype vs improving query + matching.
+
+---
+
+---
+
+### NOTE-20260606-02: Train ordered vs eval Hungarian
+
+| Field         | Value                                         |
+| ------------- | --------------------------------------------- |
+| **Timestamp** | 2026-06-06 09:03:00                           |
+| **Tags**      | training, evaluation, mismatch                |
+| **Related**   | `losses.py`, EXP-20260606-02, EXP-20260606-03 |
+
+**Context:** Why tide overfit with learnable deltas plateaued ~28% F1 despite partial learning.
+
+**Discovery:**
+
+- **Training loss** assigns query slot _i_ to the _i_-th sorted GT onset (ordered).
+- **Eval** assigns queries to GT via **Hungarian** on times, then thresholds confidence.
+- With a **uniform query time grid**, initial mean ordered L1 to GT was very large (~8.7 s) — slots start far from their ordered partners.
+- High confidence on wrong slots hurts eval F1 even if some times move toward GT.
+
+**Implication:** Train/eval mismatch **was** a major issue for conv1d (NOTE-20260606-13). Hungarian L1 training loss is now default (EXP-20260606-08).
+
+**Open:** ~~Measure whether Hungarian training closes the gap on tide without GT refs.~~ Rerun logged in EXP-20260606-08.
+
+---
+
+---
+
+### NOTE-20260606-01: How event eval works
+
+| Field         | Value                                                          |
+| ------------- | -------------------------------------------------------------- |
+| **Timestamp** | 2026-06-06 09:00:00                                            |
+| **Tags**      | evaluation, metrics                                            |
+| **Related**   | `metrics.py`, `matching.py`, planning § evaluation walkthrough |
+
+**Context:** Walkthrough of how validation/eval F1 is computed for the event onset model.
+
+**Discovery:**
+
+- Model outputs **K fixed query slots** `(time, confidence)`, not a variable-length list.
+- GT is padded to `n_max_onsets`; mask marks real vs pad positions.
+- **Hungarian matching** pairs predicted times to GT times (minimize total L1), then confidence thresholding yields TP/FP/FN.
+- K can exceed GT count N — extra slots should stay low-confidence (FP if they fire above threshold).
+
+**Implication:** Eval is set-matching in time, not “slot i must equal onset i.” Good for irregular spacing; training now uses Hungarian L1 assignment (see NOTE-20260606-12).
+
+**Open:** ~~Should training use the same Hungarian matching as eval?~~ Resolved — Hungarian L1 in training (EXP-20260606-08).

@@ -1,19 +1,22 @@
 # StepCOVNet — agent entry
 
-Open **one** index below. Do not load multiple.
+Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset prep, what's next) are **alternatives** to the general research/skills index — not extra docs to load together.
 
 | If the task is… | Index |
 | --------------- | ----- |
-| GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) (local) |
-| Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) (local) |
-| Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) (local) |
+| A **procedure** (train, overfit, WSL, log EXP/NOTE, debug playbooks) | [.cursor/skills/README.md](.cursor/skills/README.md) |
+| **Research** (experiments, design, pipeline; log runs in EXPERIMENT_LOG) | [docs/research/README.md](docs/research/README.md) |
+| **What's next** (current phase) | [docs/research/EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
+| GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |
+| Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |
 | Pre-push validation (same as CI) | [pre_submit.py](pre_submit.py) · [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml) |
 
-`docs/` and `.cursor/` are gitignored but may exist locally — verify paths with `git ls-files` vs on-disk before linking from **tracked** files.
+North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 
 ---
 
-## Always-on rules (`.cursor/rules/`, local)
+## Always-on rules (`.cursor/rules/`)
 
 | Rule file | Topic |
 | --------- | ----- |
@@ -22,7 +25,7 @@ Open **one** index below. Do not load multiple.
 | `python-environment.mdc` | `venv\Scripts\python.exe` (CPU) vs WSL GPU venv |
 | `python-style.mdc` | Ruff (`ruff check .`, incl. `PLC0415` top-level imports), pydoclint, pyright |
 | `python-tests.mdc` | Tests + coverage for code changes |
-| `research-logging.mdc` | EXP/NOTE logging under `docs/research/` |
+| `research-logging.mdc` | EXP/NOTE in `EXPERIMENT_LOG` / `DISCUSSION_NOTES`; paper outline optional |
 
 ---
 
