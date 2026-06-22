@@ -48,6 +48,7 @@ dev = [
     "nbmake",
     "pre-commit",
     "psutil",
+    "simfile==2.1.1",
 ]
 gpu = ["tensorflow[and-cuda]"]
 gpu-dev = ["stepcovnet[dev,gpu]"]

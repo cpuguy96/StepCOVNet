@@ -221,7 +221,7 @@ python pre_submit.py
 
 On Windows with a project venv: `venv\Scripts\python.exe pre_submit.py`
 
-Optional: `pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push` to run ruff on commit and the full suite on push.
+Optional: `pre-commit install --install-hooks --hook-type pre-commit` runs ruff on commit only (no full test suite on push).
 
 ## 🌟 Credits
 

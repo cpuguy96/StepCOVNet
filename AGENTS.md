@@ -41,7 +41,7 @@ venv\Scripts\python.exe pre_submit.py
 
 **When adding or changing CI/pre-submit tooling**, fix existing violations that tooling enforces *in the same change set* — do not land hooks or workflows on a still-red tree.
 
-Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push` — pre-push runs the full `pre_submit.py` mirror; do not bypass it.
+Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit` — ruff on commit only. Pre-push full-suite hook is disabled (too slow); run `pre_submit.py` manually before push when needed.
 
 ---
 

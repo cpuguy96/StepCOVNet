@@ -193,6 +193,7 @@ scripts/*
 !scripts/train_onset_event.py
 !scripts/visualize_arrow_data.py
 
-**/wsl_gpu.py
+# WSL helper tests (portable; module lives in src/stepcovnet/wsl_gpu.py)
 tests/wsl_*
+!tests/wsl_gpu_test.py
 tests/run_arch_*
