@@ -1,0 +1,22 @@
+#VERSION:0.83;
+#TITLE:Golden Song;
+#ARTIST:Fixture;
+#MUSIC:golden.ogg;
+#OFFSET:0.5;
+#BPMS:0.0=120.0;
+#SELECTABLE:YES;
+#NOTEDATA:;
+#STEPSTYPE:dance-single;
+#DIFFICULTY:Challenge;
+#METER:10;
+#NOTES:
+0000
+0001
+0000
+0000
+,
+0000
+0000
+0000
+0000
+;
