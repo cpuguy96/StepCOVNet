@@ -8,6 +8,7 @@ from stepcovnet.dataset_prep import (
     normalize,
     pipeline,
     simfile_adapter,
+    training_loader,
 )
 
 load_parsed_song = models.load_parsed_song
@@ -29,4 +30,5 @@ __all__ = [
     "run_normalization",
     "run_preprocess",
     "simfile_adapter",
+    "training_loader",
 ]

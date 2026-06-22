@@ -20,7 +20,7 @@ Open **one** index below. Do not load multiple.
 | `agents-entry.mdc` | Route through this file; one index per task |
 | `state-and-paths.mdc` | Refresh repo state; no machine-specific paths in tracked files |
 | `python-environment.mdc` | `venv\Scripts\python.exe` (CPU) vs WSL GPU venv |
-| `python-style.mdc` | Ruff (`ruff check .`), pydoclint, pyright |
+| `python-style.mdc` | Ruff (`ruff check .`, incl. `PLC0415` top-level imports), pydoclint, pyright |
 | `python-tests.mdc` | Tests + coverage for code changes |
 | `research-logging.mdc` | EXP/NOTE logging under `docs/research/` |
 

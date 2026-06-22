@@ -8,7 +8,7 @@ import json
 import os
 import pathlib
 
-from stepcovnet.dataset_prep import config, constants
+from stepcovnet.dataset_prep import config, constants, manifests
 
 
 class _DictSerializableMixin:
@@ -292,8 +292,6 @@ def save_packs_manifest(
     path = packs_manifest_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     if merge and path.is_file():
-        from stepcovnet.dataset_prep import manifests
-
         manifest = manifests.merge_packs_manifest(
             load_packs_manifest(path),
             manifest,
@@ -330,7 +328,6 @@ def load_packs_manifest(path: str | os.PathLike[str]) -> PacksManifest:
             f"expected {constants.SCHEMA_VERSION}"
         )
     manifest = PacksManifest.from_dict(data)
-    from stepcovnet.dataset_prep import manifests
 
     return dataclasses.replace(
         manifest,

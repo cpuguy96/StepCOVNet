@@ -13,7 +13,8 @@ import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
-from stepcovnet import config, constants, pairing, ssl_features
+from stepcovnet import config, constants, mel_onset, pairing, ssl_features
+from stepcovnet.dataset_prep import training_loader
 
 HOP_COEFF = constants.HOP_COEFF
 
@@ -112,10 +113,34 @@ def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
     return pairing.list_audio_chart_pairs(data_dir)
 
 
+def list_training_samples(data_dir: str) -> list[tuple[str, str, int]]:
+    """Return ``(audio_path, chart_path, chart_index)`` training sample refs."""
+    return pairing.list_training_samples(data_dir)
+
+
+def _is_chart_json(chart_path: str | pathlib.Path) -> bool:
+    return pathlib.Path(chart_path).suffix.lower() == ".json"
+
+
 def _parse_step_chart_impl(
-    chart_path: str, binary_timings: bool, return_bpm: bool
+    chart_path: str,
+    binary_timings: bool,
+    return_bpm: bool,
+    *,
+    chart_index: int = 0,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, float]:
-    """Parse StepMania .sm file; return times, cols, and optionally BPM."""
+    """Parse StepMania chart data; return times, cols, and optionally BPM."""
+    if _is_chart_json(chart_path):
+        times_arr = training_loader.load_chart_times_sec(chart_path, chart_index)
+        cols_arr = training_loader.load_chart_column_codes(
+            chart_path,
+            chart_index,
+            binary_timings=binary_timings,
+        )
+        if return_bpm:
+            return times_arr, cols_arr, training_loader.load_chart_bpm(chart_path)
+        return times_arr, cols_arr
+
     with pathlib.Path(chart_path).open() as f:
         f.readline()  # TITLE
         bpm_line = f.readline()
@@ -142,40 +167,58 @@ def _parse_step_chart_impl(
 
 
 def _parse_step_chart(
-    chart_path: str, binary_timings: bool = False
+    chart_path: str,
+    binary_timings: bool = False,
+    *,
+    chart_index: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Parse StepMania .sm file to extract step timings and note encodings.
+    """Parse StepMania chart data to extract step timings and note encodings.
 
     Args:
-        chart_path: Path to the StepMania .sm file.
+        chart_path: Path to legacy ``.txt`` / ``.sm`` or prepared ``.chart.json``.
         binary_timings: If True, returns 0 for all note encodings, effectively
                         treating the output as binary (step vs. no step).
+        chart_index: Block index when ``chart_path`` is ``.chart.json``.
 
     Returns:
         A tuple containing an array of step timings and an array of note encodings.
     """
-    out = _parse_step_chart_impl(chart_path, binary_timings, return_bpm=False)
+    out = _parse_step_chart_impl(
+        chart_path,
+        binary_timings,
+        return_bpm=False,
+        chart_index=chart_index,
+    )
     return out[0], out[1]
 
 
 def _parse_step_chart_with_bpm(
-    chart_path: str, binary_timings: bool = False
+    chart_path: str,
+    binary_timings: bool = False,
+    *,
+    chart_index: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, float]:
-    """Parse StepMania .sm file; return step times, note encodings, and BPM.
+    """Parse StepMania chart data; return step times, note encodings, and BPM.
 
     Used when BPM is needed (e.g. beat_phase). Same format as _parse_step_chart
     plus BPM in beats per minute.
 
     Args:
-        chart_path: Path to the StepMania .sm file.
+        chart_path: Path to legacy ``.txt`` / ``.sm`` or prepared ``.chart.json``.
         binary_timings: If True, returns 0 for all note encodings.
+        chart_index: Block index when ``chart_path`` is ``.chart.json``.
 
     Returns:
         (times, cols, bpm): times and cols as in _parse_step_chart; bpm as float.
     """
     result = cast(
         tuple[np.ndarray, np.ndarray, float],
-        _parse_step_chart_impl(chart_path, binary_timings, return_bpm=True),
+        _parse_step_chart_impl(
+            chart_path,
+            binary_timings,
+            return_bpm=True,
+            chart_index=chart_index,
+        ),
     )
     return result[0], result[1], result[2]
 
@@ -342,32 +385,7 @@ def audio_to_spectrogram(audio_path: str) -> np.ndarray:
         A 2D numpy array representing the mel-spectrogram in decibels,
         with shape (n_mels, time_steps).
     """
-
-    y, sr = librosa.load(audio_path, sr=_TARGET_SR)
-
-    # Sample rate conversion (if necessary)
-    if sr != _TARGET_SR:
-        y = librosa.resample(y, orig_sr=sr, target_sr=_TARGET_SR)
-
-    # Normalize audio data
-    y = y / np.max(np.abs(y))
-
-    hop_length = int(round(_TARGET_SR * HOP_COEFF))
-    win_length = int(round(_TARGET_SR * _WIN_COEFF))
-    n_fft = 2 ** int(np.ceil(np.log(win_length) / np.log(2.0)))
-
-    mel_spectrogram = librosa.feature.melspectrogram(
-        y=y,
-        sr=_TARGET_SR,
-        hop_length=hop_length,
-        win_length=win_length,
-        n_fft=n_fft,
-        fmin=_F_MIN,
-        fmax=_F_MAX,
-        n_mels=_N_MELS,
-    )
-
-    return librosa.power_to_db(mel_spectrogram, ref=np.max)
+    return mel_onset.audio_to_spectrogram(audio_path)
 
 
 def _load_mono_waveform(audio_path: str) -> np.ndarray:
@@ -410,7 +428,7 @@ def onset_frame_count(audio_path: str) -> int:
     Returns:
         Number of time steps along the onset detection grid for this file.
     """
-    return int(audio_to_spectrogram(audio_path).shape[1])
+    return mel_onset.onset_frame_count(audio_path)
 
 
 def load_onset_features(

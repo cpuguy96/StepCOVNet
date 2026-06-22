@@ -7,7 +7,7 @@ from unittest import mock
 import librosa
 import numpy as np
 
-from stepcovnet import config, constants, datasets, ssl_features
+from stepcovnet import config, constants, datasets, mel_onset, ssl_features
 
 
 class SslFeaturesTest(unittest.TestCase):
@@ -104,7 +104,7 @@ class SslFeaturesTest(unittest.TestCase):
                 autospec=True,
             ),
             mock.patch.object(
-                datasets,
+                mel_onset,
                 "onset_frame_count",
                 return_value=100,
                 autospec=True,
@@ -178,7 +178,7 @@ class SslFeaturesTest(unittest.TestCase):
                 autospec=True,
             ),
             mock.patch.object(
-                datasets,
+                mel_onset,
                 "onset_frame_count",
                 return_value=200,
                 autospec=True,
@@ -215,7 +215,7 @@ class SslFeaturesTest(unittest.TestCase):
                 side_effect=capture_chunk,
             ),
             mock.patch.object(
-                datasets,
+                mel_onset,
                 "onset_frame_count",
                 return_value=200,
                 autospec=True,

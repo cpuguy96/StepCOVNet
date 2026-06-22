@@ -7,7 +7,7 @@ import numpy as np
 import scipy.io.wavfile
 
 from stepcovnet import constants
-from stepcovnet.onset_events import audio, config, inference, models
+from stepcovnet.onset_events import audio, config, inference, models, predict_onsets
 
 
 def _write_wav(path: str, samples: np.ndarray, sample_rate: int) -> None:
@@ -244,8 +244,6 @@ class InferenceTest(unittest.TestCase):
         self.assertEqual(confidences.shape, (1,))
 
     def test_public_api_reexports_predict_onsets(self):
-        from stepcovnet.onset_events import predict_onsets
-
         self.assertIs(predict_onsets, inference.predict_onsets)
 
     def test_predict_onsets_with_built_small_model(self):

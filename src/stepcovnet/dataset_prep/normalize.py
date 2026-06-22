@@ -14,6 +14,7 @@ from stepcovnet.dataset_prep import (
     config,
     constants,
     discovery,
+    manifests,
     pack_results,
     simfile_adapter,
 )
@@ -315,8 +316,6 @@ def build_name_map(
     Returns:
         Name map with ``result=pending`` on every entry.
     """
-    from stepcovnet.dataset_prep import manifests
-
     input_root = manifests.manifest_raw_input_root(manifest)
     packs = sorted(manifest.packs, key=lambda item: item.pack_relpath.lower())
     if limit is not None:
@@ -415,8 +414,6 @@ def save_name_map(
     Returns:
         The name map that was written (merged when ``merge`` is True).
     """
-    from stepcovnet.dataset_prep import manifests
-
     path = name_map_path(output_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     if merge and path.is_file():
@@ -478,7 +475,6 @@ def load_name_map(path: str | os.PathLike[str]) -> NameMap:
             f"expected {constants.SCHEMA_VERSION}"
         )
     name_map = NameMap.from_dict(data)
-    from stepcovnet.dataset_prep import manifests
 
     return dataclasses.replace(
         name_map,

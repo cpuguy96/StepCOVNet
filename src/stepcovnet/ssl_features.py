@@ -13,7 +13,7 @@ import librosa
 import numpy as np
 from scipy import interpolate
 
-from stepcovnet import constants
+from stepcovnet import constants, mel_onset
 
 MERT_SAMPLE_RATE = 24000
 DEFAULT_MERT_MODEL = "m-a-p/MERT-v1-330M"
@@ -173,8 +173,8 @@ def _require_ssl_deps():
         ImportError: If torch or transformers is not installed.
     """
     try:
-        import torch
-        import transformers
+        import torch  # noqa: PLC0415
+        import transformers  # noqa: PLC0415
     except ImportError as exc:
         raise ImportError(
             "MERT extraction requires optional dependencies. "
@@ -306,9 +306,7 @@ def extract_mert_features_from_audio(
     else:
         merged = np.concatenate(chunks, axis=0)
 
-    from stepcovnet import datasets  # noqa: PLC0415
-
-    n_frames = datasets.onset_frame_count(audio_path)
+    n_frames = mel_onset.onset_frame_count(audio_path)
     return resample_features_to_frame_count(merged, n_frames)
 
 

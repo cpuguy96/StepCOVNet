@@ -3,6 +3,7 @@
 import unittest
 
 from stepcovnet.dataset_prep import constants
+from stepcovnet.onset_events import charts
 
 
 class DatasetPrepConstantsTest(unittest.TestCase):
@@ -10,8 +11,6 @@ class DatasetPrepConstantsTest(unittest.TestCase):
         self.assertEqual(constants.SCHEMA_VERSION, 1)
 
     def test_max_steps_matches_onset_charts(self):
-        from stepcovnet.onset_events import charts
-
         self.assertEqual(constants.MAX_STEPS_PER_CHART, charts.MAX_STEPS_PER_CHART)
 
     def test_difficulty_rank_order(self):

@@ -64,7 +64,7 @@ class DatasetsTest(unittest.TestCase):
             _write_valid_pair(tmpdir, "bbb")
             self.assertEqual(
                 datasets.first_valid_pair(tmpdir),
-                first,
+                (first[0], first[1], 0),
             )
 
     def test_create_dataset_from_pairs_single_song(self):
@@ -81,7 +81,7 @@ class DatasetsTest(unittest.TestCase):
                 batches[0]["audio"].shape, (1, int(0.25 * constants.TARGET_SR))
             )
 
-    def test_filter_valid_pairs_skips_missing_and_over_cap(self):
+    def test_filter_valid_samples_skips_missing_and_over_cap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             valid_audio, valid_chart = _write_valid_pair(tmpdir, "good")
             over_cap_chart = pathlib.Path(tmpdir) / "big.txt"
@@ -89,13 +89,16 @@ class DatasetsTest(unittest.TestCase):
             _write_chart(over_cap_chart, step_lines)
             missing_audio = pathlib.Path(tmpdir) / "ghost.wav"
 
-            pairs = [
-                (valid_audio, valid_chart),
-                (missing_audio, valid_chart),
-                (valid_audio, over_cap_chart),
+            samples = [
+                (valid_audio, valid_chart, 0),
+                (missing_audio, valid_chart, 0),
+                (valid_audio, over_cap_chart, 0),
             ]
-            filtered = datasets._filter_valid_pairs(pairs, max_steps_per_chart=1024)
-            self.assertEqual(filtered, [(valid_audio, valid_chart)])
+            filtered = datasets._filter_valid_samples(samples, max_steps_per_chart=1024)
+            self.assertEqual(filtered, [(valid_audio, valid_chart, 0)])
+
+    def test_filter_valid_pairs_skips_missing_and_over_cap(self):
+        self.test_filter_valid_samples_skips_missing_and_over_cap()
 
     def test_create_dataset_yields_expected_batch(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -244,9 +247,10 @@ class DatasetsTest(unittest.TestCase):
                 max_audio_seconds=0.05,
             )
             max_samples = datasets._max_samples(config)
-            sample = datasets._map_pair_to_sample(
+            sample = datasets._map_sample_to_batch(
                 tf.constant(audio_path),
                 tf.constant(chart_path),
+                tf.constant(0),
                 config,
                 max_samples,
             )
@@ -264,6 +268,7 @@ class DatasetsTest(unittest.TestCase):
             result = datasets._load_onset_event_py_callback(
                 tf.constant(audio_path),
                 tf.constant(chart_path),
+                tf.constant(0),
                 constants.TARGET_SR,
                 500,
                 0.25,
@@ -292,15 +297,18 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(batch["audio"].shape[0], 2)
         self.assertEqual(batch["gt_times"].shape, (2, 4))
 
-    def test_filter_valid_pairs_load_onset_times_none_branch(self):
+    def test_filter_valid_samples_load_onset_times_none_branch(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             audio_path, chart_path = _write_valid_pair(tmpdir, "edge")
-            pairs = [(audio_path, chart_path)]
+            samples = [(audio_path, chart_path, 0)]
             with mock.patch.object(
                 charts,
                 "load_onset_times",
                 return_value=None,
                 autospec=True,
             ):
-                filtered = datasets._filter_valid_pairs(pairs, max_steps_per_chart=1024)
+                filtered = datasets._filter_valid_samples(
+                    samples,
+                    max_steps_per_chart=1024,
+                )
             self.assertEqual(filtered, [])

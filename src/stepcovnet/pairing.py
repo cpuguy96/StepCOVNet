@@ -3,9 +3,14 @@
 import os
 import pathlib
 
+from stepcovnet.dataset_prep import training_loader
+
 
 def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
-    """Return paired audio and chart file paths found under a data directory.
+    """Return paired audio and legacy ``.txt`` chart paths under ``data_dir``.
+
+    For ``final_data`` layouts with ``.chart.json``, use
+    :func:`list_training_samples` instead.
 
     Args:
         data_dir: Root directory to search recursively.
@@ -31,3 +36,26 @@ def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
                 )
     pairs.sort(key=lambda pair: pair[0])
     return pairs
+
+
+def list_training_samples(data_dir: str) -> list[tuple[str, str, int]]:
+    """Return training samples as ``(audio_path, chart_path, chart_index)``.
+
+    When ``data_dir`` contains a prepared ``final_data`` layout (``name_map.json``
+    or nested ``.chart.json`` files), one row is returned per chart block inside
+    each song JSON. Otherwise falls back to legacy ``.txt`` pairs with
+    ``chart_index`` 0.
+
+    Args:
+        data_dir: Training data root (``data/v2/train``, ``data/final_data``, …).
+
+    Returns:
+        Sorted sample refs for dataloaders.
+    """
+    rows = training_loader.discover_training_rows(data_dir)
+    if rows:
+        return [(row.audio_path, row.chart_json_path, row.chart_index) for row in rows]
+    return [
+        (audio_path, chart_path, 0)
+        for audio_path, chart_path in list_audio_chart_pairs(data_dir)
+    ]
