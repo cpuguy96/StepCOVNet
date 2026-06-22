@@ -48,6 +48,7 @@ dev = [
     "nbmake",
     "pre-commit",
     "psutil",
+    "setuptools>=68,<82",  # pkg_resources for simfile/fs on clean installs
     "simfile==2.1.1",
 ]
 gpu = ["tensorflow[and-cuda]"]
