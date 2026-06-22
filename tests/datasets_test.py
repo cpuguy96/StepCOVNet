@@ -8,7 +8,7 @@ from unittest import mock
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config, constants, datasets, ssl_features
+from stepcovnet import config, constants, datasets, mel_onset, ssl_features
 
 TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
@@ -1182,7 +1182,7 @@ class DatasetsTest(unittest.TestCase):
         audio_path, _ = _get_one_audio_chart_pair(TEST_DATA_DIR)
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
-        with mock.patch.object(datasets, "librosa", autospec=True) as mock_librosa:
+        with mock.patch.object(mel_onset, "librosa", autospec=True) as mock_librosa:
             y_orig = np.random.randn(44100 * 2).astype(np.float32)
             mock_librosa.load.return_value = (y_orig, 22050)
             mock_librosa.resample.return_value = np.random.randn(44100 * 2).astype(
