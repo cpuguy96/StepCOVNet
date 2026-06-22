@@ -28,20 +28,21 @@ Open **one** index below. Do not load multiple.
 
 ## Before commit / push
 
-**Gate:** Do not commit or push Python changes unless the same checks CI runs would pass locally. Never use `git push --no-verify` or `git commit --no-verify` to bypass hooks unless the user explicitly asks.
+**Gate:** Do not push Python changes unless CI would pass. Never use `--no-verify` to bypass hooks unless you explicitly ask.
 
-From **repository root** (clone path arbitrary):
+| When | Command |
+| ---- | ------- |
+| **Every commit** (hook) | Ruff on staged files via `pre-commit` |
+| **Quick local check** | `venv\Scripts\python.exe pre_submit.py --fast` (ruff only, ~seconds) |
+| **Before push / PR** | `venv\Scripts\python.exe pre_submit.py --skip-install` (full CI mirror, ~30+ min) |
 
-```text
-venv\Scripts\python.exe -m ruff check .
-venv\Scripts\python.exe pre_submit.py
-```
-
-`pre_submit.py` mirrors [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml): `ruff check .`, full `pytest`, `nbmake notebooks`.
+`pre_submit.py --fast` is the same as `--skip-install --skip-tests --skip-nbmake`. Full `pre_submit.py` mirrors [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml).
 
 **When adding or changing CI/pre-submit tooling**, fix existing violations that tooling enforces *in the same change set* — do not land hooks or workflows on a still-red tree.
 
-Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit` — ruff on commit only. Pre-push full-suite hook is disabled (too slow); run `pre_submit.py` manually before push when needed.
+Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit` — ruff on commit only. Pre-push full-suite hook stays disabled (too slow); run full `pre_submit.py` manually before push when it matters.
+
+**WSL GPU:** `source scripts/wsl_gpu_env.sh` after `bash scripts/wsl_ensure_env.sh` — see tracked `scripts/wsl_*.sh`.
 
 ---
 

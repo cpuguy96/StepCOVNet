@@ -215,13 +215,18 @@ Please ensure your code passes existing tests and linting standards.
 Before opening a PR, run the same checks as CI from **repository root**:
 
 ```bash
-python -m pip install -e ".[dev]"
-python pre_submit.py
+# Quick (ruff only, ~seconds):
+python pre_submit.py --fast
+
+# Full CI mirror before push (~30+ min):
+python pre_submit.py --skip-install
 ```
 
-On Windows with a project venv: `venv\Scripts\python.exe pre_submit.py`
+On Windows with a project venv: `venv\Scripts\python.exe pre_submit.py --fast`
 
 Optional: `pre-commit install --install-hooks --hook-type pre-commit` runs ruff on commit only (no full test suite on push).
+
+**WSL GPU setup** (any clone): `bash scripts/wsl_ensure_env.sh` then `source scripts/wsl_gpu_env.sh` — see `scripts/wsl_*.sh`.
 
 ## 🌟 Credits
 

@@ -4,9 +4,12 @@
 #   pip install pre-commit
 #   pre-commit install --install-hooks --hook-type pre-commit
 #
-# Full CI mirror (same as GitHub Actions; run before push when you want it):
-#   venv\Scripts\python.exe pre_submit.py
-#   bash pre_submit.sh
+# Full CI mirror (same as GitHub Actions; run before push when you want parity):
+#   venv\Scripts\python.exe pre_submit.py --skip-install
+#   bash pre_submit.sh --skip-install
+#
+# Ruff only (~seconds):
+#   venv\Scripts\python.exe pre_submit.py --fast
 #
 # Pre-push full-suite hook is intentionally disabled (too slow). Re-enable later
 # with a faster subset once pre_submit is split into quick vs full targets.

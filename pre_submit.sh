@@ -10,6 +10,7 @@ SKIP_RUFF=0
 SKIP_TESTS=0
 SKIP_NBMAKE=0
 RUN_CODACY=0
+FAST=0
 
 usage() {
   cat <<'EOF'
@@ -18,6 +19,7 @@ Usage: pre_submit.sh [options]
 Runs the same checks as GitHub Actions "Pre-Submit Checks" (minus Codacy unless requested).
 
 Options:
+  --fast           Ruff only (skip install, tests, and notebooks)
   --skip-install   Skip pip install -e .[dev]
   --skip-ruff      Skip ruff check .
   --skip-tests     Skip pytest tests/ --cov-report=xml
@@ -29,6 +31,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --fast) FAST=1 ;;
     --skip-install) SKIP_INSTALL=1 ;;
     --skip-ruff) SKIP_RUFF=1 ;;
     --skip-tests) SKIP_TESTS=1 ;;
@@ -46,6 +49,12 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+if [[ "$FAST" -eq 1 ]]; then
+  SKIP_INSTALL=1
+  SKIP_TESTS=1
+  SKIP_NBMAKE=1
+fi
 
 if [[ -f venv/bin/python ]]; then
   PYTHON="venv/bin/python"

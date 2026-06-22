@@ -37,6 +37,11 @@ def main(argv: list[str] | None = None) -> None:
         description="Mirror GitHub Actions Pre-Submit Checks locally."
     )
     parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Ruff only (skip install, unit tests, and notebook checks).",
+    )
+    parser.add_argument(
         "--skip-install",
         action="store_true",
         help="Skip pip install -e .[dev]",
@@ -58,6 +63,10 @@ def main(argv: list[str] | None = None) -> None:
         help="Upload coverage.xml to Codacy (needs CODACY_PROJECT_TOKEN)",
     )
     args = parser.parse_args(argv)
+    if args.fast:
+        args.skip_install = True
+        args.skip_tests = True
+        args.skip_nbmake = True
 
     root = _repo_root()
     os.chdir(root)
