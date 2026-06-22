@@ -28,15 +28,20 @@ Open **one** index below. Do not load multiple.
 
 ## Before commit / push
 
+**Gate:** Do not commit or push Python changes unless the same checks CI runs would pass locally. Never use `git push --no-verify` or `git commit --no-verify` to bypass hooks unless the user explicitly asks.
+
 From **repository root** (clone path arbitrary):
 
 ```text
+venv\Scripts\python.exe -m ruff check .
 venv\Scripts\python.exe pre_submit.py
 ```
 
-Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push`
+`pre_submit.py` mirrors [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml): `ruff check .`, full `pytest`, `nbmake notebooks`.
 
-CI workflow: [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml) — `ruff check .`, full `pytest`, `nbmake notebooks`.
+**When adding or changing CI/pre-submit tooling**, fix existing violations that tooling enforces *in the same change set* — do not land hooks or workflows on a still-red tree.
+
+Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push` — pre-push runs the full `pre_submit.py` mirror; do not bypass it.
 
 ---
 

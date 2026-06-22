@@ -3,8 +3,7 @@ import unittest
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_events import matching
-from stepcovnet.onset_events import metrics
+from stepcovnet.onset_events import matching, metrics
 
 
 class MetricsTest(unittest.TestCase):

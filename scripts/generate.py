@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import pathlib
 
 import keras
 
@@ -81,7 +82,7 @@ def main() -> None:
         use_post_processing=ARGS.use_post_processing,
     )
 
-    with open(ARGS.output_file, "w") as f:
+    with pathlib.Path(ARGS.output_file).open("w") as f:
         f.write(output_data.generate_txt_output())
     print(f"Successfully generated step chart at {ARGS.output_file}")
 

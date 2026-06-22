@@ -2,25 +2,24 @@
 
 import argparse
 import json
-import os
 import pathlib
 import sys
 
 import tensorflow as tf
 
-from stepcovnet import config
-from stepcovnet import dense_overfit_eval
+from stepcovnet import config, dense_overfit_eval
 
 
 def _find_saved_model_path(model_output_dir: str) -> str:
+    model_dir = pathlib.Path(model_output_dir)
     keras_files = sorted(
-        name for name in os.listdir(model_output_dir) if name.endswith(".keras")
+        path.name for path in model_dir.iterdir() if path.name.endswith(".keras")
     )
     if len(keras_files) != 1:
         raise FileNotFoundError(
             f"expected one .keras in {model_output_dir}, found {keras_files!r}",
         )
-    return os.path.join(model_output_dir, keras_files[0])
+    return str(model_dir / keras_files[0])
 
 
 def _resolve_model_path(
@@ -32,7 +31,7 @@ def _resolve_model_path(
 
 
 def _default_output_path(experiment: config.OnsetExperimentConfig) -> str:
-    return os.path.join(experiment.run.model_output_dir, "eval_val_event_f1.json")
+    return str(pathlib.Path(experiment.run.model_output_dir) / "eval_val_event_f1.json")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,8 +80,9 @@ def main(argv: list[str] | None = None) -> int:
     report["model_path"] = model_path
     report["config_path"] = args.config
 
-    os.makedirs(pathlib.Path(output_path).parent, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as out_file:
+    output_file = pathlib.Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as out_file:
         json.dump(report, out_file, indent=2)
 
     print(f"wrote {output_path}")

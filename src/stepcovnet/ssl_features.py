@@ -45,7 +45,7 @@ def mert_npy_path(
         return str(audio.with_suffix(MERT_FILE_SUFFIX))
     rel = os.path.relpath(audio_path, data_root) if data_root else audio.name
     rel_npy = str(pathlib.Path(rel).with_suffix(MERT_FILE_SUFFIX))
-    return os.path.join(features_dir, rel_npy)
+    return str(pathlib.Path(features_dir) / rel_npy)
 
 
 def resample_features_to_hop_grid(
@@ -150,7 +150,7 @@ def load_mert_features(
         ValueError: If the loaded array is not 2D.
     """
     npy_path = mert_npy_path(audio_path, features_dir, data_root)
-    if not os.path.isfile(npy_path):
+    if not pathlib.Path(npy_path).is_file():
         raise FileNotFoundError(
             f"MERT features not found at {npy_path!r}. "
             "Run scripts/extract_mert_features.py on your training data first."
@@ -282,7 +282,9 @@ def extract_mert_features_from_audio(
         waveform = waveform / peak
 
     model, processor = _load_mert_model(model_name, device)
-    chunk_samples = max(MIN_MERT_CHUNK_SAMPLES, int(round(chunk_seconds * MERT_SAMPLE_RATE)))
+    chunk_samples = max(
+        MIN_MERT_CHUNK_SAMPLES, int(round(chunk_seconds * MERT_SAMPLE_RATE))
+    )
     chunks: list[np.ndarray] = []
     for start in range(0, waveform.size, chunk_samples):
         chunk = waveform[start : start + chunk_samples]
@@ -327,11 +329,10 @@ def save_mert_features(
         raise ValueError(
             f"features must be 2D (time, dim); got shape {features.shape!r}"
         )
-    out_dir = os.path.dirname(output_path)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-    np.save(output_path, features.astype(np.float32))
-    return output_path
+    out_path = pathlib.Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(out_path, features.astype(np.float32))
+    return str(out_path)
 
 
 def extract_and_save_mert_features(

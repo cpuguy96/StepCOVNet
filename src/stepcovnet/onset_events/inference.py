@@ -4,8 +4,7 @@ import os
 
 import numpy as np
 
-from stepcovnet.onset_events import audio
-from stepcovnet.onset_events import metrics
+from stepcovnet.onset_events import audio, metrics
 
 
 def _model_has_duration_input(model) -> bool:
@@ -86,9 +85,7 @@ def _extract_prediction_arrays(outputs, model) -> tuple[np.ndarray, np.ndarray]:
         pred_confidence = outputs["pred_confidence"]
     else:
         output_names = list(model.output_names)
-        outputs_by_name = {
-            name: array for name, array in zip(output_names, outputs, strict=True)
-        }
+        outputs_by_name = dict(zip(output_names, outputs, strict=True))
         pred_times = outputs_by_name["pred_times"]
         pred_confidence = outputs_by_name["pred_confidence"]
 

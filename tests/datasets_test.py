@@ -10,7 +10,7 @@ import tensorflow as tf
 
 from stepcovnet import config, constants, datasets, ssl_features
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
+TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
 
 def _first_batch(ds):
@@ -29,8 +29,8 @@ def _get_one_audio_chart_pair(data_dir):
             matching = [f for f in chart_files if f.startswith(stem)]
             if matching:
                 return (
-                    os.path.join(root, audio_file),
-                    os.path.join(root, matching[0]),
+                    str(pathlib.Path(root) / audio_file),
+                    str(pathlib.Path(root) / matching[0]),
                 )
     return None, None
 
@@ -39,7 +39,7 @@ class DatasetsTest(unittest.TestCase):
     def test_load_onset_features_mert(self):
         features = np.random.randn(20, constants.MERT_HIDDEN_SIZE).astype(np.float32)
         with tempfile.TemporaryDirectory() as tmpdir:
-            audio_path = os.path.join(tmpdir, "song.mp3")
+            audio_path = pathlib.Path(tmpdir) / "song.mp3"
             pathlib.Path(audio_path).touch()
             np.save(ssl_features.mert_npy_path(audio_path), features)
             with mock.patch.object(
@@ -66,7 +66,7 @@ class DatasetsTest(unittest.TestCase):
                 features_dir=tmpdir,
                 data_root=TEST_DATA_DIR,
             )
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            pathlib.Path(out_path).parent.mkdir(parents=True, exist_ok=True)
             np.save(out_path, features)
             loaded = datasets.load_onset_features(
                 audio_path,
@@ -118,9 +118,11 @@ class DatasetsTest(unittest.TestCase):
 
     def test_create_dataset_with_empty_directory_raises_error(self):
         for create_fn in (datasets.create_dataset, datasets.create_arrow_dataset):
-            with self.subTest(create_fn=create_fn.__name__):
-                with self.assertRaises(ValueError):
-                    create_fn("")
+            with (
+                self.subTest(create_fn=create_fn.__name__),
+                self.assertRaises(ValueError),
+            ):
+                create_fn("")
 
     def test_select_song_pairs_returns_all_when_max_songs_minus_one(self):
         pairs = [("a.ogg", "a.txt"), ("b.ogg", "b.txt")]
@@ -141,7 +143,7 @@ class DatasetsTest(unittest.TestCase):
         self.assertNotEqual(first, second)
 
     def test_create_dataset_max_songs_limits_pairs(self):
-        test_data_dir = os.path.join(os.path.dirname(__file__), "testdata")
+        test_data_dir = pathlib.Path(__file__).resolve().parent / "testdata"
         audio_path, chart_path = _get_one_audio_chart_pair(test_data_dir)
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
@@ -155,19 +157,19 @@ class DatasetsTest(unittest.TestCase):
             np.float32
         )
         with tempfile.TemporaryDirectory() as tmpdir:
-            mert_dir = os.path.join(tmpdir, "mert")
+            mert_dir = pathlib.Path(tmpdir) / "mert"
             for index in range(4):
                 stem = f"song_{index}"
-                song_dir = os.path.join(tmpdir, stem)
-                os.makedirs(song_dir, exist_ok=True)
-                shutil.copy2(audio_path, os.path.join(song_dir, f"{stem}.ogg"))
-                shutil.copy2(chart_path, os.path.join(song_dir, f"{stem}.txt"))
+                song_dir = pathlib.Path(tmpdir) / stem
+                song_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(audio_path, song_dir / f"{stem}.ogg")
+                shutil.copy2(chart_path, song_dir / f"{stem}.txt")
                 out_path = ssl_features.mert_npy_path(
-                    os.path.join(song_dir, f"{stem}.ogg"),
+                    str(song_dir / f"{stem}.ogg"),
                     features_dir=mert_dir,
                     data_root=tmpdir,
                 )
-                os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                pathlib.Path(out_path).parent.mkdir(parents=True, exist_ok=True)
                 np.save(out_path, mert_array)
             ds = datasets.create_dataset(
                 tmpdir,
@@ -811,11 +813,11 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
         with tempfile.TemporaryDirectory() as tmpdir:
-            chart_path = os.path.join(tmpdir, "empty_chart.txt")
-            with open(chart_path, "w") as f:
+            chart_path = pathlib.Path(tmpdir) / "empty_chart.txt"
+            with pathlib.Path(chart_path).open("w") as f:
                 f.write("TITLE Empty\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
             ap = tf.constant(audio_path)
-            cp = tf.constant(chart_path)
+            cp = tf.constant(str(chart_path))
             (
                 times,
                 intervals,
@@ -849,12 +851,12 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
         with tempfile.TemporaryDirectory() as tmpdir:
-            chart_path = os.path.join(tmpdir, "bad_chart.txt")
-            with open(chart_path, "w") as f:
+            chart_path = pathlib.Path(tmpdir) / "bad_chart.txt"
+            with pathlib.Path(chart_path).open("w") as f:
                 f.write("TITLE Bad\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
                 f.write("4012 7.5\n")  # invalid base-4 digit '4'
             ap = tf.constant(audio_path)
-            cp = tf.constant(chart_path)
+            cp = tf.constant(str(chart_path))
             with self.assertRaises(ValueError):
                 datasets._load_arrow_pair_py_callback(
                     ap,
@@ -873,12 +875,12 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
         with tempfile.TemporaryDirectory() as tmpdir:
-            chart_path = os.path.join(tmpdir, "bad_chart_empty_arrows.txt")
-            with open(chart_path, "w") as f:
+            chart_path = pathlib.Path(tmpdir) / "bad_chart_empty_arrows.txt"
+            with pathlib.Path(chart_path).open("w") as f:
                 f.write("TITLE Bad\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
                 f.write(" 7.5\n")  # empty arrows -> ValueError
             ap = tf.constant(audio_path)
-            cp = tf.constant(chart_path)
+            cp = tf.constant(str(chart_path))
             with self.assertRaises(ValueError):
                 datasets._load_arrow_pair_py_callback(
                     ap,
@@ -906,12 +908,14 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
         with tempfile.TemporaryDirectory() as tmpdir:
-            empty_chart = os.path.join(tmpdir, pathlib.Path(audio_path).stem + ".txt")
-            with open(empty_chart, "w") as f:
+            empty_chart = pathlib.Path(tmpdir) / (
+                pathlib.Path(audio_path).stem + ".txt"
+            )
+            with empty_chart.open("w") as f:
                 f.write("TITLE Empty\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
             shutil.copy2(
                 audio_path,
-                os.path.join(tmpdir, os.path.basename(audio_path)),
+                pathlib.Path(tmpdir) / pathlib.Path(audio_path).name,
             )
             ds = datasets.create_dataset(
                 tmpdir, use_gaussian_target=True, gaussian_sigma=1.0
@@ -993,7 +997,7 @@ class DatasetsTest(unittest.TestCase):
 
     def test_apply_spec_augment(self):
         spec = np.random.randn(constants.N_MELS, 200).astype(np.float32)
-        out = datasets._apply_spec_augment(spec, F=10, T=20)
+        out = datasets._apply_spec_augment(spec, max_freq_mask=10, max_time_mask=20)
         self.assertEqual(out.shape, spec.shape)
         self.assertFalse(np.array_equal(out, spec))
         self.assertGreater(int(np.sum(out == 0)), 0)
@@ -1124,8 +1128,8 @@ class DatasetsTest(unittest.TestCase):
         self.assertIsNotNone(audio_path)
         assert audio_path is not None
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "multi_diff.txt")
-            with open(path, "w") as f:
+            path = pathlib.Path(tmpdir) / "multi_diff.txt"
+            with pathlib.Path(path).open("w") as f:
                 f.write("TITLE X\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
                 f.write("0000 0.5\n")
                 f.write("DIFFICULTY Easy\n")
@@ -1149,8 +1153,8 @@ class DatasetsTest(unittest.TestCase):
     def test_parse_step_chart_binary_timings(self):
         """_parse_step_chart with binary_timings=True returns cols all zeros."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "chart.txt")
-            with open(path, "w") as f:
+            path = pathlib.Path(tmpdir) / "chart.txt"
+            with pathlib.Path(path).open("w") as f:
                 f.write("TITLE X\nBPM 120.0\nNOTES\nDIFFICULTY Challenge\n")
                 f.write("1000 0.0\n0100 0.5\n0010 1.0\n")
             times, cols = datasets._parse_step_chart(path, binary_timings=True)
@@ -1161,8 +1165,8 @@ class DatasetsTest(unittest.TestCase):
     def test_parse_step_chart_with_bpm_binary_timings(self):
         """_parse_step_chart_with_bpm with binary_timings=True returns cols all zeros and BPM."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "chart.txt")
-            with open(path, "w") as f:
+            path = pathlib.Path(tmpdir) / "chart.txt"
+            with pathlib.Path(path).open("w") as f:
                 f.write("TITLE Y\nBPM 135.5\nNOTES\nDIFFICULTY Hard\n")
                 f.write("0001 0.25\n1000 0.75\n")
             times, cols, bpm = datasets._parse_step_chart_with_bpm(

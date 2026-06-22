@@ -1,5 +1,7 @@
 """StepMania chart parsing for event-based onset detection."""
 
+import pathlib
+
 import numpy as np
 
 MAX_STEPS_PER_CHART = 2048
@@ -9,7 +11,7 @@ _DIFFICULTY_MAP = {"beginner": 0, "easy": 1, "medium": 2, "hard": 3, "challenge"
 
 def _parse_step_times(chart_path: str) -> np.ndarray:
     """Parse a StepMania chart file and return step times in seconds."""
-    with open(chart_path) as f:
+    with pathlib.Path(chart_path).open() as f:
         f.readline()  # TITLE
         f.readline()  # BPM
         f.readline()  # NOTES

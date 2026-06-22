@@ -7,11 +7,8 @@ import numpy as np
 import scipy.signal
 import tensorflow as tf
 
-from stepcovnet import config
-from stepcovnet import datasets
-from stepcovnet import pairing
-from stepcovnet.onset_events import charts
-from stepcovnet.onset_events import metrics
+from stepcovnet import config, datasets, pairing
+from stepcovnet.onset_events import charts, metrics
 
 DEFAULT_MIN_ONSET_DISTANCE_MS = 50.0
 DEFAULT_TOLERANCE_SEC = 0.02

@@ -4,10 +4,7 @@ import keras
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import encoder
-from stepcovnet.onset_events import frontend
-from stepcovnet.onset_events import preprocess
+from stepcovnet.onset_events import config, encoder, frontend, preprocess
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet")

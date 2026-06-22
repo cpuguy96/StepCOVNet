@@ -5,6 +5,7 @@ process them into spectrograms and target vectors, and create a TensorFlow
 dataset for training.
 """
 
+import pathlib
 from typing import Any, cast
 
 import librosa
@@ -115,7 +116,7 @@ def _parse_step_chart_impl(
     chart_path: str, binary_timings: bool, return_bpm: bool
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, float]:
     """Parse StepMania .sm file; return times, cols, and optionally BPM."""
-    with open(chart_path) as f:
+    with pathlib.Path(chart_path).open() as f:
         f.readline()  # TITLE
         bpm_line = f.readline()
         bpm = float(bpm_line.removeprefix("BPM").strip())
@@ -396,10 +397,7 @@ def load_onset_waveform(audio_path: str) -> np.ndarray:
     n_frames = onset_frame_count(audio_path)
     hop = constants.WAVEFORM_SAMPLES_PER_FRAME
     total = n_frames * hop
-    if y.size < total:
-        y = np.pad(y, (0, total - y.size))
-    else:
-        y = y[:total]
+    y = np.pad(y, (0, total - y.size)) if y.size < total else y[:total]
     return y.astype(np.float32)
 
 
@@ -508,8 +506,8 @@ def _temporal_augment_scipy(
 
 def _apply_spec_augment(
     spec: np.ndarray,
-    F: int = 27,
-    T: int = 50,
+    max_freq_mask: int = 27,
+    max_time_mask: int = 50,
     num_freq_masks: int = 1,
     num_time_masks: int = 1,
 ) -> np.ndarray:
@@ -518,8 +516,8 @@ def _apply_spec_augment(
 
     Args:
         spec: The input spectrogram of shape (n_mels, time_steps).
-        F: The maximum width of the frequency mask.
-        T: The maximum width of the time mask.
+        max_freq_mask: The maximum width of the frequency mask.
+        max_time_mask: The maximum width of the time mask.
         num_freq_masks: The number of frequency masks to apply.
         num_time_masks: The number of time masks to apply.
 
@@ -531,13 +529,13 @@ def _apply_spec_augment(
 
     # Apply frequency masking
     for _ in range(num_freq_masks):
-        f = np.random.randint(0, F)
+        f = np.random.randint(0, max_freq_mask)
         f0 = np.random.randint(0, n_freq_bins - f)
         spec_augmented[f0 : f0 + f, :] = 0
 
     # Apply time masking
     for _ in range(num_time_masks):
-        t = np.random.randint(0, T)
+        t = np.random.randint(0, max_time_mask)
         t0 = np.random.randint(0, time_steps - t)
         spec_augmented[:, t0 : t0 + t] = 0
 
@@ -706,7 +704,7 @@ def _augment_features_numpy(
         )
     spec_py = normalize_onset_spectrogram(spec_py.T).T
     if should_apply_spec_augment:
-        spec_py = _apply_spec_augment(spec_py, F=int(0.2 * n_features))
+        spec_py = _apply_spec_augment(spec_py, max_freq_mask=int(0.2 * n_features))
     final_target = combined_labels[:, :_N_TARGET]
     final_features = np.transpose(spec_py)
     return final_features.astype(np.float32), final_target.astype(np.float32)
@@ -842,10 +840,7 @@ def _load_arrow_pair_py_callback(
         intervals_norm = zeros_n.copy()
         interval_log_norm = zeros_n.copy()
 
-    if use_step_index:
-        step_index = step_index_normalized(n_steps)
-    else:
-        step_index = zeros_n.copy()
+    step_index = step_index_normalized(n_steps) if use_step_index else zeros_n.copy()
 
     if use_beat_phase and bpm > 0:
         beat_phase = beat_phase_from_times_bpm(times, bpm)

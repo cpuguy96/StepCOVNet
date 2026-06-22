@@ -2,6 +2,7 @@ import builtins
 import concurrent.futures
 import json
 import os
+import pathlib
 import random
 import subprocess
 import sys
@@ -14,17 +15,16 @@ import pytest
 from stepcovnet import config, trainers
 
 # Allow importing the script module (scripts/hyperparameter_search_arrow.py)
-_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
-_SCRIPT_DIR = os.path.abspath(_SCRIPT_DIR)
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
+_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 import hyperparameter_search_arrow  # noqa: E402
 
-_SCRIPT_PATH = os.path.join(_SCRIPT_DIR, "hyperparameter_search_arrow.py")
-_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+_SCRIPT_PATH = _SCRIPT_DIR / "hyperparameter_search_arrow.py"
+_PROJECT_ROOT = _SCRIPT_DIR.parent
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
+TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
 
 def _minimal_inline_experiment_config(
@@ -33,8 +33,8 @@ def _minimal_inline_experiment_config(
 ):
     return {
         "dataset": {
-            "data_dir": TEST_DATA_DIR,
-            "val_data_dir": TEST_DATA_DIR,
+            "data_dir": str(TEST_DATA_DIR),
+            "val_data_dir": str(TEST_DATA_DIR),
             "batch_size": 1,
         },
         "model": {
@@ -77,8 +77,8 @@ def _minimal_sweep_config(
 
 
 def _write_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+    with pathlib.Path(path).open("w", encoding="utf-8") as f:
+        json.dump(data, f, default=str)
 
 
 def _run_sweep_script(*args):
@@ -95,7 +95,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
     """Sweep config loading: valid and invalid keys."""
 
     def _write_sweep_config(self, tmpdir, data):
-        path = os.path.join(tmpdir, "sweep_config.json")
+        path = pathlib.Path(tmpdir) / "sweep_config.json"
         _write_json(path, data)
         return path
 
@@ -114,7 +114,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
             )
             data = hyperparameter_search_arrow.load_sweep_config(path)
             self.assertIsInstance(data, dict)
-            self.assertEqual(data["dataset"]["data_dir"], TEST_DATA_DIR)
+            self.assertEqual(data["dataset"]["data_dir"], str(TEST_DATA_DIR))
             self.assertEqual(
                 data["search_space"]["model.transformer.dropout_rate"], [0.0, 0.1]
             )
@@ -216,8 +216,8 @@ class SweepConfigLoadingTest(unittest.TestCase):
     def test_load_accepts_optional_workers(self):
         """Sweep config may include optional 'workers' (int >= 1)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "sweep.json")
-            with open(path, "w") as f:
+            path = pathlib.Path(tmpdir) / "sweep.json"
+            with pathlib.Path(path).open("w") as f:
                 json.dump(
                     {
                         **_minimal_inline_experiment_config(),
@@ -226,6 +226,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
                         "workers": 4,
                     },
                     f,
+                    default=str,
                 )
             data = hyperparameter_search_arrow.load_sweep_config(path)
             self.assertEqual(data["workers"], 4)
@@ -233,8 +234,8 @@ class SweepConfigLoadingTest(unittest.TestCase):
     def test_load_rejects_invalid_workers(self):
         """Sweep config 'workers' must be an integer >= 1."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "sweep.json")
-            with open(path, "w") as f:
+            path = pathlib.Path(tmpdir) / "sweep.json"
+            with pathlib.Path(path).open("w") as f:
                 json.dump(
                     {
                         **_minimal_inline_experiment_config(),
@@ -243,6 +244,7 @@ class SweepConfigLoadingTest(unittest.TestCase):
                         "workers": 0,
                     },
                     f,
+                    default=str,
                 )
             with self.assertRaises(ValueError) as ctx:
                 hyperparameter_search_arrow.load_sweep_config(path)
@@ -764,7 +766,7 @@ class ForbiddenKeysValidationTest(unittest.TestCase):
 
     def test_load_sweep_config_rejects_run_val_take_count_in_search_space(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "sweep.json")
+            path = pathlib.Path(tmpdir) / "sweep.json"
             _write_json(
                 path,
                 {
@@ -780,7 +782,7 @@ class ForbiddenKeysValidationTest(unittest.TestCase):
     def test_load_sweep_config_allows_snippet_half_frames_search_space_keys(self):
         """snippet_half_frames keys are no longer treated as forbidden search-space entries."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "sweep.json")
+            path = pathlib.Path(tmpdir) / "sweep.json"
             _write_json(
                 path,
                 {
@@ -805,8 +807,8 @@ class SweepCombinationValidationTest(unittest.TestCase):
     def test_main_rejects_invalid_full_grid_before_random_sampling(self):
         """Random search validates the whole grid before sampling or launching workers."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_output_dir = os.path.join(temp_dir, "sweep_out")
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_output_dir = pathlib.Path(temp_dir) / "sweep_out"
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
@@ -836,7 +838,7 @@ class SweepCombinationValidationTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
-                        sweep_path,
+                        str(sweep_path),
                         "--search",
                         "random",
                         "--max_runs",
@@ -845,19 +847,19 @@ class SweepCombinationValidationTest(unittest.TestCase):
                         "7",
                     ],
                 ),
+                self.assertRaises(ValueError) as ctx,
             ):
-                with self.assertRaises(ValueError) as ctx:
-                    hyperparameter_search_arrow.main()
+                hyperparameter_search_arrow.main()
             self.assertIn("warmup_epochs", str(ctx.exception))
             sample_mock.assert_not_called()
             executor_mock.assert_not_called()
-            self.assertFalse(os.path.exists(sweep_output_dir))
+            self.assertFalse(pathlib.Path(sweep_output_dir).exists())
 
     def test_main_rejects_mismatched_model_block_before_training(self):
         """Fresh setup fails fast when search_space targets a different model block."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_output_dir = os.path.join(temp_dir, "sweep_out")
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_output_dir = pathlib.Path(temp_dir) / "sweep_out"
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
@@ -877,16 +879,16 @@ class SweepCombinationValidationTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
-                        sweep_path,
+                        str(sweep_path),
                     ],
                 ),
+                self.assertRaises(ValueError) as ctx,
             ):
-                with self.assertRaises(ValueError) as ctx:
-                    hyperparameter_search_arrow.main()
+                hyperparameter_search_arrow.main()
             self.assertIn("model.gru.units", str(ctx.exception))
             self.assertIn("model_type", str(ctx.exception))
             executor_mock.assert_not_called()
-            self.assertFalse(os.path.exists(sweep_output_dir))
+            self.assertFalse(pathlib.Path(sweep_output_dir).exists())
 
 
 class BestRunSelectionTest(unittest.TestCase):
@@ -1242,26 +1244,30 @@ class EndToEndMinimalTest(unittest.TestCase):
 
     def test_one_run_produces_results_and_best_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={"model.transformer.dropout_rate": [0.0]},
                 ),
             )
 
-            result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
+            result = _run_sweep_script(
+                "--sweep_config", str(pathlib.Path(sweep_path).resolve())
+            )
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
-            sweep_out = os.path.join(temp_dir, "sweep_out")
-            results_path = os.path.join(sweep_out, "results.json")
-            best_config_path = os.path.join(sweep_out, "best_config.json")
-            self.assertTrue(os.path.isfile(results_path), f"Missing {results_path}")
+            sweep_out = pathlib.Path(temp_dir) / "sweep_out"
+            results_path = pathlib.Path(sweep_out) / "results.json"
+            best_config_path = pathlib.Path(sweep_out) / "best_config.json"
             self.assertTrue(
-                os.path.isfile(best_config_path), f"Missing {best_config_path}"
+                pathlib.Path(results_path).is_file(), f"Missing {results_path}"
             )
-            with open(results_path) as f:
+            self.assertTrue(
+                pathlib.Path(best_config_path).is_file(), f"Missing {best_config_path}"
+            )
+            with pathlib.Path(results_path).open() as f:
                 results = json.load(f)
             self.assertEqual(len(results), 1)
             self.assertIn("overrides", results[0])
@@ -1275,11 +1281,11 @@ class RandomSearchTest(unittest.TestCase):
     def test_random_search_samples_subset_and_saves_seed(self):
         """With --search=random --max_runs=2 --seed=42, exactly 2 runs are executed and sweep_config records seed."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={
                         "model.transformer.dropout_rate": [0.0, 0.1],
                         "run.chart_validity_aux_weight": [0.0, 0.3],
@@ -1289,7 +1295,7 @@ class RandomSearchTest(unittest.TestCase):
 
             result = _run_sweep_script(
                 "--sweep_config",
-                os.path.abspath(sweep_path),
+                str(pathlib.Path(sweep_path).resolve()),
                 "--search",
                 "random",
                 "--max_runs",
@@ -1298,9 +1304,9 @@ class RandomSearchTest(unittest.TestCase):
                 "42",
             )
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
-            results_path = os.path.join(temp_dir, "sweep_out", "results.json")
-            self.assertTrue(os.path.isfile(results_path))
-            with open(results_path) as f:
+            results_path = pathlib.Path(temp_dir) / "sweep_out" / "results.json"
+            self.assertTrue(pathlib.Path(results_path).is_file())
+            with pathlib.Path(results_path).open() as f:
                 results = json.load(f)
             self.assertEqual(
                 len(results), 2, "random search should run exactly 2 trials"
@@ -1313,8 +1319,10 @@ class RandomSearchTest(unittest.TestCase):
             )
             for r in results:
                 self.assertIn(r["overrides"], full_combinations)
-            sweep_config_path = os.path.join(temp_dir, "sweep_out", "sweep_config.json")
-            with open(sweep_config_path) as f:
+            sweep_config_path = (
+                pathlib.Path(temp_dir) / "sweep_out" / "sweep_config.json"
+            )
+            with pathlib.Path(sweep_config_path).open() as f:
                 saved = json.load(f)
             self.assertEqual(saved.get("_effective_search"), "random")
             self.assertEqual(saved.get("_effective_seed"), 42)
@@ -1322,11 +1330,11 @@ class RandomSearchTest(unittest.TestCase):
     def test_search_from_config_when_cli_omitted(self):
         """Sweep config 'search': 'random' is used when --search is not passed."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={
                         "model.transformer.dropout_rate": [0.0, 0.1],
                         "run.chart_validity_aux_weight": [0.0, 0.3],
@@ -1336,17 +1344,21 @@ class RandomSearchTest(unittest.TestCase):
             )
 
             # Do not pass --search; config "search": "random" must be used
-            result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
+            result = _run_sweep_script(
+                "--sweep_config", str(pathlib.Path(sweep_path).resolve())
+            )
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
-            sweep_config_path = os.path.join(temp_dir, "sweep_out", "sweep_config.json")
-            with open(sweep_config_path) as f:
+            sweep_config_path = (
+                pathlib.Path(temp_dir) / "sweep_out" / "sweep_config.json"
+            )
+            with pathlib.Path(sweep_config_path).open() as f:
                 saved = json.load(f)
             self.assertEqual(
                 saved.get("_effective_search"),
                 "random",
                 "config 'search' should be honored when --search not passed",
             )
-            with open(os.path.join(temp_dir, "sweep_out", "results.json")) as f:
+            with (pathlib.Path(temp_dir) / "sweep_out" / "results.json").open() as f:
                 results = json.load(f)
             self.assertEqual(len(results), 2)
 
@@ -1373,9 +1385,9 @@ class ResumeSweepTest(unittest.TestCase):
     def test_resume_from_and_sweep_config_mutually_exclusive(self):
         """Passing both --resume_from and --sweep_config exits with error."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            resume_dir = os.path.join(temp_dir, "resume_dir")
-            os.makedirs(resume_dir, exist_ok=True)
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            resume_dir = pathlib.Path(temp_dir) / "resume_dir"
+            pathlib.Path(resume_dir).mkdir(parents=True, exist_ok=True)
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
@@ -1385,9 +1397,9 @@ class ResumeSweepTest(unittest.TestCase):
             )
             result = _run_sweep_script(
                 "--resume_from",
-                os.path.abspath(resume_dir),
+                str(pathlib.Path(resume_dir).resolve()),
                 "--sweep_config",
-                os.path.abspath(sweep_path),
+                str(pathlib.Path(sweep_path).resolve()),
             )
             self.assertNotEqual(result.returncode, 0)
             out = (result.stdout or "") + (result.stderr or "")
@@ -1397,10 +1409,10 @@ class ResumeSweepTest(unittest.TestCase):
     def test_resume_from_partial_sweep_dir_runs_remaining(self):
         """With a sweep dir containing sweep_config.json and partial results.json, --resume_from runs only missing runs."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            resume_dir = os.path.join(temp_dir, "sweep_resume")
-            os.makedirs(resume_dir, exist_ok=True)
-            os.makedirs(os.path.join(resume_dir, "models"), exist_ok=True)
-            os.makedirs(os.path.join(resume_dir, "callbacks"), exist_ok=True)
+            resume_dir = pathlib.Path(temp_dir) / "sweep_resume"
+            pathlib.Path(resume_dir).mkdir(parents=True, exist_ok=True)
+            (pathlib.Path(resume_dir) / "models").mkdir(parents=True, exist_ok=True)
+            (pathlib.Path(resume_dir) / "callbacks").mkdir(parents=True, exist_ok=True)
 
             search_space = {"model.transformer.dropout_rate": [0.0, 0.1]}
             combinations = hyperparameter_search_arrow.expand_grid(search_space)
@@ -1411,8 +1423,8 @@ class ResumeSweepTest(unittest.TestCase):
                 "_effective_search": "grid",
                 "max_runs": None,
             }
-            with open(os.path.join(resume_dir, "sweep_config.json"), "w") as f:
-                json.dump(sweep_config, f, indent=2)
+            with (pathlib.Path(resume_dir) / "sweep_config.json").open("w") as f:
+                json.dump(sweep_config, f, indent=2, default=str)
 
             # One run done (index 0), one pending (index 1)
             partial_results = [
@@ -1424,22 +1436,22 @@ class ResumeSweepTest(unittest.TestCase):
                 },
                 None,
             ]
-            with open(os.path.join(resume_dir, "results.json"), "w") as f:
+            with (pathlib.Path(resume_dir) / "results.json").open("w") as f:
                 json.dump(partial_results, f, indent=2)
 
-            result = _run_sweep_script("--resume_from", os.path.abspath(resume_dir))
+            result = _run_sweep_script(
+                "--resume_from", str(pathlib.Path(resume_dir).resolve())
+            )
             self.assertEqual(
                 result.returncode, 0, (result.stdout or "") + (result.stderr or "")
             )
-            with open(os.path.join(resume_dir, "results.json")) as f:
+            with (pathlib.Path(resume_dir) / "results.json").open() as f:
                 results = json.load(f)
             self.assertEqual(len(results), 2)
             self.assertIsNotNone(results[0])
             self.assertIsNotNone(results[1])
             self.assertIn("best_val_loss", results[1])
-            self.assertTrue(
-                os.path.isfile(os.path.join(resume_dir, "best_config.json"))
-            )
+            self.assertTrue((pathlib.Path(resume_dir) / "best_config.json").is_file())
 
 
 class WorkersOptionTest(unittest.TestCase):
@@ -1448,11 +1460,11 @@ class WorkersOptionTest(unittest.TestCase):
     def test_workers_zero_exits_with_error(self):
         """--workers=0 causes main to call parser.error and exit."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            sweep_path = os.path.join(tmpdir, "sweep.json")
+            sweep_path = pathlib.Path(tmpdir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(tmpdir, "sweep_out"),
+                    pathlib.Path(tmpdir) / "sweep_out",
                     search_space={"model.transformer.dropout_rate": [0.0]},
                 ),
             )
@@ -1463,7 +1475,7 @@ class WorkersOptionTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
-                        sweep_path,
+                        str(sweep_path),
                         "--workers",
                         "0",
                     ],
@@ -1473,9 +1485,9 @@ class WorkersOptionTest(unittest.TestCase):
                     "error",
                     side_effect=SystemExit(2),
                 ),
+                self.assertRaises(SystemExit),
             ):
-                with self.assertRaises(SystemExit):
-                    hyperparameter_search_arrow.main()
+                hyperparameter_search_arrow.main()
 
     def test_workers_two_uses_parallel_path(self):
         """With --workers=2 and 2 grid points, executor receives 2 submit() calls and results are collected."""
@@ -1502,11 +1514,11 @@ class WorkersOptionTest(unittest.TestCase):
                 return fut
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={"model.transformer.dropout_rate": [0.0, 0.1]},
                 ),
             )
@@ -1524,7 +1536,7 @@ class WorkersOptionTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
-                        sweep_path,
+                        str(sweep_path),
                         "--workers",
                         "2",
                     ],
@@ -1535,9 +1547,9 @@ class WorkersOptionTest(unittest.TestCase):
             self.assertEqual(
                 len(submitted_futures), 2, "should submit 2 runs (2 grid points)"
             )
-            results_path = os.path.join(temp_dir, "sweep_out", "results.json")
-            self.assertTrue(os.path.isfile(results_path))
-            with open(results_path) as f:
+            results_path = pathlib.Path(temp_dir) / "sweep_out" / "results.json"
+            self.assertTrue(pathlib.Path(results_path).is_file())
+            with pathlib.Path(results_path).open() as f:
                 results = json.load(f)
             self.assertEqual(len(results), 2)
             self.assertEqual(results[0]["run_index"], 0)
@@ -1567,11 +1579,11 @@ class WorkersOptionTest(unittest.TestCase):
                 return iter(futures)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={"model.transformer.dropout_rate": [0.0]},
                     extra={"workers": 3},
                 ),
@@ -1592,7 +1604,7 @@ class WorkersOptionTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
-                        sweep_path,
+                        str(sweep_path),
                     ],
                 ),
             ):
@@ -1628,11 +1640,11 @@ class WorkersOptionTest(unittest.TestCase):
                 return iter(futures)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={"model.transformer.dropout_rate": [0.0]},
                 ),
             )
@@ -1652,7 +1664,7 @@ class WorkersOptionTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
-                        sweep_path,
+                        str(sweep_path),
                     ],
                 ),
             ):
@@ -1673,9 +1685,9 @@ class WorkersOptionTest(unittest.TestCase):
                 "optimize": {"metric": "val_loss", "mode": "min"},
                 "workers": "2",
             }
-            with open(os.path.join(tmpdir, "sweep_config.json"), "w") as f:
-                json.dump(sweep_config, f, indent=2)
-            with open(os.path.join(tmpdir, "results.json"), "w") as f:
+            with (pathlib.Path(tmpdir) / "sweep_config.json").open("w") as f:
+                json.dump(sweep_config, f, indent=2, default=str)
+            with (pathlib.Path(tmpdir) / "results.json").open("w") as f:
                 json.dump([], f)
             with (
                 mock.patch.object(
@@ -1684,7 +1696,7 @@ class WorkersOptionTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--resume_from",
-                        os.path.abspath(tmpdir),
+                        str(pathlib.Path(tmpdir).resolve()),
                     ],
                 ),
                 mock.patch.object(
@@ -1692,9 +1704,9 @@ class WorkersOptionTest(unittest.TestCase):
                     "error",
                     side_effect=SystemExit(2),
                 ) as err_mock,
+                self.assertRaises(SystemExit),
             ):
-                with self.assertRaises(SystemExit):
-                    hyperparameter_search_arrow.main()
+                hyperparameter_search_arrow.main()
             err_mock.assert_called_once()
             msg = err_mock.call_args[0][0]
             self.assertIn("workers", msg)
@@ -1731,11 +1743,11 @@ class WorkersOptionTest(unittest.TestCase):
                 return fut
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={"model.transformer.dropout_rate": [0.0, 0.1, 0.2]},
                     optimize={"metric": "val_main_loss", "mode": "min"},
                 ),
@@ -1775,7 +1787,7 @@ class WorkersOptionTest(unittest.TestCase):
                     [
                         "hyperparameter_search_arrow",
                         "--sweep_config",
-                        sweep_path,
+                        str(sweep_path),
                         "--workers",
                         "1",
                     ],
@@ -1814,10 +1826,12 @@ class MemoryBoundedSweepTest(unittest.TestCase):
             import psutil
         except ImportError:
             self.skipTest("psutil required for memory test")
-        base_config_path = os.path.join(
-            os.path.dirname(__file__), "..", "configs", "arrow_baseline.json"
+        base_config_path = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "configs"
+            / "arrow_baseline.json"
         )
-        if not os.path.isfile(base_config_path):
+        if not pathlib.Path(base_config_path).is_file():
             self.skipTest("configs/arrow_baseline.json not found")
         base_config = config.ArrowExperimentConfig.from_json(base_config_path)
         base_config.dataset.data_dir = TEST_DATA_DIR
@@ -1835,14 +1849,18 @@ class MemoryBoundedSweepTest(unittest.TestCase):
                 run_config = hyperparameter_search_arrow.apply_overrides(
                     base_config, overrides
                 )
-                run_config.run.model_output_dir = os.path.join(
-                    temp_dir, "models", f"run_{i}"
+                run_config.run.model_output_dir = str(
+                    pathlib.Path(temp_dir) / "models" / f"run_{i}"
                 )
-                run_config.run.callback_root_dir = os.path.join(
-                    temp_dir, "callbacks", f"run_{i}"
+                run_config.run.callback_root_dir = str(
+                    pathlib.Path(temp_dir) / "callbacks" / f"run_{i}"
                 )
-                os.makedirs(run_config.run.model_output_dir, exist_ok=True)
-                os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
+                pathlib.Path(run_config.run.model_output_dir).mkdir(
+                    parents=True, exist_ok=True
+                )
+                pathlib.Path(run_config.run.callback_root_dir).mkdir(
+                    parents=True, exist_ok=True
+                )
                 model, history = trainers.run_arrow_train_from_config(run_config)
                 hyperparameter_search_arrow.extract_metrics(history)
                 del model, history
@@ -1867,31 +1885,31 @@ class SweepVerbosityTest(unittest.TestCase):
     def test_sweep_passes_quiet_verbosity_to_trainer(self):
         """Sweep saves config with show_model_summary=False and fit_verbose=0."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            sweep_path = os.path.join(temp_dir, "sweep.json")
+            sweep_path = pathlib.Path(temp_dir) / "sweep.json"
             _write_json(
                 sweep_path,
                 _minimal_sweep_config(
-                    os.path.join(temp_dir, "sweep_out"),
+                    pathlib.Path(temp_dir) / "sweep_out",
                     search_space={"model.transformer.dropout_rate": [0.0]},
                 ),
             )
 
-            result = _run_sweep_script("--sweep_config", os.path.abspath(sweep_path))
+            result = _run_sweep_script(
+                "--sweep_config", str(pathlib.Path(sweep_path).resolve())
+            )
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
             # Config is saved under callbacks/run_0/logs/<callback_name>/config.json
-            callbacks_run0 = os.path.join(temp_dir, "sweep_out", "callbacks", "run_0")
-            logs_dir = os.path.join(callbacks_run0, "logs")
-            self.assertTrue(os.path.isdir(logs_dir), f"Missing {logs_dir}")
-            log_subdirs = [
-                d
-                for d in os.listdir(logs_dir)
-                if os.path.isdir(os.path.join(logs_dir, d))
-            ]
+            callbacks_run0 = (
+                pathlib.Path(temp_dir) / "sweep_out" / "callbacks" / "run_0"
+            )
+            logs_dir = pathlib.Path(callbacks_run0) / "logs"
+            self.assertTrue(pathlib.Path(logs_dir).is_dir(), f"Missing {logs_dir}")
+            log_subdirs = [d.name for d in logs_dir.iterdir() if d.is_dir()]
             self.assertGreater(len(log_subdirs), 0, "No log subdir found")
-            config_path = os.path.join(logs_dir, log_subdirs[0], "config.json")
-            self.assertTrue(os.path.isfile(config_path), f"Missing {config_path}")
-            with open(config_path) as f:
+            config_path = logs_dir / log_subdirs[0] / "config.json"
+            self.assertTrue(config_path.is_file(), f"Missing {config_path}")
+            with config_path.open() as f:
                 saved = json.load(f)
             run_saved = saved["run"]
             self.assertFalse(

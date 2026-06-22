@@ -6,25 +6,21 @@ import dataclasses
 import datetime
 import logging
 import os
+import pathlib
 
 import keras
 import numpy as np
 import tensorflow as tf
 
 from stepcovnet import reproducibility
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import datasets
-from stepcovnet.onset_events import losses
-from stepcovnet.onset_events import matching
-from stepcovnet.onset_events import metrics
-from stepcovnet.onset_events import models
+from stepcovnet.onset_events import config, datasets, losses, matching, metrics, models
 
 
 def _get_tb_callback(root_dir: str, callback_name: str) -> keras.callbacks.TensorBoard:
     """Create a TensorBoard callback for logging training metrics."""
-    logdir = os.path.join(root_dir, "logs", callback_name)
+    logdir = pathlib.Path(root_dir) / "logs" / callback_name
     return keras.callbacks.TensorBoard(
-        logdir, histogram_freq=0, write_images=False, embeddings_freq=0
+        str(logdir), histogram_freq=0, write_images=False, embeddings_freq=0
     )
 
 
@@ -58,7 +54,7 @@ class _BestBaseModelCheckpoint(keras.callbacks.Callback):
         base_model = (
             self.model.base_model if hasattr(self.model, "base_model") else self.model
         )
-        os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
+        pathlib.Path(self.filepath).parent.mkdir(parents=True, exist_ok=True)
         base_model.save(self.filepath)
 
 
@@ -69,14 +65,9 @@ def _get_ckpt_callback(
     mode: str,
 ) -> _BestBaseModelCheckpoint:
     """Create a checkpoint callback that saves the best underlying detector."""
-    ckpt_path = os.path.join(
-        root_dir,
-        "models",
-        callback_name,
-        "best.keras",
-    )
+    ckpt_path = pathlib.Path(root_dir) / "models" / callback_name / "best.keras"
     return _BestBaseModelCheckpoint(
-        filepath=ckpt_path,
+        filepath=str(ckpt_path),
         monitor=monitor_metric,
         mode=mode,
     )
@@ -105,10 +96,10 @@ def _save_config(
     callback_name: str,
 ) -> None:
     """Save experiment config JSON beside TensorBoard logs for the run."""
-    logdir = os.path.join(callback_root_dir, "logs", callback_name)
-    os.makedirs(logdir, exist_ok=True)
-    config_path = os.path.join(logdir, "config.json")
-    experiment_config.to_json(config_path)
+    logdir = pathlib.Path(callback_root_dir) / "logs" / callback_name
+    logdir.mkdir(parents=True, exist_ok=True)
+    config_path = logdir / "config.json"
+    experiment_config.to_json(str(config_path))
     logging.info("Saved experiment config to %s", config_path)
 
 
@@ -135,13 +126,13 @@ def _build_experiment_callbacks(
 
 def _latest_best_checkpoint_path(callback_root_dir: str) -> str | None:
     """Return the most recently modified ``best.keras`` under a callback root."""
-    models_dir = os.path.join(callback_root_dir, "models")
-    if not os.path.isdir(models_dir):
+    models_dir = pathlib.Path(callback_root_dir) / "models"
+    if not models_dir.is_dir():
         return None
     candidates: list[str] = []
     for root, _dirs, files in os.walk(models_dir):
         if "best.keras" in files:
-            candidates.append(os.path.join(root, "best.keras"))
+            candidates.append(str(pathlib.Path(root) / "best.keras"))
     if not candidates:
         return None
     candidates.sort(key=os.path.getmtime, reverse=True)
@@ -160,16 +151,16 @@ def _write_model(
     saved instead of the final-epoch weights.
     """
     base_model = model.base_model if hasattr(model, "base_model") else model
-    filepath = os.path.join(model_output_dir, base_model.name + ".keras")
-    os.makedirs(model_output_dir, exist_ok=True)
+    filepath = pathlib.Path(model_output_dir) / f"{base_model.name}.keras"
+    filepath.parent.mkdir(parents=True, exist_ok=True)
     best_path = _latest_best_checkpoint_path(callback_root_dir)
     if best_path is not None:
         logging.info("Saving best checkpoint from %s to %s", best_path, filepath)
         best_model = keras.models.load_model(best_path, compile=False)
-        best_model.save(filepath=filepath)
+        best_model.save(filepath=str(filepath))
         return
     logging.info("Saving trained model to %s", filepath)
-    base_model.save(filepath=filepath)
+    base_model.save(filepath=str(filepath))
 
 
 def _get_onset_event_experiment_name(
@@ -398,7 +389,7 @@ class OnsetEventTrainingModel(keras.Model):
             loss, outputs = self._forward_and_loss(batch, training=True)
         trainable_vars = self.base_model.trainable_variables
         grads = tape.gradient(loss, trainable_vars)
-        self.optimizer.apply_gradients(zip(grads, trainable_vars))
+        self.optimizer.apply_gradients(zip(grads, trainable_vars, strict=False))
         self.loss_tracker.update_state(loss)
         self.event_f1_metric.update_state(
             outputs["pred_times"],
@@ -525,26 +516,26 @@ def _resolve_single_song_pair(
     run_config: config.OnsetEventRunConfig,
 ) -> tuple[str, str] | None:
     """Return an explicit single pair for overfit training, or ``None`` for full data."""
-    audio_path = dataset_config.overfit_audio_path.strip()
-    chart_path = dataset_config.overfit_chart_path.strip()
+    audio_path = str(dataset_config.overfit_audio_path).strip()
+    chart_path = str(dataset_config.overfit_chart_path).strip()
     if audio_path or chart_path:
         if not audio_path or not chart_path:
             raise ValueError(
                 "overfit_audio_path and overfit_chart_path must both be set for "
                 "single-song overfit"
             )
-        if not os.path.isfile(audio_path):
+        if not pathlib.Path(audio_path).is_file():
             raise ValueError(f"overfit audio file not found: {audio_path}")
-        if not os.path.isfile(chart_path):
+        if not pathlib.Path(chart_path).is_file():
             raise ValueError(f"overfit chart file not found: {chart_path}")
         return audio_path, chart_path
 
     if run_config.overfit_one_song:
         search_dirs = []
-        test_dir = dataset_config.test_data_dir.strip()
+        test_dir = str(dataset_config.test_data_dir).strip()
         if test_dir:
             search_dirs.append(test_dir)
-        data_dir = dataset_config.data_dir.strip()
+        data_dir = str(dataset_config.data_dir).strip()
         if data_dir and data_dir not in search_dirs:
             search_dirs.append(data_dir)
         for root in search_dirs:

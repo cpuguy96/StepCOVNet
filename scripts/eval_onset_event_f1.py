@@ -4,11 +4,7 @@ import argparse
 
 import tensorflow as tf
 
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import datasets
-from stepcovnet.onset_events import matching
-from stepcovnet.onset_events import metrics
-from stepcovnet.onset_events import trainers
+from stepcovnet.onset_events import config, datasets, matching, metrics, trainers
 
 PARSER = argparse.ArgumentParser(description="Evaluate event_onset_f1 on one batch.")
 PARSER.add_argument("--config", type=str, required=True)

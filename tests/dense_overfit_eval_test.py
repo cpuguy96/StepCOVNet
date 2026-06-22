@@ -3,8 +3,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from stepcovnet import config
-from stepcovnet import dense_overfit_eval
+from stepcovnet import config, dense_overfit_eval
 
 
 def test_eval_dense_event_f1_for_pair_normalizes_mel_features(tmp_path) -> None:

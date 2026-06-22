@@ -2,16 +2,12 @@
 
 import argparse
 import json
-import os
 import pathlib
 
 import librosa
 import numpy as np
 
-from stepcovnet import constants
-from stepcovnet import dense_overfit_eval
-from stepcovnet import pairing
-from stepcovnet.onset_events import charts
+from stepcovnet import constants, dense_overfit_eval, pairing
 from stepcovnet.onset_events import metrics
 
 DEFAULT_THRESHOLDS = (
@@ -69,7 +65,9 @@ def _event_metrics_for_song(
     )
     gt_times, gt_mask = dense_overfit_eval.build_gt_batch(chart_path)
     pred_times_batch, pred_conf_batch, gt_times_batch, gt_mask_batch = (
-        dense_overfit_eval._align_event_batches(pred_times, pred_conf, gt_times, gt_mask)
+        dense_overfit_eval._align_event_batches(
+            pred_times, pred_conf, gt_times, gt_mask
+        )
     )
     tp, fp, fn = metrics.count_event_onset_errors_numpy(
         pred_times_batch,
@@ -118,7 +116,7 @@ def eval_spectral_flux_val(
     else:
         songs = sorted(pair_map)
     if max_songs is not None:
-        songs = songs[: max_songs]
+        songs = songs[:max_songs]
 
     per_song: dict[str, dict[str, float]] = {}
     total_tp = total_fp = total_fn = 0.0
@@ -267,8 +265,9 @@ def main(argv: list[str] | None = None) -> int:
             song_names=song_names,
         )
 
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as out_file:
+    output_file = pathlib.Path(args.output)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as out_file:
         json.dump(report, out_file, indent=2)
 
     print(f"wrote {args.output}")

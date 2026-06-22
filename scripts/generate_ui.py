@@ -7,9 +7,11 @@ Onset and arrow models (.keras) are optional; leave blank to download from Googl
 """
 
 import atexit
+import contextlib
 import ctypes
 import multiprocessing
 import os
+import pathlib
 import queue
 import sys
 import threading
@@ -107,7 +109,7 @@ def _run_generation(
             arrow_model=arrow_model,  # type: ignore[arg-type]
             use_post_processing=use_post_processing,
         )
-        with open(output_path, "w") as f:
+        with pathlib.Path(output_path).open("w") as f:
             f.write(output_data.generate_txt_output())
         result_queue.put(("generation", True, output_path))
     except Exception as e:  # noqa: BLE001
@@ -255,27 +257,24 @@ class _GeneratorApp:
             return
         self._closing = True
         if self._poll_after_id is not None:
-            try:
+            with contextlib.suppress(tk.TclError):
                 self.root.after_cancel(self._poll_after_id)
-            except tk.TclError:
-                pass
             self._poll_after_id = None
         self.root.quit()
         self.root.destroy()
 
     def _default_output_path_for_audio(self, audio_path: str) -> str:
         """Suggested output path when user selects an audio file: stepcovnet_chart_ + song title or basename."""
-        out_dir = os.path.dirname(audio_path)
-        base = os.path.splitext(os.path.basename(audio_path))[0]
+        audio = pathlib.Path(audio_path)
         prefix = "stepcovnet_chart_"
         title = self.song_title_var.get().strip()
         if title:
             # Sanitize for filesystem: replace path separators and other unsafe chars
             safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in title).strip()
-            name = prefix + (safe if safe else base)
+            name = prefix + (safe if safe else audio.stem)
         else:
-            name = prefix + base
-        return os.path.join(out_dir, name + ".txt")
+            name = prefix + audio.stem
+        return str(audio.parent / f"{name}.txt")
 
     def browse_audio(self) -> None:
         path = filedialog.askopenfilename(
@@ -443,10 +442,8 @@ _stdout_stderr_fallbacks: list = []
 def _close_stdout_stderr_fallbacks() -> None:
     """Close file handles opened by _ensure_stdout_stderr_for_frozen (called at exit)."""
     for f in _stdout_stderr_fallbacks:
-        try:
+        with contextlib.suppress(OSError):
             f.close()
-        except OSError:
-            pass
     _stdout_stderr_fallbacks.clear()
 
 
@@ -458,11 +455,11 @@ def _ensure_stdout_stderr_for_frozen() -> None:
     closed at process exit via atexit to avoid leaking file descriptors.
     """
     if sys.stdout is None:
-        f = open(os.devnull, "w")
+        f = pathlib.Path(os.devnull).open("w")  # noqa: SIM115
         _stdout_stderr_fallbacks.append(f)
         sys.stdout = f
     if sys.stderr is None:
-        f = open(os.devnull, "w")
+        f = pathlib.Path(os.devnull).open("w")  # noqa: SIM115
         _stdout_stderr_fallbacks.append(f)
         sys.stderr = f
     if _stdout_stderr_fallbacks:

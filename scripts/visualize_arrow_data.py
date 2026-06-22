@@ -7,7 +7,7 @@ Usage:
 """
 
 import argparse
-import os
+import pathlib
 import sys
 
 import matplotlib.pyplot as plt
@@ -96,7 +96,7 @@ def _build_note_kind_lookup() -> np.ndarray:
 def _parse_bpm(chart_path: str) -> float | None:
     """Read BPM from chart header (second line). Returns None on error."""
     try:
-        with open(chart_path) as f:
+        with pathlib.Path(chart_path).open() as f:
             f.readline()  # TITLE
             line = f.readline()
         return float(line.removeprefix("BPM").strip())
@@ -426,8 +426,9 @@ def write_summary(agg: dict, output_path: str | None) -> str:
 
     summary = "\n".join(lines)
     if output_path:
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        with open(output_path, "w") as f:
+        output_file = pathlib.Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        with output_file.open("w") as f:
             f.write(summary)
             f.write("\n")
     return summary
@@ -445,7 +446,7 @@ def plot_note_kind(agg: dict, output_dir: str | None, show: bool) -> None:
     plt.xticks(rotation=45, ha="right")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "note_kind_dist.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "note_kind_dist.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -479,7 +480,7 @@ def plot_top_arrow_types(
     ax.set_title(f"Top {top_n} arrow types")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "top_arrow_types.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "top_arrow_types.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -498,7 +499,7 @@ def plot_per_column_activity(agg: dict, output_dir: str | None, show: bool) -> N
     ax.set_title("Per-column activity")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "per_column_activity.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "per_column_activity.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -517,7 +518,7 @@ def plot_chart_validity(agg: dict, output_dir: str | None, show: bool) -> None:
     ax.set_title("Chart validity")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "chart_validity.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "chart_validity.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -538,7 +539,7 @@ def plot_steps_per_chart(agg: dict, output_dir: str | None, show: bool) -> None:
     ax.set_title("Steps per chart distribution")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "steps_per_chart.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "steps_per_chart.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -563,7 +564,7 @@ def plot_chord_size(agg: dict, output_dir: str | None, show: bool) -> None:
     ax.set_title("Chord size (non-empty steps)")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "chord_size.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "chord_size.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -581,7 +582,7 @@ def plot_bpm(agg: dict, output_dir: str | None, show: bool) -> None:
     ax.set_title("BPM distribution")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "bpm.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "bpm.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -605,7 +606,7 @@ def plot_chart_duration(agg: dict, output_dir: str | None, show: bool) -> None:
     ax.set_title("Chart duration distribution")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "chart_duration.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "chart_duration.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -629,7 +630,7 @@ def plot_inter_step_interval(agg: dict, output_dir: str | None, show: bool) -> N
     ax.set_title("Inter-step interval distribution")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "inter_step_interval.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "inter_step_interval.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -653,7 +654,7 @@ def plot_steps_per_second(agg: dict, output_dir: str | None, show: bool) -> None
     ax.set_title("Steps per second distribution")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "steps_per_second.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "steps_per_second.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -698,7 +699,7 @@ def plot_time_bin_vs_note_kind(agg: dict, output_dir: str | None, show: bool) ->
     ax.set_xlim(-0.05, 1.05)
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "time_bin_vs_note_kind.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "time_bin_vs_note_kind.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -746,7 +747,7 @@ def plot_interval_vs_note_kind(agg: dict, output_dir: str | None, show: bool) ->
     plt.colorbar(im, ax=ax, label="Count")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "interval_vs_note_kind.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "interval_vs_note_kind.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -789,7 +790,7 @@ def plot_time_bin_vs_chord_size(agg: dict, output_dir: str | None, show: bool) -
     ax.legend()
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "time_bin_vs_chord_size.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "time_bin_vs_chord_size.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -836,7 +837,7 @@ def plot_interval_vs_chord_size(agg: dict, output_dir: str | None, show: bool) -
     plt.colorbar(im, ax=ax, label="Count")
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "interval_vs_chord_size.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "interval_vs_chord_size.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -867,7 +868,7 @@ def plot_time_vs_note_kind_strip(agg: dict, output_dir: str | None, show: bool) 
     ax.legend(loc="upper right", fontsize=8)
     fig.tight_layout()
     if output_dir:
-        fig.savefig(os.path.join(output_dir, "time_vs_note_kind_strip.png"), dpi=150)
+        fig.savefig(pathlib.Path(output_dir) / "time_vs_note_kind_strip.png", dpi=150)
     if show:
         plt.show()
     plt.close()
@@ -884,11 +885,11 @@ def main() -> int:
     show = not args.no_show
     out = args.output_dir
     if out:
-        os.makedirs(out, exist_ok=True)
+        pathlib.Path(out).mkdir(parents=True, exist_ok=True)
 
     summary = write_summary(
         agg,
-        os.path.join(out, "summary.txt") if out else None,
+        str(pathlib.Path(out) / "summary.txt") if out else None,
     )
     print(summary)
 

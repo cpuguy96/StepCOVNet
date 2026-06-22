@@ -1,4 +1,5 @@
 import json
+import pathlib
 import tempfile
 import unittest
 
@@ -7,9 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import constants
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import frontend
-from stepcovnet.onset_events import models
+from stepcovnet.onset_events import config, frontend, models
 
 
 def _small_model_config(**overrides) -> config.OnsetEventModelConfig:
@@ -46,7 +45,7 @@ class ModelsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = f"{tmpdir}/onset_event.json"
             experiment.to_json(path)
-            with open(path, encoding="utf-8") as config_file:
+            with pathlib.Path(path).open(encoding="utf-8") as config_file:
                 raw = json.load(config_file)
             loaded = config.OnsetEventExperimentConfig.from_json(path)
         self.assertEqual(raw["dataset"]["target_sample_rate"], 44100)

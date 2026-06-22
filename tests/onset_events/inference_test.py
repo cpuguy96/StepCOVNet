@@ -1,4 +1,4 @@
-import os
+import pathlib
 import tempfile
 import unittest
 from unittest import mock
@@ -7,10 +7,7 @@ import numpy as np
 import scipy.io.wavfile
 
 from stepcovnet import constants
-from stepcovnet.onset_events import audio
-from stepcovnet.onset_events import inference
-from stepcovnet.onset_events import models
-from stepcovnet.onset_events import config
+from stepcovnet.onset_events import audio, config, inference, models
 
 
 def _write_wav(path: str, samples: np.ndarray, sample_rate: int) -> None:
@@ -128,7 +125,7 @@ class InferenceTest(unittest.TestCase):
         model = _FixedPredictModel(pred_times, pred_confidence)
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "tone.wav")
+            path = pathlib.Path(tmpdir) / "tone.wav"
             _write_wav(path, tone, sr)
             times, confidences = inference.predict_onsets(
                 model,

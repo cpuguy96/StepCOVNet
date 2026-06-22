@@ -2,20 +2,14 @@
 
 import argparse
 import json
-import os
 import pathlib
 
 import librosa
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config
-from stepcovnet import datasets
-from stepcovnet import dense_overfit_eval
-from stepcovnet import pairing
-from stepcovnet import ssl_features
-from stepcovnet.onset_events import charts
-from stepcovnet.onset_events import metrics
+from stepcovnet import config, datasets, dense_overfit_eval, pairing, ssl_features
+from stepcovnet.onset_events import charts, metrics
 
 THRESHOLDS = (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6)
 MIN_ONSET_DISTANCE_MS = 50.0
@@ -36,7 +30,7 @@ def _pair_map(data_dir: str) -> dict[str, tuple[str, str]]:
 
 
 def _chart_bpm(chart_path: str) -> float:
-    with open(chart_path, encoding="utf-8") as chart_file:
+    with pathlib.Path(chart_path).open(encoding="utf-8") as chart_file:
         chart_file.readline()
         bpm_line = chart_file.readline()
     return float(bpm_line.removeprefix("BPM").strip())
@@ -229,8 +223,8 @@ def _ood_analysis(
     }
 
     investigate_profiles: dict[str, dict] = {}
-    if os.path.isfile(investigate_path):
-        with open(investigate_path, encoding="utf-8") as inv_file:
+    if pathlib.Path(investigate_path).is_file():
+        with pathlib.Path(investigate_path).open(encoding="utf-8") as inv_file:
             inv_data = json.load(inv_file)
         investigate_profiles = inv_data.get("feature_profiles", {})
 
@@ -293,11 +287,11 @@ def main() -> int:
     args = parser.parse_args()
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
-    model_dir = experiment.run.model_output_dir
+    model_dir = pathlib.Path(experiment.run.model_output_dir)
     keras_files = sorted(
-        name for name in os.listdir(model_dir) if name.endswith(".keras")
+        path.name for path in model_dir.iterdir() if path.name.endswith(".keras")
     )
-    model_path = os.path.join(model_dir, keras_files[0])
+    model_path = str(model_dir / keras_files[0])
     model = tf.keras.models.load_model(model_path, compile=False)
 
     val_pairs = _pair_map(experiment.dataset.val_data_dir)
@@ -433,8 +427,9 @@ def main() -> int:
         "ood_bottom_3": ood,
     }
 
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as out_file:
+    output_file = pathlib.Path(args.output)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as out_file:
         json.dump(report, out_file, indent=2)
 
     print(f"wrote {args.output}")

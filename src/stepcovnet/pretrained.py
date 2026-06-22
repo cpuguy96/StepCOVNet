@@ -83,7 +83,14 @@ def _download_zip_and_extract_keras(drive_id: str, output_path: pathlib.Path) ->
             zip_path.unlink(missing_ok=True)
 
 
-def resolve_onset_model_path(provided_path: str | None) -> str:
+def _normalize_optional_path(provided_path: str | pathlib.Path | None) -> str | None:
+    if provided_path is None:
+        return None
+    text = str(provided_path).strip()
+    return text or None
+
+
+def resolve_onset_model_path(provided_path: str | pathlib.Path | None) -> str:
     """Return path to onset model: use provided path if set and exists, else cache or download.
 
     If provided_path is non-empty and the file exists, return it.
@@ -97,8 +104,9 @@ def resolve_onset_model_path(provided_path: str | None) -> str:
     Returns:
         Absolute path to the onset model file (.keras).
     """
-    if provided_path and provided_path.strip():
-        p = pathlib.Path(provided_path.strip())
+    normalized = _normalize_optional_path(provided_path)
+    if normalized:
+        p = pathlib.Path(normalized)
         if not p.is_file():
             raise FileNotFoundError(f"Onset model path does not exist: {p}")
         return str(p.resolve())
@@ -121,7 +129,7 @@ def resolve_onset_model_path(provided_path: str | None) -> str:
     return str(cached)
 
 
-def resolve_arrow_model_path(provided_path: str | None) -> str:
+def resolve_arrow_model_path(provided_path: str | pathlib.Path | None) -> str:
     """Return path to arrow model: use provided path if set and exists, else cache or download.
 
     If provided_path is non-empty and the file exists, return it.
@@ -135,8 +143,9 @@ def resolve_arrow_model_path(provided_path: str | None) -> str:
     Returns:
         Absolute path to the arrow model file (.keras).
     """
-    if provided_path and provided_path.strip():
-        p = pathlib.Path(provided_path.strip())
+    normalized = _normalize_optional_path(provided_path)
+    if normalized:
+        p = pathlib.Path(normalized)
         if not p.is_file():
             raise FileNotFoundError(f"Arrow model path does not exist: {p}")
         return str(p.resolve())

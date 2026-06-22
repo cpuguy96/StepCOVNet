@@ -1,4 +1,4 @@
-import os
+import pathlib
 import tempfile
 import unittest
 from unittest import mock
@@ -35,7 +35,7 @@ class AudioTest(unittest.TestCase):
         tone = 0.5 * np.sin(2 * np.pi * 440 * t)
         samples = np.column_stack([tone, 0.25 * tone]).astype(np.float32)
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "tone.wav")
+            path = pathlib.Path(tmpdir) / "tone.wav"
             _write_wav(path, samples, sr)
             waveform = audio.load_waveform(path)
         self.assertEqual(waveform.dtype, np.float32)
@@ -46,7 +46,7 @@ class AudioTest(unittest.TestCase):
         """Cover sr != target_sample_rate branch (librosa.load may still return other sr)."""
         y_orig = np.array([0.5, -0.25], dtype=np.float32)
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "x.wav")
+            path = pathlib.Path(tmpdir) / "x.wav"
             _write_wav(path, y_orig, constants.TARGET_SR)
             with mock.patch.object(audio, "librosa", autospec=True) as mock_librosa:
                 mock_librosa.load.return_value = (y_orig, 22050)
@@ -69,7 +69,7 @@ class AudioTest(unittest.TestCase):
         t = np.linspace(0, duration, n, endpoint=False, dtype=np.float64)
         samples = (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "low_sr.wav")
+            path = pathlib.Path(tmpdir) / "low_sr.wav"
             _write_wav(path, samples, orig_sr)
             waveform = audio.load_waveform(path, target_sample_rate=constants.TARGET_SR)
         expected_len = int(round(duration * constants.TARGET_SR))
@@ -124,7 +124,7 @@ class AudioTest(unittest.TestCase):
         n = 200
         samples = (np.sin(np.linspace(0, 4 * np.pi, n)) * 0.8).astype(np.float32)
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "clip.wav")
+            path = pathlib.Path(tmpdir) / "clip.wav"
             _write_wav(path, samples, sr)
             loaded = audio.load_waveform(path)
         truncated = audio.truncate_waveform(loaded, max_samples=100)

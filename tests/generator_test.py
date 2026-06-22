@@ -1,4 +1,4 @@
-import os
+import pathlib
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -12,7 +12,7 @@ from stepcovnet import (
     models,  # Required to ensure registration of custom Keras layers/functions for model loading.
 )
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
+TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
 
 def _mock_arrow_input(name: str):
@@ -44,7 +44,7 @@ class GeneratorTest(unittest.TestCase):
         for use_post_processing in [True, False]:
             with self.subTest(f"use_post_processing={use_post_processing}"):
                 output_data = generator.generate_output_data(
-                    audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+                    audio_path=TEST_DATA_DIR / "mayu.ogg",
                     song_title="Test Song",
                     bpm=120,
                     onset_model=mock_onset_model,
@@ -65,7 +65,7 @@ class GeneratorTest(unittest.TestCase):
     def test_generate_output_data_with_two_input_arrow_model(self):
         """generate_output_data works when arrow model has two inputs (snippets)."""
         onset_model = keras.models.load_model(
-            os.path.join(TEST_DATA_DIR, "stepcovnet_ONSET-mayu_overfit.keras"),
+            TEST_DATA_DIR / "stepcovnet_ONSET-mayu_overfit.keras",
             compile=False,
         )
         arrow_model = models.build_arrow_model(
@@ -74,7 +74,7 @@ class GeneratorTest(unittest.TestCase):
             config.TransformerArrowParams(),
         )
         output_data = generator.generate_output_data(
-            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            audio_path=TEST_DATA_DIR / "mayu.ogg",
             song_title="M.A.Y.U",
             bpm=128,
             onset_model=onset_model,  # type: ignore[arg-type]
@@ -116,7 +116,7 @@ class GeneratorTest(unittest.TestCase):
         mock_arrow.input_shape = [(None, None, 1), snippet_shape]
 
         generator.generate_output_data(
-            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            audio_path=TEST_DATA_DIR / "mayu.ogg",
             song_title="Snippet shape test",
             bpm=120,
             onset_model=mock_onset,
@@ -157,7 +157,7 @@ class GeneratorTest(unittest.TestCase):
         ]
 
         generator.generate_output_data(
-            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            audio_path=TEST_DATA_DIR / "mayu.ogg",
             song_title="Keras suffix test",
             bpm=120,
             onset_model=mock_onset,
@@ -192,7 +192,7 @@ class GeneratorTest(unittest.TestCase):
         ]
 
         generator.generate_output_data(
-            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            audio_path=TEST_DATA_DIR / "mayu.ogg",
             song_title="Interval test",
             bpm=120,
             onset_model=mock_onset,
@@ -234,7 +234,7 @@ class GeneratorTest(unittest.TestCase):
         ]
 
         generator.generate_output_data(
-            audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+            audio_path=TEST_DATA_DIR / "mayu.ogg",
             song_title="Extra input test",
             bpm=bpm,
             onset_model=mock_onset,
@@ -288,18 +288,18 @@ class GeneratorTest(unittest.TestCase):
 
     def test_generate_output_data(self):
         onset_model = keras.models.load_model(
-            os.path.join(TEST_DATA_DIR, "stepcovnet_ONSET-mayu_overfit.keras"),
+            TEST_DATA_DIR / "stepcovnet_ONSET-mayu_overfit.keras",
             compile=False,
         )
         arrow_model = keras.models.load_model(
-            os.path.join(TEST_DATA_DIR, "stepcovnet_ARROW-mayu_overfit.keras"),
+            TEST_DATA_DIR / "stepcovnet_ARROW-mayu_overfit.keras",
             compile=False,
         )
 
         for use_post_processing in [True, False]:
             with self.subTest(f"use_post_processing={use_post_processing}"):
                 output_data = generator.generate_output_data(
-                    audio_path=os.path.join(TEST_DATA_DIR, "mayu.ogg"),
+                    audio_path=TEST_DATA_DIR / "mayu.ogg",
                     song_title="M.A.Y.U",
                     bpm=128,
                     onset_model=onset_model,  # type: ignore
@@ -344,7 +344,7 @@ class GeneratorTest(unittest.TestCase):
         mock_arrow.predict.side_effect = _arrow_pred_mock
         mock_arrow.inputs = [_mock_arrow_input("timing_input")]
 
-        audio_path = os.path.join(TEST_DATA_DIR, "mayu.ogg")
+        audio_path = TEST_DATA_DIR / "mayu.ogg"
         with mock.patch.object(
             generator,
             "_estimate_bpm_from_audio",

@@ -21,8 +21,7 @@ import argparse
 
 import tensorflow as tf
 
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import trainers
+from stepcovnet.onset_events import config, trainers
 
 PARSER = argparse.ArgumentParser(description="Train event-based onset detection model.")
 PARSER.add_argument(

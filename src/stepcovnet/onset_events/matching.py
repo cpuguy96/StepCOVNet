@@ -94,7 +94,7 @@ def _assign_single_l1(
     gt_unmatched[valid_gt] = True
 
     match_count = 0
-    for row, col in zip(row_ind, col_ind):
+    for row, col in zip(row_ind, col_ind, strict=False):
         gt_slot = int(gt_slot_indices[col])
         matched_pred[match_count] = int(row)
         matched_gt[match_count] = gt_slot
@@ -137,7 +137,7 @@ def _match_single(
     gt_unmatched[valid_gt] = True
 
     match_count = 0
-    for row, col in zip(row_ind, col_ind):
+    for row, col in zip(row_ind, col_ind, strict=False):
         if diff[row, col] <= tolerance_sec:
             gt_slot = int(gt_slot_indices[col])
             matched_pred[match_count] = int(row)

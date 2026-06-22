@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import json
-import os
+import pathlib
 from typing import Any, get_args, get_origin, get_type_hints
 
 from stepcovnet import constants
@@ -51,12 +51,25 @@ class FeatureSource(enum.StrEnum):
     WAVEFORM = "waveform"
 
 
+def _coerce_json_values(value: Any) -> Any:
+    """Recursively convert Path and enum values for JSON serialization."""
+    if isinstance(value, pathlib.Path):
+        return str(value)
+    if isinstance(value, enum.Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {key: _coerce_json_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_coerce_json_values(item) for item in value]
+    return value
+
+
 class _DictSerializableMixin:
     """Mixin providing default as_dict and from_dict for dataclass configs."""
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization."""
-        return dataclasses.asdict(self)  # type: ignore[arg-type]
+        return _coerce_json_values(dataclasses.asdict(self))  # type: ignore[arg-type]
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -113,7 +126,7 @@ class OnsetDatasetConfig(_DictSerializableMixin):
         """Convert to dict for JSON; feature_source serialized as string."""
         d = dataclasses.asdict(self)  # type: ignore[arg-type]
         d["feature_source"] = self.feature_source.value
-        return d
+        return _coerce_json_values(d)
 
     @classmethod
     def from_dict(cls, data: dict) -> OnsetDatasetConfig:
@@ -168,7 +181,7 @@ class ArrowDatasetConfig(_DictSerializableMixin):
         """Convert to dict for JSON; interval_encoding serialized as string."""
         d = dataclasses.asdict(self)  # type: ignore[arg-type]
         d["interval_encoding"] = self.interval_encoding.value
-        return d
+        return _coerce_json_values(d)
 
     def get_experiment_name_parts(self) -> list[str]:
         """Return experiment name fragments for dataset-level options (e.g. timing jitter)."""
@@ -270,7 +283,7 @@ class OnsetModelConfig(_DictSerializableMixin):
         """Convert to dict for JSON; onset_architecture serialized as string."""
         d = dataclasses.asdict(self)  # type: ignore[arg-type]
         d["onset_architecture"] = self.onset_architecture.value
-        return d
+        return _coerce_json_values(d)
 
     @classmethod
     def from_dict(cls, data: dict) -> OnsetModelConfig:
@@ -879,10 +892,9 @@ class OnsetExperimentConfig:
         Args:
             path: File path where the JSON config will be saved.
         """
-        os.makedirs(
-            os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True
-        )
-        with open(path, "w") as f:
+        config_path = pathlib.Path(path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with config_path.open("w") as f:
             json.dump(self.as_dict(), f, indent=2)
 
     @classmethod
@@ -900,7 +912,7 @@ class OnsetExperimentConfig:
             json.JSONDecodeError: If the file contains invalid JSON.
             KeyError: If required keys are missing from the JSON.
         """
-        with open(path) as f:
+        with pathlib.Path(path).open() as f:
             data = json.load(f)
         return cls.from_dict(data)
 
@@ -963,10 +975,9 @@ class ArrowExperimentConfig:
         Args:
             path: File path where the JSON config will be saved.
         """
-        os.makedirs(
-            os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True
-        )
-        with open(path, "w") as f:
+        config_path = pathlib.Path(path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with config_path.open("w") as f:
             json.dump(self.as_dict(), f, indent=2)
 
     @classmethod
@@ -984,6 +995,6 @@ class ArrowExperimentConfig:
             json.JSONDecodeError: If the file contains invalid JSON.
             KeyError: If required keys are missing from the JSON.
         """
-        with open(path) as f:
+        with pathlib.Path(path).open() as f:
             data = json.load(f)
         return cls.from_dict(data)

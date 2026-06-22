@@ -1,4 +1,4 @@
-import os
+import pathlib
 import tempfile
 import unittest
 
@@ -7,14 +7,14 @@ import numpy as np
 from stepcovnet import datasets
 from stepcovnet.onset_events import charts
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "testdata")
-MAYU_CHART = os.path.join(TEST_DATA_DIR, "mayu.txt")
+TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "testdata"
+MAYU_CHART = TEST_DATA_DIR / "mayu.txt"
 
 
 def _write_chart(
     path: str, step_lines: list[str], difficulty: str = "Challenge"
 ) -> None:
-    with open(path, "w") as chart_file:
+    with pathlib.Path(path).open("w") as chart_file:
         chart_file.write("TITLE Test\nBPM 120.0\nNOTES\n")
         chart_file.write(f"DIFFICULTY {difficulty}\n")
         chart_file.write("".join(step_lines))
@@ -26,7 +26,7 @@ class ChartsTest(unittest.TestCase):
 
     def test_load_onset_times_inline_chart(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "chart.txt")
+            path = pathlib.Path(tmpdir) / "chart.txt"
             _write_chart(
                 path,
                 ["1000 1.0\n", "0100 0.5\n", "0010 2.0\n"],
@@ -45,8 +45,8 @@ class ChartsTest(unittest.TestCase):
 
     def test_load_onset_times_stops_at_second_difficulty(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "multi_diff.txt")
-            with open(path, "w") as chart_file:
+            path = pathlib.Path(tmpdir) / "multi_diff.txt"
+            with pathlib.Path(path).open("w") as chart_file:
                 chart_file.write("TITLE X\nBPM 128.0\nNOTES\nDIFFICULTY Challenge\n")
                 chart_file.write("0000 0.5\n")
                 chart_file.write("DIFFICULTY Easy\n")
@@ -58,18 +58,18 @@ class ChartsTest(unittest.TestCase):
 
     def test_count_steps(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "chart.txt")
+            path = pathlib.Path(tmpdir) / "chart.txt"
             _write_chart(path, ["1000 0.0\n", "0100 0.5\n", "0010 1.0\n"])
             self.assertEqual(charts.count_steps(path), 3)
 
     def test_chart_exceeds_step_cap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            small_path = os.path.join(tmpdir, "small.txt")
+            small_path = pathlib.Path(tmpdir) / "small.txt"
             _write_chart(small_path, ["1000 0.0\n"])
             self.assertFalse(charts.chart_exceeds_step_cap(small_path, max_steps=1))
             self.assertTrue(charts.chart_exceeds_step_cap(small_path, max_steps=0))
 
-            large_path = os.path.join(tmpdir, "large.txt")
+            large_path = pathlib.Path(tmpdir) / "large.txt"
             step_lines = [f"1000 {i * 0.01}\n" for i in range(2049)]
             _write_chart(large_path, step_lines)
             self.assertTrue(charts.chart_exceeds_step_cap(large_path))
@@ -77,7 +77,7 @@ class ChartsTest(unittest.TestCase):
 
     def test_load_onset_times_returns_none_when_over_cap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "large.txt")
+            path = pathlib.Path(tmpdir) / "large.txt"
             step_lines = [f"1000 {i * 0.01}\n" for i in range(2049)]
             _write_chart(path, step_lines)
             self.assertIsNone(charts.load_onset_times(path))
@@ -88,7 +88,7 @@ class ChartsTest(unittest.TestCase):
 
     def test_load_onset_times_allows_exact_cap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "cap.txt")
+            path = pathlib.Path(tmpdir) / "cap.txt"
             step_lines = [f"1000 {i * 0.01}\n" for i in range(2048)]
             _write_chart(path, step_lines)
             loaded = charts.load_onset_times(path)
@@ -98,7 +98,7 @@ class ChartsTest(unittest.TestCase):
 
     def test_load_onset_times_empty_chart(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "empty.txt")
+            path = pathlib.Path(tmpdir) / "empty.txt"
             _write_chart(path, [])
             loaded = charts.load_onset_times(path, max_steps=None)
             self.assertIsNotNone(loaded)

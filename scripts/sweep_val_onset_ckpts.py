@@ -1,14 +1,12 @@
 """Post-hoc sweep of VAL_ONSET_F1_SCORE callback checkpoints at a fixed threshold."""
 
 import argparse
-import glob
-import os
+import pathlib
 import sys
 
 import tensorflow as tf
 
-from stepcovnet import config
-from stepcovnet import dense_overfit_eval
+from stepcovnet import config, dense_overfit_eval
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,7 +26,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
-    paths = sorted(glob.glob(args.pattern), key=os.path.getmtime)
+    pattern_path = pathlib.Path(args.pattern)
+    paths = sorted(
+        pattern_path.parent.glob(pattern_path.name),
+        key=lambda path: path.stat().st_mtime,
+    )
     if not paths:
         print(f"No checkpoints matched: {args.pattern}", file=sys.stderr)
         return 1
@@ -36,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     best_tag = ""
     best_micro = 0.0
     for path in paths:
-        model = tf.keras.models.load_model(path, compile=False)
+        model = tf.keras.models.load_model(str(path), compile=False)
         report = dense_overfit_eval.eval_dense_val_event_f1(
             model,
             experiment.dataset,
@@ -44,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
             confidence_threshold=args.threshold,
         )
         micro = float(report["micro_event_f1"])
-        tag = os.path.basename(path)
+        tag = path.name
         print(f"{micro:.4f}  {tag}", flush=True)
         if micro > best_micro:
             best_tag = tag

@@ -4,9 +4,7 @@ import dataclasses
 
 import numpy as np
 
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import matching
-from stepcovnet.onset_events import metrics
+from stepcovnet.onset_events import config, matching, metrics
 
 
 def uniform_grid_ref_times_sec(

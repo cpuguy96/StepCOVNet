@@ -29,7 +29,7 @@ import datetime
 import gc
 import itertools
 import json
-import os
+import pathlib
 import random
 import sys
 from concurrent import futures
@@ -38,8 +38,7 @@ from typing import Any, cast
 import tensorflow as tf
 
 # Add project root for imports when run as script
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+_PROJECT_ROOT = str(pathlib.Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -105,7 +104,7 @@ _BATCH_SIZE_FIXED = 1
 
 def load_sweep_config(path: str) -> dict[str, Any]:
     """Load and validate sweep config from JSON."""
-    with open(path) as f:
+    with pathlib.Path(path).open() as f:
         data = json.load(f)
     if not isinstance(data, dict):
         raise ValueError("sweep config must be a JSON object")
@@ -174,18 +173,24 @@ def load_sweep_config(path: str) -> dict[str, Any]:
                     "sweep config validity_gate.validity_metric must be a non-empty "
                     "string when set"
                 )
-        if "optimize_metric" in vg and vg["optimize_metric"] is not None:
-            if not isinstance(vg["optimize_metric"], str):
-                raise ValueError(
-                    "sweep config validity_gate.optimize_metric must be a string "
-                    f"when set, got {type(vg['optimize_metric']).__name__}"
-                )
-        if "optimize_mode" in vg and vg["optimize_mode"] is not None:
-            if vg["optimize_mode"] not in ("min", "max"):
-                raise ValueError(
-                    f"sweep config validity_gate.optimize_mode must be 'min' or 'max', "
-                    f"got {vg['optimize_mode']!r}"
-                )
+        if (
+            "optimize_metric" in vg
+            and vg["optimize_metric"] is not None
+            and not isinstance(vg["optimize_metric"], str)
+        ):
+            raise ValueError(
+                "sweep config validity_gate.optimize_metric must be a string "
+                f"when set, got {type(vg['optimize_metric']).__name__}"
+            )
+        if (
+            "optimize_mode" in vg
+            and vg["optimize_mode"] is not None
+            and vg["optimize_mode"] not in ("min", "max")
+        ):
+            raise ValueError(
+                f"sweep config validity_gate.optimize_mode must be 'min' or 'max', "
+                f"got {vg['optimize_mode']!r}"
+            )
     return data
 
 
@@ -197,16 +202,17 @@ def _load_resume_state(
     Returns (sweep_save, results_list). results_list has length = total runs;
     completed runs have a dict, incomplete have None.
     """
-    config_path = os.path.join(sweep_output_dir, "sweep_config.json")
-    if not os.path.isfile(config_path):
+    sweep_dir = pathlib.Path(sweep_output_dir)
+    config_path = sweep_dir / "sweep_config.json"
+    if not config_path.is_file():
         raise FileNotFoundError(
             f"Cannot resume: {config_path!r} not found. Use the exact sweep output directory from the interrupted run."
         )
-    with open(config_path) as f:
+    with config_path.open() as f:
         sweep_save = json.load(f)
-    results_path = os.path.join(sweep_output_dir, "results.json")
-    if os.path.isfile(results_path):
-        with open(results_path) as f:
+    results_path = sweep_dir / "results.json"
+    if results_path.is_file():
+        with results_path.open() as f:
             results_list = json.load(f)
         if not isinstance(results_list, list):
             raise ValueError(
@@ -510,14 +516,13 @@ def _run_single_training(
     run_config = apply_overrides(base, overrides)
     if effective_seed is not None:
         run_config.run.seed = effective_seed
-    run_config.run.model_output_dir = os.path.join(
-        sweep_output_dir, "models", f"run_{run_index}"
+    sweep_root = pathlib.Path(sweep_output_dir)
+    run_config.run.model_output_dir = str(sweep_root / "models" / f"run_{run_index}")
+    run_config.run.callback_root_dir = str(
+        sweep_root / "callbacks" / f"run_{run_index}"
     )
-    run_config.run.callback_root_dir = os.path.join(
-        sweep_output_dir, "callbacks", f"run_{run_index}"
-    )
-    os.makedirs(run_config.run.model_output_dir, exist_ok=True)
-    os.makedirs(run_config.run.callback_root_dir, exist_ok=True)
+    pathlib.Path(run_config.run.model_output_dir).mkdir(parents=True, exist_ok=True)
+    pathlib.Path(run_config.run.callback_root_dir).mkdir(parents=True, exist_ok=True)
     _model, history = trainers.run_arrow_train_from_config(run_config)
     metrics = extract_metrics(history)
     # Clear TF session so this worker doesn't keep memory when reused for next run
@@ -832,10 +837,12 @@ class _SweepContext:
 
 def _setup_resume(resume_from: str) -> _SweepContext | None:
     """Load state from a previous run. If all runs are already complete, write best_config and return None."""
-    if not os.path.isabs(resume_from):
-        resume_from = os.path.join(_PROJECT_ROOT, resume_from)
-    if not os.path.isdir(resume_from):
-        PARSER.error(f"--resume_from directory does not exist: {resume_from}")
+    resume_path = pathlib.Path(resume_from)
+    if not resume_path.is_absolute():
+        resume_path = pathlib.Path(_PROJECT_ROOT) / resume_from
+    if not resume_path.is_dir():
+        PARSER.error(f"--resume_from directory does not exist: {resume_path}")
+    resume_from = str(resume_path)
     sweep_save, results_list = _load_resume_state(resume_from)
     base_config = config.ArrowExperimentConfig.from_dict(sweep_save)
     combinations = _rebuild_combinations_from_saved(sweep_save)
@@ -894,18 +901,17 @@ def _finish_sweep_early(
     best_idx, gate_info = _select_best_run_with_validity_gate(results, sweep_save)
     best_overrides = results[best_idx]["overrides"]
     best_config = apply_overrides(base_config, best_overrides)
-    callback_root_dir = os.path.join(sweep_output_dir, "callbacks")
-    model_output_dir = os.path.join(sweep_output_dir, "models")
-    best_config.run.model_output_dir = os.path.join(model_output_dir, f"run_{best_idx}")
-    best_config.run.callback_root_dir = os.path.join(
-        callback_root_dir, f"run_{best_idx}"
-    )
+    sweep_dir = pathlib.Path(sweep_output_dir)
+    callback_root_dir = sweep_dir / "callbacks"
+    model_output_dir = sweep_dir / "models"
+    best_config.run.model_output_dir = str(model_output_dir / f"run_{best_idx}")
+    best_config.run.callback_root_dir = str(callback_root_dir / f"run_{best_idx}")
     best_config.run.val_take_count = _VAL_TAKE_COUNT_FIXED
     best_config.dataset.batch_size = _BATCH_SIZE_FIXED
-    best_config_path = os.path.join(sweep_output_dir, "best_config.json")
-    with open(best_config_path, "w") as f:
+    best_config_path = sweep_dir / "best_config.json"
+    with best_config_path.open("w") as f:
         json.dump(best_config.as_dict(), f, indent=2)
-    results_path = os.path.join(sweep_output_dir, "results.json")
+    results_path = sweep_dir / "results.json"
     _print_sweep_summary(
         results=results,
         best_idx=best_idx,
@@ -950,34 +956,34 @@ def _setup_fresh_sweep(args: argparse.Namespace) -> _SweepContext:
             full_combinations[:max_runs] if max_runs is not None else full_combinations
         )
     sweep_output_dir = sweep.get("sweep_output_dir")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     if not sweep_output_dir:
-        sweep_output_dir = os.path.join(
-            _PROJECT_ROOT,
-            "output",
-            f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        sweep_output_dir = str(
+            pathlib.Path(_PROJECT_ROOT) / "output" / f"arrow_sweep_{timestamp}"
         )
     else:
-        if not os.path.isabs(sweep_output_dir):
-            sweep_output_dir = os.path.join(
-                _PROJECT_ROOT,
-                sweep_output_dir,
-                f"arrow_sweep_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        if not pathlib.Path(sweep_output_dir).is_absolute():
+            sweep_output_dir = str(
+                pathlib.Path(_PROJECT_ROOT)
+                / sweep_output_dir
+                / f"arrow_sweep_{timestamp}"
             )
-    os.makedirs(sweep_output_dir, exist_ok=True)
-    callback_root_dir = os.path.join(sweep_output_dir, "callbacks")
-    model_output_dir = os.path.join(sweep_output_dir, "models")
-    os.makedirs(callback_root_dir, exist_ok=True)
-    os.makedirs(model_output_dir, exist_ok=True)
+    sweep_dir = pathlib.Path(sweep_output_dir)
+    sweep_dir.mkdir(parents=True, exist_ok=True)
+    callback_root_dir = sweep_dir / "callbacks"
+    model_output_dir = sweep_dir / "models"
+    callback_root_dir.mkdir(parents=True, exist_ok=True)
+    model_output_dir.mkdir(parents=True, exist_ok=True)
     sweep_save = dict(sweep)
     sweep_save["_effective_search"] = effective_search
     if effective_seed is not None:
         sweep_save["_effective_seed"] = effective_seed
-    with open(os.path.join(sweep_output_dir, "sweep_config.json"), "w") as f:
+    with (sweep_dir / "sweep_config.json").open("w") as f:
         json.dump(sweep_save, f, indent=2)
     return _SweepContext(
         base_config=base_config,
         combinations=combinations,
-        sweep_output_dir=sweep_output_dir,
+        sweep_output_dir=str(sweep_dir),
         sweep_save=sweep_save,
         effective_search=effective_search,
         effective_seed=effective_seed,
@@ -1009,11 +1015,11 @@ def _run_pending(ctx: _SweepContext, workers: int) -> None:
     )
     if workers > 1:
         print(f"  Workers:       {workers} (parallel)\n")
-    results_path = os.path.join(ctx.sweep_output_dir, "results.json")
+    results_path = pathlib.Path(ctx.sweep_output_dir) / "results.json"
 
     def write_checkpoint() -> None:
         ordered = [ctx.results_by_index.get(i) for i in range(len(ctx.combinations))]
-        with open(results_path, "w") as f:
+        with results_path.open("w") as f:
             json.dump(ordered, f, indent=2)
 
     base_config_dict = ctx.base_config.as_dict()
@@ -1059,24 +1065,23 @@ def _write_final_results_and_best(ctx: _SweepContext) -> None:
     results: list[dict[str, Any]] = [
         ctx.results_by_index[i] for i in range(len(ctx.combinations))
     ]
-    results_path = os.path.join(ctx.sweep_output_dir, "results.json")
-    with open(results_path, "w") as f:
+    results_path = pathlib.Path(ctx.sweep_output_dir) / "results.json"
+    with results_path.open("w") as f:
         json.dump(results, f, indent=2)
     optimize_metric = ctx.sweep_save["optimize"]["metric"]
     optimize_mode = ctx.sweep_save["optimize"]["mode"]
     best_idx, gate_info = _select_best_run_with_validity_gate(results, ctx.sweep_save)
     best_overrides = results[best_idx]["overrides"]
     best_config = apply_overrides(ctx.base_config, best_overrides)
-    callback_root_dir = os.path.join(ctx.sweep_output_dir, "callbacks")
-    model_output_dir = os.path.join(ctx.sweep_output_dir, "models")
-    best_config.run.model_output_dir = os.path.join(model_output_dir, f"run_{best_idx}")
-    best_config.run.callback_root_dir = os.path.join(
-        callback_root_dir, f"run_{best_idx}"
-    )
+    sweep_dir = pathlib.Path(ctx.sweep_output_dir)
+    callback_root_dir = sweep_dir / "callbacks"
+    model_output_dir = sweep_dir / "models"
+    best_config.run.model_output_dir = str(model_output_dir / f"run_{best_idx}")
+    best_config.run.callback_root_dir = str(callback_root_dir / f"run_{best_idx}")
     best_config.run.val_take_count = _VAL_TAKE_COUNT_FIXED
     best_config.dataset.batch_size = _BATCH_SIZE_FIXED
-    best_config_path = os.path.join(ctx.sweep_output_dir, "best_config.json")
-    with open(best_config_path, "w") as f:
+    best_config_path = sweep_dir / "best_config.json"
+    with best_config_path.open("w") as f:
         json.dump(best_config.as_dict(), f, indent=2)
     _print_sweep_summary(
         results=results,

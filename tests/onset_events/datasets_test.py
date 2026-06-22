@@ -1,4 +1,4 @@
-import os
+import pathlib
 import tempfile
 import unittest
 from unittest import mock
@@ -8,15 +8,11 @@ import scipy.io.wavfile
 import tensorflow as tf
 
 from stepcovnet import constants
-from stepcovnet.onset_events import audio
-from stepcovnet.onset_events import charts
-from stepcovnet.onset_events import datasets
-from stepcovnet.onset_events import preprocess
-from stepcovnet.onset_events import targets
+from stepcovnet.onset_events import audio, charts, datasets, preprocess, targets
 
 
 def _write_chart(path: str, step_lines: list[str]) -> None:
-    with open(path, "w") as chart_file:
+    with pathlib.Path(path).open("w") as chart_file:
         chart_file.write("TITLE Test\nBPM 120.0\nNOTES\nDIFFICULTY Challenge\n")
         chart_file.write("".join(step_lines))
 
@@ -35,8 +31,8 @@ def _write_valid_pair(
 ) -> tuple[str, str]:
     if step_lines is None:
         step_lines = ["1000 0.05\n", "0100 0.10\n", "0010 0.15\n"]
-    audio_path = os.path.join(directory, f"{stem}.wav")
-    chart_path = os.path.join(directory, f"{stem}.txt")
+    audio_path = str(pathlib.Path(directory) / f"{stem}.wav")
+    chart_path = str(pathlib.Path(directory) / f"{stem}.txt")
     sr = constants.TARGET_SR
     n = max(1, int(duration_sec * sr))
     t = np.linspace(0, duration_sec, n, endpoint=False, dtype=np.float64)
@@ -88,10 +84,10 @@ class DatasetsTest(unittest.TestCase):
     def test_filter_valid_pairs_skips_missing_and_over_cap(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             valid_audio, valid_chart = _write_valid_pair(tmpdir, "good")
-            over_cap_chart = os.path.join(tmpdir, "big.txt")
+            over_cap_chart = pathlib.Path(tmpdir) / "big.txt"
             step_lines = [f"1000 {i * 0.01}\n" for i in range(1025)]
             _write_chart(over_cap_chart, step_lines)
-            missing_audio = os.path.join(tmpdir, "ghost.wav")
+            missing_audio = pathlib.Path(tmpdir) / "ghost.wav"
 
             pairs = [
                 (valid_audio, valid_chart),
@@ -165,25 +161,24 @@ class DatasetsTest(unittest.TestCase):
     def test_create_dataset_skips_over_cap_chart(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             _write_valid_pair(tmpdir, "ok")
-            over_path = os.path.join(tmpdir, "big.txt")
+            over_path = pathlib.Path(tmpdir) / "big.txt"
             step_lines = [f"1000 {i * 0.01}\n" for i in range(1025)]
             _write_chart(over_path, step_lines)
-            big_audio = os.path.join(tmpdir, "big.wav")
+            big_audio = pathlib.Path(tmpdir) / "big.wav"
             _write_wav(
                 big_audio,
                 np.array([0.5, -0.5], dtype=np.float32),
                 constants.TARGET_SR,
             )
 
-            ds = datasets.create_onset_event_dataset(tmpdir)
+            ds = datasets.create_onset_event_dataset(tmpdir, max_steps_per_chart=1024)
             batches = list(ds.take(2))
             self.assertEqual(len(batches), 1)
             self.assertEqual(int(np.sum(batches[0]["gt_mask"][0])), 3)
 
     def test_create_dataset_raises_when_no_valid_pairs(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaises(ValueError):
-                datasets.create_onset_event_dataset(tmpdir)
+        with tempfile.TemporaryDirectory() as tmpdir, self.assertRaises(ValueError):
+            datasets.create_onset_event_dataset(tmpdir)
 
     def test_create_dataset_shuffle_uses_seed(self):
         with tempfile.TemporaryDirectory() as tmpdir:

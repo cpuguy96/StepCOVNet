@@ -1,7 +1,6 @@
 import numpy as np
 
-from stepcovnet import models
-from stepcovnet import reproducibility
+from stepcovnet import models, reproducibility
 
 
 def test_apply_training_seed_stabilizes_model_init() -> None:

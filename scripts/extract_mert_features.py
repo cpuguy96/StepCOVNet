@@ -11,7 +11,6 @@ Usage:
 """
 
 import argparse
-import os
 import pathlib
 import sys
 
@@ -86,7 +85,7 @@ def main(argv: list[str] | None = None) -> None:
     if not pairs:
         raise SystemExit(f"No audio-chart pairs found under {args.data_dir!r}")
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     extracted = 0
     skipped = 0
     failed: list[str] = []
@@ -96,7 +95,7 @@ def main(argv: list[str] | None = None) -> None:
             args.output_dir,
             args.data_dir,
         )
-        if args.skip_existing and os.path.isfile(output_path):
+        if args.skip_existing and pathlib.Path(output_path).is_file():
             skipped += 1
             continue
         print(f"Extracting {audio_path} -> {output_path}")

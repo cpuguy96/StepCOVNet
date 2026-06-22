@@ -1,17 +1,13 @@
 """TensorFlow dataset pipeline for event-based onset detection."""
 
 import dataclasses
-import os
+import pathlib
 
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import constants
-from stepcovnet import pairing
-from stepcovnet.onset_events import audio
-from stepcovnet.onset_events import charts
-from stepcovnet.onset_events import preprocess
-from stepcovnet.onset_events import targets
+from stepcovnet import constants, pairing
+from stepcovnet.onset_events import audio, charts, preprocess, targets
 
 
 @dataclasses.dataclass
@@ -79,7 +75,10 @@ def _filter_valid_pairs(
     """Keep pairs with existing files and charts within the step cap."""
     valid: list[tuple[str, str]] = []
     for audio_path, chart_path in pairs:
-        if not os.path.isfile(audio_path) or not os.path.isfile(chart_path):
+        if (
+            not pathlib.Path(audio_path).is_file()
+            or not pathlib.Path(chart_path).is_file()
+        ):
             continue
         if charts.chart_exceeds_step_cap(chart_path, max_steps=max_steps_per_chart):
             continue

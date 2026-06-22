@@ -1,5 +1,6 @@
 """Training reproducibility helpers."""
 
+import contextlib
 import os
 import random
 
@@ -21,7 +22,5 @@ def apply_training_seed(seed: int) -> None:
     np.random.seed(seed)
     tf.random.set_seed(seed)
     keras.utils.set_random_seed(seed)
-    try:
+    with contextlib.suppress(AttributeError):
         tf.config.experimental.enable_op_determinism()
-    except (AttributeError, tf.errors.NotImplementedError):
-        pass

@@ -1,5 +1,5 @@
 import json
-import os
+import pathlib
 import tempfile
 import unittest
 
@@ -1460,11 +1460,11 @@ class OnsetExperimentConfigTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "test_config.json")
+            config_path = pathlib.Path(temp_dir) / "test_config.json"
             exp_cfg.to_json(config_path)
 
             # Verify file exists
-            self.assertTrue(os.path.exists(config_path))
+            self.assertTrue(pathlib.Path(config_path).exists())
 
             # Load it back
             loaded_cfg = config.OnsetExperimentConfig.from_json(config_path)
@@ -1484,9 +1484,9 @@ class OnsetExperimentConfigTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "subdir", "config.json")
+            config_path = pathlib.Path(temp_dir) / "subdir" / "config.json"
             exp_cfg.to_json(config_path)
-            self.assertTrue(os.path.exists(config_path))
+            self.assertTrue(pathlib.Path(config_path).exists())
 
     def test_from_json_file_not_found(self):
         """Test that loading non-existent file raises FileNotFoundError."""
@@ -1496,8 +1496,8 @@ class OnsetExperimentConfigTest(unittest.TestCase):
     def test_from_json_invalid_json(self):
         """Test that invalid JSON raises JSONDecodeError."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "invalid.json")
-            with open(config_path, "w") as f:
+            config_path = pathlib.Path(temp_dir) / "invalid.json"
+            with pathlib.Path(config_path).open("w") as f:
                 f.write("invalid json content {")
             with self.assertRaises(json.JSONDecodeError):
                 config.OnsetExperimentConfig.from_json(config_path)
@@ -1557,7 +1557,7 @@ class ArrowExperimentConfigTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "arrow_config.json")
+            config_path = pathlib.Path(temp_dir) / "arrow_config.json"
             exp_cfg.to_json(config_path)
 
             loaded_cfg = config.ArrowExperimentConfig.from_json(config_path)

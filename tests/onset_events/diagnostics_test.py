@@ -2,8 +2,7 @@ import unittest
 
 import numpy as np
 
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import diagnostics
+from stepcovnet.onset_events import config, diagnostics
 
 
 class OnsetEventDiagnosticsTest(unittest.TestCase):

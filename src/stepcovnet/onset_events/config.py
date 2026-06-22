@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import os
+import pathlib
 
 from stepcovnet import constants
-from stepcovnet.onset_events import charts
+from stepcovnet.onset_events import charts, targets
 from stepcovnet.onset_events import frontend as audio_frontend
-from stepcovnet.onset_events import targets
+
+
+def _coerce_json_values(value: object) -> object:
+    """Recursively convert Path values for JSON serialization."""
+    if isinstance(value, pathlib.Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _coerce_json_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_coerce_json_values(item) for item in value]
+    return value
 
 
 class _DictSerializableMixin:
@@ -17,7 +27,7 @@ class _DictSerializableMixin:
 
     def as_dict(self) -> dict:
         """Convert config to dictionary for JSON serialization."""
-        return dataclasses.asdict(self)  # type: ignore[arg-type]
+        return _coerce_json_values(dataclasses.asdict(self))  # type: ignore[arg-type]
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -227,10 +237,9 @@ class OnsetEventExperimentConfig:
         Args:
             path: Destination file path.
         """
-        os.makedirs(
-            os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True
-        )
-        with open(path, "w", encoding="utf-8") as config_file:
+        config_path = pathlib.Path(path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with config_path.open("w", encoding="utf-8") as config_file:
             json.dump(self.as_dict(), config_file, indent=2)
 
     @classmethod
@@ -248,6 +257,6 @@ class OnsetEventExperimentConfig:
             json.JSONDecodeError: If the file is not valid JSON.
             KeyError: If required keys are missing.
         """
-        with open(path, encoding="utf-8") as config_file:
+        with pathlib.Path(path).open(encoding="utf-8") as config_file:
             data = json.load(config_file)
         return cls.from_dict(data)

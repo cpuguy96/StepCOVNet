@@ -33,9 +33,9 @@ def _get_tb_callback(root_dir: str, callback_name: str):
     Returns:
         TensorBoard callback configured to log to the specified directory.
     """
-    logdir = os.path.join(root_dir, "logs", callback_name)
+    logdir = pathlib.Path(root_dir) / "logs" / callback_name
     return keras.callbacks.TensorBoard(
-        logdir, histogram_freq=0, write_images=False, embeddings_freq=0
+        str(logdir), histogram_freq=0, write_images=False, embeddings_freq=0
     )
 
 
@@ -58,14 +58,14 @@ def _get_ckpt_callback(
         ModelCheckpoint callback configured to save the best model based on
         the monitored metric.
     """
-    ckpt_path = os.path.join(
-        root_dir,
-        "models",
-        callback_name,
-        f"{monitor_metric.upper()}" + "-{" + f"{monitor_metric}" + ":.5f}.keras",
+    ckpt_path = (
+        pathlib.Path(root_dir)
+        / "models"
+        / callback_name
+        / (f"{monitor_metric.upper()}" + "-{" + f"{monitor_metric}" + ":.5f}.keras")
     )
     model_checkpoint_callback = keras.callbacks.ModelCheckpoint(
-        filepath=ckpt_path,
+        filepath=str(ckpt_path),
         monitor=monitor_metric,
         save_best_only=True,
         mode=mode,
@@ -241,8 +241,8 @@ def _list_monitored_checkpoints(
     monitor_metric: str,
 ) -> list[str]:
     """Return all monitored checkpoint paths under a callback root, sorted by path."""
-    models_root = os.path.join(callback_root_dir, "models")
-    if not os.path.isdir(models_root):
+    models_root = pathlib.Path(callback_root_dir) / "models"
+    if not models_root.is_dir():
         return []
     prefix = f"{monitor_metric.upper()}-"
     paths: list[str] = []
@@ -255,14 +255,14 @@ def _list_monitored_checkpoints(
                 float(value_text)
             except ValueError:
                 continue
-            paths.append(os.path.join(root, name))
+            paths.append(str(pathlib.Path(root) / name))
     return sorted(paths)
 
 
 def _monitored_checkpoint_value(path: str, monitor_metric: str) -> float:
     """Parse the monitored metric value encoded in a checkpoint filename."""
     prefix = f"{monitor_metric.upper()}-"
-    name = os.path.basename(path)
+    name = pathlib.Path(path).name
     return float(name[len(prefix) : -len(".keras")])
 
 
@@ -292,16 +292,16 @@ def _write_model(
     When ``callback_root_dir`` contains a monitored checkpoint, that model is
     saved instead of the final-epoch weights.
     """
-    filepath = os.path.join(model_output_dir, model.name + ".keras")
-    os.makedirs(model_output_dir, exist_ok=True)
+    filepath = pathlib.Path(model_output_dir) / f"{model.name}.keras"
+    filepath.parent.mkdir(parents=True, exist_ok=True)
     best_path = _latest_monitored_checkpoint(callback_root_dir, monitor_metric)
     if best_path is not None:
         logging.info("Saving best checkpoint from %s to %s", best_path, filepath)
         best_model = keras.models.load_model(best_path, compile=False)
-        best_model.save(filepath=filepath)
+        best_model.save(filepath=str(filepath))
         return
     logging.info("Saving trained model to %s", filepath)
-    model.save(filepath=filepath)
+    model.save(filepath=str(filepath))
 
 
 POST_HOC_EVENT_F1_REPORT_NAME = "event_f1_sweep.json"
@@ -378,15 +378,13 @@ def _export_best_event_f1_checkpoint(
     )
     if report is None:
         return None
-    os.makedirs(run_config.model_output_dir, exist_ok=True)
-    filepath = os.path.join(run_config.model_output_dir, model.name + ".keras")
+    output_dir = pathlib.Path(run_config.model_output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filepath = output_dir / f"{model.name}.keras"
     best_model = keras.models.load_model(report["best_checkpoint"], compile=False)
-    best_model.save(filepath=filepath)
-    report_path = os.path.join(
-        run_config.model_output_dir,
-        POST_HOC_EVENT_F1_REPORT_NAME,
-    )
-    with open(report_path, "w", encoding="utf-8") as report_file:
+    best_model.save(filepath=str(filepath))
+    report_path = output_dir / POST_HOC_EVENT_F1_REPORT_NAME
+    with report_path.open("w", encoding="utf-8") as report_file:
         json.dump(report, report_file, indent=2)
     logging.info(
         "Post-hoc event-F1 export: %s @ thr=%s (micro F1 %.5f) -> %s",
@@ -419,10 +417,10 @@ def _save_config(
 
     The config is saved to: {callback_root_dir}/logs/{callback_name}/config.json
     """
-    logdir = os.path.join(callback_root_dir, "logs", callback_name)
-    os.makedirs(logdir, exist_ok=True)
-    config_path = os.path.join(logdir, "config.json")
-    experiment_config.to_json(config_path)
+    logdir = pathlib.Path(callback_root_dir) / "logs" / callback_name
+    logdir.mkdir(parents=True, exist_ok=True)
+    config_path = logdir / "config.json"
+    experiment_config.to_json(str(config_path))
     logging.info(f"Saved experiment config to {config_path}")
 
 
@@ -676,8 +674,8 @@ def run_train_from_config(
             monitor_metric=ONSET_CHECKPOINT_MONITOR,
         )
 
-    saved_path = os.path.join(run_config.model_output_dir, model.name + ".keras")
-    if os.path.isfile(saved_path):
+    saved_path = pathlib.Path(run_config.model_output_dir) / f"{model.name}.keras"
+    if saved_path.is_file():
         model = keras.models.load_model(saved_path, compile=False)
 
     return model, train_history

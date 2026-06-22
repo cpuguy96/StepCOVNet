@@ -1,11 +1,13 @@
 import json
-import os
+import pathlib
 import sys
 import tempfile
 import unittest
 from unittest import mock
 
-_SCRIPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
+_SCRIPT_DIR = str(
+    pathlib.Path(pathlib.Path(__file__).resolve()).resolve().parent.parent / "scripts"
+)
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
@@ -15,14 +17,14 @@ import eval_dense_onset  # noqa: E402
 class EvalDenseOnsetScriptTest(unittest.TestCase):
     def test_main_writes_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            model_dir = os.path.join(tmpdir, "models")
-            os.makedirs(model_dir)
-            model_path = os.path.join(model_dir, "best.keras")
-            with open(model_path, "wb") as model_file:
+            model_dir = pathlib.Path(tmpdir) / "models"
+            pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
+            model_path = pathlib.Path(model_dir) / "best.keras"
+            with pathlib.Path(model_path).open("wb") as model_file:
                 model_file.write(b"keras")
 
-            config_path = os.path.join(tmpdir, "config.json")
-            with open(config_path, "w", encoding="utf-8") as config_file:
+            config_path = pathlib.Path(tmpdir) / "config.json"
+            with pathlib.Path(config_path).open("w", encoding="utf-8") as config_file:
                 json.dump(
                     {
                         "dataset": {
@@ -35,14 +37,14 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
                         "run": {
                             "epoch": 1,
                             "take_count": -1,
-                            "model_output_dir": model_dir,
+                            "model_output_dir": str(model_dir),
                             "callback_root_dir": "callbacks/test",
                         },
                     },
                     config_file,
                 )
 
-            output_path = os.path.join(tmpdir, "eval.json")
+            output_path = pathlib.Path(tmpdir) / "eval.json"
             fake_report = {
                 "eval_split": "data/v2/val",
                 "num_songs": 2,
@@ -82,10 +84,10 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             eval_mock.assert_called_once()
             self.assertEqual(eval_mock.call_args.kwargs["confidence_threshold"], 0.5)
-            with open(output_path, encoding="utf-8") as out_file:
+            with pathlib.Path(output_path).open(encoding="utf-8") as out_file:
                 report = json.load(out_file)
-            self.assertEqual(report["model_path"], model_path)
-            self.assertEqual(report["config_path"], config_path)
+            self.assertEqual(report["model_path"], str(model_path))
+            self.assertEqual(report["config_path"], str(config_path))
             self.assertEqual(report["micro_event_f1"], 0.55)
 
     def test_find_saved_model_path_requires_single_keras(self) -> None:
@@ -93,13 +95,13 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 eval_dense_onset._find_saved_model_path(tmpdir)
 
-            with open(os.path.join(tmpdir, "a.keras"), "wb") as model_file:
+            with (pathlib.Path(tmpdir) / "a.keras").open("wb") as model_file:
                 model_file.write(b"a")
-            with open(os.path.join(tmpdir, "b.keras"), "wb") as model_file:
+            with (pathlib.Path(tmpdir) / "b.keras").open("wb") as model_file:
                 model_file.write(b"b")
             with self.assertRaises(FileNotFoundError):
                 eval_dense_onset._find_saved_model_path(tmpdir)
 
-            os.remove(os.path.join(tmpdir, "b.keras"))
+            (pathlib.Path(tmpdir) / "b.keras").unlink()
             resolved = eval_dense_onset._find_saved_model_path(tmpdir)
             self.assertTrue(resolved.endswith("a.keras"))

@@ -8,22 +8,23 @@ Usage:
 """
 
 import os
+import pathlib
 import subprocess
 import sys
 
 
 def main() -> None:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    spec_path = os.path.join(script_dir, "generate_ui.spec")
+    script_dir = pathlib.Path(__file__).resolve().parent
+    project_root = script_dir.parent
+    spec_path = script_dir / "generate_ui.spec"
 
-    if not os.path.isfile(spec_path):
+    if not spec_path.is_file():
         print(f"Spec file not found: {spec_path}", file=sys.stderr)
         sys.exit(1)
 
     os.chdir(project_root)
     result = subprocess.run(
-        [sys.executable, "-m", "PyInstaller", spec_path],
+        [sys.executable, "-m", "PyInstaller", str(spec_path)],
         cwd=project_root,
     )
     sys.exit(result.returncode)

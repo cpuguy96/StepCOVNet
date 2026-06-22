@@ -24,7 +24,10 @@ class SslFeaturesTest(unittest.TestCase):
             features_dir="/cache/mert",
             data_root="/data/train",
         )
-        self.assertEqual(path, os.path.join("/cache/mert", "sub", "song.mert.npy"))
+        self.assertEqual(
+            pathlib.Path(path),
+            pathlib.Path("/cache/mert") / "sub" / "song.mert.npy",
+        )
 
     def test_resample_features_to_hop_grid_upsamples(self):
         features = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]], dtype=np.float32)
@@ -54,7 +57,7 @@ class SslFeaturesTest(unittest.TestCase):
     def test_save_and_load_mert_features_roundtrip(self):
         features = np.random.randn(50, constants.MERT_HIDDEN_SIZE).astype(np.float32)
         with tempfile.TemporaryDirectory() as tmpdir:
-            audio_path = os.path.join(tmpdir, "track.wav")
+            audio_path = pathlib.Path(tmpdir) / "track.wav"
             out_path = ssl_features.mert_npy_path(audio_path)
             ssl_features.save_mert_features(features, out_path)
             loaded = ssl_features.load_mert_features(audio_path)
@@ -65,16 +68,15 @@ class SslFeaturesTest(unittest.TestCase):
             ssl_features.load_mert_features("/no/such/song.mp3")
 
     def test_save_mert_features_invalid_shape_raises(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaises(ValueError):
-                ssl_features.save_mert_features(
-                    np.zeros((2, 3, 4), dtype=np.float32),
-                    os.path.join(tmpdir, "bad.mert.npy"),
-                )
+        with tempfile.TemporaryDirectory() as tmpdir, self.assertRaises(ValueError):
+            ssl_features.save_mert_features(
+                np.zeros((2, 3, 4), dtype=np.float32),
+                pathlib.Path(tmpdir) / "bad.mert.npy",
+            )
 
     def test_load_mert_features_invalid_shape_raises(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            audio_path = os.path.join(tmpdir, "track.wav")
+            audio_path = pathlib.Path(tmpdir) / "track.wav"
             bad = np.zeros((2, 3, 4), dtype=np.float32)
             np.save(ssl_features.mert_npy_path(audio_path), bad)
             with self.assertRaises(ValueError):
@@ -114,7 +116,7 @@ class SslFeaturesTest(unittest.TestCase):
 
     def test_extract_and_save_mert_features_with_mocks(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            out_path = os.path.join(tmpdir, "song.mert.npy")
+            out_path = pathlib.Path(tmpdir) / "song.mert.npy"
             with mock.patch.object(
                 ssl_features,
                 "extract_mert_features_from_audio",
@@ -125,7 +127,7 @@ class SslFeaturesTest(unittest.TestCase):
                     "/fake/song.mp3",
                     out_path,
                 )
-            self.assertEqual(written, out_path)
+            self.assertEqual(pathlib.Path(written), out_path)
             loaded = np.load(out_path)
             self.assertEqual(loaded.shape, (5, constants.MERT_HIDDEN_SIZE))
 
@@ -233,17 +235,21 @@ class SslFeaturesTest(unittest.TestCase):
                 raise ImportError("no torch")
             return real_import(name, globals, locals, fromlist, level)
 
-        with mock.patch.object(builtins, "__import__", side_effect=fake_import):
-            with self.assertRaises(ImportError):
-                ssl_features._require_ssl_deps()
+        with (
+            mock.patch.object(builtins, "__import__", side_effect=fake_import),
+            self.assertRaises(ImportError),
+        ):
+            ssl_features._require_ssl_deps()
 
     def test_extract_mert_features_from_audio_empty_raises(self):
-        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
-            with mock.patch.object(
+        with (
+            tempfile.NamedTemporaryFile(suffix=".wav") as tmp,
+            mock.patch.object(
                 librosa, "load", return_value=(np.array([]), 24000), autospec=True
-            ):
-                with self.assertRaises(ValueError):
-                    ssl_features.extract_mert_features_from_audio(tmp.name)
+            ),
+            self.assertRaises(ValueError),
+        ):
+            ssl_features.extract_mert_features_from_audio(tmp.name)
 
     def test_mert_hidden_states_for_empty_chunk(self):
         out = ssl_features._mert_hidden_states_for_chunk(
@@ -258,12 +264,12 @@ class SslFeaturesTest(unittest.TestCase):
 
 class MertDatasetIntegrationTest(unittest.TestCase):
     def test_create_dataset_with_precomputed_mert_features(self):
-        test_data_dir = os.path.join(os.path.dirname(__file__), "testdata")
+        test_data_dir = pathlib.Path(__file__).resolve().parent / "testdata"
         audio_path = None
         for root, _, files in os.walk(test_data_dir):
             for name in files:
                 if name.endswith((".mp3", ".ogg", ".wav")):
-                    audio_path = os.path.join(root, name)
+                    audio_path = str(pathlib.Path(root) / name)
                     break
             if audio_path:
                 break
@@ -283,7 +289,7 @@ class MertDatasetIntegrationTest(unittest.TestCase):
                 features_dir=tmpdir,
                 data_root=test_data_dir,
             )
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            pathlib.Path(out_path).parent.mkdir(parents=True, exist_ok=True)
             np.save(out_path, mert_array)
             ds = datasets.create_dataset(
                 test_data_dir,
@@ -336,12 +342,12 @@ class ResolveOnsetInputFeaturesTest(unittest.TestCase):
 
 class ListAudioChartPairsTest(unittest.TestCase):
     def test_list_audio_chart_pairs_finds_files(self):
-        test_data_dir = os.path.join(os.path.dirname(__file__), "testdata")
+        test_data_dir = pathlib.Path(__file__).resolve().parent / "testdata"
         pairs = datasets.list_audio_chart_pairs(test_data_dir)
         self.assertGreater(len(pairs), 0)
         for audio_path, chart_path in pairs:
-            self.assertTrue(os.path.isfile(audio_path))
-            self.assertTrue(os.path.isfile(chart_path))
+            self.assertTrue(pathlib.Path(audio_path).is_file())
+            self.assertTrue(pathlib.Path(chart_path).is_file())
             self.assertEqual(
                 pathlib.Path(audio_path).stem,
                 pathlib.Path(chart_path).stem.split(".")[0],

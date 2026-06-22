@@ -1,4 +1,4 @@
-import os
+import pathlib
 import tempfile
 import unittest
 
@@ -8,12 +8,11 @@ import scipy.io.wavfile
 import tensorflow as tf
 
 from stepcovnet import constants
-from stepcovnet.onset_events import config
-from stepcovnet.onset_events import trainers
+from stepcovnet.onset_events import config, trainers
 
 
 def _write_chart(path: str, step_lines: list[str]) -> None:
-    with open(path, "w") as chart_file:
+    with pathlib.Path(path).open("w") as chart_file:
         chart_file.write("TITLE Test\nBPM 120.0\nNOTES\nDIFFICULTY Challenge\n")
         chart_file.write("".join(step_lines))
 
@@ -32,8 +31,8 @@ def _write_valid_pair(
 ) -> tuple[str, str]:
     if step_lines is None:
         step_lines = ["1000 0.05\n", "0100 0.10\n", "0010 0.15\n"]
-    audio_path = os.path.join(directory, f"{stem}.wav")
-    chart_path = os.path.join(directory, f"{stem}.txt")
+    audio_path = str(pathlib.Path(directory) / f"{stem}.wav")
+    chart_path = str(pathlib.Path(directory) / f"{stem}.txt")
     sr = constants.TARGET_SR
     n = max(1, int(duration_sec * sr))
     t = np.linspace(0, duration_sec, n, endpoint=False, dtype=np.float64)
@@ -50,8 +49,8 @@ def _tiny_experiment(
 ) -> config.OnsetEventExperimentConfig:
     return config.OnsetEventExperimentConfig(
         dataset=config.OnsetEventDatasetConfig(
-            data_dir=data_dir,
-            val_data_dir=val_data_dir,
+            data_dir=str(data_dir),
+            val_data_dir=str(val_data_dir),
             test_data_dir="",
             batch_size=1,
             max_audio_seconds=0.25,
@@ -69,7 +68,7 @@ def _tiny_experiment(
         ),
         run=config.OnsetEventRunConfig(
             epochs=1,
-            model_output_dir=model_output_dir,
+            model_output_dir=str(model_output_dir),
             callback_root_dir="",
             seed=7,
         ),
@@ -79,11 +78,11 @@ def _tiny_experiment(
 class TrainersTest(unittest.TestCase):
     def test_train_onset_event_writes_model_and_returns_history(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            val_dir = os.path.join(tmpdir, "val")
-            model_dir = os.path.join(tmpdir, "models")
-            os.makedirs(data_dir)
-            os.makedirs(val_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            val_dir = pathlib.Path(tmpdir) / "val"
+            model_dir = pathlib.Path(tmpdir) / "models"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
+            pathlib.Path(val_dir).mkdir(parents=True, exist_ok=True)
             _write_valid_pair(data_dir, "song")
             _write_valid_pair(val_dir, "val_song")
 
@@ -95,7 +94,7 @@ class TrainersTest(unittest.TestCase):
             )
 
             self.assertTrue(
-                os.path.isfile(os.path.join(model_dir, "onset_event_model.keras"))
+                (pathlib.Path(model_dir) / "onset_event_model.keras").is_file()
             )
             self.assertEqual(base_model.name, "onset_event_model")
             self.assertIn("loss", history.history)
@@ -105,10 +104,10 @@ class TrainersTest(unittest.TestCase):
 
     def test_train_onset_event_requires_output_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            val_dir = os.path.join(tmpdir, "val")
-            os.makedirs(data_dir)
-            os.makedirs(val_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            val_dir = pathlib.Path(tmpdir) / "val"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
+            pathlib.Path(val_dir).mkdir(parents=True, exist_ok=True)
             _write_valid_pair(data_dir, "song")
             _write_valid_pair(val_dir, "val_song")
 
@@ -135,7 +134,6 @@ class TrainersTest(unittest.TestCase):
             tolerance_sec=0.02,
             confidence_threshold=0.5,
         )
-        k = 8
         pred_times = np.array(
             [[0.05, 0.10, 0.15, 0.20, 0.99, 0.98, 0.97, 0.96]],
             dtype=np.float32,
@@ -212,11 +210,11 @@ class TrainersTest(unittest.TestCase):
 
     def test_overfit_paths_require_both(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            os.makedirs(data_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
             audio_path, _chart_path = _write_valid_pair(data_dir, "song")
             experiment = _tiny_experiment(
-                data_dir, data_dir, os.path.join(tmpdir, "out")
+                data_dir, data_dir, pathlib.Path(tmpdir) / "out"
             )
             experiment.dataset.overfit_audio_path = audio_path
             with self.assertRaises(ValueError):
@@ -227,10 +225,10 @@ class TrainersTest(unittest.TestCase):
 
     def test_overfit_explicit_pair_uses_same_train_and_val(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            os.makedirs(data_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
             audio_path, chart_path = _write_valid_pair(data_dir, "song")
-            model_dir = os.path.join(tmpdir, "models")
+            model_dir = pathlib.Path(tmpdir) / "models"
 
             experiment = _tiny_experiment(data_dir, data_dir, model_dir)
             experiment.dataset.overfit_audio_path = audio_path
@@ -245,10 +243,10 @@ class TrainersTest(unittest.TestCase):
 
     def test_overfit_one_song_loss_decreases(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            os.makedirs(data_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
             _write_valid_pair(data_dir, "song")
-            model_dir = os.path.join(tmpdir, "models")
+            model_dir = pathlib.Path(tmpdir) / "models"
 
             experiment = _tiny_experiment(data_dir, data_dir, model_dir)
             experiment.run.overfit_one_song = True
@@ -267,10 +265,10 @@ class TrainersTest(unittest.TestCase):
     @pytest.mark.slow
     def test_overfit_one_song_caps_epochs_at_300(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            os.makedirs(data_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
             _write_valid_pair(data_dir, "song")
-            model_dir = os.path.join(tmpdir, "models")
+            model_dir = pathlib.Path(tmpdir) / "models"
 
             experiment = _tiny_experiment(data_dir, data_dir, model_dir)
             experiment.run.overfit_one_song = True
@@ -288,15 +286,15 @@ class TrainersTest(unittest.TestCase):
     def test_pipeline_check_shortcuts_reaches_perfect_f1(self):
         step_lines = [f"1000 {t:.6f}\n" for t in np.arange(0.1, 2.5, 0.2)]
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            os.makedirs(data_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
             _write_valid_pair(
                 data_dir,
                 "song",
                 step_lines=step_lines,
                 duration_sec=2.4,
             )
-            model_dir = os.path.join(tmpdir, "models")
+            model_dir = pathlib.Path(tmpdir) / "models"
 
             experiment = _tiny_experiment(data_dir, data_dir, model_dir)
             experiment.dataset.max_audio_seconds = 2.5
@@ -331,15 +329,15 @@ class TrainersTest(unittest.TestCase):
         # GT; the model must still learn per-slot confidence above threshold.
         step_lines = [f"1000 {t:.6f}\n" for t in np.arange(0.1, 2.5, 0.2)]
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "train")
-            os.makedirs(data_dir)
+            data_dir = pathlib.Path(tmpdir) / "train"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
             _write_valid_pair(
                 data_dir,
                 "song",
                 step_lines=step_lines,
                 duration_sec=2.4,
             )
-            model_dir = os.path.join(tmpdir, "models")
+            model_dir = pathlib.Path(tmpdir) / "models"
 
             experiment = _tiny_experiment(data_dir, data_dir, model_dir)
             experiment.dataset.max_audio_seconds = 2.5
@@ -370,7 +368,7 @@ class TrainersTest(unittest.TestCase):
 
     def test_build_experiment_callbacks_saves_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            callback_root = os.path.join(tmpdir, "callbacks")
+            callback_root = pathlib.Path(tmpdir) / "callbacks"
             experiment = _tiny_experiment("train", "val", "out")
             experiment.run.callback_root_dir = callback_root
             callbacks = trainers._build_experiment_callbacks(
@@ -381,8 +379,8 @@ class TrainersTest(unittest.TestCase):
                 experiment_config=experiment,
             )
             self.assertEqual(len(callbacks), 2)
-            logs_dir = os.path.join(callback_root, "logs")
-            run_dirs = os.listdir(logs_dir)
+            logs_dir = pathlib.Path(callback_root) / "logs"
+            run_dirs = [p.name for p in pathlib.Path(logs_dir).iterdir()]
             self.assertEqual(len(run_dirs), 1)
-            config_path = os.path.join(logs_dir, run_dirs[0], "config.json")
-            self.assertTrue(os.path.isfile(config_path))
+            config_path = logs_dir / run_dirs[0] / "config.json"
+            self.assertTrue(config_path.is_file())

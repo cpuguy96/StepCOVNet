@@ -7,7 +7,7 @@ import pathlib
 import tempfile
 import unittest
 
-from stepcovnet.dataset_prep import config, constants, export, models
+from stepcovnet.dataset_prep import config, constants, export
 from tests.dataset_prep.pipeline_test import _minimal_pack
 
 

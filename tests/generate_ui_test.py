@@ -1,22 +1,22 @@
 import io
 import os
+import pathlib
 import queue
 import sys
 import tempfile
 import tkinter as tk
-from tkinter import filedialog, messagebox
 import unittest
+from tkinter import filedialog, messagebox
 from unittest import mock
 
 # Allow importing the script module (scripts/generate_ui.py)
-_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
-_SCRIPT_DIR = os.path.abspath(_SCRIPT_DIR)
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
+_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 import generate_ui  # noqa: E402
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
+TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
 
 def _make_app():
@@ -162,19 +162,19 @@ class RunGenerationTest(unittest.TestCase):
         mock_output_data.generate_txt_output.return_value = mock_output
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, "output.txt")
+            output_path = pathlib.Path(tmpdir) / "output.txt"
             result_queue = queue.Queue()
             with (
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_onset_model_path",
-                    side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.keras",
                     autospec=True,
                 ),
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_arrow_model_path",
-                    side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.keras",
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -205,7 +205,7 @@ class RunGenerationTest(unittest.TestCase):
             self.assertEqual(source, "generation")
             self.assertTrue(success)
             self.assertEqual(value, output_path)
-            with open(output_path) as f:
+            with pathlib.Path(output_path).open() as f:
                 self.assertEqual(f.read(), mock_output)
 
     def test_run_generation_with_none_bpm_calls_generator_with_none(self):
@@ -214,19 +214,19 @@ class RunGenerationTest(unittest.TestCase):
         mock_output_data.generate_txt_output.return_value = "TITLE X\nBPM 100\nNOTES\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, "output.txt")
+            output_path = pathlib.Path(tmpdir) / "output.txt"
             result_queue = queue.Queue()
             with (
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_onset_model_path",
-                    side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.keras",
                     autospec=True,
                 ),
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_arrow_model_path",
-                    side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.keras",
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -268,19 +268,19 @@ class RunGenerationTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, "output.txt")
+            output_path = pathlib.Path(tmpdir) / "output.txt"
             result_queue = queue.Queue()
             with (
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_onset_model_path",
-                    side_effect=lambda p: p or os.path.join(tmpdir, "onset.keras"),
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.keras",
                     autospec=True,
                 ),
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_arrow_model_path",
-                    side_effect=lambda p: p or os.path.join(tmpdir, "arrow.keras"),
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.keras",
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -310,7 +310,7 @@ class RunGenerationTest(unittest.TestCase):
             source, success, _ = result_queue.get_nowait()
             self.assertEqual(source, "generation")
             self.assertTrue(success)
-            with open(output_path) as f:
+            with pathlib.Path(output_path).open() as f:
                 content = f.read()
             self.assertIn("TITLE My Song", content)
             self.assertIn("BPM 128", content)
@@ -401,9 +401,9 @@ class RunGenerationTest(unittest.TestCase):
         mock_output_data.generate_txt_output.return_value = "TITLE X\nBPM 100\nNOTES\n"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, "output.txt")
-            onset_resolved = os.path.join(tmpdir, "onset.keras")
-            arrow_resolved = os.path.join(tmpdir, "arrow.keras")
+            output_path = pathlib.Path(tmpdir) / "output.txt"
+            onset_resolved = pathlib.Path(tmpdir) / "onset.keras"
+            arrow_resolved = pathlib.Path(tmpdir) / "arrow.keras"
             result_queue = queue.Queue()
             with (
                 mock.patch.object(
@@ -988,8 +988,8 @@ class FrozenTkinterCompatTest(unittest.TestCase):
         PyInstaller often omits these tkinter submodules unless listed; without them
         the frozen exe raises AttributeError when opening file dialogs or message boxes.
         """
-        spec_path = os.path.join(_SCRIPT_DIR, "generate_ui.spec")
-        with open(spec_path, encoding="utf-8") as f:
+        spec_path = _SCRIPT_DIR / "generate_ui.spec"
+        with spec_path.open(encoding="utf-8") as f:
             spec_source = f.read()
         self.assertIn(
             "tkinter.filedialog",

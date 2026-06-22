@@ -1,18 +1,17 @@
-import os
+import pathlib
 import sys
 import unittest
 
 import numpy as np
 
 # Allow importing the script module (scripts/visualize_arrow_data.py)
-_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
-_SCRIPT_DIR = os.path.abspath(_SCRIPT_DIR)
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
+_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 import visualize_arrow_data as viz  # noqa: E402
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
+TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
 
 class CramersVTest(unittest.TestCase):

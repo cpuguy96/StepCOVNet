@@ -1,6 +1,6 @@
 import contextlib
 import json
-import os
+import pathlib
 import tempfile
 import typing
 import unittest
@@ -12,16 +12,16 @@ import tensorflow as tf
 
 from stepcovnet import config, datasets, dense_overfit_eval, losses, models, trainers
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "testdata")
+TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
 
 @contextlib.contextmanager
 def _temp_model_and_callback_dirs(with_callbacks: bool = False):
     """Yield (model_output_dir, callback_root_dir) inside a temporary directory."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        model_output_dir = os.path.join(temp_dir, "models")
+        model_output_dir = pathlib.Path(temp_dir) / "models"
         callback_root_dir = (
-            os.path.join(temp_dir, "callbacks") if with_callbacks else ""
+            pathlib.Path(temp_dir) / "callbacks" if with_callbacks else ""
         )
         yield model_output_dir, callback_root_dir
 
@@ -201,42 +201,40 @@ class TrainersTest(unittest.TestCase):
 
     def test_latest_monitored_checkpoint_picks_highest_onset_f1_score(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = os.path.join(tmp, "models", "run1")
-            os.makedirs(run_dir)
-            low_path = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras")
-            high_path = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.99000.keras")
+            run_dir = pathlib.Path(tmp) / "models" / "run1"
+            pathlib.Path(run_dir).mkdir(parents=True, exist_ok=True)
+            low_path = pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.10000.keras"
+            high_path = pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.99000.keras"
             for path in (low_path, high_path):
-                with open(path, "wb") as checkpoint_file:
+                with pathlib.Path(path).open("wb") as checkpoint_file:
                     checkpoint_file.write(b"")
             selected = trainers._latest_monitored_checkpoint(
                 tmp, trainers.ONSET_CHECKPOINT_MONITOR
             )
-            self.assertEqual(selected, high_path)
+            self.assertEqual(selected, str(high_path))
 
     def test_list_monitored_checkpoints_returns_all_sorted(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = os.path.join(tmp, "models", "run1")
-            os.makedirs(run_dir)
+            run_dir = pathlib.Path(tmp) / "models" / "run1"
+            pathlib.Path(run_dir).mkdir(parents=True, exist_ok=True)
             paths = [
-                os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.20000.keras"),
-                os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras"),
-                os.path.join(run_dir, "VAL_ONSET_F1_SCORE-notanumber.keras"),
-                os.path.join(run_dir, "not_a_checkpoint.keras"),
+                pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.20000.keras",
+                pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.10000.keras",
+                pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-notanumber.keras",
+                pathlib.Path(run_dir) / "not_a_checkpoint.keras",
             ]
             for path in paths:
-                with open(path, "wb") as checkpoint_file:
+                with pathlib.Path(path).open("wb") as checkpoint_file:
                     checkpoint_file.write(b"")
             listed = trainers._list_monitored_checkpoints(
                 tmp, trainers.ONSET_CHECKPOINT_MONITOR
             )
             self.assertEqual(
                 listed,
-                sorted(
-                    [
-                        os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras"),
-                        os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.20000.keras"),
-                    ]
-                ),
+                [
+                    str(pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.10000.keras"),
+                    str(pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.20000.keras"),
+                ],
             )
 
     def test_list_monitored_checkpoints_empty_when_missing(self):
@@ -250,17 +248,17 @@ class TrainersTest(unittest.TestCase):
 
     def test_select_best_event_f1_checkpoint_uses_event_f1_not_frame_f1(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = os.path.join(tmp, "callbacks", "models", "run1")
-            os.makedirs(run_dir)
-            low_frame = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.10000.keras")
-            high_frame = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.20000.keras")
+            run_dir = pathlib.Path(tmp) / "callbacks" / "models" / "run1"
+            pathlib.Path(run_dir).mkdir(parents=True, exist_ok=True)
+            low_frame = pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.10000.keras"
+            high_frame = pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.20000.keras"
             for path in (low_frame, high_frame):
-                with open(path, "wb") as checkpoint_file:
+                with pathlib.Path(path).open("wb") as checkpoint_file:
                     checkpoint_file.write(b"")
             dataset_config, model_config, run_config = _make_onset_configs(
-                os.path.join(tmp, "models"),
+                pathlib.Path(tmp) / "models",
                 run_kwargs={
-                    "callback_root_dir": os.path.join(tmp, "callbacks"),
+                    "callback_root_dir": pathlib.Path(tmp) / "callbacks",
                     "post_hoc_event_f1_thresholds": [0.2, 0.35],
                 },
             )
@@ -288,7 +286,7 @@ class TrainersTest(unittest.TestCase):
                 report = trainers._select_best_event_f1_checkpoint(
                     dataset_config, model_config, run_config
                 )
-            self.assertEqual(report["best_checkpoint"], low_frame)
+            self.assertEqual(report["best_checkpoint"], str(low_frame))
             self.assertEqual(report["best_threshold"], 0.35)
             self.assertEqual(report["best_micro_event_f1"], 0.8)
             self.assertEqual(len(report["per_checkpoint"]), 2)
@@ -296,8 +294,8 @@ class TrainersTest(unittest.TestCase):
     def test_select_best_event_f1_checkpoint_none_without_checkpoints(self):
         with tempfile.TemporaryDirectory() as tmp:
             dataset_config, model_config, run_config = _make_onset_configs(
-                os.path.join(tmp, "models"),
-                run_kwargs={"callback_root_dir": os.path.join(tmp, "callbacks")},
+                pathlib.Path(tmp) / "models",
+                run_kwargs={"callback_root_dir": pathlib.Path(tmp) / "callbacks"},
             )
             self.assertIsNone(
                 trainers._select_best_event_f1_checkpoint(
@@ -307,16 +305,16 @@ class TrainersTest(unittest.TestCase):
 
     def test_export_best_event_f1_checkpoint_writes_model_and_report(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run_dir = os.path.join(tmp, "callbacks", "models", "run1")
-            os.makedirs(run_dir)
-            best_ckpt = os.path.join(run_dir, "VAL_ONSET_F1_SCORE-0.15000.keras")
-            with open(best_ckpt, "wb") as checkpoint_file:
+            run_dir = pathlib.Path(tmp) / "callbacks" / "models" / "run1"
+            pathlib.Path(run_dir).mkdir(parents=True, exist_ok=True)
+            best_ckpt = pathlib.Path(run_dir) / "VAL_ONSET_F1_SCORE-0.15000.keras"
+            with pathlib.Path(best_ckpt).open("wb") as checkpoint_file:
                 checkpoint_file.write(b"")
-            model_output_dir = os.path.join(tmp, "models")
+            model_output_dir = pathlib.Path(tmp) / "models"
             dataset_config, model_config, run_config = _make_onset_configs(
                 model_output_dir,
                 run_kwargs={
-                    "callback_root_dir": os.path.join(tmp, "callbacks"),
+                    "callback_root_dir": pathlib.Path(tmp) / "callbacks",
                     "post_hoc_event_f1_thresholds": [0.2],
                 },
             )
@@ -325,7 +323,7 @@ class TrainersTest(unittest.TestCase):
             best_model = mock.Mock()
 
             def _save(filepath):
-                with open(filepath, "wb") as out_file:
+                with pathlib.Path(filepath).open("wb") as out_file:
                     out_file.write(b"saved")
 
             best_model.save.side_effect = _save
@@ -350,22 +348,22 @@ class TrainersTest(unittest.TestCase):
                     stub_model, dataset_config, model_config, run_config
                 )
             self.assertIsNotNone(report)
-            exported = os.path.join(model_output_dir, "dense_model.keras")
-            self.assertTrue(os.path.isfile(exported))
-            report_path = os.path.join(
-                model_output_dir, trainers.POST_HOC_EVENT_F1_REPORT_NAME
+            exported = pathlib.Path(model_output_dir) / "dense_model.keras"
+            self.assertTrue(pathlib.Path(exported).is_file())
+            report_path = (
+                pathlib.Path(model_output_dir) / trainers.POST_HOC_EVENT_F1_REPORT_NAME
             )
-            self.assertTrue(os.path.isfile(report_path))
-            with open(report_path, encoding="utf-8") as report_file:
+            self.assertTrue(report_path.is_file())
+            with report_path.open(encoding="utf-8") as report_file:
                 written = json.load(report_file)
-            self.assertEqual(written["best_checkpoint"], best_ckpt)
+            self.assertEqual(written["best_checkpoint"], str(best_ckpt))
             self.assertEqual(written["best_threshold"], 0.2)
 
     def test_export_best_event_f1_checkpoint_none_without_checkpoints(self):
         with tempfile.TemporaryDirectory() as tmp:
             dataset_config, model_config, run_config = _make_onset_configs(
-                os.path.join(tmp, "models"),
-                run_kwargs={"callback_root_dir": os.path.join(tmp, "callbacks")},
+                pathlib.Path(tmp) / "models",
+                run_kwargs={"callback_root_dir": pathlib.Path(tmp) / "callbacks"},
             )
             stub_model = mock.Mock()
             stub_model.name = "dense_model"
@@ -501,9 +499,9 @@ class TrainersTest(unittest.TestCase):
             )
             expected_name = "stepcovnet_ONSET-my_onset_model"
             self.assertEqual(model.name, expected_name)
-            saved_path = os.path.join(model_output_dir, expected_name + ".keras")
+            saved_path = pathlib.Path(model_output_dir) / (expected_name + ".keras")
             self.assertTrue(
-                os.path.isfile(saved_path),
+                saved_path.is_file(),
                 f"Expected saved model at {saved_path}",
             )
 
@@ -524,9 +522,9 @@ class TrainersTest(unittest.TestCase):
                 model.name.startswith("stepcovnet_ONSET-"),
                 f"Expected model.name to start with 'stepcovnet_ONSET-', got {model.name!r}",
             )
-            saved_path = os.path.join(model_output_dir, model.name + ".keras")
+            saved_path = pathlib.Path(model_output_dir) / (model.name + ".keras")
             self.assertTrue(
-                os.path.isfile(saved_path),
+                saved_path.is_file(),
                 f"Expected saved model at {saved_path}",
             )
 
@@ -540,9 +538,9 @@ class TrainersTest(unittest.TestCase):
             model, _ = trainers.run_arrow_train_from_config(exp)
             expected_name = "stepcovnet_ARROW-my_arrow_model"
             self.assertEqual(model.name, expected_name)
-            saved_path = os.path.join(model_output_dir, expected_name + ".keras")
+            saved_path = pathlib.Path(model_output_dir) / (expected_name + ".keras")
             self.assertTrue(
-                os.path.isfile(saved_path),
+                saved_path.is_file(),
                 f"Expected saved model at {saved_path}",
             )
 
@@ -560,9 +558,9 @@ class TrainersTest(unittest.TestCase):
                 model.name.startswith("stepcovnet_ARROW-"),
                 f"Expected model.name to start with 'stepcovnet_ARROW-', got {model.name!r}",
             )
-            saved_path = os.path.join(model_output_dir, model.name + ".keras")
+            saved_path = pathlib.Path(model_output_dir) / (model.name + ".keras")
             self.assertTrue(
-                os.path.isfile(saved_path),
+                saved_path.is_file(),
                 f"Expected saved model at {saved_path}",
             )
 
@@ -695,7 +693,7 @@ class TrainersTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "config.json")
+            config_path = pathlib.Path(temp_dir) / "config.json"
             experiment_config.to_json(config_path)
 
             # Load it back
@@ -717,8 +715,8 @@ class TrainersTest(unittest.TestCase):
     def test_run_train_from_config_saves_config(self):
         """Test that config is saved when callback_root_dir is set."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
+            callback_root_dir = pathlib.Path(temp_dir) / "callbacks"
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             dataset_config = config.OnsetDatasetConfig(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -738,14 +736,17 @@ class TrainersTest(unittest.TestCase):
             # Check that config file was created
             log_dirs = [
                 d
-                for d in os.listdir(os.path.join(callback_root_dir, "logs"))
-                if os.path.isdir(os.path.join(callback_root_dir, "logs", d))
+                for d in (pathlib.Path(callback_root_dir) / "logs").iterdir()
+                if d.is_dir()
             ]
             self.assertGreater(len(log_dirs), 0)
-            config_path = os.path.join(
-                callback_root_dir, "logs", log_dirs[0], "config.json"
+            config_path = (
+                pathlib.Path(callback_root_dir)
+                / "logs"
+                / log_dirs[0].name
+                / "config.json"
             )
-            self.assertTrue(os.path.exists(config_path))
+            self.assertTrue(config_path.exists())
 
             # Verify config can be loaded
             loaded_config = config.OnsetExperimentConfig.from_json(config_path)
@@ -755,7 +756,7 @@ class TrainersTest(unittest.TestCase):
     def test_run_train_from_config_no_callbacks(self):
         """Test that training works without callback_root_dir."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             dataset_config = config.OnsetDatasetConfig(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -777,7 +778,7 @@ class TrainersTest(unittest.TestCase):
     def test_run_train_with_gaussian_targets(self):
         """Test training with Gaussian targets."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             dataset_config = config.OnsetDatasetConfig(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -800,7 +801,7 @@ class TrainersTest(unittest.TestCase):
     def test_run_train_with_augmentations(self):
         """Test training with temporal and spectrogram augmentations."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             dataset_config = config.OnsetDatasetConfig(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -823,7 +824,7 @@ class TrainersTest(unittest.TestCase):
     def test_run_train_with_seed(self):
         """Test that seed is set when provided in config."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             dataset_config = config.OnsetDatasetConfig(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -845,7 +846,7 @@ class TrainersTest(unittest.TestCase):
     def test_run_arrow_train_with_take_count_minus_one(self):
         """Test arrow training with take_count=-1 (entire dataset)."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             exp = config.ArrowExperimentConfig(
                 dataset=config.ArrowDatasetConfig(
                     data_dir=TEST_DATA_DIR,
@@ -866,8 +867,8 @@ class TrainersTest(unittest.TestCase):
     def test_run_arrow_train_saves_config(self):
         """Test that arrow config is saved when callback_root_dir is set."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
+            callback_root_dir = pathlib.Path(temp_dir) / "callbacks"
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             exp = config.ArrowExperimentConfig(
                 dataset=config.ArrowDatasetConfig(
                     data_dir=TEST_DATA_DIR,
@@ -889,14 +890,17 @@ class TrainersTest(unittest.TestCase):
             # Check that config file was created
             log_dirs = [
                 d
-                for d in os.listdir(os.path.join(callback_root_dir, "logs"))
-                if os.path.isdir(os.path.join(callback_root_dir, "logs", d))
+                for d in (pathlib.Path(callback_root_dir) / "logs").iterdir()
+                if d.is_dir()
             ]
             self.assertGreater(len(log_dirs), 0)
-            config_path = os.path.join(
-                callback_root_dir, "logs", log_dirs[0], "config.json"
+            config_path = (
+                pathlib.Path(callback_root_dir)
+                / "logs"
+                / log_dirs[0].name
+                / "config.json"
             )
-            self.assertTrue(os.path.exists(config_path))
+            self.assertTrue(config_path.exists())
 
             # Verify config can be loaded (nested model config)
             loaded_config = config.ArrowExperimentConfig.from_json(config_path)
@@ -906,8 +910,8 @@ class TrainersTest(unittest.TestCase):
     def test_backward_compatibility_run_train(self):
         """Test that old run_train API still works (backward compatibility)."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
+            callback_root_dir = pathlib.Path(temp_dir) / "callbacks"
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             # Use old API with kwargs
             model, history = trainers.run_train(
                 data_dir=TEST_DATA_DIR,
@@ -929,8 +933,8 @@ class TrainersTest(unittest.TestCase):
     def test_backward_compatibility_run_arrow_train(self):
         """Test that run_arrow_train with model_params dict (nested format) still works."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            callback_root_dir = os.path.join(temp_dir, "callbacks")
-            model_output_dir = os.path.join(temp_dir, "models")
+            callback_root_dir = pathlib.Path(temp_dir) / "callbacks"
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             model, history = trainers.run_arrow_train(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -950,7 +954,7 @@ class TrainersTest(unittest.TestCase):
     def test_run_train_without_model_params_uses_defaults(self):
         """run_train works without model_params (uses default OnsetModelConfig)."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             model, history = trainers.run_train(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -969,7 +973,7 @@ class TrainersTest(unittest.TestCase):
     def test_run_arrow_train_without_model_params_uses_defaults(self):
         """run_arrow_train works without model_params (uses default ArrowModelConfig)."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            model_output_dir = os.path.join(temp_dir, "models")
+            model_output_dir = pathlib.Path(temp_dir) / "models"
             model, history = trainers.run_arrow_train(
                 data_dir=TEST_DATA_DIR,
                 val_data_dir=TEST_DATA_DIR,
@@ -1430,7 +1434,9 @@ class ExperimentNameHelperTests(unittest.TestCase):
             )
             trainers.run_arrow_train_from_config(exp)
             keras_files = [
-                f for f in os.listdir(model_output_dir) if f.endswith(".keras")
+                f
+                for f in [p.name for p in pathlib.Path(model_output_dir).iterdir()]
+                if f.endswith(".keras")
             ]
             self.assertGreater(
                 len(keras_files), 0, "Expected at least one .keras file in output dir"
@@ -1464,7 +1470,9 @@ class ExperimentNameHelperTests(unittest.TestCase):
             )
             trainers.run_arrow_train_from_config(exp)
             keras_files = [
-                f for f in os.listdir(model_output_dir) if f.endswith(".keras")
+                f
+                for f in [p.name for p in pathlib.Path(model_output_dir).iterdir()]
+                if f.endswith(".keras")
             ]
             self.assertGreater(
                 len(keras_files), 0, "Expected at least one .keras file in output dir"
@@ -1493,7 +1501,9 @@ class ExperimentNameHelperTests(unittest.TestCase):
             )
             trainers.run_arrow_train_from_config(exp)
             keras_files = [
-                f for f in os.listdir(model_output_dir) if f.endswith(".keras")
+                f
+                for f in [p.name for p in pathlib.Path(model_output_dir).iterdir()]
+                if f.endswith(".keras")
             ]
             self.assertGreater(
                 len(keras_files), 0, "Expected at least one .keras file in output dir"
@@ -1527,7 +1537,9 @@ class ExperimentNameHelperTests(unittest.TestCase):
             )
             trainers.run_arrow_train_from_config(exp)
             keras_files = [
-                f for f in os.listdir(model_output_dir) if f.endswith(".keras")
+                f
+                for f in [p.name for p in pathlib.Path(model_output_dir).iterdir()]
+                if f.endswith(".keras")
             ]
             self.assertGreater(
                 len(keras_files), 0, "Expected at least one .keras file in output dir"
@@ -1665,7 +1677,7 @@ class ArrowLossTests(unittest.TestCase):
         run_config = config.ArrowRunConfig(
             epoch=1,
             take_count=1,
-            model_output_dir=os.path.join(tempfile.gettempdir(), "arrow_aux_test"),
+            model_output_dir=pathlib.Path(tempfile.gettempdir()) / "arrow_aux_test",
             aux_interval_weight=0.3,
         )
         use_aux_interval = run_config.aux_interval_weight > 0

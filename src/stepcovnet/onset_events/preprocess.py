@@ -5,8 +5,7 @@ import numpy as np
 from stepcovnet import config as project_config
 from stepcovnet import constants
 from stepcovnet import datasets as dense_datasets
-from stepcovnet.onset_events import audio
-from stepcovnet.onset_events import frontend
+from stepcovnet.onset_events import audio, frontend
 
 FRONTEND_CONV1D = "conv1d"
 FRONTEND_MEL = "mel"
@@ -125,10 +124,7 @@ def load_preprocessed_encoder_input(
             data_root,
         )
 
-    if active_frames > 0:
-        features = features[:active_frames]
-    else:
-        features = features[:0]
+    features = features[:active_frames] if active_frames > 0 else features[:0]
 
     encoder_input = _pad_feature_frames(features, max_frames)
     return encoder_input, audio_length, duration

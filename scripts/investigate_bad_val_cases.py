@@ -2,20 +2,14 @@
 
 import argparse
 import json
-import os
 import pathlib
 
 import librosa
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import config
-from stepcovnet import datasets
-from stepcovnet import dense_overfit_eval
-from stepcovnet import pairing
-from stepcovnet import ssl_features
-from stepcovnet.onset_events import charts
-from stepcovnet.onset_events import metrics
+from stepcovnet import config, datasets, dense_overfit_eval, pairing, ssl_features
+from stepcovnet.onset_events import charts, metrics
 
 WORST_SONGS = (
     "1_2_fanclub",
@@ -196,7 +190,9 @@ def _feature_profile(
         experiment.dataset.mert_features_dir,
         val_dir,
     )
-    n_mert_raw = int(np.load(mert_path).shape[0]) if os.path.isfile(mert_path) else -1
+    n_mert_raw = (
+        int(np.load(mert_path).shape[0]) if pathlib.Path(mert_path).is_file() else -1
+    )
     gt_mask = _gt_frame_mask(times, pred_probs.size, datasets.HOP_COEFF)
     pred_times, _ = dense_overfit_eval.peak_times_and_confidence(
         pred_probs,
@@ -283,9 +279,11 @@ def main() -> int:
     args = parser.parse_args()
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
-    model_dir = experiment.run.model_output_dir
-    keras_files = [name for name in os.listdir(model_dir) if name.endswith(".keras")]
-    model_path = os.path.join(model_dir, keras_files[0])
+    model_dir = pathlib.Path(experiment.run.model_output_dir)
+    keras_files = [
+        path.name for path in model_dir.iterdir() if path.name.endswith(".keras")
+    ]
+    model_path = str(model_dir / keras_files[0])
     model = tf.keras.models.load_model(model_path, compile=False)
 
     val_pairs = _pair_map(experiment.dataset.val_data_dir)
@@ -333,8 +331,9 @@ def main() -> int:
         "feature_profiles": profiles,
         "group_compare": group_compare,
     }
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as out_file:
+    output_file = pathlib.Path(args.output)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("w", encoding="utf-8") as out_file:
         json.dump(report, out_file, indent=2)
     print(f"wrote {args.output}")
     print("\n=== threshold sweep best F1 (worst) ===")

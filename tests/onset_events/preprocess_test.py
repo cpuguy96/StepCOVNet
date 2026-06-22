@@ -1,4 +1,4 @@
-import os
+import pathlib
 import tempfile
 import unittest
 from unittest import mock
@@ -6,10 +6,8 @@ from unittest import mock
 import numpy as np
 import scipy.io.wavfile
 
-from stepcovnet import constants
-from stepcovnet.onset_events import frontend
-from stepcovnet.onset_events import preprocess
-from stepcovnet import datasets
+from stepcovnet import constants, datasets
+from stepcovnet.onset_events import frontend, preprocess
 
 
 def _write_wav(path: str, samples: np.ndarray, sample_rate: int) -> None:
@@ -31,7 +29,7 @@ class PreprocessTest(unittest.TestCase):
 
     def test_load_conv1d_returns_padded_waveform(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            audio_path = os.path.join(tmpdir, "clip.wav")
+            audio_path = pathlib.Path(tmpdir) / "clip.wav"
             sr = constants.TARGET_SR
             samples = np.zeros(int(0.2 * sr), dtype=np.float32)
             _write_wav(audio_path, samples, sr)
@@ -51,7 +49,7 @@ class PreprocessTest(unittest.TestCase):
 
     def test_load_mel_returns_padded_features(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            audio_path = os.path.join(tmpdir, "clip.wav")
+            audio_path = pathlib.Path(tmpdir) / "clip.wav"
             sr = constants.TARGET_SR
             samples = np.zeros(int(0.2 * sr), dtype=np.float32)
             _write_wav(audio_path, samples, sr)

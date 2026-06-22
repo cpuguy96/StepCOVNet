@@ -1,5 +1,5 @@
 import io
-import os
+import pathlib
 import sys
 import tempfile
 import unittest
@@ -9,7 +9,9 @@ import numpy as np
 
 from stepcovnet import constants, ssl_features, wsl_gpu
 
-_SCRIPT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts"))
+_SCRIPT_DIR = str(
+    pathlib.Path(pathlib.Path(__file__).resolve()).resolve().parent.parent / "scripts"
+)
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
@@ -19,14 +21,14 @@ import extract_mert_features  # noqa: E402
 class ExtractMertFeaturesScriptTest(unittest.TestCase):
     def test_main_extracts_pairs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "data")
-            out_dir = os.path.join(tmpdir, "mert")
-            os.makedirs(data_dir)
-            audio_path = os.path.join(data_dir, "song.mp3")
-            chart_path = os.path.join(data_dir, "song.txt")
-            with open(audio_path, "wb") as audio_file:
+            data_dir = pathlib.Path(tmpdir) / "data"
+            out_dir = pathlib.Path(tmpdir) / "mert"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
+            audio_path = pathlib.Path(data_dir) / "song.mp3"
+            chart_path = pathlib.Path(data_dir) / "song.txt"
+            with pathlib.Path(audio_path).open("wb") as audio_file:
                 audio_file.write(b"audio")
-            with open(chart_path, "w") as chart_file:
+            with pathlib.Path(chart_path).open("w") as chart_file:
                 chart_file.write("TITLE test\nBPM 120\nNOTES\n")
 
             argv = [
@@ -44,7 +46,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(
                     ssl_features,
                     "extract_and_save_mert_features",
-                    return_value=os.path.join(out_dir, "song.mert.npy"),
+                    return_value=pathlib.Path(out_dir) / "song.mert.npy",
                     autospec=True,
                 ) as mock_extract,
             ):
@@ -57,7 +59,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             argv = [
                 f"--data_dir={tmpdir}",
-                f"--output_dir={os.path.join(tmpdir, 'out')}",
+                f"--output_dir={pathlib.Path(tmpdir) / 'out'}",
             ]
             with (
                 mock.patch.object(
@@ -67,27 +69,27 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                     autospec=True,
                 ),
                 mock.patch.object(sys, "argv", argv),
+                self.assertRaises(SystemExit),
             ):
-                with self.assertRaises(SystemExit):
-                    extract_mert_features.main(argv)
+                extract_mert_features.main(argv)
 
     def test_main_skip_existing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = os.path.join(tmpdir, "data")
-            out_dir = os.path.join(tmpdir, "mert")
-            os.makedirs(data_dir)
-            audio_path = os.path.join(data_dir, "song.mp3")
-            chart_path = os.path.join(data_dir, "song.txt")
-            with open(audio_path, "wb") as audio_file:
+            data_dir = pathlib.Path(tmpdir) / "data"
+            out_dir = pathlib.Path(tmpdir) / "mert"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
+            audio_path = pathlib.Path(data_dir) / "song.mp3"
+            chart_path = pathlib.Path(data_dir) / "song.txt"
+            with pathlib.Path(audio_path).open("wb") as audio_file:
                 audio_file.write(b"audio")
-            with open(chart_path, "w") as chart_file:
+            with pathlib.Path(chart_path).open("w") as chart_file:
                 chart_file.write("TITLE test\nBPM 120\nNOTES\n")
             existing = ssl_features.mert_npy_path(
                 audio_path,
                 out_dir,
                 data_dir,
             )
-            os.makedirs(os.path.dirname(existing), exist_ok=True)
+            pathlib.Path(existing).parent.mkdir(parents=True, exist_ok=True)
             np.save(
                 existing, np.zeros((1, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
             )
@@ -123,13 +125,15 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
             "--output_dir=C:\\out",
             "--device=cuda",
         ]
-        with mock.patch.object(
-            wsl_gpu,
-            "maybe_dispatch_for_mert_extract",
-            side_effect=SystemExit(0),
-        ) as mock_dispatch:
-            with self.assertRaises(SystemExit) as ctx:
-                extract_mert_features.main(argv)
+        with (
+            mock.patch.object(
+                wsl_gpu,
+                "maybe_dispatch_for_mert_extract",
+                side_effect=SystemExit(0),
+            ) as mock_dispatch,
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            extract_mert_features.main(argv)
         self.assertEqual(ctx.exception.code, 0)
         mock_dispatch.assert_called_once()
         dispatch_argv = mock_dispatch.call_args[0][1]

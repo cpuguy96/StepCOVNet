@@ -24,8 +24,8 @@ def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
             if matching_charts:
                 pairs.append(
                     (
-                        os.path.join(root, audio_file),
-                        os.path.join(root, matching_charts[0]),
+                        str(pathlib.Path(root) / audio_file),
+                        str(pathlib.Path(root) / matching_charts[0]),
                     )
                 )
     return pairs

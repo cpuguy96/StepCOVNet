@@ -3,7 +3,6 @@
 import keras
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
 
 from stepcovnet import constants
 
@@ -192,14 +191,14 @@ class OnsetF1Metric(keras.metrics.Metric):
         """
         # Calculate Precision
         precision = self.true_positives / (
-            self.true_positives + self.false_positives + K.epsilon()
+            self.true_positives + self.false_positives + keras.backend.epsilon()
         )
         # Calculate Recall
         recall = self.true_positives / (
-            self.true_positives + self.false_negatives + K.epsilon()
+            self.true_positives + self.false_negatives + keras.backend.epsilon()
         )
         # Calculate F1 Score
-        f1 = 2 * (precision * recall) / (precision + recall + K.epsilon())
+        f1 = 2 * (precision * recall) / (precision + recall + keras.backend.epsilon())
         return f1
 
     def reset_state(self):

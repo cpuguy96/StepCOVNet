@@ -1,5 +1,5 @@
 import io
-import os
+import pathlib
 import subprocess
 import sys
 import tempfile
@@ -9,15 +9,14 @@ from unittest import mock
 import pytest
 
 # Allow importing the script module (scripts/build_generate_ui_binary.py)
-_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
-_SCRIPT_DIR = os.path.abspath(_SCRIPT_DIR)
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
+_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
-_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
-_SPEC_PATH = os.path.join(_SCRIPT_DIR, "generate_ui.spec")
-_ENTRY_SCRIPT_PATH = os.path.join(_SCRIPT_DIR, "generate_ui.py")
-_BUILD_HELPER_PATH = os.path.join(_SCRIPT_DIR, "build_generate_ui_binary.py")
+_PROJECT_ROOT = _SCRIPT_DIR.parent
+_SPEC_PATH = _SCRIPT_DIR / "generate_ui.spec"
+_ENTRY_SCRIPT_PATH = _SCRIPT_DIR / "generate_ui.py"
+_BUILD_HELPER_PATH = _SCRIPT_DIR / "build_generate_ui_binary.py"
 _EXE_NAME = "generate_ui.exe" if sys.platform == "win32" else "generate_ui"
 
 import build_generate_ui_binary  # noqa: E402
@@ -28,24 +27,24 @@ class BuildArtifactsExistTest(unittest.TestCase):
 
     def test_spec_file_exists(self):
         self.assertTrue(
-            os.path.isfile(_SPEC_PATH),
+            _SPEC_PATH.is_file(),
             f"Spec file should exist at scripts/generate_ui.spec: {_SPEC_PATH}",
         )
 
     def test_entry_script_exists(self):
         self.assertTrue(
-            os.path.isfile(_ENTRY_SCRIPT_PATH),
+            _ENTRY_SCRIPT_PATH.is_file(),
             f"Entry script should exist at scripts/generate_ui.py: {_ENTRY_SCRIPT_PATH}",
         )
 
     def test_build_helper_script_exists(self):
         self.assertTrue(
-            os.path.isfile(_BUILD_HELPER_PATH),
+            _BUILD_HELPER_PATH.is_file(),
             f"Build helper should exist at scripts/build_generate_ui_binary.py: {_BUILD_HELPER_PATH}",
         )
 
     def test_spec_refers_to_entry_script(self):
-        with open(_SPEC_PATH, encoding="utf-8") as f:
+        with _SPEC_PATH.open(encoding="utf-8") as f:
             content = f.read()
         self.assertIn(
             "generate_ui.py", content, "Spec should reference the entry script"
@@ -57,67 +56,53 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
 
     def test_main_exits_1_when_spec_file_missing(self):
         """When the spec file does not exist, main() exits with 1 and prints to stderr."""
-        with mock.patch.object(
-            build_generate_ui_binary.os.path,
-            "isfile",
-            return_value=False,
-            autospec=True,
-        ) as isfile_mock:
-            stderr = io.StringIO()
-            with mock.patch.object(sys, "stderr", stderr):
-                with self.assertRaises(SystemExit) as cm:
-                    build_generate_ui_binary.main()
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(pathlib.Path, "is_file", return_value=False),
+            mock.patch.object(sys, "stderr", stderr),
+            self.assertRaises(SystemExit) as cm,
+        ):
+            build_generate_ui_binary.main()
         self.assertEqual(cm.exception.code, 1)
         self.assertIn("Spec file not found", stderr.getvalue())
         self.assertIn("generate_ui.spec", stderr.getvalue())
-        isfile_mock.assert_called_once()
 
     def test_main_propagates_subprocess_return_code(self):
         """main() exits with the same return code as the PyInstaller subprocess."""
         with (
-            mock.patch.object(
-                build_generate_ui_binary.os.path,
-                "isfile",
-                return_value=True,
-                autospec=True,
-            ),
+            mock.patch.object(pathlib.Path, "is_file", return_value=True),
             mock.patch.object(build_generate_ui_binary.os, "chdir", autospec=True),
-        ):
-            with mock.patch.object(
+            mock.patch.object(
                 build_generate_ui_binary.subprocess,
                 "run",
                 return_value=mock.MagicMock(returncode=3),
                 autospec=True,
-            ) as run_mock:
-                with self.assertRaises(SystemExit) as cm:
-                    build_generate_ui_binary.main()
+            ) as run_mock,
+            self.assertRaises(SystemExit) as cm,
+        ):
+            build_generate_ui_binary.main()
         self.assertEqual(cm.exception.code, 3)
         run_mock.assert_called_once()
         call_args = run_mock.call_args[0][0]
         self.assertEqual(call_args[0], sys.executable)
         self.assertEqual(call_args[1], "-m")
         self.assertEqual(call_args[2], "PyInstaller")
-        self.assertTrue(call_args[3].endswith("generate_ui.spec"))
+        self.assertTrue(str(call_args[3]).endswith("generate_ui.spec"))
 
     def test_main_exits_0_on_success(self):
         """When PyInstaller succeeds, main() exits with 0."""
         with (
-            mock.patch.object(
-                build_generate_ui_binary.os.path,
-                "isfile",
-                return_value=True,
-                autospec=True,
-            ),
+            mock.patch.object(pathlib.Path, "is_file", return_value=True),
             mock.patch.object(build_generate_ui_binary.os, "chdir", autospec=True),
-        ):
-            with mock.patch.object(
+            mock.patch.object(
                 build_generate_ui_binary.subprocess,
                 "run",
                 return_value=mock.MagicMock(returncode=0),
                 autospec=True,
-            ) as run_mock:
-                with self.assertRaises(SystemExit) as cm:
-                    build_generate_ui_binary.main()
+            ) as run_mock,
+            self.assertRaises(SystemExit) as cm,
+        ):
+            build_generate_ui_binary.main()
         self.assertEqual(cm.exception.code, 0)
         run_mock.assert_called_once()
         kwargs = run_mock.call_args[1]
@@ -138,8 +123,8 @@ class BuildInstructionsRunTest(unittest.TestCase):
             )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            distpath = os.path.join(tmpdir, "dist")
-            workpath = os.path.join(tmpdir, "build")
+            distpath = pathlib.Path(tmpdir) / "dist"
+            workpath = pathlib.Path(tmpdir) / "build"
             result = subprocess.run(
                 [
                     sys.executable,
@@ -161,8 +146,8 @@ class BuildInstructionsRunTest(unittest.TestCase):
                 0,
                 f"Build should exit 0. stderr: {result.stderr!r} stdout: {result.stdout!r}",
             )
-            exe_path = os.path.join(distpath, _EXE_NAME)
+            exe_path = pathlib.Path(distpath) / _EXE_NAME
             self.assertTrue(
-                os.path.isfile(exe_path),
+                exe_path.is_file(),
                 f"Executable should exist at {exe_path} after build",
             )

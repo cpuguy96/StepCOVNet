@@ -1,5 +1,5 @@
 import argparse
-import os
+import pathlib
 import sys
 import tempfile
 import unittest
@@ -8,14 +8,12 @@ from unittest import mock
 import keras
 import tensorflow as tf
 
-from stepcovnet import config, models
-from stepcovnet import trainers
+from stepcovnet import config, models, trainers
 
 # Allow importing the script module (defer import so parse_args can be patched)
-_SCRIPT_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
-_SCRIPT_DIR = os.path.abspath(_SCRIPT_DIR)
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
+_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 
 def _make_args(config, set_overrides=None):
@@ -30,7 +28,7 @@ def _minimal_config_path(
     data_dir = data_dir or tmpdir
     val_data_dir = val_data_dir or tmpdir
     model_output_dir = model_output_dir or tmpdir
-    path = os.path.join(tmpdir, "arrow.json")
+    path = pathlib.Path(tmpdir) / "arrow.json"
     cfg = config.ArrowExperimentConfig(
         dataset=config.ArrowDatasetConfig(
             data_dir=data_dir,
@@ -392,11 +390,11 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
     def test_config_file_with_model_type_override(self):
         """Config has transformer; --set model.model_type=mlp and model.mlp.dropout_rate=0.2 override."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = os.path.join(tmpdir, "arrow.json")
+            config_path = pathlib.Path(tmpdir) / "arrow.json"
             experiment = config.ArrowExperimentConfig(
                 dataset=config.ArrowDatasetConfig(
-                    data_dir=os.path.join(tmpdir, "train"),
-                    val_data_dir=os.path.join(tmpdir, "val"),
+                    data_dir=pathlib.Path(tmpdir) / "train",
+                    val_data_dir=pathlib.Path(tmpdir) / "val",
                     snippet_half_frames=0,
                 ),
                 model=config.ArrowModelConfig.from_dict(
@@ -405,7 +403,7 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
                 run=config.ArrowRunConfig(
                     epoch=5,
                     take_count=1,
-                    model_output_dir=os.path.join(tmpdir, "out"),
+                    model_output_dir=pathlib.Path(tmpdir) / "out",
                 ),
             )
             experiment.to_json(config_path)
@@ -574,7 +572,7 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
     def test_config_file_with_snippet_half_frames_override(self):
         """With --config, --set dataset.snippet_half_frames updates dataset config."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            json_path = os.path.join(tmpdir, "c.json")
+            json_path = pathlib.Path(tmpdir) / "c.json"
             cfg = config.ArrowExperimentConfig(
                 dataset=config.ArrowDatasetConfig(
                     data_dir=tmpdir, val_data_dir=tmpdir, snippet_half_frames=0
@@ -594,7 +592,7 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
     def test_run_config_cli_overrides(self):
         """--set run.* applies epoch, take_count, val_take_count, paths, aux weights, lr."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            out_dir = os.path.join(tmpdir, "out")
+            out_dir = pathlib.Path(tmpdir) / "out"
             path = _minimal_config_path(tmpdir, model_output_dir=out_dir)
             args = _make_args(
                 path,
@@ -602,8 +600,8 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
                     "run.epoch=3",
                     "run.take_count=2",
                     "run.val_take_count=1",
-                    "run.model_output_dir=" + out_dir,
-                    "run.callback_root_dir=" + os.path.join(tmpdir, "callbacks"),
+                    "run.model_output_dir=" + str(out_dir),
+                    "run.callback_root_dir=" + str(pathlib.Path(tmpdir) / "callbacks"),
                     "run.model_name=my_model",
                     "run.chart_validity_aux_weight=0.4",
                     "run.diversity_aux_weight=0.2",
@@ -618,9 +616,9 @@ class TrainArrowConfigFileAndOverridesTest(unittest.TestCase):
         self.assertEqual(run_config.epoch, 3)
         self.assertEqual(run_config.take_count, 2)
         self.assertEqual(run_config.val_take_count, 1)
-        self.assertEqual(run_config.model_output_dir, out_dir)
+        self.assertEqual(run_config.model_output_dir, str(out_dir))
         self.assertEqual(
-            run_config.callback_root_dir, os.path.join(tmpdir, "callbacks")
+            run_config.callback_root_dir, str(pathlib.Path(tmpdir) / "callbacks")
         )
         self.assertEqual(run_config.model_name, "my_model")
         self.assertEqual(run_config.chart_validity_aux_weight, 0.4)
@@ -651,7 +649,7 @@ class TrainArrowValidationTest(unittest.TestCase):
     def test_main_errors_when_config_has_empty_model_output_dir_and_no_override(self):
         """Config with run.model_output_dir empty and no --set override triggers PARSER.error."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            json_path = os.path.join(tmpdir, "c.json")
+            json_path = pathlib.Path(tmpdir) / "c.json"
             cfg = config.ArrowExperimentConfig(
                 dataset=config.ArrowDatasetConfig(
                     data_dir=tmpdir, val_data_dir=tmpdir, snippet_half_frames=0
@@ -676,7 +674,7 @@ class TrainArrowValidationTest(unittest.TestCase):
     def test_main_errors_when_config_has_empty_data_dir_and_no_override(self):
         """Config with dataset.data_dir empty and no --set override triggers PARSER.error."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            json_path = os.path.join(tmpdir, "c.json")
+            json_path = pathlib.Path(tmpdir) / "c.json"
             cfg = config.ArrowExperimentConfig(
                 dataset=config.ArrowDatasetConfig(
                     data_dir="", val_data_dir=tmpdir, snippet_half_frames=0

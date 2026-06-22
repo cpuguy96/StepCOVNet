@@ -121,11 +121,11 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
     def test_provided_path_exists_returns_it(self):
         """When provided_path exists, returns that path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "onset.keras")
-            with open(path, "w") as f:
+            path = pathlib.Path(tmpdir) / "onset.keras"
+            with pathlib.Path(path).open("w") as f:
                 f.write("")
             result = pretrained.resolve_onset_model_path(path)
-            self.assertEqual(result, os.path.abspath(path))
+            self.assertEqual(result, str(pathlib.Path(path).resolve()))
 
     def test_provided_path_missing_raises_filenotfounderror(self):
         """When provided_path is set but file does not exist, raises FileNotFoundError."""
@@ -136,8 +136,8 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
     def test_none_and_file_in_default_dir_returns_cached_path(self):
         """When provided_path is None and file exists in default dir, returns that path (no download)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cached = os.path.join(tmpdir, pretrained._ONSET_FILENAME)
-            with open(cached, "w") as f:
+            cached = pathlib.Path(tmpdir) / pretrained._ONSET_FILENAME
+            with cached.open("w") as f:
                 f.write("")
             with mock.patch.object(
                 pretrained,
@@ -146,22 +146,22 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
                 autospec=True,
             ):
                 result = pretrained.resolve_onset_model_path(None)
-        self.assertEqual(result, cached)
+        self.assertEqual(result, str(cached))
 
     def test_none_and_empty_drive_id_raises_valueerror(self):
         """When provided_path is None and DEFAULT_ONSET_DRIVE_ID is empty, raises ValueError."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with (
-                mock.patch.object(
-                    pretrained,
-                    "get_default_models_dir",
-                    return_value=pathlib.Path(tmpdir),
-                    autospec=True,
-                ),
-                mock.patch.object(pretrained, "DEFAULT_ONSET_DRIVE_ID", ""),
-            ):
-                with self.assertRaises(ValueError) as ctx:
-                    pretrained.resolve_onset_model_path(None)
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                pretrained,
+                "get_default_models_dir",
+                return_value=pathlib.Path(tmpdir),
+                autospec=True,
+            ),
+            mock.patch.object(pretrained, "DEFAULT_ONSET_DRIVE_ID", ""),
+            self.assertRaises(ValueError) as ctx,
+        ):
+            pretrained.resolve_onset_model_path(None)
         self.assertIn("DEFAULT_ONSET_DRIVE_ID", str(ctx.exception))
         self.assertIn("--onset_model_path", str(ctx.exception))
 
@@ -184,7 +184,7 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
                     pretrained.gdown, "download", autospec=True
                 ) as mock_download,
             ):
-                out_path = os.path.join(tmpdir, pretrained._ONSET_FILENAME)
+                out_path = pathlib.Path(tmpdir) / pretrained._ONSET_FILENAME
 
                 def create_zip_with_keras(url, output, **kwargs):
                     with zipfile.ZipFile(output, "w") as zf:
@@ -192,8 +192,8 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
 
                 mock_download.side_effect = create_zip_with_keras
                 result = pretrained.resolve_onset_model_path(None)
-            self.assertEqual(result, out_path)
-            self.assertTrue(os.path.isfile(out_path))
+            self.assertEqual(result, str(out_path))
+            self.assertTrue(pathlib.Path(out_path).is_file())
             mock_download.assert_called_once()
             call_args = mock_download.call_args[0]
             self.assertIn("test_drive_id_123", call_args[0])
@@ -202,8 +202,8 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
     def test_empty_string_treated_as_none(self):
         """Empty or whitespace provided_path is treated as None (use default/cache/download)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cached = os.path.join(tmpdir, pretrained._ONSET_FILENAME)
-            with open(cached, "w") as f:
+            cached = pathlib.Path(tmpdir) / pretrained._ONSET_FILENAME
+            with cached.open("w") as f:
                 f.write("")
             with mock.patch.object(
                 pretrained,
@@ -213,29 +213,29 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
             ):
                 for empty in ("", "  ", "\t"):
                     result = pretrained.resolve_onset_model_path(empty)
-                    self.assertEqual(result, cached)
+                    self.assertEqual(result, str(cached))
 
     def test_download_fails_to_create_zip_raises_runtimeerror(self):
         """When Drive ID is set but gdown does not create the zip, raises RuntimeError."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with (
-                mock.patch.object(
-                    pretrained,
-                    "get_default_models_dir",
-                    return_value=pathlib.Path(tmpdir),
-                    autospec=True,
-                ),
-                mock.patch.object(pretrained, "DEFAULT_ONSET_DRIVE_ID", "id123"),
-                mock.patch.object(
-                    pretrained.gdown, "download", autospec=True
-                ),  # no side_effect
-            ):
-                with self.assertRaises(RuntimeError) as ctx:
-                    pretrained.resolve_onset_model_path(None)
-                self.assertIn(
-                    "Download from Drive did not produce file",
-                    str(ctx.exception),
-                )
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                pretrained,
+                "get_default_models_dir",
+                return_value=pathlib.Path(tmpdir),
+                autospec=True,
+            ),
+            mock.patch.object(pretrained, "DEFAULT_ONSET_DRIVE_ID", "id123"),
+            mock.patch.object(
+                pretrained.gdown, "download", autospec=True
+            ),  # no side_effect
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                pretrained.resolve_onset_model_path(None)
+            self.assertIn(
+                "Download from Drive did not produce file",
+                str(ctx.exception),
+            )
 
 
 class ResolveArrowModelPathTest(unittest.TestCase):
@@ -244,11 +244,11 @@ class ResolveArrowModelPathTest(unittest.TestCase):
     def test_provided_path_exists_returns_it(self):
         """When provided_path exists, returns that path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "arrow.keras")
-            with open(path, "w") as f:
+            path = pathlib.Path(tmpdir) / "arrow.keras"
+            with pathlib.Path(path).open("w") as f:
                 f.write("")
             result = pretrained.resolve_arrow_model_path(path)
-            self.assertEqual(result, os.path.abspath(path))
+            self.assertEqual(result, str(pathlib.Path(path).resolve()))
 
     def test_provided_path_missing_raises_filenotfounderror(self):
         """When provided_path is set but file does not exist, raises FileNotFoundError."""
@@ -259,8 +259,8 @@ class ResolveArrowModelPathTest(unittest.TestCase):
     def test_none_and_file_in_default_dir_returns_cached_path(self):
         """When provided_path is None and file exists in default dir, returns that path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            cached = os.path.join(tmpdir, pretrained._ARROW_FILENAME)
-            with open(cached, "w") as f:
+            cached = pathlib.Path(tmpdir) / pretrained._ARROW_FILENAME
+            with cached.open("w") as f:
                 f.write("")
             with mock.patch.object(
                 pretrained,
@@ -269,22 +269,22 @@ class ResolveArrowModelPathTest(unittest.TestCase):
                 autospec=True,
             ):
                 result = pretrained.resolve_arrow_model_path(None)
-        self.assertEqual(result, cached)
+        self.assertEqual(result, str(cached))
 
     def test_none_and_empty_drive_id_raises_valueerror(self):
         """When provided_path is None and DEFAULT_ARROW_DRIVE_ID is empty, raises ValueError."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with (
-                mock.patch.object(
-                    pretrained,
-                    "get_default_models_dir",
-                    return_value=pathlib.Path(tmpdir),
-                    autospec=True,
-                ),
-                mock.patch.object(pretrained, "DEFAULT_ARROW_DRIVE_ID", ""),
-            ):
-                with self.assertRaises(ValueError) as ctx:
-                    pretrained.resolve_arrow_model_path(None)
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                pretrained,
+                "get_default_models_dir",
+                return_value=pathlib.Path(tmpdir),
+                autospec=True,
+            ),
+            mock.patch.object(pretrained, "DEFAULT_ARROW_DRIVE_ID", ""),
+            self.assertRaises(ValueError) as ctx,
+        ):
+            pretrained.resolve_arrow_model_path(None)
         self.assertIn("DEFAULT_ARROW_DRIVE_ID", str(ctx.exception))
         self.assertIn("--arrow_model_path", str(ctx.exception))
 
@@ -303,7 +303,7 @@ class ResolveArrowModelPathTest(unittest.TestCase):
                     pretrained.gdown, "download", autospec=True
                 ) as mock_download,
             ):
-                out_path = os.path.join(tmpdir, pretrained._ARROW_FILENAME)
+                out_path = pathlib.Path(tmpdir) / pretrained._ARROW_FILENAME
 
                 def create_zip_with_keras(url, output, **kwargs):
                     with zipfile.ZipFile(output, "w") as zf:
@@ -311,8 +311,8 @@ class ResolveArrowModelPathTest(unittest.TestCase):
 
                 mock_download.side_effect = create_zip_with_keras
                 result = pretrained.resolve_arrow_model_path(None)
-            self.assertEqual(result, out_path)
-            self.assertTrue(os.path.isfile(out_path))
+            self.assertEqual(result, str(out_path))
+            self.assertTrue(pathlib.Path(out_path).is_file())
             mock_download.assert_called_once()
             call_args = mock_download.call_args[0]
             self.assertIn("arrow_id_456", call_args[0])
@@ -320,23 +320,23 @@ class ResolveArrowModelPathTest(unittest.TestCase):
 
     def test_download_fails_to_create_zip_raises_runtimeerror(self):
         """When Drive ID is set but gdown does not create the zip, raises RuntimeError."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with (
-                mock.patch.object(
-                    pretrained,
-                    "get_default_models_dir",
-                    return_value=pathlib.Path(tmpdir),
-                    autospec=True,
-                ),
-                mock.patch.object(pretrained, "DEFAULT_ARROW_DRIVE_ID", "id456"),
-                mock.patch.object(pretrained.gdown, "download", autospec=True),
-            ):
-                with self.assertRaises(RuntimeError) as ctx:
-                    pretrained.resolve_arrow_model_path(None)
-                self.assertIn(
-                    "Download from Drive did not produce file",
-                    str(ctx.exception),
-                )
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            mock.patch.object(
+                pretrained,
+                "get_default_models_dir",
+                return_value=pathlib.Path(tmpdir),
+                autospec=True,
+            ),
+            mock.patch.object(pretrained, "DEFAULT_ARROW_DRIVE_ID", "id456"),
+            mock.patch.object(pretrained.gdown, "download", autospec=True),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                pretrained.resolve_arrow_model_path(None)
+            self.assertIn(
+                "Download from Drive did not produce file",
+                str(ctx.exception),
+            )
 
 
 class ClearModelCacheTest(unittest.TestCase):
