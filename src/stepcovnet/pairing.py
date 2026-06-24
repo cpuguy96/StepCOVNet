@@ -2,8 +2,11 @@
 
 import os
 import pathlib
+from typing import Literal
 
-from stepcovnet.dataset_prep import training_loader
+from stepcovnet.dataset_prep import training_index, training_loader
+
+SplitName = Literal["train", "val"]
 
 
 def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
@@ -38,20 +41,35 @@ def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def list_training_samples(data_dir: str) -> list[tuple[str, str, int]]:
+def list_training_samples(
+    data_dir: str,
+    split: SplitName | None = None,
+) -> list[tuple[str, str, int]]:
     """Return training samples as ``(audio_path, chart_path, chart_index)``.
 
     When ``data_dir`` contains a prepared ``final_data`` layout (``name_map.json``
     or nested ``.chart.json`` files), one row is returned per chart block inside
-    each song JSON. Otherwise falls back to legacy ``.txt`` pairs with
-    ``chart_index`` 0.
+    each song JSON. When ``split`` is ``train`` or ``val`` and
+    ``training_index.json`` exists, only manifest rows for that split are returned.
+    Otherwise falls back to legacy ``.txt`` pairs with ``chart_index`` 0.
 
     Args:
         data_dir: Training data root (``data/v2/train``, ``data/final_data``, …).
+        split: Optional ``train`` or ``val`` filter when a training index exists.
 
     Returns:
         Sorted sample refs for dataloaders.
+
+    Raises:
+        ValueError: When ``split`` is set but ``training_index.json`` is missing.
     """
+    if split is not None:
+        index_path = training_index.training_index_path(data_dir)
+        if not index_path.is_file():
+            raise ValueError(f"split={split!r} requires {index_path}")
+        rows = training_index.rows_for_split(data_dir, split)
+        return [(row.audio_path, row.chart_json_path, row.chart_index) for row in rows]
+
     rows = training_loader.discover_training_rows(data_dir)
     if rows:
         return [(row.audio_path, row.chart_json_path, row.chart_index) for row in rows]

@@ -52,6 +52,7 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | ---- | ---- |
 | `scripts/` | CLI entry points (train, extract, suite runners) |
 | `scripts/preprocess_dataset.py` | Raw simfile packs → nested `data/final_data` |
+| `scripts/build_training_index.py` | Train/val split manifest (`training_index.json`) |
 | `configs/` | JSON experiment configs |
 | `configs/overfit_tide/` | Tide single-song overfit smoke configs |
 

@@ -56,7 +56,13 @@ Out of scope: MERT extraction, train/val split, model training.
 
 **P9 (done):** trainers and onset dataloaders consume `(audio_path, chart_json_path, chart_index)` from `final_data`. `datasets._parse_step_chart` and `onset_events.charts` read `.chart.json` blocks by `chart_index`; legacy `.txt` / `.sm` still supported.
 
-**P8 (next):** flat `training_index.json` + reproducible train/val split — discovery today walks all chart rows under `output_dir` (no split manifest yet).
+**P8 (done):** `training_index.json` at output root; song-level `stratified_song_v1` split (10% val per bundle default). Build:
+
+```bash
+venv\Scripts\python.exe scripts\build_training_index.py --output-dir data/final_data --overwrite
+```
+
+Loaders: `pairing.list_training_samples(data_dir, split="train"|"val")`. Event trainer auto-uses the manifest when `data_dir == val_data_dir` and the index file exists.
 
 **Raw gap (prep input):** ITL packs often have `Expanded.ogg` + `sm.ssc` with **non-matching stems** — resolved in prep via `#MUSIC` + audio inference (§8.2), not at train time.
 
@@ -888,10 +894,10 @@ Implement **in order** P0→P6, then P7 batch. Phases are sequential dependencie
 | **P5**           | `scripts/preprocess_dataset.py` + `--workers N` process pool                                | Done   |
 | **P6**           | Golden fixtures in `tests/fixtures/dataset_prep/` + `golden_fixtures_test.py`               | Done   |
 | **P7**           | Full three-bundle batch → `data/final_data`                                                 | Done — **1942** chart rows (ITL 246, Mizuki 1310, Vocaloid 386); **822** rows with `chart_index > 0` |
-| **P8**           | Train/val split + `training_index.json`                                                     | **Next** |
-| **P9**           | `training_loader.py`, `pairing.list_training_samples`, onset/dense chart loaders (§13)    | Done   |
+| **P8**           | Train/val split + `training_index.json`                                                     | **Done** — `stratified_song_v1`; `scripts/build_training_index.py` |
+| **P9**           | `training_loader.py`, `pairing.list_training_samples`, onset/dense chart loaders (§13)      | Done   |
 
-**Next milestone:** P8 split manifest, then first multi-song training on `data/final_data`.
+**Next milestone:** first multi-song training on `data/final_data` with `training_index.json`.
 
 ---
 
@@ -1060,20 +1066,18 @@ Gate before P0–P7. **Blockers** must be specified in-doc or in first PR; **imp
 
 | Item                               | Status |
 | ---------------------------------- | ------ |
-| P8 `training_index.json`           | **Next** — required for proper val split |
+| P8 `training_index.json`           | **Done** — `build_training_index.py` |
 | Cross-artist meter normalization   | §15.1 deferred |
 | `configs/dataset_prep/itl_v1.json` | §15.10 — CLI defaults suffice |
-| Single-song overfit on `final_data` | OK today via explicit sample list (no P8) |
 
-### Repo state (2026-06-22)
+### Repo state (2026-06-23)
 
 | Area | State |
 | ---- | ----- |
-| Package | `src/stepcovnet/dataset_prep/` — 15 modules including `pipeline`, `training_loader`, `simfile_adapter`, `export`, `validate` |
-| CLI | `scripts/preprocess_dataset.py` (`--dry-run`, `--workers`, `--overwrite`, `--limit`, …) |
-| Tests | `tests/dataset_prep/` + `tests/fixtures/dataset_prep/` (P6 golden packs) |
-| Optional dep | `pip install -e ".[dataset-prep]"` → `simfile==2.1.1` |
-| Local output | `data/final_data/` — **1942** chart rows, 0 missing audio/chart pairs (P9 smoke 2026-06-22) |
-| Training hookup | P9 committed (`5810ee8`); P8 not started |
+| Package | `src/stepcovnet/dataset_prep/` — 16 modules including `training_index`, `training_loader` |
+| CLI | `preprocess_dataset.py`, `build_training_index.py` |
+| Tests | `tests/dataset_prep/` + golden fixtures |
+| Local output | `data/final_data/` — **1942** chart rows + `training_index.json` |
+| Training hookup | P8 + P9 done; event trainer auto-splits when train/val dirs match |
 
 ---

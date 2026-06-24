@@ -365,6 +365,7 @@ def create_onset_event_dataset(
     frontend: str = preprocess.FRONTEND_CONV1D,
     mert_features_dir: str = "",
     data_root: str = "",
+    split: str | None = None,
 ) -> tf.data.Dataset:
     """Build a ``tf.data`` pipeline over audio/chart pairs for event onset training.
 
@@ -382,6 +383,7 @@ def create_onset_event_dataset(
         target_sample_rate: Sample rate in Hz for waveform loading.
         shuffle: Whether to shuffle pair order each epoch.
         seed: Random seed used when ``shuffle`` is True.
+        split: Optional ``train`` or ``val`` when ``training_index.json`` exists.
 
     Returns:
         Dataset yielding dict batches with keys ``audio``, ``audio_length``,
@@ -391,7 +393,7 @@ def create_onset_event_dataset(
         ValueError: When no valid audio/chart pairs remain after filtering.
     """
     samples = _filter_valid_samples(
-        pairing.list_training_samples(data_dir),
+        pairing.list_training_samples(data_dir, split=split),  # type: ignore[arg-type]
         max_steps_per_chart,
     )
     if not samples:

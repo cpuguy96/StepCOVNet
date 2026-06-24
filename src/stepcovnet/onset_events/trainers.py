@@ -13,6 +13,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import reproducibility
+from stepcovnet.dataset_prep import training_index
 from stepcovnet.onset_events import config, datasets, losses, matching, metrics, models
 
 
@@ -584,15 +585,30 @@ def _create_datasets(
         )
         return overfit_dataset, overfit_dataset
 
+    train_split = None
+    val_split = None
+    if training_index.manifest_split_enabled(
+        dataset_config.data_dir,
+        dataset_config.val_data_dir,
+    ):
+        train_split = training_index.SPLIT_TRAIN
+        val_split = training_index.SPLIT_VAL
+        logging.info(
+            "Using training_index.json for train/val under %s",
+            dataset_config.data_dir,
+        )
+
     train_dataset = datasets.create_onset_event_dataset(
         dataset_config.data_dir,
         shuffle=True,
         seed=run_config.seed,
+        split=train_split,
         **common_kwargs,
     )
     val_dataset = datasets.create_onset_event_dataset(
         dataset_config.val_data_dir,
         shuffle=False,
+        split=val_split,
         **common_kwargs,
     )
     return train_dataset, val_dataset

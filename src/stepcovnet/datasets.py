@@ -113,9 +113,12 @@ def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
     return pairing.list_audio_chart_pairs(data_dir)
 
 
-def list_training_samples(data_dir: str) -> list[tuple[str, str, int]]:
+def list_training_samples(
+    data_dir: str,
+    split: str | None = None,
+) -> list[tuple[str, str, int]]:
     """Return ``(audio_path, chart_path, chart_index)`` training sample refs."""
-    return pairing.list_training_samples(data_dir)
+    return pairing.list_training_samples(data_dir, split=split)  # type: ignore[arg-type]
 
 
 def _is_chart_json(chart_path: str | pathlib.Path) -> bool:

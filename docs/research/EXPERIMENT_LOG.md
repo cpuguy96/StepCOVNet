@@ -16,10 +16,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 | Phase | Status |
 | ----- | ------ |
-| P0–P7, P6, P9 | **Done** — full three-bundle export to `data/final_data`; **1942** chart rows; P9 loaders smoke-tested |
-| **P8** | **Next** — `training_index.json` + reproducible train/val split |
+| P0–P7, P6, P9, **P8** | **Done** — full three-bundle export; **1942** chart rows; loaders + `training_index.json` |
 
-**Recommended next step:** Implement P8, then run first multi-song onset training with `data_dir=data/final_data` (WSL GPU for serious runs). Single-song overfit is OK today via explicit sample lists.
+**Recommended next step:** Run `build_training_index.py` on `data/final_data` if needed, then first multi-song onset training with `data_dir=val_data_dir=data/final_data` (WSL GPU).
 
 ### Onset detection (research track)
 

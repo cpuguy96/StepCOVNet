@@ -85,7 +85,7 @@
 | --- | -------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
 | G1  | **Prep output layout**           | Nested `{bundle}/{id}/` + multi-chart JSON                 | **decided** — [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §1  |
 | G2  | **Training loader (P9)**         | `chart_index` per row; `.chart.json` primary                 | **decided** — `training_loader.py`, `pairing.list_training_samples`    |
-| G3  | **Train/val split (P8)**         | `training_index.json` flat manifest                          | **open** — blocks multi-song val on `final_data`                       |
+| G3  | **Train/val split (P8)**         | `training_index.json` + `stratified_song_v1`                   | **decided** — `build_training_index.py`; song-level split per bundle |
 | G4  | **Step cap**                     | 2048 steps per chart at export and load                      | **decided** — all 1942 local rows pass cap (EXP-20260622-01)           |
 | G5  | **Legacy `.txt` during migration** | Fallback `chart_index=0` for `data/v2`                     | **decided** — until P8 + full migration                                |
 
@@ -95,8 +95,8 @@
 
 ### Dataset prep
 
-1. **P8 — `training_index.json` + train/val split** — next gate for multi-song training on `final_data`
-2. **First `final_data` training run** — dense or event onset after P8
+1. ~~**P8 — `training_index.json` + train/val split**~~ — done (`stratified_song_v1`)
+2. **First `final_data` training run** — dense or event onset with `data_dir=val_data_dir=data/final_data`
 
 ### Onset research (paused pending P8 or explicit waive)
 
