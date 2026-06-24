@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import pathlib
 
 import tensorflow as tf
 
@@ -131,6 +132,12 @@ PARSER.add_argument(
     required=False,
 )
 PARSER.add_argument(
+    "--training_index_path",
+    type=str,
+    default=None,
+    help="Path to training_index.json (overrides dataset.training_index_path).",
+)
+PARSER.add_argument(
     "--model_name",
     type=str,
     default=None,
@@ -194,6 +201,8 @@ def main():
         dataset_config.data_dir = ARGS.train_data_dir
     if ARGS.val_data_dir:
         dataset_config.val_data_dir = ARGS.val_data_dir
+    if ARGS.training_index_path:
+        dataset_config.training_index_path = ARGS.training_index_path
     if ARGS.batch_size is not None:
         dataset_config.batch_size = ARGS.batch_size
     if ARGS.apply_temporal_augment is not None:
@@ -226,8 +235,15 @@ def main():
         run_config.model_name = ARGS.model_name
 
     # Validate required fields
-    if not dataset_config.data_dir or not dataset_config.val_data_dir:
-        PARSER.error("--train_data_dir and --val_data_dir are required")
+    index_ref = str(dataset_config.training_index_path).strip()
+    if index_ref:
+        if not pathlib.Path(index_ref).is_file():
+            PARSER.error(f"training_index_path not found: {index_ref}")
+    elif not dataset_config.data_dir or not dataset_config.val_data_dir:
+        PARSER.error(
+            "--training_index_path or both --train_data_dir and --val_data_dir "
+            "are required"
+        )
     if not run_config.model_output_dir:
         PARSER.error("--model_output_dir is required")
 

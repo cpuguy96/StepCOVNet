@@ -6,11 +6,12 @@ import contextlib
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
 from stepcovnet import datasets, pairing
-from stepcovnet.dataset_prep import config, pipeline, training_loader
+from stepcovnet.dataset_prep import config, pipeline, training_index, training_loader
 from stepcovnet.onset_events import charts
 
 _FIXTURES_ROOT = (
@@ -89,6 +90,60 @@ class TrainingLoaderTest(unittest.TestCase):
             training_loader.filter_rows_by_step_cap([row], max_steps=9),
             [],
         )
+
+    def test_list_dense_onset_samples_matches_pairing_on_prepared_output(self):
+        with self._prepared_output("vocaloid_multi_sm") as out_dir:
+            dense_samples = datasets.list_dense_onset_samples(out_dir)
+            pairing_samples = pairing.list_training_samples(out_dir)
+            self.assertEqual(dense_samples, pairing_samples)
+            self.assertEqual(len(dense_samples), 2)
+
+    def test_list_dense_onset_samples_respects_train_split(self):
+        with self._prepared_output("vocaloid_multi_sm") as out_dir:
+            index_path = training_index.save_training_index(
+                training_index.build_training_index(
+                    out_dir,
+                    val_fraction=0.0,
+                    seed=11,
+                )
+            )
+            train_samples = datasets.list_dense_onset_samples(
+                str(index_path),
+                split="train",
+            )
+            val_samples = datasets.list_dense_onset_samples(
+                str(index_path),
+                split="val",
+            )
+            self.assertEqual(len(train_samples), 2)
+            self.assertEqual(len(val_samples), 0)
+
+    def test_create_dataset_from_training_index_yields_batch(self):
+        with self._prepared_output("itl_challenge_ssc") as out_dir:
+            index_path = training_index.save_training_index(
+                training_index.build_training_index(
+                    out_dir,
+                    val_fraction=0.0,
+                    seed=1,
+                )
+            )
+            stub_features = np.zeros((10, 128), dtype=np.float32)
+            with mock.patch.object(
+                datasets,
+                "load_onset_features",
+                return_value=stub_features,
+            ):
+                ds = datasets.create_dataset(
+                    str(index_path),
+                    split="train",
+                    data_root=str(out_dir),
+                )
+                features, targets = next(iter(ds.take(1)))
+            self.assertEqual(features.shape[0], 1)
+            self.assertEqual(features.shape[2], 128)
+            self.assertEqual(targets.shape[0], 1)
+            self.assertEqual(targets.shape[2], 1)
+            self.assertEqual(features.shape[1], targets.shape[1])
 
 
 if __name__ == "__main__":

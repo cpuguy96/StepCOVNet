@@ -97,6 +97,11 @@ class OnsetDatasetConfig(_DictSerializableMixin):
         mert_features_dir: Directory containing precomputed ``.mert.npy`` files when
             feature_source is MERT. When empty, features are loaded beside each audio file.
         max_train_songs: Maximum training songs to use (-1 for all songs under data_dir).
+        training_index_path: Optional path to ``training_index.json``. When set,
+            train/val splits are read from the manifest and ``data_dir`` / ``val_data_dir``
+            are optional.
+        data_root: Prepared output root for nested MERT paths; inferred from the manifest
+            when ``training_index_path`` is set.
     """
 
     data_dir: str
@@ -109,6 +114,8 @@ class OnsetDatasetConfig(_DictSerializableMixin):
     feature_source: FeatureSource = FeatureSource.MEL
     mert_features_dir: str = ""
     max_train_songs: int = -1
+    training_index_path: str = ""
+    data_root: str = ""
 
     def __post_init__(self) -> None:
         """Normalize feature_source from string to enum when loaded from dict/JSON."""

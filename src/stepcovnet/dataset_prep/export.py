@@ -15,12 +15,23 @@ class _DictSerializableMixin:
     """Mixin providing default as_dict and from_dict for export dataclasses."""
 
     def as_dict(self) -> dict:
-        """Convert object to dictionary for JSON serialization."""
+        """Convert object to dictionary for JSON serialization.
+
+        Returns:
+            Serializable mapping of dataclass fields.
+        """
         return dataclasses.asdict(self)  # type: ignore[arg-type]
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Create object from dictionary."""
+        """Create object from dictionary.
+
+        Args:
+            data: Serialized field values for the dataclass.
+
+        Returns:
+            Instance with fields taken from ``data``.
+        """
         return cls(**data)
 
 

@@ -142,6 +142,13 @@ class DatasetsTest(unittest.TestCase):
         second = datasets.select_song_pairs(pairs, max_songs=3, seed=2)
         self.assertNotEqual(first, second)
 
+    def test_list_dense_onset_samples_legacy_txt_pairs(self):
+        samples = datasets.list_dense_onset_samples(TEST_DATA_DIR)
+        legacy = datasets.list_audio_chart_pairs(TEST_DATA_DIR)
+        self.assertGreater(len(samples), 0)
+        self.assertEqual(len(samples), len(legacy))
+        self.assertTrue(all(chart_index == 0 for _, _, chart_index in samples))
+
     def test_create_dataset_max_songs_limits_pairs(self):
         test_data_dir = pathlib.Path(__file__).resolve().parent / "testdata"
         audio_path, chart_path = _get_one_audio_chart_pair(test_data_dir)

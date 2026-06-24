@@ -585,9 +585,27 @@ def _create_datasets(
         )
         return overfit_dataset, overfit_dataset
 
+    index_ref = str(dataset_config.training_index_path).strip()
     train_split = None
     val_split = None
-    if training_index.manifest_split_enabled(
+    train_ref = dataset_config.data_dir
+    val_ref = dataset_config.val_data_dir
+
+    if index_ref:
+        index_path = pathlib.Path(index_ref)
+        index = training_index.load_training_index(index_path)
+        data_root = training_index.resolve_output_dir(index, index_path)
+        common_kwargs["data_root"] = str(data_root)
+        train_ref = index_ref
+        val_ref = index_ref
+        train_split = training_index.SPLIT_TRAIN
+        val_split = training_index.SPLIT_VAL
+        logging.info(
+            "Using training index %s (data root %s)",
+            index_ref,
+            data_root,
+        )
+    elif training_index.manifest_split_enabled(
         dataset_config.data_dir,
         dataset_config.val_data_dir,
     ):
@@ -599,14 +617,14 @@ def _create_datasets(
         )
 
     train_dataset = datasets.create_onset_event_dataset(
-        dataset_config.data_dir,
+        train_ref,
         shuffle=True,
         seed=run_config.seed,
         split=train_split,
         **common_kwargs,
     )
     val_dataset = datasets.create_onset_event_dataset(
-        dataset_config.val_data_dir,
+        val_ref,
         shuffle=False,
         split=val_split,
         **common_kwargs,
@@ -669,8 +687,15 @@ def train_onset_event(
         dataset_config,
     )
 
-    if not dataset_config.data_dir or not dataset_config.val_data_dir:
-        raise ValueError("dataset.data_dir and dataset.val_data_dir are required")
+    index_ref = str(dataset_config.training_index_path).strip()
+    if index_ref:
+        if not pathlib.Path(index_ref).is_file():
+            raise ValueError(f"training_index_path not found: {index_ref}")
+    elif not dataset_config.data_dir or not dataset_config.val_data_dir:
+        raise ValueError(
+            "dataset.training_index_path or both dataset.data_dir and "
+            "dataset.val_data_dir are required"
+        )
     if not run_config.model_output_dir:
         raise ValueError("run.model_output_dir is required")
 

@@ -93,6 +93,24 @@ class OnsetDatasetConfigTest(unittest.TestCase):
         self.assertEqual(cfg.max_train_songs, 20)
         self.assertEqual(cfg.as_dict()["max_train_songs"], 20)
 
+    def test_training_index_path_from_dict(self):
+        data = {
+            "data_dir": "",
+            "val_data_dir": "",
+            "training_index_path": "data/final_data/training_index.json",
+            "data_root": "data/final_data",
+        }
+        cfg = config.OnsetDatasetConfig.from_dict(data)
+        self.assertEqual(
+            cfg.training_index_path,
+            "data/final_data/training_index.json",
+        )
+        self.assertEqual(cfg.data_root, "data/final_data")
+        self.assertEqual(
+            cfg.as_dict()["training_index_path"],
+            "data/final_data/training_index.json",
+        )
+
     def test_max_train_songs_zero_raises(self):
         with self.assertRaises(ValueError) as ctx:
             config.OnsetDatasetConfig(

@@ -75,6 +75,31 @@ def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
     return pairing.list_audio_chart_pairs(data_dir)
 
 
+def list_dense_onset_samples(
+    data_dir: str,
+    split: str | None = None,
+) -> list[tuple[str, str, int]]:
+    """Return ``(audio_path, chart_path, chart_index)`` refs for dense onset training.
+
+    Uses ``training_index.json`` / ``.chart.json`` when available; otherwise legacy
+    ``.txt`` pairs with ``chart_index`` 0.
+
+    Args:
+        data_dir: Manifest file, prepared output root, or legacy training directory.
+        split: Optional ``train`` or ``val`` filter when loading from a manifest.
+
+    Returns:
+        Sorted sample refs for the dense onset dataloader.
+    """
+    samples = list_training_samples(data_dir, split=split)
+    if samples:
+        return samples
+    return [
+        (audio_path, chart_path, 0)
+        for audio_path, chart_path in pairing.list_audio_chart_pairs(data_dir)
+    ]
+
+
 def select_song_pairs(
     pairs: list[tuple[str, str]],
     max_songs: int = -1,
@@ -615,6 +640,8 @@ def _load_and_preprocess_paths(
     feature_source: config.FeatureSource,
     mert_features_dir: str,
     data_root: str,
+    *,
+    chart_index: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load audio and chart, build features and target (pure Python, no TF)."""
     features = load_onset_features(
@@ -627,7 +654,11 @@ def _load_and_preprocess_paths(
         spec_length = features.size // constants.WAVEFORM_SAMPLES_PER_FRAME
     else:
         spec_length = features.shape[0]
-    times, cols = _parse_step_chart(chart_path, binary_timings=True)
+    times, cols = _parse_step_chart(
+        chart_path,
+        binary_timings=True,
+        chart_index=chart_index,
+    )
     target = (
         _create_target_gaussian(times, cols, spec_length, gaussian_sigma)
         if use_gaussian_target
@@ -639,6 +670,7 @@ def _load_and_preprocess_paths(
 def _load_and_preprocess_py_callback(
     audio_path_t: tf.Tensor,
     chart_path_t: tf.Tensor,
+    chart_index_t: tf.Tensor,
     use_gaussian_target: bool,
     gaussian_sigma: float,
     feature_source: config.FeatureSource,
@@ -648,6 +680,7 @@ def _load_and_preprocess_py_callback(
     """Decode paths and delegate to _load_and_preprocess_paths (for tf.py_function)."""
     audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
     chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
+    chart_index = int(chart_index_t.numpy())
     return _load_and_preprocess_paths(
         audio_path,
         chart_path,
@@ -656,12 +689,14 @@ def _load_and_preprocess_py_callback(
         feature_source,
         mert_features_dir,
         data_root,
+        chart_index=chart_index,
     )
 
 
 def _load_and_preprocess_tf_map(
     audio_path_t: tf.Tensor,
     chart_path_t: tf.Tensor,
+    chart_index_t: tf.Tensor,
     use_gaussian_target: bool,
     gaussian_sigma: float,
     feature_source: config.FeatureSource,
@@ -669,18 +704,19 @@ def _load_and_preprocess_tf_map(
     data_root: str,
     n_features: int,
 ) -> tuple[tf.Tensor, tf.Tensor]:
-    """Map one (audio_path, chart_path) to (features, target) tensors."""
+    """Map one (audio_path, chart_path, chart_index) to (features, target) tensors."""
     features, target = tf.py_function(  # type: ignore[misc]
-        lambda ap, cp: _load_and_preprocess_py_callback(
+        lambda ap, cp, ci: _load_and_preprocess_py_callback(
             ap,
             cp,
+            ci,
             use_gaussian_target,
             gaussian_sigma,
             feature_source,
             mert_features_dir,
             data_root,
         ),
-        [audio_path_t, chart_path_t],
+        [audio_path_t, chart_path_t, chart_index_t],
         (tf.float32, tf.float32),
     )
     return _set_loaded_feature_shapes(
@@ -1205,6 +1241,8 @@ def create_dataset(
     n_features: int | None = None,
     max_songs: int = -1,
     song_selection_seed: int | None = None,
+    split: str | None = None,
+    data_root: str = "",
 ) -> tf.data.Dataset:
     """
     Creates a TensorFlow dataset pipeline with a proper caching strategy.
@@ -1217,24 +1255,33 @@ def create_dataset(
         else:
             n_features = _N_MELS
 
-    pairs = select_song_pairs(
-        _load_and_pair_files(data_dir),
+    root = data_root or data_dir
+    samples = select_song_pairs(
+        list_dense_onset_samples(data_dir, split=split),
         max_songs=max_songs,
         seed=song_selection_seed,
     )
-    if not pairs:
+    if not samples:
         raise ValueError("No audio-chart pairs found.")
 
-    ds = tf.data.Dataset.from_tensor_slices(pairs)
+    audio_paths, chart_paths, chart_indices = zip(*samples, strict=True)
+    ds = tf.data.Dataset.from_tensor_slices(
+        (
+            list(audio_paths),
+            list(chart_paths),
+            list(chart_indices),
+        )
+    )
     ds = ds.map(
-        lambda p: _load_and_preprocess_tf_map(
-            p[0],
-            p[1],
+        lambda audio_path, chart_path, chart_index: _load_and_preprocess_tf_map(
+            audio_path,
+            chart_path,
+            chart_index,
             use_gaussian_target,
             gaussian_sigma,
             feature_source,
             mert_features_dir,
-            data_dir,
+            root,
             n_features,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,

@@ -50,7 +50,8 @@ def first_valid_pair(
     """Return the first valid audio/chart sample under ``data_dir``.
 
     Args:
-        data_dir: Root directory searched for paired audio and chart files.
+        data_dir: Root directory searched for paired audio and chart files, or a
+            path to ``training_index.json``.
         max_steps_per_chart: Skip charts with more than this many steps.
 
     Returns:
@@ -375,7 +376,8 @@ def create_onset_event_dataset(
     then audio and times are padded to fixed shapes.
 
     Args:
-        data_dir: Root directory searched for paired audio and chart files.
+        data_dir: Root directory searched for paired audio and chart files, or a
+            path to ``training_index.json``.
         batch_size: Number of samples per batch.
         max_audio_seconds: Maximum audio duration in seconds before truncation.
         n_max_onsets: Fixed length for padded ground-truth onset times.

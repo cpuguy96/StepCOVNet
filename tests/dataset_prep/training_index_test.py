@@ -72,6 +72,20 @@ class TrainingIndexTest(unittest.TestCase):
             self.assertEqual(len(val_samples), 0)
             self.assertEqual(len(all_samples), 2)
 
+    def test_list_training_samples_accepts_index_file_path(self):
+        with self._prepared_output("vocaloid_multi_sm") as out_dir:
+            index_path = training_index.save_training_index(
+                training_index.build_training_index(
+                    out_dir,
+                    val_fraction=0.0,
+                    seed=9,
+                )
+            )
+            from_index = pairing.list_training_samples(str(index_path), split="train")
+            from_dir = pairing.list_training_samples(out_dir, split="train")
+            self.assertEqual(from_index, from_dir)
+            self.assertEqual(len(from_index), 2)
+
     def test_manifest_split_enabled_requires_same_root(self):
         with self._prepared_output("itl_challenge_ssc") as out_dir:
             training_index.save_training_index(

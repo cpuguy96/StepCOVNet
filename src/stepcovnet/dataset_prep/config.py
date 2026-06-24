@@ -14,7 +14,11 @@ class _DictSerializableMixin:
     """Mixin providing default as_dict and from_dict for dataclass configs."""
 
     def as_dict(self) -> dict:
-        """Convert config to dictionary for JSON serialization."""
+        """Convert config to dictionary for JSON serialization.
+
+        Returns:
+            Serializable mapping of dataclass fields.
+        """
         return dataclasses.asdict(self)  # type: ignore[arg-type]
 
     @classmethod
@@ -31,7 +35,11 @@ class _DictSerializableMixin:
 
 
 class ExportMode(enum.StrEnum):
-    """Which dance-single charts to export from each simfile pack."""
+    """Which dance-single charts to export from each simfile pack.
+
+    Attributes:
+        EXPORT_ALL_SINGLES: Export every ``dance-single`` chart in each pack.
+    """
 
     EXPORT_ALL_SINGLES = constants.EXPORT_MODE_ALL_SINGLES
 

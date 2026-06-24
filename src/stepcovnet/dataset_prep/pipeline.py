@@ -25,12 +25,23 @@ class _DictSerializableMixin:
     """Mixin providing default as_dict and from_dict for report dataclasses."""
 
     def as_dict(self) -> dict:
-        """Convert object to dictionary for JSON serialization."""
+        """Convert object to dictionary for JSON serialization.
+
+        Returns:
+            Serializable mapping of dataclass fields.
+        """
         return dataclasses.asdict(self)  # type: ignore[arg-type]
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Create object from dictionary."""
+        """Create object from dictionary.
+
+        Args:
+            data: Serialized field values for the dataclass.
+
+        Returns:
+            Instance with fields taken from ``data``.
+        """
         return cls(**data)
 
 
@@ -274,7 +285,14 @@ def process_pack_entry(
 
 
 def _process_pack_entry_job(payload: dict) -> dict:
-    """Picklable worker entry point for the process pool."""
+    """Picklable worker entry point for the process pool.
+
+    Args:
+        payload: Worker job with ``entry``, ``prep_config``, and ``input_dir``.
+
+    Returns:
+        JSON-serializable dict from ``WorkerResult.as_dict()``.
+    """
     entry = normalize.NameMapEntry.from_dict(payload["entry"])
     prep_config = config.PrepConfig.from_dict(payload["prep_config"])
     if "export_mode" in payload["prep_config"]:

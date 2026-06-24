@@ -43,6 +43,12 @@ PARSER.add_argument(
     help="Override dataset.val_data_dir.",
 )
 PARSER.add_argument(
+    "--training_index_path",
+    type=str,
+    default=None,
+    help="Override dataset.training_index_path (manifest JSON).",
+)
+PARSER.add_argument(
     "--epochs",
     type=int,
     default=None,
@@ -108,6 +114,8 @@ def main() -> None:
         dataset_config.data_dir = ARGS.train_data_dir
     if ARGS.val_data_dir:
         dataset_config.val_data_dir = ARGS.val_data_dir
+    if ARGS.training_index_path:
+        dataset_config.training_index_path = ARGS.training_index_path
     if ARGS.epochs is not None:
         run_config.epochs = ARGS.epochs
     if ARGS.model_output_dir:
@@ -124,8 +132,13 @@ def main() -> None:
     take_count = ARGS.take_count if ARGS.take_count is not None else -1
     val_take_count = ARGS.val_take_count if ARGS.val_take_count is not None else -1
 
-    if not dataset_config.data_dir or not dataset_config.val_data_dir:
-        PARSER.error("dataset.data_dir and dataset.val_data_dir are required")
+    if not dataset_config.training_index_path and (
+        not dataset_config.data_dir or not dataset_config.val_data_dir
+    ):
+        PARSER.error(
+            "dataset.training_index_path or both dataset.data_dir and "
+            "dataset.val_data_dir are required"
+        )
     if not run_config.model_output_dir:
         PARSER.error("--model_output_dir is required (config or CLI)")
 

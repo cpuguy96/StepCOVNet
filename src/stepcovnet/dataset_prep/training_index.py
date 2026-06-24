@@ -52,7 +52,12 @@ class TrainingIndexEntry:
 
 @dataclasses.dataclass
 class TrainingIndexCounts:
-    """Aggregate song and chart-row counts per split."""
+    """Aggregate song and chart-row counts per split.
+
+    Attributes:
+        songs: Song counts keyed by ``train`` or ``val``.
+        rows: Chart-row counts keyed by ``train`` or ``val``.
+    """
 
     songs: dict[SplitName, int]
     rows: dict[SplitName, int]
@@ -60,7 +65,18 @@ class TrainingIndexCounts:
 
 @dataclasses.dataclass
 class TrainingIndex:
-    """Flat training manifest for ``final_data`` with train/val assignment."""
+    """Flat training manifest for ``final_data`` with train/val assignment.
+
+    Attributes:
+        schema_version: Manifest layout version.
+        output_dir: Preprocess output root used to build the manifest.
+        split_policy: Split algorithm identifier (``stratified_song_v1``).
+        split_seed: Reproducibility seed for per-bundle shuffles.
+        val_fraction: Fraction of songs per bundle assigned to validation.
+        created_at: ISO-8601 UTC timestamp when the manifest was built.
+        counts: Aggregate song and row counts per split.
+        entries: One row per chart block with split label and relative paths.
+    """
 
     schema_version: int
     output_dir: str
@@ -73,16 +89,157 @@ class TrainingIndex:
 
 
 def training_index_path(output_dir: str | os.PathLike[str]) -> pathlib.Path:
-    """Return the canonical path to ``training_index.json`` under ``output_dir``."""
+    """Return ``training_index.json`` path under ``output_dir``.
+
+    Args:
+        output_dir: Preprocess output root.
+
+    Returns:
+        Path to ``{output_dir}/training_index.json``.
+    """
     return pathlib.Path(output_dir) / TRAINING_INDEX_FILENAME
 
 
+def is_training_index_file(path: str | os.PathLike[str]) -> bool:
+    """Return True when ``path`` points at a training manifest JSON file.
+
+    Args:
+        path: Candidate manifest file or directory reference.
+
+    Returns:
+        True for an existing ``training_index.json`` or ``.json`` manifest file.
+    """
+    target = pathlib.Path(path)
+    return target.is_file() and (
+        target.name == TRAINING_INDEX_FILENAME or target.suffix.lower() == ".json"
+    )
+
+
+def resolve_output_dir(
+    index: TrainingIndex,
+    index_path: str | os.PathLike[str],
+) -> pathlib.Path:
+    """Resolve the prepared data root for a loaded manifest.
+
+    Prefers ``index.output_dir`` when that directory exists. Otherwise falls back
+    to the directory containing ``index_path`` when it looks like a prep output root.
+
+    Args:
+        index: Loaded training manifest.
+        index_path: Path used to load ``index`` (for sibling-root fallback).
+
+    Returns:
+        Absolute preprocess output root for chart and audio paths.
+
+    Raises:
+        ValueError: When neither stored nor sibling output roots exist.
+    """
+    stored = pathlib.Path(index.output_dir)
+    if stored.is_dir():
+        return stored.resolve()
+
+    sibling_root = pathlib.Path(index_path).resolve().parent
+    if (sibling_root / "name_map.json").is_file() or any(
+        sibling_root.rglob("*.chart.json")
+    ):
+        return sibling_root
+
+    raise ValueError(
+        f"cannot resolve data root for training index {index_path}: "
+        f"output_dir {index.output_dir!r} is missing"
+    )
+
+
+def locate_training_index(
+    data_ref: str | os.PathLike[str],
+) -> tuple[pathlib.Path | None, pathlib.Path]:
+    """Interpret ``data_ref`` as a manifest file path or prepared output root.
+
+    Args:
+        data_ref: ``training_index.json`` path or preprocess output directory.
+
+    Returns:
+        ``(index_path, data_root)`` when a manifest is found; otherwise
+        ``(None, data_ref)`` resolved as a directory path.
+    """
+    ref = pathlib.Path(data_ref)
+    if is_training_index_file(ref):
+        index = load_training_index(ref)
+        return ref.resolve(), resolve_output_dir(index, ref)
+
+    if ref.is_dir():
+        candidate = training_index_path(ref)
+        if candidate.is_file():
+            index = load_training_index(candidate)
+            return candidate.resolve(), resolve_output_dir(index, candidate)
+
+    return None, ref.resolve()
+
+
+def rows_from_index(
+    index: TrainingIndex,
+    output_dir: pathlib.Path,
+    split: SplitName | None = None,
+) -> list[training_loader.TrainingChartRow]:
+    """Materialize chart rows from a loaded manifest.
+
+    Args:
+        index: Loaded training manifest.
+        output_dir: Preprocess output root for resolving relative paths.
+        split: When set, keep only rows assigned to this split.
+
+    Returns:
+        Sorted chart rows with absolute audio and chart JSON paths.
+    """
+    root = output_dir.resolve()
+    rows: list[training_loader.TrainingChartRow] = []
+    for entry in index.entries:
+        if split is not None and entry.split != split:
+            continue
+        audio_path = (root / entry.audio_relpath).resolve()
+        chart_path = (root / entry.chart_relpath).resolve()
+        rows.append(
+            training_loader.TrainingChartRow(
+                normalized_bundle=entry.normalized_bundle,
+                normalized_id=entry.normalized_id,
+                chart_index=entry.chart_index,
+                output_relpath=entry.output_relpath,
+                chart_json_path=str(chart_path),
+                audio_path=str(audio_path),
+                difficulty=entry.difficulty,
+                meter=entry.meter,
+                num_steps=entry.num_steps,
+            )
+        )
+    rows.sort(
+        key=lambda row: (row.normalized_bundle, row.normalized_id, row.chart_index)
+    )
+    return rows
+
+
 def song_key(normalized_bundle: str, normalized_id: str) -> str:
-    """Stable song identifier for split assignment."""
+    """Return stable song identifier for split assignment.
+
+    Args:
+        normalized_bundle: Output bundle slug.
+        normalized_id: Output song slug within the bundle.
+
+    Returns:
+        ``{normalized_bundle}/{normalized_id}`` string.
+    """
     return f"{normalized_bundle}/{normalized_id}"
 
 
 def _bundle_rng(seed: int, normalized_bundle: str) -> random.Random:
+    """Return a deterministic RNG for one bundle's validation shuffle.
+
+    Args:
+        seed: Global split seed from the manifest.
+        normalized_bundle: Bundle slug combined with ``seed`` for hashing.
+
+    Returns:
+        Seeded ``random.Random`` instance unique to the bundle.
+    """
     digest = hashlib.sha256(f"{seed}:{normalized_bundle}".encode()).digest()
     return random.Random(int.from_bytes(digest[:8], "big"))
 
@@ -102,6 +259,9 @@ def assign_stratified_song_splits(
 
     Returns:
         Map ``song_key`` → ``train`` | ``val``.
+
+    Raises:
+        ValueError: When ``val_fraction`` is outside ``[0, 1)``.
     """
     if not 0.0 <= val_fraction < 1.0:
         raise ValueError(f"val_fraction must be in [0, 1); got {val_fraction}")
@@ -120,7 +280,15 @@ def assign_stratified_song_splits(
 
 
 def _relpath_under(output_dir: pathlib.Path, absolute_path: str) -> str:
-    """Return ``absolute_path`` relative to resolved ``output_dir``."""
+    """Return ``absolute_path`` relative to resolved ``output_dir``.
+
+    Args:
+        output_dir: Preprocess output root.
+        absolute_path: Absolute audio or chart path to relativize.
+
+    Returns:
+        POSIX-style path relative to ``output_dir``.
+    """
     root = output_dir.resolve()
     resolved = pathlib.Path(absolute_path).resolve()
     return resolved.relative_to(root).as_posix()
@@ -131,6 +299,16 @@ def _row_to_entry(
     split: SplitName,
     output_dir: pathlib.Path,
 ) -> TrainingIndexEntry:
+    """Convert a discovered chart row into one manifest entry.
+
+    Args:
+        row: Training row from discovery.
+        split: Assigned ``train`` or ``val`` label.
+        output_dir: Preprocess output root for relative path fields.
+
+    Returns:
+        Manifest entry with audio and chart paths relative to ``output_dir``.
+    """
     audio_rel = _relpath_under(output_dir, row.audio_path)
     chart_rel = _relpath_under(output_dir, row.chart_json_path)
     return TrainingIndexEntry(
@@ -150,6 +328,14 @@ def _row_to_entry(
 def _counts_from_entries(
     entries: list[TrainingIndexEntry],
 ) -> TrainingIndexCounts:
+    """Aggregate per-split song and row counts from manifest entries.
+
+    Args:
+        entries: Flat manifest rows with split labels.
+
+    Returns:
+        Song and row totals keyed by ``train`` and ``val``.
+    """
     songs: dict[SplitName, set[str]] = {SPLIT_TRAIN: set(), SPLIT_VAL: set()}
     rows: dict[SplitName, int] = {SPLIT_TRAIN: 0, SPLIT_VAL: 0}
     for entry in entries:
@@ -233,7 +419,14 @@ def build_training_index(
 
 
 def validate_training_index(index: TrainingIndex) -> list[str]:
-    """Return human-readable validation errors; empty when valid."""
+    """Return human-readable validation errors; empty when valid.
+
+    Args:
+        index: Manifest to validate in memory.
+
+    Returns:
+        Validation error messages; empty list when ``index`` is valid.
+    """
     errors: list[str] = []
     if index.schema_version != constants.SCHEMA_VERSION:
         errors.append(
@@ -270,6 +463,14 @@ def validate_training_index(index: TrainingIndex) -> list[str]:
 
 
 def _index_to_dict(index: TrainingIndex) -> dict:
+    """Serialize a training manifest to a JSON-compatible mapping.
+
+    Args:
+        index: In-memory manifest.
+
+    Returns:
+        Dictionary suitable for ``json.dump``.
+    """
     return {
         "schema_version": index.schema_version,
         "output_dir": index.output_dir,
@@ -286,6 +487,17 @@ def _index_to_dict(index: TrainingIndex) -> dict:
 
 
 def _index_from_dict(data: dict) -> TrainingIndex:
+    """Parse a training manifest from a JSON-compatible mapping.
+
+    Args:
+        data: Root object loaded from ``training_index.json``.
+
+    Returns:
+        In-memory manifest without post-load validation.
+
+    Raises:
+        ValueError: When ``schema_version`` is missing or unsupported.
+    """
     version = data.get("schema_version")
     if version is None:
         raise ValueError("missing schema_version in training_index.json")
@@ -323,7 +535,15 @@ def save_training_index(
     index: TrainingIndex,
     path: str | os.PathLike[str] | None = None,
 ) -> pathlib.Path:
-    """Write manifest JSON to ``path`` or ``{output_dir}/training_index.json``."""
+    """Write manifest JSON to ``path`` or ``{output_dir}/training_index.json``.
+
+    Args:
+        index: Manifest to serialize.
+        path: Optional explicit output path; defaults to ``index.output_dir``.
+
+    Returns:
+        Path where the manifest was written.
+    """
     target = (
         pathlib.Path(path)
         if path is not None
@@ -337,7 +557,17 @@ def save_training_index(
 
 
 def load_training_index(path: str | os.PathLike[str]) -> TrainingIndex:
-    """Load and parse ``training_index.json``."""
+    """Load and parse ``training_index.json``.
+
+    Args:
+        path: Path to a training manifest JSON file.
+
+    Returns:
+        Validated in-memory manifest.
+
+    Raises:
+        ValueError: When schema version is unsupported or validation fails.
+    """
     target = pathlib.Path(path)
     with target.open(encoding="utf-8") as handle:
         data = json.load(handle)
@@ -352,41 +582,42 @@ def manifest_split_enabled(
     train_dir: str | os.PathLike[str],
     val_dir: str | os.PathLike[str],
 ) -> bool:
-    """True when train and val share one root that has ``training_index.json``."""
-    train_root = pathlib.Path(train_dir).resolve()
-    val_root = pathlib.Path(val_dir).resolve()
+    """Return True when train and val share one root that has ``training_index.json``.
+
+    Args:
+        train_dir: Training data directory or manifest path.
+        val_dir: Validation data directory or manifest path.
+
+    Returns:
+        True when both references resolve to the same indexed output root.
+    """
+    train_ref = pathlib.Path(train_dir)
+    val_ref = pathlib.Path(val_dir)
+    if is_training_index_file(train_ref) and is_training_index_file(val_ref):
+        return train_ref.resolve() == val_ref.resolve()
+    train_root = train_ref.resolve()
+    val_root = val_ref.resolve()
     if train_root != val_root:
         return False
     return training_index_path(train_root).is_file()
 
 
 def rows_for_split(
-    output_dir: str | os.PathLike[str],
+    data_ref: str | os.PathLike[str],
     split: SplitName,
 ) -> list[training_loader.TrainingChartRow]:
-    """Load chart rows for one split from ``training_index.json``."""
-    root = pathlib.Path(output_dir)
-    index = load_training_index(training_index_path(root))
-    rows: list[training_loader.TrainingChartRow] = []
-    for entry in index.entries:
-        if entry.split != split:
-            continue
-        audio_path = (root / entry.audio_relpath).resolve()
-        chart_path = (root / entry.chart_relpath).resolve()
-        rows.append(
-            training_loader.TrainingChartRow(
-                normalized_bundle=entry.normalized_bundle,
-                normalized_id=entry.normalized_id,
-                chart_index=entry.chart_index,
-                output_relpath=entry.output_relpath,
-                chart_json_path=str(chart_path),
-                audio_path=str(audio_path),
-                difficulty=entry.difficulty,
-                meter=entry.meter,
-                num_steps=entry.num_steps,
-            )
-        )
-    rows.sort(
-        key=lambda row: (row.normalized_bundle, row.normalized_id, row.chart_index)
-    )
-    return rows
+    """Load chart rows for one split from a manifest file or output root.
+
+    Args:
+        data_ref: ``training_index.json`` path or preprocess output directory.
+        split: ``train`` or ``val`` split to materialize.
+
+    Returns:
+        Sorted chart rows for the requested split.
+    """
+    index_path, data_root = locate_training_index(data_ref)
+    if index_path is None:
+        index_path = training_index_path(data_root)
+    index = load_training_index(index_path)
+    root = resolve_output_dir(index, index_path)
+    return rows_from_index(index, root, split=split)

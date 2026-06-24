@@ -11,6 +11,8 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import config, datasets, dense_overfit_eval, losses, models, trainers
+from stepcovnet.dataset_prep import config as prep_config
+from stepcovnet.dataset_prep import pipeline, training_index
 
 TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
@@ -179,6 +181,80 @@ class TrainersTest(unittest.TestCase):
             model, history = trainers.run_train_from_config(
                 dataset_config, model_config, run_config
             )
+        self.assertIsNotNone(model)
+        self.assertIsNotNone(history)
+
+    def test_run_train_from_config_with_training_index_path(self):
+        fixtures_root = (
+            pathlib.Path(__file__).resolve().parent / "fixtures" / "dataset_prep"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_dir = pathlib.Path(tmpdir) / "out"
+            pipeline.run_preprocess(
+                prep_config.PrepConfig(
+                    input_dir=str(fixtures_root / "vocaloid_multi_sm"),
+                    output_dir=str(out_dir),
+                    overwrite=True,
+                )
+            )
+            index_path = training_index.save_training_index(
+                training_index.build_training_index(
+                    out_dir,
+                    val_fraction=0.0,
+                    seed=1,
+                )
+            )
+            stub_ds = datasets.create_dataset(TEST_DATA_DIR, batch_size=1)
+
+            def _fake_create_dataset(data_dir, **kwargs):
+                return stub_ds
+
+            with _temp_model_and_callback_dirs() as (
+                model_output_dir,
+                callback_root_dir,
+            ):
+                dataset_config, model_config, run_config = _make_onset_configs(
+                    model_output_dir,
+                    dataset_kwargs={
+                        "data_dir": "",
+                        "val_data_dir": "",
+                        "training_index_path": str(index_path),
+                        "batch_size": 1,
+                    },
+                    model_kwargs={
+                        "initial_filters": 8,
+                        "depth": 1,
+                        "dilation_rates": [1, 2],
+                        "dropout_rate": 0.0,
+                    },
+                    run_kwargs={
+                        "epoch": 1,
+                        "take_count": 1,
+                        "val_take_count": 1,
+                        "callback_root_dir": callback_root_dir,
+                    },
+                )
+                with mock.patch.object(
+                    datasets,
+                    "create_dataset",
+                    side_effect=_fake_create_dataset,
+                ) as mock_create:
+                    model, history = trainers.run_train_from_config(
+                        dataset_config,
+                        model_config,
+                        run_config,
+                    )
+        self.assertEqual(mock_create.call_count, 2)
+        train_call = mock_create.call_args_list[0]
+        val_call = mock_create.call_args_list[1]
+        self.assertEqual(train_call.kwargs["split"], training_index.SPLIT_TRAIN)
+        self.assertEqual(val_call.kwargs["split"], training_index.SPLIT_VAL)
+        self.assertEqual(train_call.kwargs["data_dir"], str(index_path))
+        self.assertEqual(val_call.kwargs["data_dir"], str(index_path))
+        self.assertEqual(
+            pathlib.Path(train_call.kwargs["data_root"]),
+            out_dir.resolve(),
+        )
         self.assertIsNotNone(model)
         self.assertIsNotNone(history)
 

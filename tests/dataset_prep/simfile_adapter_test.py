@@ -37,7 +37,9 @@ _BASE_SSC = """#VERSION:0.83;
 """
 
 
-def _single_chart_notes(notes_block: str, *, difficulty: str = "Hard", meter: int = 8) -> str:
+def _single_chart_notes(
+    notes_block: str, *, difficulty: str = "Hard", meter: int = 8
+) -> str:
     return (
         _BASE_SSC
         + f"""
@@ -209,7 +211,9 @@ class ParseSongPackTest(unittest.TestCase):
                 source_pack_relpath="bundle/pack",
             )
             self.assertEqual(result.reason, pack_results.REASON_NO_EXPORTABLE_CHARTS)
-            self.assertEqual(result.chart_skips[0].reason, constants.CHART_SKIP_INVALID_HOLDS)
+            self.assertEqual(
+                result.chart_skips[0].reason, constants.CHART_SKIP_INVALID_HOLDS
+            )
 
     def test_parse_song_pack_no_dance_single(self):
         sim_text = (
@@ -308,7 +312,9 @@ class ParseSongPackTest(unittest.TestCase):
                 prep_config=cfg,
             )
             self.assertEqual(result.reason, pack_results.REASON_NO_EXPORTABLE_CHARTS)
-            self.assertEqual(result.chart_skips[0].reason, constants.CHART_SKIP_OVER_CAP)
+            self.assertEqual(
+                result.chart_skips[0].reason, constants.CHART_SKIP_OVER_CAP
+            )
 
     def test_parse_song_pack_skips_mine_only_chart(self):
         sim_text = _single_chart_notes(
@@ -351,7 +357,9 @@ class ParseSongPackTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             pack = pathlib.Path(tmpdir) / "pack"
             pack.mkdir()
-            (pack / "chart.ssc").write_text("#VERSION:0.83;\n#NOTES:broken;\n", encoding="utf-8")
+            (pack / "chart.ssc").write_text(
+                "#VERSION:0.83;\n#NOTES:broken;\n", encoding="utf-8"
+            )
             (pack / "song.ogg").write_bytes(b"audio")
             result = simfile_adapter.parse_song_pack(
                 pack,
@@ -442,8 +450,14 @@ class ParseSongPackTest(unittest.TestCase):
             self.assertIsNone(result.reason)
             assert result.pack is not None
             self.assertTrue(
-                any(item.startswith("fake_notes_unencoded:") for item in result.pack.warnings)
+                any(
+                    item.startswith("fake_notes_unencoded:")
+                    for item in result.pack.warnings
+                )
             )
             self.assertTrue(
-                any(item.startswith("lift_notes_unencoded:") for item in result.pack.warnings)
+                any(
+                    item.startswith("lift_notes_unencoded:")
+                    for item in result.pack.warnings
+                )
             )

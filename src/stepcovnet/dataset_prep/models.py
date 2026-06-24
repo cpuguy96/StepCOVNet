@@ -14,7 +14,11 @@ class _DictSerializableMixin:
     """Mixin providing default as_dict and from_dict for dataclass models."""
 
     def as_dict(self) -> dict:
-        """Convert model to dictionary for JSON serialization."""
+        """Convert model to dictionary for JSON serialization.
+
+        Returns:
+            Serializable mapping of dataclass fields.
+        """
         return dataclasses.asdict(self)  # type: ignore[arg-type]
 
     @classmethod
@@ -69,7 +73,14 @@ class SimfileMetadata(_DictSerializableMixin):
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Parse metadata including nested BPM segments."""
+        """Parse metadata including nested BPM segments.
+
+        Args:
+            data: Serialized metadata block from ``.chart.json``.
+
+        Returns:
+            Parsed song-level metadata with nested BPM segments.
+        """
         segments = [BpmSegment.from_dict(item) for item in data.get("bpm_segments", [])]
         payload = dict(data)
         payload["bpm_segments"] = segments
@@ -117,7 +128,14 @@ class ParsedChart(_DictSerializableMixin):
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Parse chart including nested summary."""
+        """Parse chart including nested summary.
+
+        Args:
+            data: Serialized chart block from ``.chart.json``.
+
+        Returns:
+            Parsed chart with nested summary and step rows.
+        """
         payload = dict(data)
         payload["summary"] = ChartSummary.from_dict(data["summary"])
         return cls(**payload)
@@ -159,7 +177,14 @@ class ParsedSongPack(_DictSerializableMixin):
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Parse a song pack including nested metadata and charts."""
+        """Parse a song pack including nested metadata and charts.
+
+        Args:
+            data: Serialized ``.chart.json`` root object.
+
+        Returns:
+            Parsed song pack with nested metadata and chart blocks.
+        """
         payload = dict(data)
         payload["metadata"] = SimfileMetadata.from_dict(data["metadata"])
         payload["charts"] = [ParsedChart.from_dict(c) for c in data.get("charts", [])]

@@ -15,7 +15,11 @@ class _DictSerializableMixin:
     """Mixin providing default as_dict and from_dict for manifest dataclasses."""
 
     def as_dict(self) -> dict:
-        """Convert manifest object to dictionary for JSON serialization."""
+        """Convert manifest object to dictionary for JSON serialization.
+
+        Returns:
+            Serializable mapping of dataclass fields.
+        """
         return dataclasses.asdict(self)  # type: ignore[arg-type]
 
     @classmethod
@@ -32,7 +36,12 @@ class _DictSerializableMixin:
 
 
 class DiscoveryMode(enum.StrEnum):
-    """How ``--input-dir`` is interpreted for bundle grouping."""
+    """How ``--input-dir`` is interpreted for bundle grouping.
+
+    Attributes:
+        MULTI_BUNDLE: ``input_dir`` contains multiple bundle subdirectories.
+        SINGLE_BUNDLE: ``input_dir`` is one bundle directory.
+    """
 
     MULTI_BUNDLE = "multi_bundle"
     SINGLE_BUNDLE = "single_bundle"
@@ -92,7 +101,14 @@ class PacksManifest(_DictSerializableMixin):
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Parse manifest including nested bundle and pack rows."""
+        """Parse manifest including nested bundle and pack rows.
+
+        Args:
+            data: Serialized ``packs_manifest.json`` payload.
+
+        Returns:
+            Parsed manifest with nested bundle and pack entries.
+        """
         payload = dict(data)
         payload["discovery_mode"] = DiscoveryMode(data["discovery_mode"])
         payload["bundles"] = [
@@ -177,7 +193,15 @@ def list_pack_dirs(bundle_dir: pathlib.Path) -> list[pathlib.Path]:
 
 
 def _relpath_posix(root: pathlib.Path, path: pathlib.Path) -> str:
-    """Return ``path`` relative to ``root`` using forward slashes."""
+    """Return ``path`` relative to ``root`` using forward slashes.
+
+    Args:
+        root: Base directory for the relative path.
+        path: Absolute or resolved path under ``root``.
+
+    Returns:
+        POSIX-style relative path string.
+    """
     return path.relative_to(root).as_posix()
 
 

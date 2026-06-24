@@ -24,12 +24,23 @@ class _DictSerializableMixin:
     """Mixin providing default as_dict and from_dict for manifest dataclasses."""
 
     def as_dict(self) -> dict:
-        """Convert manifest object to dictionary for JSON serialization."""
+        """Convert manifest object to dictionary for JSON serialization.
+
+        Returns:
+            Serializable mapping of dataclass fields.
+        """
         return dataclasses.asdict(self)  # type: ignore[arg-type]
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Create manifest object from dictionary."""
+        """Create manifest object from dictionary.
+
+        Args:
+            data: Serialized field values for the dataclass.
+
+        Returns:
+            Instance with fields taken from ``data``.
+        """
         return cls(**data)
 
 
@@ -73,7 +84,14 @@ class NameMapEntry(_DictSerializableMixin):
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Parse name map entry with defaults for newer optional fields."""
+        """Parse name map entry with defaults for newer optional fields.
+
+        Args:
+            data: Serialized name-map row.
+
+        Returns:
+            Parsed entry with defaults for optional chart counters.
+        """
         payload = dict(data)
         payload.setdefault("charts_exported", 0)
         payload.setdefault("charts_skipped", 0)
@@ -99,7 +117,14 @@ class NameMap(_DictSerializableMixin):
 
     @classmethod
     def from_dict(cls, data: dict):
-        """Parse name map including nested entries."""
+        """Parse name map including nested entries.
+
+        Args:
+            data: Serialized ``name_map.json`` root object.
+
+        Returns:
+            Parsed name map with nested entry rows.
+        """
         payload = dict(data)
         payload["raw_input_root"] = data.get("raw_input_root") or data.get(
             "input_dir", ""

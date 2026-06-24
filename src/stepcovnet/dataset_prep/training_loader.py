@@ -44,6 +44,17 @@ class TrainingChartRow:
 def _load_pack_from_chart_json(
     chart_path: str | os.PathLike[str],
 ) -> models.ParsedSongPack:
+    """Load and validate one ``.chart.json`` file as a parsed song pack.
+
+    Args:
+        chart_path: Absolute path to a chart JSON file.
+
+    Returns:
+        Parsed song pack for the on-disk JSON object.
+
+    Raises:
+        ValueError: When ``schema_version`` is missing or unsupported.
+    """
     path = pathlib.Path(chart_path)
     with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
@@ -63,6 +74,16 @@ def _row_from_pack(
     chart_index: int,
     output_dir: pathlib.Path,
 ) -> TrainingChartRow:
+    """Build one training row from a parsed pack and chart index.
+
+    Args:
+        pack: Parsed song pack loaded from disk.
+        chart_index: Index into ``pack.charts``.
+        output_dir: Preprocess output root for resolving paths.
+
+    Returns:
+        Training row with absolute audio and chart JSON paths.
+    """
     chart = pack.charts[chart_index]
     song_dir = output_dir / pack.normalized_bundle / pack.normalized_id
     chart_json = song_dir / f"{pack.normalized_id}.chart.json"
@@ -85,6 +106,15 @@ def _discover_from_name_map(
     *,
     only_exported: bool,
 ) -> list[TrainingChartRow]:
+    """Discover training rows via ``name_map.json`` exported entries.
+
+    Args:
+        output_dir: Preprocess output root containing ``name_map.json``.
+        only_exported: When True, skip non-exported name-map rows.
+
+    Returns:
+        Sorted rows for every chart block in selected packs.
+    """
     name_map = normalize.load_name_map(normalize.name_map_path(output_dir))
     rows: list[TrainingChartRow] = []
     for entry in name_map.entries:
@@ -104,6 +134,14 @@ def _discover_from_name_map(
 
 
 def _discover_from_filesystem(output_dir: pathlib.Path) -> list[TrainingChartRow]:
+    """Discover training rows by scanning nested ``*.chart.json`` files.
+
+    Args:
+        output_dir: Preprocess output root to scan recursively.
+
+    Returns:
+        Sorted rows for every chart block found on disk.
+    """
     rows: list[TrainingChartRow] = []
     for chart_path in sorted(output_dir.rglob("*.chart.json")):
         if any(part in _SKIP_DIR_NAMES for part in chart_path.parts):
@@ -158,7 +196,15 @@ def filter_rows_by_step_cap(
     *,
     max_steps: int,
 ) -> list[TrainingChartRow]:
-    """Keep rows whose ``num_steps`` is at most ``max_steps``."""
+    """Keep rows whose ``num_steps`` is at most ``max_steps``.
+
+    Args:
+        rows: Candidate training rows.
+        max_steps: Maximum encoded step count (inclusive).
+
+    Returns:
+        Filtered rows preserving input order among kept entries.
+    """
     return [row for row in rows if row.num_steps <= max_steps]
 
 
@@ -166,7 +212,18 @@ def load_chart_times_sec(
     chart_path: str | os.PathLike[str],
     chart_index: int,
 ) -> np.ndarray:
-    """Load sorted onset times for one chart block inside ``.chart.json``."""
+    """Return sorted onset times for one chart block inside ``.chart.json``.
+
+    Args:
+        chart_path: Path to a ``.chart.json`` file.
+        chart_index: Index into ``charts[]`` inside the JSON file.
+
+    Returns:
+        Sorted onset times in seconds as ``float64``.
+
+    Raises:
+        IndexError: When ``chart_index`` is out of range for the file.
+    """
     pack = _load_pack_from_chart_json(chart_path)
     if chart_index < 0 or chart_index >= len(pack.charts):
         raise IndexError(
@@ -183,7 +240,19 @@ def load_chart_column_codes(
     *,
     binary_timings: bool = False,
 ) -> np.ndarray:
-    """Load per-step column codes for one chart block inside ``.chart.json``."""
+    """Return per-step column codes for one chart block inside ``.chart.json``.
+
+    Args:
+        chart_path: Path to a ``.chart.json`` file.
+        chart_index: Index into ``charts[]`` inside the JSON file.
+        binary_timings: When True, return zeros (timing-only labels).
+
+    Returns:
+        Column codes as ``int32``; zeros when ``binary_timings`` is True.
+
+    Raises:
+        IndexError: When ``chart_index`` is out of range for the file.
+    """
     pack = _load_pack_from_chart_json(chart_path)
     if chart_index < 0 or chart_index >= len(pack.charts):
         raise IndexError(
@@ -197,6 +266,13 @@ def load_chart_column_codes(
 
 
 def load_chart_bpm(chart_path: str | os.PathLike[str]) -> float:
-    """Return ``metadata.initial_bpm`` from a ``.chart.json`` file."""
+    """Return ``metadata.initial_bpm`` from a ``.chart.json`` file.
+
+    Args:
+        chart_path: Path to a ``.chart.json`` file.
+
+    Returns:
+        Initial BPM from the first ``#BPMS`` segment in the simfile metadata.
+    """
     pack = _load_pack_from_chart_json(chart_path)
     return float(pack.metadata.initial_bpm)

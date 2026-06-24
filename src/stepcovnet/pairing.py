@@ -42,38 +42,47 @@ def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
 
 
 def list_training_samples(
-    data_dir: str,
+    data_ref: str,
     split: SplitName | None = None,
 ) -> list[tuple[str, str, int]]:
     """Return training samples as ``(audio_path, chart_path, chart_index)``.
 
-    When ``data_dir`` contains a prepared ``final_data`` layout (``name_map.json``
-    or nested ``.chart.json`` files), one row is returned per chart block inside
-    each song JSON. When ``split`` is ``train`` or ``val`` and
-    ``training_index.json`` exists, only manifest rows for that split are returned.
-    Otherwise falls back to legacy ``.txt`` pairs with ``chart_index`` 0.
+    ``data_ref`` may be:
+
+    - A path to ``training_index.json`` (or another manifest ``.json``). Entries
+      are resolved via the manifest's ``output_dir`` and relative audio/chart paths.
+    - A prepared output root (``final_data``). Uses ``training_index.json`` when
+      ``split`` is set, otherwise discovers all chart rows under the tree.
+    - A legacy layout root with ``.txt`` charts (``chart_index`` 0).
 
     Args:
-        data_dir: Training data root (``data/v2/train``, ``data/final_data``, …).
-        split: Optional ``train`` or ``val`` filter when a training index exists.
+        data_ref: Manifest file, prepared output root, or legacy training directory.
+        split: Optional ``train`` or ``val`` filter when loading from a manifest.
 
     Returns:
         Sorted sample refs for dataloaders.
 
     Raises:
-        ValueError: When ``split`` is set but ``training_index.json`` is missing.
+        ValueError: When ``split`` is set but no manifest can be resolved.
     """
-    if split is not None:
-        index_path = training_index.training_index_path(data_dir)
-        if not index_path.is_file():
-            raise ValueError(f"split={split!r} requires {index_path}")
-        rows = training_index.rows_for_split(data_dir, split)
+    index_path, data_root = training_index.locate_training_index(data_ref)
+    if index_path is not None:
+        index = training_index.load_training_index(index_path)
+        root = training_index.resolve_output_dir(index, index_path)
+        rows = training_index.rows_from_index(index, root, split=split)
         return [(row.audio_path, row.chart_json_path, row.chart_index) for row in rows]
 
-    rows = training_loader.discover_training_rows(data_dir)
+    if split is not None:
+        raise ValueError(
+            f"split={split!r} requires a training index; "
+            f"pass a manifest file or a directory containing "
+            f"{training_index.TRAINING_INDEX_FILENAME}"
+        )
+
+    rows = training_loader.discover_training_rows(data_ref)
     if rows:
         return [(row.audio_path, row.chart_json_path, row.chart_index) for row in rows]
     return [
         (audio_path, chart_path, 0)
-        for audio_path, chart_path in list_audio_chart_pairs(data_dir)
+        for audio_path, chart_path in list_audio_chart_pairs(data_ref)
     ]

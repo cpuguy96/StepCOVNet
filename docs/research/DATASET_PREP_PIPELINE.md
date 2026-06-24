@@ -56,13 +56,30 @@ Out of scope: MERT extraction, train/val split, model training.
 
 **P9 (done):** trainers and onset dataloaders consume `(audio_path, chart_json_path, chart_index)` from `final_data`. `datasets._parse_step_chart` and `onset_events.charts` read `.chart.json` blocks by `chart_index`; legacy `.txt` / `.sm` still supported.
 
-**P8 (done):** `training_index.json` at output root; song-level `stratified_song_v1` split (10% val per bundle default). Build:
+**P8 (done):** point training at ``training_index.json`` directly or at the prepared
+output root. The manifest's ``output_dir`` plus relative ``audio_relpath`` /
+``chart_relpath`` entries tell loaders where files live.
 
 ```bash
 venv\Scripts\python.exe scripts\build_training_index.py --output-dir data/final_data --overwrite
 ```
 
-Loaders: `pairing.list_training_samples(data_dir, split="train"|"val")`. Event trainer auto-uses the manifest when `data_dir == val_data_dir` and the index file exists.
+Load samples:
+
+```python
+pairing.list_training_samples("data/final_data/training_index.json", split="train")
+```
+
+Train (manifest is the only data pointer needed):
+
+```bash
+python scripts/train_onset_event.py --config=... \
+  --training_index_path=data/final_data/training_index.json \
+  --model_output_dir=models/onset_event
+```
+
+Legacy: ``data_dir=val_data_dir=data/final_data`` still auto-splits when the index
+sits under that root.
 
 **Raw gap (prep input):** ITL packs often have `Expanded.ogg` + `sm.ssc` with **non-matching stems** — resolved in prep via `#MUSIC` + audio inference (§8.2), not at train time.
 

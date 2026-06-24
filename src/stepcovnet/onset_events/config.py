@@ -63,8 +63,11 @@ class OnsetEventDatasetConfig(_DictSerializableMixin):
     """Dataset settings for event-based onset training and validation.
 
     Attributes:
-        data_dir: Path to training audio/chart pairs.
-        val_data_dir: Path to validation pairs.
+        data_dir: Path to training audio/chart pairs, or legacy train directory.
+        val_data_dir: Path to validation pairs, or legacy val directory.
+        training_index_path: Optional path to ``training_index.json``. When set,
+            train/val samples and ``data_root`` are resolved from the manifest;
+            ``data_dir`` / ``val_data_dir`` are optional.
         test_data_dir: Optional path for smoke or holdout evaluation.
         batch_size: Samples per batch.
         max_audio_seconds: Maximum waveform duration before truncation.
@@ -85,6 +88,7 @@ class OnsetEventDatasetConfig(_DictSerializableMixin):
 
     data_dir: str = "data/v2/train"
     val_data_dir: str = "data/v2/val"
+    training_index_path: str = ""
     test_data_dir: str = "data/v2/test"
     overfit_audio_path: str = ""
     overfit_chart_path: str = ""

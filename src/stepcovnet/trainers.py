@@ -19,6 +19,7 @@ from stepcovnet import (
     models,
     reproducibility,
 )
+from stepcovnet.dataset_prep import training_index
 
 ONSET_CHECKPOINT_MONITOR = "val_onset_f1_score"
 
@@ -547,30 +548,61 @@ def run_train_from_config(
     if run_config.seed is not None:
         reproducibility.apply_training_seed(run_config.seed)
 
-    if dataset_config.max_train_songs != -1:
-        all_train_pairs = datasets.select_song_pairs(
-            datasets.list_audio_chart_pairs(dataset_config.data_dir),
-            max_songs=-1,
+    train_split = None
+    val_split = None
+    train_ref = dataset_config.data_dir
+    val_ref = dataset_config.val_data_dir
+    data_root = dataset_config.data_root or dataset_config.data_dir
+
+    index_ref = str(dataset_config.training_index_path).strip()
+    if index_ref:
+        index_path = pathlib.Path(index_ref)
+        index = training_index.load_training_index(index_path)
+        data_root = str(training_index.resolve_output_dir(index, index_path))
+        train_ref = index_ref
+        val_ref = index_ref
+        train_split = training_index.SPLIT_TRAIN
+        val_split = training_index.SPLIT_VAL
+        logging.info(
+            "Using training index %s (data root %s)",
+            index_ref,
+            data_root,
         )
-        selected_train_pairs = datasets.select_song_pairs(
-            all_train_pairs,
+    elif training_index.manifest_split_enabled(
+        dataset_config.data_dir,
+        dataset_config.val_data_dir,
+    ):
+        train_split = training_index.SPLIT_TRAIN
+        val_split = training_index.SPLIT_VAL
+        logging.info(
+            "Using training_index.json for train/val under %s",
+            dataset_config.data_dir,
+        )
+
+    if dataset_config.max_train_songs != -1:
+        all_train_samples = datasets.list_dense_onset_samples(
+            train_ref,
+            split=train_split,
+        )
+        selected_train_samples = datasets.select_song_pairs(
+            all_train_samples,
             max_songs=dataset_config.max_train_songs,
             seed=run_config.seed,
         )
         selected_stems = sorted(
-            pathlib.Path(audio_path).stem for audio_path, _ in selected_train_pairs
+            pathlib.Path(audio_path).stem for audio_path, _, _ in selected_train_samples
         )
         logging.info(
             "Training on %d of %d songs (max_train_songs=%d, seed=%s): %s",
-            len(selected_train_pairs),
-            len(all_train_pairs),
+            len(selected_train_samples),
+            len(all_train_samples),
             dataset_config.max_train_songs,
             run_config.seed,
             ", ".join(selected_stems),
         )
 
     train_dataset = datasets.create_dataset(
-        data_dir=dataset_config.data_dir,
+        data_dir=train_ref,
         batch_size=dataset_config.batch_size,
         apply_temporal_augment=dataset_config.apply_temporal_augment,
         should_apply_spec_augment=dataset_config.should_apply_spec_augment,
@@ -581,10 +613,12 @@ def run_train_from_config(
         n_features=config.resolve_onset_input_features(dataset_config, model_config),
         max_songs=dataset_config.max_train_songs,
         song_selection_seed=run_config.seed,
+        split=train_split,
+        data_root=data_root,
     )
 
     val_dataset = datasets.create_dataset(
-        data_dir=dataset_config.val_data_dir,
+        data_dir=val_ref,
         batch_size=dataset_config.batch_size,
         apply_temporal_augment=False,
         should_apply_spec_augment=False,
@@ -592,6 +626,8 @@ def run_train_from_config(
         feature_source=dataset_config.feature_source,
         mert_features_dir=dataset_config.mert_features_dir,
         n_features=config.resolve_onset_input_features(dataset_config, model_config),
+        split=val_split,
+        data_root=data_root,
     )
 
     experiment_name = _get_onset_experiment_name(

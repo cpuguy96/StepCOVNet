@@ -151,7 +151,11 @@ def normalize_difficulty(difficulty: str) -> tuple[str, str, list[str]]:
     normalized = difficulty.strip().lower()
     if normalized in constants.STANDARD_DIFFICULTIES:
         return normalized, constants.DIFFICULTY_KIND_STANDARD, []
-    return normalized or "custom", constants.DIFFICULTY_KIND_CUSTOM, ["custom_difficulty"]
+    return (
+        normalized or "custom",
+        constants.DIFFICULTY_KIND_CUSTOM,
+        ["custom_difficulty"],
+    )
 
 
 def is_dance_single(chart: types.Chart) -> bool:

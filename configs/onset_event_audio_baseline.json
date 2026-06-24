@@ -5,8 +5,8 @@
     "test_data_dir": "data/v2/test",
     "batch_size": 1,
     "max_audio_seconds": 300,
-    "n_max_onsets": 1024,
-    "max_steps_per_chart": 1024,
+    "n_max_onsets": 2048,
+    "max_steps_per_chart": 2048,
     "target_sample_rate": 44100,
     "truncate_long_audio": true,
     "apply_audio_augment": false
@@ -20,7 +20,7 @@
       "kernel_size": 3,
       "dropout_rate": 0.0
     },
-    "num_queries": 1024,
+    "num_queries": 2048,
     "embed_dim": 256,
     "decoder_layers": 2
   },
