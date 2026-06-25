@@ -1,6 +1,6 @@
 # Dataset preprocessing pipeline — plan
 
-**Status:** Design doc — decisions locked **2026-06-10** (§14); layout nested bundles **2026-06-10** (§1, §7, 1.4); field rationale **2026-06-14** (§6.3); audit **2026-06-10** (§15). **Implementation:** P0–P7 + P6 + **P9 done** (2026-06-22); local `data/final_data` has **1942** chart rows from three bundles; **P8** (`training_index.json` + train/val split) is next.  
+**Status:** Design doc — decisions locked **2026-06-10** (§14); layout nested bundles **2026-06-10** (§1, §7, 1.4); field rationale **2026-06-14** (§6.3); audit **2026-06-10** (§15). **Implementation:** **P0–P9 done** (2026-06-24); local `data/final_data` has **1942** chart rows + `training_index.json` (**1010** / **110** songs, **1745** / **197** rows train/val).  
 **Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) (PRE stage) · [project-layout.md](../agents/project-layout.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase
 
 **Default paths (configurable):**
@@ -42,7 +42,7 @@ Per song directory:
 ```
 
 Stage 1 scope: **discover → normalize bundle + song names → parse simfile → convert to seconds → validate → write**.  
-Out of scope: MERT extraction, train/val split, model training.
+Out of scope for `preprocess_dataset.py`: MERT extraction, train/val split (see P8 / `build_training_index.py`), model training.
 
 ---
 
@@ -61,7 +61,7 @@ output root. The manifest's ``output_dir`` plus relative ``audio_relpath`` /
 ``chart_relpath`` entries tell loaders where files live.
 
 ```bash
-venv\Scripts\python.exe scripts\build_training_index.py --output-dir data/final_data --overwrite
+python scripts/build_training_index.py --output-dir data/final_data --overwrite
 ```
 
 Load samples:
@@ -73,9 +73,13 @@ pairing.list_training_samples("data/final_data/training_index.json", split="trai
 Train (manifest is the only data pointer needed):
 
 ```bash
-python scripts/train_onset_event.py --config=... \
+python scripts/train_onset.py --config=configs/onset_baseline.json \
   --training_index_path=data/final_data/training_index.json \
-  --model_output_dir=models/onset_event
+  --model_output_dir=models/dense_final_data
+
+python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json \
+  --training_index_path=data/final_data/training_index.json \
+  --model_output_dir=models/onset_event_final_data
 ```
 
 Legacy: ``data_dir=val_data_dir=data/final_data`` still auto-splits when the index
@@ -150,10 +154,10 @@ Quick test on `data/raw_data/ITL Online 2026` (310 packs):
 4. **Skip charts over 2048** unless `--allow-over-cap`; record in `preprocess_report.json` `chart_skips` (§7.4).
 5. **Nested output** `{normalized_bundle}/{normalized_id}/` with normalized bundle folder names (§7).
 
-Re-run discovery (repo root, Windows CPU venv):
+Re-run discovery (repository root):
 
 ```bash
-venv\Scripts\python.exe scripts\preprocess_dataset.py --dry-run --input-dir data/raw_data --output-dir data/final_data
+python scripts/preprocess_dataset.py --dry-run --input-dir data/raw_data --output-dir data/final_data
 ```
 
 **API surface (v2.1.1):**
@@ -229,12 +233,12 @@ flowchart TD
 
 One CLI runs the pipeline **in order**: discover → normalize → process packs → merge report. Implementation is **sequential by phase** (P0→P7 in §10). Within a batch run, only **pack processing** is parallel — controlled by **`--workers N`** (default `1`) via a process pool inside the script.
 
-Run from **repository root** (Windows CPU venv):
+Run from **repository root** (project virtual environment activated):
 
 ```bash
-venv\Scripts\python.exe scripts\preprocess_dataset.py ^
-  --input-dir "data/raw_data/ITL Online 2026" ^
-  --output-dir data/final_data ^
+python scripts/preprocess_dataset.py \
+  --input-dir "data/raw_data/ITL Online 2026" \
+  --output-dir data/final_data \
   --workers 8
 ```
 
@@ -689,7 +693,7 @@ Backward-compatible **optional** keys (old loaders ignore) _may_ stay on v1 if d
 | `entries[].source_pack`       | Full path to raw pack       | Traceability | Manual fixes via `name_map.csv`                     |
 | `entries[].status`            | Pack lifecycle              | §7.5         | `pending` → `ok` / skip codes                       |
 
-`training_index.json` is **not** in prep v1 (§14 3.2, P8).
+`training_index.json` is emitted by **P8** (`scripts/build_training_index.py`); not written by `preprocess_dataset.py`.
 
 #### `preprocess_report.json`
 
@@ -914,7 +918,7 @@ Implement **in order** P0→P6, then P7 batch. Phases are sequential dependencie
 | **P8**           | Train/val split + `training_index.json`                                                     | **Done** — `stratified_song_v1`; `scripts/build_training_index.py` |
 | **P9**           | `training_loader.py`, `pairing.list_training_samples`, onset/dense chart loaders (§13)      | Done   |
 
-**Next milestone:** first multi-song training on `data/final_data` with `training_index.json`.
+**Next milestone:** first full multi-song GPU training + val eval on `data/final_data` via `--training_index_path` (see [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase).
 
 ---
 
@@ -936,7 +940,7 @@ Pin `simfile==2.1.1` after smoke test; revisit when simfile 3.x stabilizes.
 | Risk                                                  | Mitigation                                                              |
 | ----------------------------------------------------- | ----------------------------------------------------------------------- |
 | ~60 ITL doubles-only packs skipped                    | Expected; report as `no_dance_single` — no `dance-double` parsing in v1 |
-| Mizuki/Vocaloid multi-chart packs                     | `export_all_singles`; P8 training index later                           |
+| Mizuki/Vocaloid multi-chart packs                     | `export_all_singles`; one manifest row per `chart_index` (P8 done)    |
 | Mizuki Beginner meter > Challenge                     | Export as-is; cross-artist meter normalization deferred (§15.1)         |
 | Shift-JIS / mixed-encoding `.sm` (Mizuki)             | Encoding retry list; skip pack on `encoding_error`                      |
 | Custom `#DIFFICULTY` (e.g. Vocaloid **Edit**)         | Export with `difficulty_kind: custom` + warning                         |
@@ -959,12 +963,14 @@ Prep writes `.chart.json` (legacy `.txt` off by default). **P9 (done)** wires tr
 | `dataset_prep/training_loader.py` | `discover_training_rows`, `load_chart_times_sec`, `load_chart_column_codes`, `filter_rows_by_step_cap` |
 | `pairing.list_training_samples` | `(audio_path, chart_json_path, chart_index)`; falls back to legacy `.txt` |
 | `datasets.list_training_samples` | Thin wrapper over `pairing` |
+| `datasets.list_dense_onset_samples` | Dense path; same 3-tuple contract |
 | `datasets._parse_step_chart(..., chart_index=)` | JSON block or legacy `.txt` |
 | `onset_events/charts.py`, `onset_events/datasets.py` | Event pipeline; 3-tuple samples through TF dataset |
+| `trainers.py`, `onset_events/trainers.py` | `--training_index_path` or `dataset.training_index_path` selects train/val rows |
 
 Discovery uses `name_map.json` when present, else filesystem scan of `*.chart.json`. One training row per `(bundle, song, chart_index)`.
 
-**P8:** emit flat `training_index.json` rows (§6.2 example) and train/val partition — loaders should prefer that manifest once shipped.
+**P8 (done):** `training_index.json` is the preferred train/val pointer — `output_dir` + per-row `audio_relpath` / `chart_relpath` / `split`. CLI: `--training_index_path` on `train_onset.py` and `train_onset_event.py`.
 
 **Do not** merge simfile parsing into `datasets.py` — keep raw PRE ingestion in `dataset_prep/`.
 
@@ -977,7 +983,7 @@ Ad-hoc ITL-only script (2026-06-13); superseded for counts by `preprocess_datase
 Re-run discovery dry-run (repo root):
 
 ```bash
-venv\Scripts\python.exe scripts\preprocess_dataset.py --dry-run --input-dir data/raw_data --output-dir data/final_data
+python scripts/preprocess_dataset.py --dry-run --input-dir data/raw_data --output-dir data/final_data
 ```
 
 **P6 tests (§14 15.11):** use self-contained packs in `tests/fixtures/dataset_prep/` (3 golden fixtures). Optional `@pytest.mark.slow` integration may point at real `data/raw_data/` paths when present locally.
@@ -999,7 +1005,7 @@ Locked before implementation. Historical pack survey (2026-06-10) informed §3; 
 | 2.4   | Vocaloid Edit          | Include; difficulty_kind custom                                                   |
 | 2.5   | highest_meter policy   | Removed from v1                                                                   |
 | 3.1   | Schema                 | charts[] + default_chart_index                                                    |
-| 3.2   | training_index.json    | Defer P8                                                                          |
+| 3.2   | training_index.json    | **Done** — P8 `build_training_index.py`                                           |
 | 3.3   | Manifest bundle fields | `source_bundle`, `normalized_bundle`, `output_relpath` in `name_map.json` only    |
 | 3.4   | difficulty_kind        | Always on every chart                                                             |
 | 3.5   | Derived stats          | num_steps only in v1                                                              |
@@ -1010,7 +1016,7 @@ Locked before implementation. Historical pack survey (2026-06-10) informed §3; 
 | 8.x   | Legacy txt             | Off by default; multi-block when on                                               |
 | 9.x   | Validation             | Skip bad, empty, invalid charts; **no** `--reject-invalid-holds` (15.9)           |
 | 10.x  | Slugs                  | TITLE, translit, folder; max 64; reserved → `_dir` (15.12)                        |
-| 11.1  | Train/val split        | Defer P8                                                                          |
+| 11.1  | Train/val split        | **Done** — `stratified_song_v1` in `training_index.json`                          |
 | 11.2  | JSON loader            | P9 — `training_loader` + `pairing.list_training_samples` (done)                   |
 | 11.3  | dance-double           | Skip in v1                                                                        |
 | 11.4  | MERT                   | Out of prep scope                                                                 |
@@ -1038,7 +1044,7 @@ Items **not yet locked** or explicitly **deferred past v1** — safe to implemen
 | -------------------------------------------------- | ----------- | -------------------------------------------------------------------------- |
 | **Cross-artist difficulty normalization** (15.1)   | Deferred    | Raw `#METER` only; meter=99 / Mizuki Beginner need computed hardness later |
 | **`steps_per_second`, hold/jump fractions** (15.2) | Deferred    | Extend `ChartSummary` in schema v2 if needed                               |
-| **`training_index.json`** (3.2 / P8)               | Deferred P8 | Flat `(bundle, song, chart_index)` rows after train/val split              |
+| **`training_index.json`** (3.2 / P8)               | **Done**    | `scripts/build_training_index.py` → flat split rows under `output_dir`     |
 | **`mine_times_sec`** (15.4)                        | Deferred    | Onset training uses player steps only today                                |
 | **Audio transcode to `.ogg`** (15.5)               | Deferred    | Copy as-is; trainers accept `.mp3` or transcode in later PRE               |
 | **Deep nested raw layouts** (15.6)                 | Deferred    | Packs = direct children of bundle (ITL, Mizuki, Vocaloid)                  |
@@ -1095,6 +1101,6 @@ Gate before P0–P7. **Blockers** must be specified in-doc or in first PR; **imp
 | CLI | `preprocess_dataset.py`, `build_training_index.py` |
 | Tests | `tests/dataset_prep/` + golden fixtures |
 | Local output | `data/final_data/` — **1942** chart rows + `training_index.json` |
-| Training hookup | P8 + P9 done; event trainer auto-splits when train/val dirs match |
+| Training hookup | P8 + P9 done; dense + event trainers use `--training_index_path` (legacy: same `data_dir`/`val_data_dir` auto-split) |
 
 ---

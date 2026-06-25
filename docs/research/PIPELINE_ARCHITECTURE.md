@@ -146,7 +146,7 @@ audio
 | Stage             | Module(s)                                                | Notes                                       |
 | ----------------- | -------------------------------------------------------- | ------------------------------------------- |
 | PRE I/O           | `onset_events/audio.py`                                  | librosa load, 44.1 kHz mono, peak norm      |
-| PRE chart pairing | `pairing.py`, `dataset_prep/training_loader.py`        | `final_data` `.chart.json` + `chart_index`; legacy `.txt` fallback |
+| PRE chart pairing | `pairing.py`, `dataset_prep/training_loader.py`, `dataset_prep/training_index.py` | `final_data` `.chart.json` + `chart_index`; `training_index.json` split; legacy `.txt` fallback |
 | PRE features      | `onset_events/frontend.py`, `onset_events/preprocess.py` | Conv1d in-graph; mel/MERT `.npy` cache      |
 | MODEL             | `onset_events/encoder.py`, `onset_events/models.py`      | U-Net encoder + query head                  |
 | POST (inference)  | `onset_events/inference.py`                              | Threshold, sort, min-gap                    |
@@ -154,7 +154,7 @@ audio
 | Training feedback | `onset_events/losses.py`, `onset_events/trainers.py`     | Combined loss, custom train/val steps       |
 | Diagnostics       | `onset_events/diagnostics.py`                            | Confidence/assignment sweeps on checkpoints |
 
-**Scripts:** `scripts/train_onset_event.py`, `scripts/run_overfit_tide_suite.py`, `scripts/run_overfit_tide_ablations.py`
+**Scripts:** `scripts/train_onset.py`, `scripts/train_onset_event.py`, `scripts/run_overfit_tide_suite.py`, `scripts/run_overfit_tide_ablations.py`
 
 ---
 
@@ -180,7 +180,7 @@ Tag each `EXP-…` entry with the stage under test:
 | Tag      | Question example                                 |
 | -------- | ------------------------------------------------ |
 | `pre`    | Raw Conv1D vs mel vs MERT on same event head     |
-| `model`  | K=1024 vs capacity; query slots vs dense         |
+| `model`  | K=2048 vs capacity; query slots vs dense         |
 | `post`   | Threshold / min-gap sweep on fixed checkpoint    |
 | `metric` | Train matching vs eval; mingap in primary metric |
 | `train`  | Loss weights, epochs, LR                         |

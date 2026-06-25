@@ -4,6 +4,32 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md)
 
+## Session 2026-06-24 — P8 complete + training manifest wiring
+
+### NOTE-20260624-01: final_data ready for multi-song training
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-24 12:00:00                                                   |
+| **Topic**     | P8 manifest + dense/event trainer hookup on `final_data`              |
+
+**Context:** P8 (`422a985`) and manifest-as-pointer wiring (`95367e7`) landed; docs still routed agents to build index / blocked val on P8.
+
+**Discovery:**
+
+- `training_index.json`: **1010** / **110** songs, **1745** / **197** chart rows (`stratified_song_v1`, val_fraction 0.1)
+- Dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches each track
+- Event baseline caps raised to **2048** (`n_max_onsets`, `max_steps_per_chart`, `num_queries`) — required for Raputa (1164 steps)
+
+**Implication:**
+
+- **Current phase:** first full GPU dense train on `data/final_data/training_index.json`, then val eval + threshold sweep
+- Legacy `data_dir=val_data_dir=data/final_data` remains but does not replace the P8 song split
+
+**Related:** [EXP-20260623-02](EXPERIMENT_LOG.md#exp-20260623-02-p8-trainval-manifest-on-full-final_data), [EXP-20260624-01](EXPERIMENT_LOG.md#exp-20260624-01-10-song-dense-training-smoke-training_index_path), [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2
+
+---
+
 ## Session 2026-06-22 — P9 smoke + doc sync
 
 ### NOTE-20260622-01: P9 loaders validated on full final_data
@@ -23,7 +49,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Implication:**
 
-- P9 **done**; **P8** (`training_index.json` + split) is the remaining gate for proper val on `final_data`
+- P9 **done**; ~~P8 is the remaining gate~~ **Update (2026-06-24):** P8 done — `training_index.json` + dense/event `--training_index_path` (EXP-20260623-02, EXP-20260624-01/02)
 - Synced [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2/§10/§13/§16, [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md), [project-layout.md](../agents/project-layout.md), [AGENTS.md](../../AGENTS.md), [README.md](../../README.md)
 
 **Related:** [EXP-20260622-01](EXPERIMENT_LOG.md#exp-20260622-01-p9-final_data-loader-smoke), DATASET_PREP_PIPELINE §10

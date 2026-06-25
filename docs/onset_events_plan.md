@@ -1,10 +1,12 @@
 # Event-based onset detection — implementation plan
 
 > **Historical:** Phases 1–6 were implemented in `src/stepcovnet/onset_events/`. For current architecture, training procedures, and next steps, use [PIPELINE_ARCHITECTURE.md](research/PIPELINE_ARCHITECTURE.md) and [EXPERIMENT_LOG.md](research/EXPERIMENT_LOG.md) § Current phase. This file is kept for WP/phase detail only.
+>
+> **Supersedes (2026-06-24):** Step/query caps are **2048** in `configs/onset_event_audio_baseline.json` (not 1024). Multi-song training on prep output uses `--training_index_path=data/final_data/training_index.json` — see [DATASET_PREP_PIPELINE.md](research/DATASET_PREP_PIPELINE.md) §2.
 
 **Status:** Superseded for routing — see note above.
 
-**Last updated:** 2026-06-22 (banner only; body reflects 2026-06-01 handoff)
+**Last updated:** 2026-06-24 (banner; body reflects 2026-06-01 handoff)
 
 **Repo:** `stepcovnet` · **Package:** `src/stepcovnet/onset_events/`
 
@@ -79,11 +81,11 @@ Sub-agents do **not** auto-coordinate. The monitor must enforce **file ownership
 - **Scope:** New code under `src/stepcovnet/onset_events/` and `tests/onset_events/` only, plus `scripts/train_onset_event.py`, `configs/onset_event_audio_baseline.json`, and edits to this doc’s phase tracker. **Do not** change dense onset (`train_onset.py`, frame `datasets.create_dataset`, `models.build_unet_wavenet_model` sigmoid head) except **reuse** via import/copy patterns noted in the plan.
 - **I/O:** Raw audio in; continuous **seconds** + confidence out; **no** `HOP_COEFF` in labels/outputs; **no** mel/MERT feature files for this track.
 - **Constants:** `target_sample_rate=44100`, `max_audio_seconds=300`, `num_queries=1024`, `n_max_onsets=1024`, skip charts with **>1024** steps, `batch_size=1`, Hungarian matching, `λ_cls=1`, `λ_time=5`, `tolerance_sec=0.02`.
-- **Python:** Windows CPU venv at `venv\Scripts\python.exe` (repo root); WSL GPU venv at `${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}`. See [python-environment.mdc](../../.cursor/rules/python-environment.mdc) and [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
-- **Tests (Windows, repo root):**  
-  `venv\Scripts\python.exe -m pytest tests/onset_events/ -m "not slow" --cov=stepcovnet.onset_events`  
-  (per-package command in work packages may narrow path.) Follow `.cursor/rules/python-tests.mdc`.
-- **Train / GPU probe (WSL, repo root):** source `scripts/wsl_gpu_env.sh`, then `"${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}" scripts/...` — or run `scripts/wsl_probe_onset_event_sample_rate.sh` / `scripts/train_onset_event.py`.
+- **Python:** `python` from repository root with project venv activated (CPU). WSL GPU: `python` after `source scripts/wsl_gpu_env.sh` (override with `STEPCOVNET_WSL_PYTHON`). See [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+- **Tests (repo root):**  
+  `python -m pytest tests/onset_events/ -m "not slow" --cov=stepcovnet.onset_events`  
+  (per-package command in work packages may narrow path.)
+- **Train / GPU probe (WSL, repo root):** `source scripts/wsl_gpu_env.sh`, then `python scripts/...` — or run `scripts/wsl_probe_onset_event_sample_rate.sh` / `scripts/train_onset_event.py`.
 
 ### Dependency graph (what may run in parallel)
 
@@ -182,8 +184,7 @@ Run from **repository root** inside WSL (path to the clone does not matter):
 bash scripts/wsl_ensure_env.sh
 source scripts/wsl_gpu_env.sh
 export STEPCOVNET_IN_WSL=1
-"${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}" \
-  scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json
+python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json
 ```
 
 Use a short run (e.g. `take_count: 1`, few epochs) in config for smoke; full `epochs: 20` for real training.

@@ -49,7 +49,7 @@ allowing rhythm game enthusiasts to create charts for their favorite songs insta
 
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   source venv/bin/activate  # Windows: `venv\Scripts\activate` (after `python -m venv venv`)
    ```
 
 3. **Install dependencies**
@@ -138,17 +138,30 @@ preprocessed into nested `{bundle}/{song}/` directories with audio + `.chart.jso
 (local doc; `docs/` may be gitignored).
 
 ```bash
-# Windows CPU venv from repo root:
+# From repository root (activate your project virtual environment first):
 pip install -e ".[dataset-prep]"
-venv\Scripts\python.exe scripts\preprocess_dataset.py ^
-  --input-dir data/raw_data ^
-  --output-dir data/final_data ^
+python scripts/preprocess_dataset.py \
+  --input-dir data/raw_data \
+  --output-dir data/final_data \
   --workers 8
+
+python scripts/build_training_index.py \
+  --output-dir data/final_data \
+  --overwrite
 ```
 
-Training loaders discover samples via `pairing.list_training_samples(data_dir)` —
-one row per `(audio, chart.json, chart_index)`. Legacy `.txt` pairing still works
-for `data/v2`.
+Training loaders discover samples via `pairing.list_training_samples(...)` —
+one row per `(audio, chart.json, chart_index)`. For `final_data`, pass
+`training_index.json` (train/val split) to training scripts:
+
+```bash
+python scripts/train_onset.py \
+  --config configs/onset_baseline.json \
+  --training_index_path data/final_data/training_index.json \
+  --model_output_dir models/dense_final_data
+```
+
+Legacy `.txt` pairing still works for `data/v2` (`--train_data_dir` / `--val_data_dir`).
 
 **Manual `.sm` conversion (legacy):** Use [`SMDataTools`](https://github.com/jhaco/SMDataTools)
 to convert `.sm` files into `.txt` if not using the prep pipeline.
@@ -158,23 +171,40 @@ to convert `.sm` files into `.txt` if not using the prep pipeline.
 Train the model responsible for detecting when a note should occur. Spectrogram
 normalization is always applied so that training matches the inference pipeline.
 
+**`final_data` (recommended):** use a config + manifest:
+
 ```bash
 python scripts/train_onset.py \
-  --train_data_dir "data/train" \
-  --val_data_dir "data/val" \
-  --model_output_dir "models/onset" \
+  --config configs/onset_baseline.json \
+  --training_index_path data/final_data/training_index.json \
+  --model_output_dir models/onset
+```
+
+**Legacy `data/v2` layout:**
+
+```bash
+python scripts/train_onset.py \
+  --train_data_dir data/v2/train \
+  --val_data_dir data/v2/val \
+  --model_output_dir models/onset \
   --epochs 20
 ```
 
-| Argument              | Description                              | Default        |
-| :-------------------- | :--------------------------------------- | :------------- |
-| `--train_data_dir`    | Directory containing training data       | Required       |
-| `--val_data_dir`      | Directory containing validation data     | Required       |
-| `--model_output_dir`  | Directory to save the trained model      | Required       |
-| `--epochs`            | Number of training epochs                | `10`           |
-| `--callback_root_dir` | Root directory for logs and checkpoints  | `""`           |
-| `--take_count`        | Number of batches to use (for debugging) | `1`            |
-| `--model_name`        | Custom name for the model                | Auto-generated |
+On Windows, GPU training auto-dispatches to WSL when scripts use the GPU dispatch helper — see [docs/agents/project-layout.md](docs/agents/project-layout.md).
+
+| Argument                 | Description                              | Default        |
+| :----------------------- | :--------------------------------------- | :------------- |
+| `--config`               | JSON config path (dense baseline)        | Optional       |
+| `--training_index_path`  | `training_index.json` for train/val      | Optional       |
+| `--train_data_dir`       | Training data directory (legacy)         | Required\*     |
+| `--val_data_dir`         | Validation data directory (legacy)       | Required\*     |
+| `--model_output_dir`     | Directory to save the trained model      | Required       |
+| `--epochs`               | Number of training epochs                | From config / `10` |
+| `--callback_root_dir`    | Root directory for logs and checkpoints  | `""`           |
+| `--take_count`           | Number of batches to use (for debugging) | `1`            |
+| `--model_name`           | Custom name for the model                | Auto-generated |
+
+\*Required when not using `--training_index_path` or `--config` dataset paths.
 
 #### Training Arrow Model
 
@@ -182,9 +212,9 @@ Train the model responsible for predicting the arrow pattern (Left, Down, Up, Ri
 
 ```bash
 python scripts/train_arrow.py \
-  --train_data_dir "data/train" \
-  --val_data_dir "data/val" \
-  --model_output_dir "models/arrow" \
+  --train_data_dir data/v2/train \
+  --val_data_dir data/v2/val \
+  --model_output_dir models/arrow \
   --epochs 20
 ```
 
@@ -200,29 +230,49 @@ python scripts/train_arrow.py \
 
 ## 📂 Project Structure
 
+What you get from `git clone` (tracked paths):
+
 ```text
 stepcovnet/
-├── scripts/            # Training, generation, preprocess_dataset.py
-│   ├── generate.py
-│   ├── preprocess_dataset.py
-│   ├── train_onset.py
-│   └── train_arrow.py
+├── AGENTS.md
+├── LICENSE
+├── README.md
+├── configs/                # JSON experiment configs (onset, arrow, overfit_tide/, …)
+├── docs/                   # Research notes + docs/agents/ layout
+├── notebooks/
+├── pre_submit.py           # Local CI mirror (ruff, tests, notebooks)
+├── pre_submit.sh
+├── resources/              # Images, etc. (e.g. README header GIF)
+├── scripts/                # CLI entry points (28 scripts)
+│   ├── generate.py / generate_ui.py
+│   ├── preprocess_dataset.py / build_training_index.py
+│   ├── train_onset.py / train_onset_event.py / train_arrow.py
+│   ├── eval_dense_onset.py / eval_onset_event_f1.py / eval_spectral_flux_onset.py
+│   ├── extract_mert_features.py / sweep_val_*.py
+│   └── wsl_*.sh            # WSL GPU environment helpers
 ├── src/
-│   └── stepcovnet/     # Core package
+│   └── stepcovnet/
 │       ├── dataset_prep/   # Raw simfile → final_data (PRE)
 │       ├── onset_events/   # Event-based onset pipeline
-│       ├── datasets.py     # Data loading and preprocessing
-│       ├── pairing.py      # Audio/chart pairing for training
-│       ├── models.py       # Model architectures
-│       └── trainers.py     # Training loops
-├── data/
-│   ├── v2/             # Legacy train/val (.txt charts)
-│   ├── raw_data/       # Downloaded simfile packs
-│   └── final_data/     # Preprocessed nested output (.chart.json)
-├── tests/              # Unit tests
-├── pyproject.toml
-└── README.md
+│       ├── config.py, datasets.py, models.py, trainers.py
+│       ├── pairing.py, generator.py, mel_onset.py, wsl_gpu.py
+│       └── …               # losses, metrics, ssl_features, dense_overfit_eval, …
+├── tests/                  # Unit tests + tests/fixtures/dataset_prep/
+└── pyproject.toml
 ```
+
+**Not in git** (`.gitignore` — you create these locally when training or prepping data):
+
+```text
+data/v2/          # Legacy train/val/test (download or symlink)
+data/raw_data/    # Downloaded simfile packs
+data/final_data/  # Preprocess output (.chart.json, training_index.json)
+models/           # Saved checkpoints
+models_wsl/       # WSL-trained checkpoints
+callbacks/        # TensorBoard / training callbacks
+```
+
+See [docs/agents/project-layout.md](docs/agents/project-layout.md) for a fuller map of modules and scripts.
 
 ## 🤝 Contributing
 
@@ -245,8 +295,6 @@ python pre_submit.py --fast
 # Full CI mirror before push (~30+ min):
 python pre_submit.py --skip-install
 ```
-
-On Windows with a project venv: `venv\Scripts\python.exe pre_submit.py --fast`
 
 Optional: `pre-commit install --install-hooks --hook-type pre-commit` runs ruff on commit only (no full test suite on push).
 

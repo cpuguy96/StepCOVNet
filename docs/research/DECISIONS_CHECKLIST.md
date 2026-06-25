@@ -39,7 +39,7 @@
 | #   | Decision               | Options / notes                                                                             | Status                                       |
 | --- | ---------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | C1  | **Output formulation** | K query slots (current) vs dense frames vs seq2seq                                          | **open** — stay on query slots for ablations |
-| C2  | **`num_queries` K**    | 1024 vs tied to `n_max_onsets` — enforce `K >= max steps`                                   | **decided** — 1024 in baseline config        |
+| C2  | **`num_queries` K**    | 1024 vs tied to `n_max_onsets` — enforce `K >= max steps`                                   | **decided** — **2048** in `onset_event_audio_baseline.json` (align with `max_steps_per_chart`) |
 | C3  | **Time head**          | Learnable deltas + uniform grid (normal); GT refs only when `pipeline_check_shortcuts=true` | **decided**                                  |
 | C4  | **Encoder capacity**   | Current U-Net + 2 decoder layers — scale up only after pre ablation                         | **deferred**                                 |
 | C5  | **Loss weights**       | `lambda_cls`, `lambda_time` (tide overfit used 20 for time)                                 | **open** for full val train                  |
@@ -87,7 +87,7 @@
 | G2  | **Training loader (P9)**         | `chart_index` per row; `.chart.json` primary                 | **decided** — `training_loader.py`, `pairing.list_training_samples`    |
 | G3  | **Train/val split (P8)**         | `training_index.json` + `stratified_song_v1`                   | **decided** — `build_training_index.py`; song-level split per bundle |
 | G4  | **Step cap**                     | 2048 steps per chart at export and load                      | **decided** — all 1942 local rows pass cap (EXP-20260622-01)           |
-| G5  | **Legacy `.txt` during migration** | Fallback `chart_index=0` for `data/v2`                     | **decided** — until P8 + full migration                                |
+| G5  | **Legacy `.txt` during migration** | Fallback `chart_index=0` for `data/v2`                     | **decided** — `final_data` uses `.chart.json`; `data/v2` until retired |
 
 ---
 
@@ -95,10 +95,11 @@
 
 ### Dataset prep
 
-1. ~~**P8 — `training_index.json` + train/val split**~~ — done (`stratified_song_v1`)
-2. **First `final_data` training run** — dense or event onset with `data_dir=val_data_dir=data/final_data`
+1. ~~**P8 — `training_index.json` + train/val split**~~ — done (`stratified_song_v1`, EXP-20260623-02)
+2. ~~**Training manifest hookup**~~ — dense + event `--training_index_path` (EXP-20260624-01/02)
+3. **First full `final_data` GPU run** — dense MERT (or mel) with `--training_index_path=data/final_data/training_index.json`; then `eval_dense_onset.py` + threshold sweep
 
-### Onset research (paused pending P8 or explicit waive)
+### Onset research
 
 1. ~~**A5 — Hungarian train loss**~~ — done → [EXP-20260606-08](EXPERIMENT_LOG.md#experiment-index)
 2. ~~**Debug conv1d 0% F1**~~ — root cause in [NOTE-20260606-13](DISCUSSION_NOTES.md#note-20260606-13-conv1d-zero-f1--confidence-collapse-from-ordered-training)
@@ -106,8 +107,9 @@
 4. ~~**100 ep tide suite**~~ — no overfit → EXP-09
 5. ~~**Threshold / loss / arch ablations**~~ — none break plateau → EXP-10
 6. ~~**Tide bisection (diagnose + half-cheat)**~~ — formulation ceiling, not bug → EXP-11
-7. **Dense MERT tide overfit** — formulation control experiment
-8. **Formulation prototype** — dense frames or seq2seq on event metric
-9. Multi-song val — only after formulation gate or explicit waive
+7. **Full `final_data` dense val** — primary baseline on new dataset (unblocks F1/F3 comparisons)
+8. **Dense MERT tide overfit** — formulation control experiment (`data/v2`)
+9. **Formulation prototype** — dense frames or seq2seq on event metric
+10. Multi-song event val on `final_data` — after dense baseline or explicit waive
 
 Update this file when a row moves to **decided**; link the deciding `EXP-…` or `NOTE-…`.

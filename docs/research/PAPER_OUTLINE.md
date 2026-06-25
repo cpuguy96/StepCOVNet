@@ -35,6 +35,7 @@ See [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) for full stage definiti
 ### 3.1 Pipeline overview
 
 - PRE: audio I/O + optional features (raw, cached mel, cached MERT).
+- Dataset: `data/v2` (legacy `.txt`) vs `data/final_data` (nested `.chart.json` + `training_index.json` train/val).
 - MODEL: core detector → raw outputs.
 - POST: threshold, sort, min-gap → onset list (inference).
 - METRICS: Hungarian match @ tolerance → F1; optional mingap metric path.

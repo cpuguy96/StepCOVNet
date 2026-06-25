@@ -29,7 +29,8 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | User / task trigger                                     | Entry                                                                                    |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | raw simfile → `final_data`, preprocess, dataset prep    | `scripts/preprocess_dataset.py`, [DATASET_PREP_PIPELINE.md](../../docs/research/DATASET_PREP_PIPELINE.md) |
-| train/val split manifest for `final_data`             | `scripts/build_training_index.py`, [DATASET_PREP_PIPELINE.md](../../docs/research/DATASET_PREP_PIPELINE.md) §P8 |
+| train/val split manifest for `final_data`             | `scripts/build_training_index.py`, [DATASET_PREP_PIPELINE.md](../../docs/research/DATASET_PREP_PIPELINE.md) §2 |
+| dense / event train on `final_data`                     | `scripts/train_onset.py` or `train_onset_event.py` + `--training_index_path`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
 | bisection, half-cheat, grid oracle, smoke gate bug hunt | `scripts/run_overfit_tide_bisection.py`, [EXP-11](../../docs/research/EXPERIMENT_LOG.md) |
 
 ## Adding a skill

@@ -10,25 +10,26 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-06-22
+**Updated:** 2026-06-24
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
-| P0–P7, P6, P9, **P8** | **Done** — full three-bundle export; **1942** chart rows; loaders + `training_index.json` |
+| P0–P9 | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val) |
 
-**Recommended next step:** Run `build_training_index.py` on `data/final_data` if needed, then first multi-song onset training with `data_dir=val_data_dir=data/final_data` (WSL GPU).
+**Recommended next step:** First full multi-song **dense** training on `final_data` via `--training_index_path=data/final_data/training_index.json` (WSL GPU). Extract MERT features for `final_data` if not using mel baseline; then `eval_dense_onset.py` + threshold sweep on val.
 
 ### Onset detection (research track)
 
 | Item | Status |
 | ---- | ------ |
-| Dense val best | BiLSTM 256u — micro event F1 **0.686** @ thr=0.30 (EXP-20260610-03) |
-| Event tide formulation | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) |
-| Multi-song val on `final_data` | **Blocked on P8** |
+| Dense val best (`data/v2`) | BiLSTM 256u — micro event F1 **0.686** @ thr=0.30 (EXP-20260610-03) |
+| Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) |
+| `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01) |
+| Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU train + eval |
 
-**Recommended when resuming onset work:** After P8, re-run dense/event val on `data/final_data` train/val split; or continue tide overfit / formulation probes on `data/v2` in parallel.
+**Recommended when resuming onset work:** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best. Event track: continue formulation probes on `data/v2` in parallel if not blocking dense baseline.
 
 ---
 
@@ -38,6 +39,9 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260624-01 | `pre` + `train` | 10-song dense smoke via `training_index_path` | **Supported** | **10/10** train batches, 2 ep CPU; manifest-as-pointer OK |
+| EXP-20260624-02 | `pre` + `train` | 10-song event smoke @ 2048 caps | **Supported** | **10/10** train batches after `n_max_onsets` / `num_queries` / `max_steps_per_chart` = 2048 |
+| EXP-20260623-02 | `pre` | P8 `training_index.json` on full `final_data` | **Supported** | `stratified_song_v1`; 1010/110 songs; 1745/197 rows |
 | EXP-20260622-01 | `pre` + loader | P9 smoke on local `final_data` | **Supported** | 1942 chart rows; multi-`chart_index` OK; 0 missing pairs |
 | EXP-20260610-03 | `model` + `train` + `post` | BiLSTM 256u 50-train 200ep scale-up | **Supported** | **0.686** @ 0.30 — session best (+0.3 pp vs U-Net EXP-12) |
 | EXP-20260610-02 | `model` + `post` | BiLSTM/TCN round-2 follow-ups | **Supported** | BiLSTM 256u **0.680** @ 0.25; TCN blocks=6 rejected (0.655) |
@@ -79,6 +83,36 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
 
+### EXP-20260624-01: 10-song dense training smoke (`training_index_path`)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-24 12:00:00 |
+| **Track** | `pre` + dense `train` |
+| **Config** | `configs/onset_baseline.json`; `--training_index_path=data/final_data/training_index_10songs.json`; `--epochs=2`; CPU |
+| **Outcome** | **10/10** train batches; model saved under `models/final_data_10song_dense_smoke` |
+| **Conclusion** | Dense `create_dataset` + manifest-as-pointer path works end-to-end on nested `.chart.json` |
+
+### EXP-20260624-02: 10-song event training smoke (2048 caps)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-24 12:30:00 |
+| **Track** | `pre` + event `train` |
+| **Config** | `configs/onset_event_audio_baseline.json` (`n_max_onsets`, `max_steps_per_chart`, `num_queries` = **2048**); same 10-song manifest; `--epochs=2` |
+| **Outcome** | **10/10** train batches (Raputa chart has 1164 steps — needs full 2048 cap, not 1024) |
+| **Conclusion** | Event path ready for `final_data`; align loader cap with model `num_queries` |
+
+### EXP-20260623-02: P8 train/val manifest on full `final_data`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-24 04:26:00 |
+| **Track** | `pre` / dataset prep |
+| **Config** | `scripts/build_training_index.py --output-dir data/final_data --overwrite` |
+| **Outcome** | `training_index.json` — `stratified_song_v1`, seed 42, val_fraction 0.1; **1010** train / **110** val songs; **1745** / **197** chart rows |
+| **Conclusion** | Song-level stratified split per bundle; trainers should point at this manifest, not duplicate dirs |
+
 ### EXP-20260622-01: P9 final_data loader smoke
 
 | Field | Value |
@@ -87,7 +121,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Track** | `pre` / dataset prep |
 | **Config** | Local `data/final_data`; `training_loader.discover_training_rows`, `pairing.list_training_samples`, `create_onset_event_dataset_from_pairs` (1 sample) |
 | **Outcome** | **1942** chart rows; ITL 246 / Mizuki 1310 / Vocaloid 386; **822** with `chart_index > 0`; 0 missing audio or `.chart.json`; all ≤2048 steps; TF batch builds with GT onsets when `max_audio_seconds` covers chart offset |
-| **Conclusion** | P9 loaders ready for training; P8 split manifest is the remaining gate for proper val |
+| **Conclusion** | P9 loaders ready; superseded for train/val routing by P8 manifest (EXP-20260623-02) |
 
 ---
 

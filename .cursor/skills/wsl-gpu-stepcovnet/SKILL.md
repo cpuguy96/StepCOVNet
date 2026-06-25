@@ -20,13 +20,13 @@ Shell helpers share these via `scripts/wsl_common.sh`.
 
 ## Rule
 
-On native Windows, **never** run CUDA/GPU training in the Windows venv. From **repo root**:
+On native Windows, **never** run CUDA/GPU training in the Windows venv. From **repo root** (project venv activated):
 
 ```text
-venv\Scripts\python.exe scripts/<script>.py <args>
+python scripts/<script>.py <args>
 ```
 
-when the script calls `wsl_gpu.maybe_dispatch_for_training` (or MERT `--device=cuda` dispatch). See [python-environment.mdc](../../.cursor/rules/python-environment.mdc).
+when the script calls `wsl_gpu.maybe_dispatch_for_training` (or MERT `--device=cuda` dispatch).
 
 Opt out: `STEPCOVNET_NO_WSL=1`.
 
@@ -37,7 +37,7 @@ cd /path/to/your/clone   # any mount, e.g. /mnt/d/dev/stepcovnet
 bash scripts/wsl_ensure_env.sh
 source scripts/wsl_gpu_env.sh
 export STEPCOVNET_IN_WSL=1
-"${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}" scripts/<script>.py <args>
+python scripts/<script>.py <args>
 ```
 
 Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
@@ -52,7 +52,9 @@ Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
 | `scripts/run_overfit_tide_bisection.py` | Diagnose, grid oracle, half-cheat ablations (EXP-11) |
 | `scripts/debug_onset_overfit.py`        | Checkpoint diagnostics                               |
 
-**Configs:** `configs/overfit_tide/{conv1d,mel,mert}.json` (default **50 epochs**).
+**`final_data`:** pass `--training_index_path=data/final_data/training_index.json` (or a smoke subset manifest). Do not rely on `data_dir=val_data_dir` alone when train/val must follow the P8 song split.
+
+**Configs:** `configs/overfit_tide/{conv1d,mel,mert}.json` (default **50 epochs**); `configs/onset_event_audio_baseline.json` for multi-song event runs (`num_queries` / `n_max_onsets` = **2048**).
 
 **Artifacts:** `models_wsl/overfit_tide/`, `models_wsl/overfit_tide_ablations/`, MERT cache `data/v2/test/tide.mert.npy`.
 
@@ -60,10 +62,10 @@ Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
 
 | Script                                           | Track              |
 | ------------------------------------------------ | ------------------ |
-| `scripts/train_onset.py`                         | Dense onset        |
+| `scripts/train_onset.py`                         | Dense onset — use `--training_index_path` for `final_data` |
 | `scripts/train_arrow.py`                         | Arrow model        |
 | `scripts/extract_mert_features.py --device=cuda` | MERT feature cache |
 
 ## Already inside WSL
 
-`cd` to repo root, `bash scripts/wsl_ensure_env.sh` if needed, `source scripts/wsl_gpu_env.sh`, `export STEPCOVNET_IN_WSL=1`, use `"${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}"` — do not nest another `wsl` call.
+`cd` to repo root, `bash scripts/wsl_ensure_env.sh` if needed, `source scripts/wsl_gpu_env.sh`, `export STEPCOVNET_IN_WSL=1`, use `python` — do not nest another `wsl` call.

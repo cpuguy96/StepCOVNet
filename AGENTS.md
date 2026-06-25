@@ -22,7 +22,7 @@ North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 | --------- | ----- |
 | `agents-entry.mdc` | Route through this file; one index per task |
 | `state-and-paths.mdc` | Refresh repo state; no machine-specific paths in tracked files |
-| `python-environment.mdc` | `venv\Scripts\python.exe` (CPU) vs WSL GPU venv |
+| `python-environment.mdc` | CPU `python` (project venv) vs WSL GPU |
 | `python-style.mdc` | Ruff (`ruff check .`, incl. `PLC0415` top-level imports), pydoclint, pyright |
 | `python-tests.mdc` | Tests + coverage for code changes |
 | `research-logging.mdc` | EXP/NOTE in `EXPERIMENT_LOG` / `DISCUSSION_NOTES`; paper outline optional |
@@ -36,8 +36,8 @@ North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 | When | Command |
 | ---- | ------- |
 | **Every commit** (hook) | Ruff on staged files via `pre-commit` |
-| **Quick local check** | `venv\Scripts\python.exe pre_submit.py --fast` (ruff only, ~seconds) |
-| **Before push / PR** | `venv\Scripts\python.exe pre_submit.py --skip-install` (full CI mirror, ~30+ min) |
+| **Quick local check** | `python pre_submit.py --fast` (ruff only, ~seconds) |
+| **Before push / PR** | `python pre_submit.py --skip-install` (full CI mirror, ~30+ min) |
 
 `pre_submit.py --fast` is the same as `--skip-install --skip-tests --skip-nbmake`. Full `pre_submit.py` mirrors [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml).
 
@@ -53,11 +53,8 @@ Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commi
 
 | Kind | Pattern |
 | ---- | ------- |
-| Windows CPU | `venv\Scripts\python.exe` from repo root (clone anywhere) |
-| WSL GPU | `"${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}"` after `source scripts/wsl_gpu_env.sh` — Linux `$HOME`, not a Windows user path |
-| WSL venv override | `WSL_VENV` or `STEPCOVNET_WSL_PYTHON` |
+| CPU (pytest, lint, scripts) | `python` from repository root with project venv activated |
+| WSL GPU | `python` after `source scripts/wsl_gpu_env.sh` — override with `STEPCOVNET_WSL_PYTHON` or `WSL_VENV` |
 | Data / artifacts | Repo-relative (`data/v2`, `data/final_data`, `models_wsl/`) |
 
-GPU scripts on Windows auto-dispatch to WSL using the **current clone path** — never embed `/mnt/c/Users/...` or `C:\Users\...`.
-
-Scan tracked files: `git grep -E "C:\\\\Users|/mnt/c/Users/"` — expect no matches.
+GPU scripts on Windows auto-dispatch to WSL using the **current clone path** — do not commit machine-specific absolute paths (`C:\Users\...`, `/mnt/c/Users/...`).
