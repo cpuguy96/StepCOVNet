@@ -1075,11 +1075,12 @@ class DatasetsTest(unittest.TestCase):
         features, target = datasets._load_and_preprocess_py_callback(
             ap,  # type: ignore[arg-type]
             cp,  # type: ignore[arg-type]
+            tf.constant(0),  # type: ignore[arg-type]
             False,
             1.0,
             config.FeatureSource.MEL,
             "",
-            "",
+            TEST_DATA_DIR,
         )
         self.assertEqual(features.shape[1], constants.N_MELS)
         self.assertEqual(target.shape[1], 1)
@@ -1211,6 +1212,7 @@ class DatasetsTest(unittest.TestCase):
         features, target = datasets._load_and_preprocess_tf_map(
             tf.constant(audio_path),  # type: ignore[arg-type]
             tf.constant(chart_path),  # type: ignore[arg-type]
+            tf.constant(0),  # type: ignore[arg-type]
             use_gaussian_target=False,
             gaussian_sigma=1.0,
             feature_source=config.FeatureSource.MEL,
