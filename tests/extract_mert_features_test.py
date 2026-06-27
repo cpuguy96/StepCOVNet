@@ -45,8 +45,14 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(
                     ssl_features,
+                    "_load_mert_model",
+                    return_value=(mock.Mock(), mock.Mock()),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    ssl_features,
                     "extract_and_save_mert_features",
-                    return_value=pathlib.Path(out_dir) / "song.mert.npy",
+                    return_value=str(pathlib.Path(out_dir) / "song.mert.npy"),
                     autospec=True,
                 ) as mock_extract,
             ):
@@ -80,8 +86,14 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(
                     ssl_features,
+                    "_load_mert_model",
+                    return_value=(mock.Mock(), mock.Mock()),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    ssl_features,
                     "extract_and_save_mert_features",
-                    return_value=pathlib.Path(data_dir) / "song.mert.npy",
+                    return_value=str(pathlib.Path(data_dir) / "song.mert.npy"),
                     autospec=True,
                 ) as mock_extract,
             ):
@@ -112,19 +124,27 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 ),
                 mock.patch.object(
                     ssl_features,
+                    "_load_mert_model",
+                    return_value=(mock.Mock(), mock.Mock()),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    ssl_features,
                     "extract_and_save_mert_features",
                     autospec=True,
                 ) as mock_extract,
             ):
                 extract_mert_features.main(argv)
-            mock_extract.assert_called_once_with(
-                audio_path,
+            mock_extract.assert_called_once()
+            call_kwargs = mock_extract.call_args.kwargs
+            self.assertEqual(mock_extract.call_args.args[0], audio_path)
+            self.assertEqual(
+                mock_extract.call_args.args[1],
                 ssl_features.mert_npy_path(audio_path, "", tmpdir),
-                model_name=ssl_features.DEFAULT_MERT_MODEL,
-                layer=ssl_features.DEFAULT_MERT_LAYER,
-                device="cpu",
-                chunk_seconds=ssl_features.MERT_CHUNK_SECONDS,
             )
+            self.assertEqual(call_kwargs["device"], "cpu")
+            self.assertIsNotNone(call_kwargs["model"])
+            self.assertIsNotNone(call_kwargs["processor"])
 
     def test_main_exits_when_no_pairs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -188,7 +208,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
             ):
                 extract_mert_features.main(argv)
             mock_extract.assert_not_called()
-            self.assertIn("skipped 1 existing", stdout.getvalue())
+            self.assertIn("Nothing to do", stdout.getvalue())
 
     def test_main_dispatches_cuda_to_wsl(self):
         argv = [

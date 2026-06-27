@@ -8,8 +8,6 @@ import shlex
 import subprocess
 import sys
 
-import tensorflow as tf
-
 
 def is_windows() -> bool:
     """Return True when running on native Windows (not inside WSL).
@@ -269,6 +267,8 @@ def require_tensorflow_gpu() -> None:
 
     Call after :func:`apply_tensorflow_gpu_library_path` and before training.
     """
+    import tensorflow as tf  # noqa: PLC0415
+
     gpus = tf.config.list_physical_devices("GPU")
     if gpus:
         print(f"TensorFlow GPU devices: {gpus}", flush=True)

@@ -10,7 +10,6 @@ import simfile
 from simfile import notes, timing, types
 from simfile.notes import timed
 
-from stepcovnet import metrics
 from stepcovnet.dataset_prep import (
     arrow_rows,
     audio_resolve,
@@ -312,6 +311,8 @@ def encode_chart(
                 reason=constants.CHART_SKIP_OVER_CAP,
             ),
         )
+
+    from stepcovnet import metrics  # noqa: PLC0415
 
     violations, _hold_ends, _examples = metrics.compute_chart_validity_violations(
         np.asarray(column_codes, dtype=np.int32)

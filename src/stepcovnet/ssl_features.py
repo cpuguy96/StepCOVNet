@@ -261,6 +261,8 @@ def extract_mert_features_from_audio(
     layer: int = DEFAULT_MERT_LAYER,
     device: str = "cpu",
     chunk_seconds: float = MERT_CHUNK_SECONDS,
+    model=None,
+    processor=None,
 ) -> np.ndarray:
     """Extract MERT hidden states from an audio file, resampled to the onset grid.
 
@@ -270,6 +272,8 @@ def extract_mert_features_from_audio(
         layer: Hidden-state layer index to extract.
         device: Torch device for inference.
         chunk_seconds: Maximum chunk length in seconds for long files.
+        model: Optional pre-loaded MERT model (avoids reloading weights per file).
+        processor: Optional matching feature extractor.
 
     Returns:
         Feature array with shape ``(time_steps, hidden_dim)`` on the HOP_COEFF grid.
@@ -281,7 +285,8 @@ def extract_mert_features_from_audio(
     if peak > 0:
         waveform = waveform / peak
 
-    model, processor = _load_mert_model(model_name, device)
+    if model is None or processor is None:
+        model, processor = _load_mert_model(model_name, device)
     chunk_samples = max(
         MIN_MERT_CHUNK_SAMPLES, int(round(chunk_seconds * MERT_SAMPLE_RATE))
     )
@@ -341,6 +346,8 @@ def extract_and_save_mert_features(
     layer: int = DEFAULT_MERT_LAYER,
     device: str = "cpu",
     chunk_seconds: float = MERT_CHUNK_SECONDS,
+    model=None,
+    processor=None,
 ) -> str:
     """Extract MERT features from audio and write them to disk.
 
@@ -351,6 +358,8 @@ def extract_and_save_mert_features(
         layer: Hidden-state layer index.
         device: Torch device for inference.
         chunk_seconds: Chunk length for long audio.
+        model: Optional pre-loaded MERT model.
+        processor: Optional matching feature extractor.
 
     Returns:
         The output path written.
@@ -361,5 +370,7 @@ def extract_and_save_mert_features(
         layer=layer,
         device=device,
         chunk_seconds=chunk_seconds,
+        model=model,
+        processor=processor,
     )
     return save_mert_features(features, output_path)

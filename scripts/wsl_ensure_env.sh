@@ -26,4 +26,4 @@ PY="$STEPCOVNET_WSL_PYTHON"
 "$PY" -c "import zlib"
 
 "$UV" pip install --python "$PY" -U pip wheel setuptools -q
-"$UV" pip install --python "$PY" -e ".[ssl,gpu]" -q
+"$UV" pip install --python "$PY" -e ".[ssl,gpu,dataset-prep]" -q
