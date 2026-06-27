@@ -7,7 +7,7 @@ from unittest import mock
 
 import numpy as np
 
-from stepcovnet import constants, ssl_features, wsl_gpu
+from stepcovnet import constants, pairing, ssl_features, wsl_gpu
 
 _SCRIPT_DIR = str(
     pathlib.Path(pathlib.Path(__file__).resolve()).resolve().parent.parent / "scripts"
@@ -54,6 +54,77 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
             mock_extract.assert_called_once()
             call_kwargs = mock_extract.call_args.kwargs
             self.assertEqual(call_kwargs["device"], "cpu")
+
+    def test_main_extracts_pairs_beside_audio(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = pathlib.Path(tmpdir) / "data"
+            pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
+            audio_path = pathlib.Path(data_dir) / "song.mp3"
+            chart_path = pathlib.Path(data_dir) / "song.txt"
+            with pathlib.Path(audio_path).open("wb") as audio_file:
+                audio_file.write(b"audio")
+            with pathlib.Path(chart_path).open("w") as chart_file:
+                chart_file.write("TITLE test\nBPM 120\nNOTES\n")
+
+            argv = [
+                f"--data_dir={data_dir}",
+                "--beside_audio",
+            ]
+            with (
+                mock.patch.object(
+                    wsl_gpu,
+                    "maybe_dispatch_for_mert_extract",
+                    return_value=False,
+                    autospec=True,
+                ),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(
+                    ssl_features,
+                    "extract_and_save_mert_features",
+                    return_value=pathlib.Path(data_dir) / "song.mert.npy",
+                    autospec=True,
+                ) as mock_extract,
+            ):
+                extract_mert_features.main(argv)
+            mock_extract.assert_called_once()
+            output_path = mock_extract.call_args.args[1]
+            self.assertTrue(str(output_path).endswith("song.mert.npy"))
+
+    def test_main_training_index_beside_audio(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_path = str(pathlib.Path(tmpdir) / "song.ogg")
+            argv = [
+                f"--training_index_path={tmpdir}/training_index.json",
+                "--beside_audio",
+            ]
+            with (
+                mock.patch.object(
+                    wsl_gpu,
+                    "maybe_dispatch_for_mert_extract",
+                    return_value=False,
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    pairing,
+                    "list_unique_audio_paths",
+                    return_value=([audio_path], tmpdir),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    ssl_features,
+                    "extract_and_save_mert_features",
+                    autospec=True,
+                ) as mock_extract,
+            ):
+                extract_mert_features.main(argv)
+            mock_extract.assert_called_once_with(
+                audio_path,
+                ssl_features.mert_npy_path(audio_path, "", tmpdir),
+                model_name=ssl_features.DEFAULT_MERT_MODEL,
+                layer=ssl_features.DEFAULT_MERT_LAYER,
+                device="cpu",
+                chunk_seconds=ssl_features.MERT_CHUNK_SECONDS,
+            )
 
     def test_main_exits_when_no_pairs(self):
         with tempfile.TemporaryDirectory() as tmpdir:

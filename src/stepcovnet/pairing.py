@@ -41,6 +41,41 @@ def list_audio_chart_pairs(data_dir: str) -> list[tuple[str, str]]:
     return pairs
 
 
+def list_unique_audio_paths(
+    data_ref: str,
+    split: SplitName | None = None,
+) -> tuple[list[str], str]:
+    """Return deduplicated audio paths and data root for MERT extraction.
+
+    Args:
+        data_ref: Manifest file, prepared output root, or legacy training directory.
+        split: Optional ``train`` or ``val`` filter when loading from a manifest.
+
+    Returns:
+        Sorted unique audio paths and the data root for nested ``.mert.npy`` paths.
+
+    Raises:
+        ValueError: When no audio paths are found under ``data_ref``.
+    """
+    samples = list_training_samples(data_ref, split=split)
+    if samples:
+        index_path, data_root = training_index.locate_training_index(data_ref)
+        if index_path is not None:
+            index = training_index.load_training_index(index_path)
+            root = str(training_index.resolve_output_dir(index, index_path))
+        else:
+            root = str(data_root)
+        unique = sorted({audio_path for audio_path, _, _ in samples})
+        if not unique:
+            raise ValueError(f"no audio paths found under {data_ref!r}")
+        return unique, root
+
+    pairs = list_audio_chart_pairs(data_ref)
+    if not pairs:
+        raise ValueError(f"no audio-chart pairs found under {data_ref!r}")
+    return sorted({audio_path for audio_path, _ in pairs}), data_ref
+
+
 def list_training_samples(
     data_ref: str,
     split: SplitName | None = None,

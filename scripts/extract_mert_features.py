@@ -8,6 +8,9 @@ Requires optional dependencies: pip install '.[ssl]'
 Usage:
     python scripts/extract_mert_features.py --data_dir=data/train --output_dir=data/mert/train
     python scripts/extract_mert_features.py --data_dir=data/val --output_dir=data/mert/val --device=cuda
+    python scripts/extract_mert_features.py \
+        --training_index_path=data/final_data/training_index.json \
+        --beside_audio --device=cuda --skip_existing
 """
 
 import argparse
@@ -24,14 +27,32 @@ PARSER = argparse.ArgumentParser(
 PARSER.add_argument(
     "--data_dir",
     type=str,
-    required=True,
-    help="Directory containing audio and chart files (same layout as training).",
+    default="",
+    help="Directory containing audio and chart files (legacy .txt layout).",
+)
+PARSER.add_argument(
+    "--training_index_path",
+    type=str,
+    default="",
+    help="Path to training_index.json or prepared final_data root (multi-chart JSON).",
+)
+PARSER.add_argument(
+    "--split",
+    type=str,
+    choices=("all", "train", "val"),
+    default="all",
+    help="Manifest split filter when using --training_index_path (default: all).",
 )
 PARSER.add_argument(
     "--output_dir",
     type=str,
-    required=True,
+    default="",
     help="Directory where .mert.npy files are written (mirrors relative paths).",
+)
+PARSER.add_argument(
+    "--beside_audio",
+    action="store_true",
+    help="Write each .mert.npy beside its audio file (ignores --output_dir).",
 )
 PARSER.add_argument(
     "--model_name",
@@ -78,22 +99,58 @@ def _full_argv(argv: list[str] | None) -> list[str]:
     return [script_path, *cli_argv]
 
 
+def _resolve_audio_paths(args: argparse.Namespace) -> tuple[list[str], str]:
+    """Return unique audio paths and data root from CLI args."""
+    index_ref = str(args.training_index_path).strip()
+    data_dir = str(args.data_dir).strip()
+    if index_ref:
+        split = None if args.split == "all" else args.split
+        return pairing.list_unique_audio_paths(index_ref, split=split)
+    if not data_dir:
+        raise SystemExit(
+            "Provide --training_index_path or --data_dir.",
+        )
+    return pairing.list_unique_audio_paths(data_dir)
+
+
+def _output_path(
+    audio_path: str,
+    *,
+    beside_audio: bool,
+    output_dir: str,
+    data_root: str,
+) -> str:
+    if beside_audio:
+        return ssl_features.mert_npy_path(audio_path, "", data_root)
+    if not output_dir:
+        raise SystemExit("--output_dir is required unless --beside_audio is set.")
+    return ssl_features.mert_npy_path(
+        audio_path,
+        output_dir,
+        data_root,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     wsl_gpu.maybe_dispatch_for_mert_extract(SCRIPT_REL, _full_argv(argv))
     args = PARSER.parse_args(argv)
-    pairs = pairing.list_audio_chart_pairs(args.data_dir)
-    if not pairs:
-        raise SystemExit(f"No audio-chart pairs found under {args.data_dir!r}")
+    try:
+        audio_paths, data_root = _resolve_audio_paths(args)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
-    pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    if not args.beside_audio:
+        pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+
     extracted = 0
     skipped = 0
     failed: list[str] = []
-    for audio_path, _chart_path in pairs:
-        output_path = ssl_features.mert_npy_path(
+    for audio_path in audio_paths:
+        output_path = _output_path(
             audio_path,
-            args.output_dir,
-            args.data_dir,
+            beside_audio=args.beside_audio,
+            output_dir=args.output_dir,
+            data_root=data_root,
         )
         if args.skip_existing and pathlib.Path(output_path).is_file():
             skipped += 1

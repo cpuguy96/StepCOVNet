@@ -171,6 +171,7 @@ configs/**
 !configs/arrow_baseline.json
 !configs/arrow_sweep_example.json
 !configs/onset_baseline.json
+!configs/onset_final_data_mert_bilstm.json
 !configs/onset_event_audio_baseline.json
 !configs/onset_event_overfit_one.json
 !configs/overfit_dense/dense_mert_3song.json

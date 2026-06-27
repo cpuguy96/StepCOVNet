@@ -14,7 +14,7 @@ import tensorflow as tf
 from scipy import interpolate
 
 from stepcovnet import config, constants, mel_onset, pairing, ssl_features
-from stepcovnet.dataset_prep import training_loader
+from stepcovnet.dataset_prep import training_index, training_loader
 
 HOP_COEFF = constants.HOP_COEFF
 
@@ -73,6 +73,63 @@ def _base4_to_int(base4_string: str) -> int:
 def _load_and_pair_files(data_dir: str) -> list[tuple[str, str]]:
     """Find paired audio files and StepMania chart files."""
     return pairing.list_audio_chart_pairs(data_dir)
+
+
+def resolve_dense_eval_samples(
+    dataset_config: config.OnsetDatasetConfig,
+    *,
+    data_ref: str = "",
+    split: str | None = "val",
+) -> tuple[list[tuple[str, str, int]], str]:
+    """Resolve validation samples and data root for dense event-F1 eval.
+
+    Uses ``training_index.json`` when ``dataset_config.training_index_path`` is
+    set or when ``data_ref`` points at a manifest; otherwise falls back to legacy
+    ``.txt`` pairs under ``val_data_dir``.
+
+    Args:
+        dataset_config: Dense onset dataset configuration.
+        data_ref: Optional override for manifest or val directory path.
+        split: Manifest split filter (default ``val``).
+
+    Returns:
+        ``(samples, data_root)`` where each sample is
+        ``(audio_path, chart_path, chart_index)``.
+    """
+    index_ref = str(dataset_config.training_index_path).strip()
+    ref = data_ref or index_ref or dataset_config.val_data_dir
+    index_path, data_root = training_index.locate_training_index(ref)
+    if index_path is not None or index_ref:
+        manifest_ref = str(index_path) if index_path is not None else index_ref
+        if index_path is not None:
+            index = training_index.load_training_index(index_path)
+            resolved_root = str(training_index.resolve_output_dir(index, index_path))
+        else:
+            resolved_root = str(pathlib.Path(index_ref).resolve().parent)
+        configured_root = str(dataset_config.data_root).strip()
+        root = configured_root or resolved_root
+        samples = list_dense_onset_samples(manifest_ref, split=split)
+        if not samples:
+            raise ValueError(f"no dense eval samples for split={split!r} under {ref!r}")
+        return samples, root
+
+    pairs = pairing.list_audio_chart_pairs(ref)
+    if not pairs:
+        raise ValueError(f"no audio-chart pairs found under {ref!r}")
+    return [(audio_path, chart_path, 0) for audio_path, chart_path in pairs], ref
+
+
+def dense_eval_sample_key(
+    audio_path: str,
+    chart_path: str,
+    chart_index: int,
+) -> str:
+    """Return a stable report key for one dense eval sample."""
+    del audio_path
+    chart = pathlib.Path(chart_path)
+    if chart_index:
+        return f"{chart.stem}#{chart_index}"
+    return chart.parent.name
 
 
 def list_dense_onset_samples(

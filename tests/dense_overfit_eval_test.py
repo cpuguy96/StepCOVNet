@@ -1,9 +1,11 @@
+import pathlib
 from unittest import mock
 
 import numpy as np
 import pytest
 
-from stepcovnet import config, dense_overfit_eval
+from stepcovnet import config, datasets, dense_overfit_eval, pairing
+from stepcovnet.dataset_prep import training_index
 
 
 def test_eval_dense_event_f1_for_pair_normalizes_mel_features(tmp_path) -> None:
@@ -166,6 +168,104 @@ def test_build_gt_batch_uses_uncapped_chart_times(tmp_path) -> None:
     np.testing.assert_allclose(gt_times[0], long_times)
 
 
+def test_build_gt_batch_passes_chart_index(tmp_path) -> None:
+    chart = tmp_path / "song.chart.json"
+    chart.write_text("{}", encoding="utf-8")
+    with mock.patch.object(
+        dense_overfit_eval.charts,
+        "load_onset_times",
+        return_value=np.array([0.1], dtype=np.float64),
+        autospec=True,
+    ) as load_mock:
+        dense_overfit_eval.build_gt_batch(str(chart), chart_index=2)
+    load_mock.assert_called_once_with(str(chart), max_steps=None, chart_index=2)
+
+
+def test_resolve_dense_eval_samples_uses_manifest() -> None:
+    dataset_config = config.OnsetDatasetConfig(
+        data_dir="",
+        val_data_dir="",
+        training_index_path="data/final_data/training_index.json",
+        data_root="data/final_data",
+        feature_source=config.FeatureSource.MERT,
+    )
+    expected = [("a.ogg", "a.chart.json", 1)]
+    index_path = pathlib.Path("data/final_data/training_index.json")
+    with (
+        mock.patch.object(
+            training_index,
+            "locate_training_index",
+            return_value=(index_path.resolve(), index_path.parent.resolve()),
+            autospec=True,
+        ),
+        mock.patch.object(
+            training_index,
+            "load_training_index",
+            autospec=True,
+        ),
+        mock.patch.object(
+            training_index,
+            "resolve_output_dir",
+            return_value=pathlib.Path("data/final_data"),
+            autospec=True,
+        ),
+        mock.patch.object(
+            datasets,
+            "list_dense_onset_samples",
+            return_value=expected,
+            autospec=True,
+        ) as list_mock,
+    ):
+        samples, root = datasets.resolve_dense_eval_samples(dataset_config)
+    list_mock.assert_called_once()
+    assert list_mock.call_args.kwargs == {"split": "val"}
+    assert (
+        pathlib.Path(list_mock.call_args.args[0])
+        .as_posix()
+        .endswith(
+            "data/final_data/training_index.json",
+        )
+    )
+    assert samples == expected
+    assert root == "data/final_data"
+
+
+def test_list_unique_audio_paths_deduplicates_manifest_rows() -> None:
+    rows = [
+        ("a.ogg", "a.chart.json", 0),
+        ("a.ogg", "a.chart.json", 1),
+        ("b.ogg", "b.chart.json", 0),
+    ]
+    with (
+        mock.patch.object(
+            pairing,
+            "list_training_samples",
+            return_value=rows,
+            autospec=True,
+        ),
+        mock.patch.object(
+            training_index,
+            "locate_training_index",
+            return_value=(pathlib.Path("index.json"), pathlib.Path("root")),
+            autospec=True,
+        ),
+        mock.patch.object(
+            training_index,
+            "load_training_index",
+            autospec=True,
+        ),
+        mock.patch.object(
+            training_index,
+            "resolve_output_dir",
+            return_value=pathlib.Path("data/final_data"),
+            autospec=True,
+        ),
+    ):
+        audio_paths, root = pairing.list_unique_audio_paths("index.json")
+    assert audio_paths == ["a.ogg", "b.ogg"]
+    assert pathlib.Path(root).as_posix() == "data/final_data"
+
+
 def test_eval_dense_val_event_f1_aggregates_per_song() -> None:
     dataset_config = config.OnsetDatasetConfig(
         data_dir="data/train",
@@ -186,8 +286,15 @@ def test_eval_dense_val_event_f1_aggregates_per_song() -> None:
         min_onset_distance_ms,
         tolerance_sec,
         data_root="",
+        chart_index=0,
     ) -> dict[str, float]:
-        del confidence_threshold, min_onset_distance_ms, tolerance_sec, data_root
+        del (
+            confidence_threshold,
+            min_onset_distance_ms,
+            tolerance_sec,
+            data_root,
+            chart_index,
+        )
         if "alpha" in _audio_path:
             return {
                 "event_f1": 0.8,
@@ -205,14 +312,14 @@ def test_eval_dense_val_event_f1_aggregates_per_song() -> None:
         }
 
     pairs = [
-        ("data/val/alpha/alpha.ogg", "data/val/alpha/alpha.txt"),
-        ("data/val/beta/beta.ogg", "data/val/beta/beta.txt"),
+        ("data/val/alpha/alpha.ogg", "data/val/alpha/alpha.txt", 0),
+        ("data/val/beta/beta.ogg", "data/val/beta/beta.txt", 0),
     ]
     with (
         mock.patch.object(
-            dense_overfit_eval.pairing,
-            "list_audio_chart_pairs",
-            return_value=pairs,
+            dense_overfit_eval.datasets,
+            "resolve_dense_eval_samples",
+            return_value=(pairs, "data/val"),
             autospec=True,
         ),
         mock.patch.object(
@@ -267,13 +374,13 @@ def test_sweep_thresholds_dense_val_event_f1_selects_best_threshold() -> None:
     )
     model_config = config.OnsetModelConfig(input_features=2)
     stub_model = mock.Mock()
-    pairs = [("data/val/song/song.ogg", "data/val/song/song.txt")]
+    pairs = [("data/val/song/song.ogg", "data/val/song/song.txt", 0)]
 
     with (
         mock.patch.object(
-            dense_overfit_eval.pairing,
-            "list_audio_chart_pairs",
-            return_value=pairs,
+            dense_overfit_eval.datasets,
+            "resolve_dense_eval_samples",
+            return_value=(pairs, "data/val"),
             autospec=True,
         ),
         mock.patch.object(

@@ -1,13 +1,11 @@
 """Peak-pick and event-F1 evaluation for dense frame onset models."""
 
-import pathlib
-
 import keras
 import numpy as np
 import scipy.signal
 import tensorflow as tf
 
-from stepcovnet import config, datasets, pairing
+from stepcovnet import config, datasets
 from stepcovnet.onset_events import charts, metrics
 
 DEFAULT_MIN_ONSET_DISTANCE_MS = 50.0
@@ -227,9 +225,14 @@ def build_gt_batch(
     chart_path: str,
     *,
     n_max: int | None = None,
+    chart_index: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Build padded ground-truth batch arrays for event metrics."""
-    times = charts.load_onset_times(chart_path, max_steps=None)
+    times = charts.load_onset_times(
+        chart_path,
+        max_steps=None,
+        chart_index=chart_index,
+    )
     if times is None:
         raise ValueError(f"failed to load chart times: {chart_path}")
     n_gt = int(times.size)
@@ -322,7 +325,7 @@ def predict_dense_probs_for_pair(
         audio_path,
         dataset_config.feature_source,
         dataset_config.mert_features_dir,
-        data_root or dataset_config.data_dir,
+        data_root or str(dataset_config.data_root).strip() or dataset_config.data_dir,
     )
     if config.uses_waveform_model_input(dataset_config):
         features_batch = np.expand_dims(features, axis=0)
@@ -375,15 +378,17 @@ def eval_dense_event_f1_for_pair(
     min_onset_distance_ms: float,
     tolerance_sec: float,
     data_root: str = "",
+    chart_index: int = 0,
 ) -> dict[str, float]:
     """Peak-pick event F1 for one audio/chart pair."""
+    del model_config
     pred_probs = predict_dense_probs_for_pair(
         model,
         audio_path,
         dataset_config,
         data_root=data_root,
     )
-    gt_times, gt_mask = build_gt_batch(chart_path)
+    gt_times, gt_mask = build_gt_batch(chart_path, chart_index=chart_index)
     return event_metrics_from_probs(
         pred_probs,
         gt_times,
@@ -404,16 +409,24 @@ def eval_dense_val_event_f1(
     tolerance_sec: float = DEFAULT_TOLERANCE_SEC,
     val_data_dir: str = "",
 ) -> dict[str, object]:
-    """Peak-pick event F1 on every audio/chart pair under a val directory."""
-    val_dir = val_data_dir or dataset_config.val_data_dir
-    per_song: dict[str, dict[str, float]] = {}
+    """Peak-pick event F1 on every val sample (manifest rows or legacy pairs)."""
+    samples, data_root = datasets.resolve_dense_eval_samples(
+        dataset_config,
+        data_ref=val_data_dir,
+        split="val",
+    )
+    per_sample: dict[str, dict[str, float]] = {}
     total_tp = 0.0
     total_fp = 0.0
     total_fn = 0.0
     f1_sum = 0.0
-    for audio_path, chart_path in pairing.list_audio_chart_pairs(val_dir):
-        song = pathlib.Path(audio_path).parent.name
-        song_metrics = eval_dense_event_f1_for_pair(
+    for audio_path, chart_path, chart_index in samples:
+        sample_key = datasets.dense_eval_sample_key(
+            audio_path,
+            chart_path,
+            chart_index,
+        )
+        sample_metrics = eval_dense_event_f1_for_pair(
             model,
             audio_path,
             chart_path,
@@ -422,21 +435,24 @@ def eval_dense_val_event_f1(
             confidence_threshold=confidence_threshold,
             min_onset_distance_ms=min_onset_distance_ms,
             tolerance_sec=tolerance_sec,
-            data_root=val_dir,
+            data_root=data_root,
+            chart_index=chart_index,
         )
-        per_song[song] = song_metrics
-        total_tp += song_metrics["event_tp"]
-        total_fp += song_metrics["event_fp"]
-        total_fn += song_metrics["event_fn"]
-        f1_sum += song_metrics["event_f1"]
-    n_songs = len(per_song)
-    mean_f1 = float(f1_sum / n_songs) if n_songs else 0.0
+        per_sample[sample_key] = sample_metrics
+        total_tp += sample_metrics["event_tp"]
+        total_fp += sample_metrics["event_fp"]
+        total_fn += sample_metrics["event_fn"]
+        f1_sum += sample_metrics["event_f1"]
+    n_samples = len(per_sample)
+    mean_f1 = float(f1_sum / n_samples) if n_samples else 0.0
     micro_f1 = _micro_event_f1(total_tp, total_fp, total_fn)
     micro_p_denom = total_tp + total_fp
     micro_r_denom = total_tp + total_fn
     return {
-        "eval_split": val_dir,
-        "num_songs": n_songs,
+        "eval_split": val_data_dir
+        or dataset_config.training_index_path
+        or dataset_config.val_data_dir,
+        "num_songs": n_samples,
         "mean_event_f1": mean_f1,
         "micro_event_f1": micro_f1,
         "micro_precision": float(total_tp / micro_p_denom) if micro_p_denom else 0.0,
@@ -449,7 +465,7 @@ def eval_dense_val_event_f1(
             "min_onset_distance_ms": min_onset_distance_ms,
             "tolerance_sec": tolerance_sec,
         },
-        "per_song": per_song,
+        "per_song": per_sample,
     }
 
 
@@ -508,16 +524,20 @@ def sweep_thresholds_dense_val_event_f1(
     del model_config
     if not thresholds:
         raise ValueError("thresholds must be non-empty")
-    val_dir = val_data_dir or dataset_config.val_data_dir
+    samples, data_root = datasets.resolve_dense_eval_samples(
+        dataset_config,
+        data_ref=val_data_dir,
+        split="val",
+    )
     pred_gt_cache: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-    for audio_path, chart_path in pairing.list_audio_chart_pairs(val_dir):
+    for audio_path, chart_path, chart_index in samples:
         pred_probs = predict_dense_probs_for_pair(
             model,
             audio_path,
             dataset_config,
-            data_root=val_dir,
+            data_root=data_root,
         )
-        gt_times, gt_mask = build_gt_batch(chart_path)
+        gt_times, gt_mask = build_gt_batch(chart_path, chart_index=chart_index)
         pred_gt_cache.append((pred_probs, gt_times, gt_mask))
 
     per_threshold: list[dict[str, float]] = []
@@ -536,8 +556,13 @@ def sweep_thresholds_dense_val_event_f1(
         ):
             best_summary = summary
     assert best_summary is not None
+    eval_split = (
+        val_data_dir
+        or dataset_config.training_index_path
+        or dataset_config.val_data_dir
+    )
     return {
-        "eval_split": val_dir,
+        "eval_split": eval_split,
         "num_songs": len(pred_gt_cache),
         "best_threshold": best_summary["confidence_threshold"],
         "best_micro_event_f1": best_summary["micro_event_f1"],
