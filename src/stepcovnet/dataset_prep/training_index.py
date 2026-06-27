@@ -433,7 +433,9 @@ def validate_training_index(index: TrainingIndex) -> list[str]:
             f"unsupported schema_version {index.schema_version}; "
             f"expected {constants.SCHEMA_VERSION}"
         )
-    if index.split_policy != SPLIT_POLICY_STRATIFIED_SONG_V1:
+    if index.split_policy != SPLIT_POLICY_STRATIFIED_SONG_V1 and not (
+        index.split_policy.startswith(f"{SPLIT_POLICY_STRATIFIED_SONG_V1}+")
+    ):
         errors.append(f"unsupported split_policy {index.split_policy!r}")
 
     song_splits: dict[str, set[SplitName]] = {}
@@ -576,6 +578,77 @@ def load_training_index(path: str | os.PathLike[str]) -> TrainingIndex:
     if errors:
         raise ValueError(f"invalid training index {target}: " + "; ".join(errors))
     return index
+
+
+def build_training_index_subset(
+    source_path: str | os.PathLike[str],
+    *,
+    train_rows: int,
+    val_rows: int,
+    seed: int = 42,
+    policy_tag: str = "scoreboard_subset",
+) -> TrainingIndex:
+    """Sample fixed train/val row counts from an existing P8 manifest.
+
+    Args:
+        source_path: Path to a full ``training_index.json``.
+        train_rows: Number of train chart rows to keep.
+        val_rows: Number of val chart rows to keep.
+        seed: Shuffle seed for reproducible sampling.
+        policy_tag: Suffix recorded in ``split_policy`` for traceability.
+
+    Returns:
+        New manifest sharing ``output_dir`` with the source index.
+
+    Raises:
+        ValueError: When requested counts exceed available rows or validation fails.
+    """
+    if train_rows < 1 or val_rows < 1:
+        raise ValueError("train_rows and val_rows must be at least 1")
+    source = load_training_index(source_path)
+    train_pool = [entry for entry in source.entries if entry.split == SPLIT_TRAIN]
+    val_pool = [entry for entry in source.entries if entry.split == SPLIT_VAL]
+    if train_rows > len(train_pool):
+        raise ValueError(
+            f"train_rows={train_rows} exceeds available train rows ({len(train_pool)})",
+        )
+    if val_rows > len(val_pool):
+        raise ValueError(
+            f"val_rows={val_rows} exceeds available val rows ({len(val_pool)})",
+        )
+    rng = random.Random(seed)
+    sampled = rng.sample(train_pool, train_rows) + rng.sample(val_pool, val_rows)
+    sampled.sort(
+        key=lambda entry: (
+            entry.split,
+            entry.normalized_bundle,
+            entry.normalized_id,
+            entry.chart_index,
+        ),
+    )
+    subset = TrainingIndex(
+        schema_version=source.schema_version,
+        output_dir=source.output_dir,
+        split_policy=f"{source.split_policy}+{policy_tag}",
+        split_seed=seed,
+        val_fraction=val_rows / (train_rows + val_rows),
+        created_at=datetime.datetime.now(tz=datetime.UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+        ),
+        counts=_counts_from_entries(sampled),
+        entries=sampled,
+    )
+    errors = validate_training_index(subset)
+    if errors:
+        raise ValueError(
+            f"invalid training index subset from {source_path}: " + "; ".join(errors),
+        )
+    return subset
+
+
+def unique_audio_relpaths(entries: list[TrainingIndexEntry]) -> set[str]:
+    """Return the set of ``audio_relpath`` values referenced by manifest rows."""
+    return {entry.audio_relpath for entry in entries}
 
 
 def manifest_split_enabled(

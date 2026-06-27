@@ -1,0 +1,41 @@
+{
+  "dataset": {
+    "data_dir": "",
+    "val_data_dir": "",
+    "training_index_path": "data/final_data/training_index_scoreboard_50t_100v.json",
+    "data_root": "data/final_data",
+    "batch_size": 1,
+    "apply_temporal_augment": false,
+    "should_apply_spec_augment": false,
+    "use_gaussian_target": true,
+    "gaussian_sigma": 1.0,
+    "feature_source": "mert",
+    "mert_features_dir": ""
+  },
+  "model": {
+    "onset_architecture": "bilstm",
+    "recurrent_units": 256,
+    "depth": 2,
+    "initial_filters": 16,
+    "dilation_rates": [1, 2, 4, 8],
+    "kernel_size": 3,
+    "dropout_rate": 0.0,
+    "input_features": 1024
+  },
+  "run": {
+    "epoch": 200,
+    "take_count": -1,
+    "val_take_count": -1,
+    "model_output_dir": "models_wsl/final_data_dense_bilstm_scoreboard_50t_100v",
+    "callback_root_dir": "callbacks/final_data_dense_bilstm_scoreboard_50t_100v",
+    "model_name": "final_data_dense_bilstm_scoreboard_50t_100v",
+    "seed": 42,
+    "show_model_summary": true,
+    "fit_verbose": 1,
+    "early_stopping_patience": 25,
+    "post_hoc_event_f1_export": true,
+    "tolerance_sec": 0.02,
+    "min_onset_distance_ms": 50.0,
+    "confidence_threshold": 0.05
+  }
+}

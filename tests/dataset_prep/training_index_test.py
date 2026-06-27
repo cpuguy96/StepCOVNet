@@ -175,6 +175,33 @@ class TrainingIndexTest(unittest.TestCase):
             self.assertIn("counts", payload)
             self.assertIn("entries", payload)
 
+    def test_build_training_index_subset_rejects_excess_rows(self):
+        with self._prepared_output("vocaloid_multi_sm") as out_dir:
+            path = training_index.save_training_index(
+                training_index.build_training_index(out_dir, val_fraction=0.0, seed=1)
+            )
+            with self.assertRaises(ValueError):
+                training_index.build_training_index_subset(
+                    path,
+                    train_rows=99,
+                    val_rows=1,
+                )
+
+    def test_build_training_index_subset_samples_fixed_counts(self):
+        index_path = pathlib.Path("data/final_data/training_index.json")
+        if not index_path.is_file():
+            self.skipTest("requires local data/final_data/training_index.json")
+        subset = training_index.build_training_index_subset(
+            index_path,
+            train_rows=50,
+            val_rows=100,
+            seed=42,
+        )
+        self.assertEqual(len(subset.entries), 150)
+        self.assertEqual(subset.counts.rows[training_index.SPLIT_TRAIN], 50)
+        self.assertEqual(subset.counts.rows[training_index.SPLIT_VAL], 100)
+        self.assertIn("scoreboard_subset", subset.split_policy)
+
 
 if __name__ == "__main__":
     unittest.main()
