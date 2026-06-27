@@ -14,6 +14,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 | [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md)                                 | Conversation insights — newest first (`NOTE-YYYYMMDD-NN`)     |
 | [PAPER_OUTLINE.md](PAPER_OUTLINE.md)                                       | Paper draft skeleton — promote findings from log when drafting |
 | [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md)                           | Open decisions before ablation runs                           |
+| [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)                                   | **Autoregressive onset** — v1 stack locked 2026-06; gates + slug registry (not implemented) |
 | [../onset_events_plan.md](../onset_events_plan.md)                         | Historical event-onset WP plan (superseded for routing)       |
 
 ## For agents and contributors

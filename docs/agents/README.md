@@ -19,5 +19,7 @@ Project context for Cursor agents — **not** research findings. Routed from [AG
 | Dataset prep / `final_data` | [DATASET_PREP_PIPELINE.md](../research/DATASET_PREP_PIPELINE.md) |
 | Paper draft (optional) | [PAPER_OUTLINE.md](../research/PAPER_OUTLINE.md) — promote from log when drafting |
 | Target pipeline design | [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) |
+| AR onset (locked design, not implemented) | [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
+| Open decisions / gates | [DECISIONS_CHECKLIST.md](../research/DECISIONS_CHECKLIST.md) |
 | How to run a procedure (train, overfit, WSL, debug) | [.cursor/skills/README.md](../../.cursor/skills/README.md) |
 | Code style, tests, Python env | [`.cursor/rules/`](../../.cursor/rules/) |

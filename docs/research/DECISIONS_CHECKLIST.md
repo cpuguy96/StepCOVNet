@@ -6,7 +6,7 @@
 
 **Pipeline:** audio → **pre** → **model** → raw outputs → **post** → final list → **metrics** → training feedback
 
-**Related:** [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) · [planning doc](../onset_output_targets_planning.md)
+**Related:** [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) · [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) · [planning doc](../onset_output_targets_planning.md)
 
 ---
 
@@ -17,7 +17,7 @@
 | A1  | **Primary val metric for checkpointing** | Frame F1 during train; canonical event F1 post-hoc (`eval_dense_onset.py`)         | **decided** – dense: in-train save on **`val_onset_f1_score`** (frame @ 0.5); auto post-hoc event-F1 ckpt+threshold export opt-in via `RunConfig.post_hoc_event_f1_export` ([NOTE-20260610-01](DISCUSSION_NOTES.md#note-20260610-01-auto-post-hoc-event-f1-export-implemented)); manual `sweep_val_onset_ckpts.py` + POST sweep otherwise (EXP-11/12, NOTE-09/11); `DenseValEventF1Callback` disabled ([NOTE-20260608-01](DISCUSSION_NOTES.md#note-20260608-01-disable-dense-val-event-f1-callback)) |
 | A2  | **Match tolerance**                      | 20 ms default (`tolerance_sec=0.02`) — keep or sweep?                              | **decided** — keep 20 ms for v1 comparisons                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A3  | **Confidence threshold**                 | 0.5 default — sweep on best checkpoint?                                            | **decided** — **always** val-sweep POST per checkpoint; Gaussian dense ~**0.35** (EXP-07/12); binary ~0.20 (EXP-08-01); never report default 0.05 alone                                                                                                                                                                                                                                                                                                                                              |
-| A4  | **Min onset gap (post)**                 | 50 ms default — matches inference + `event_onset_f1_mingap`                        | **decided** — implemented in metrics                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| A4  | **Min onset gap (post)**                 | 50 ms default — matches inference + `event_onset_f1_mingap`                        | **decided** — implemented in metrics; dense/event report both paths; **AR primary eval off** (`eval-min-gap`) — optional secondary only |
 | A5  | **Train vs eval matching**               | Ordered (legacy) vs Hungarian L1 in training loss (`assign_onset_pairs_l1`)        | **decided** — Hungarian L1 in `losses.py` (EXP-08)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | A6  | **Dense baseline metric parity**         | Same event F1 on extracted peaks vs frame F1 — document both when comparing tracks | **decided** — checkpoint on `val_dense_event_onset_f1`; frame F1 diagnostic; report via `eval_dense_onset.py`                                                                                                                                                                                                                                                                                                                                                                                        |
 
@@ -28,7 +28,7 @@
 | #   | Decision                         | Options / notes                                                            | Status                                                            |
 | --- | -------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | B1  | **Frontend for event model v1**  | Raw Conv1D vs cached mel vs cached MERT (`preprocess.py` + model frontend) | **decided** — EXP-20260606-07: MERT > mel >> conv1d on tide smoke |
-| B2  | **Cache vs on-the-fly features** | MERT/mel `.npy` cache (fast) vs STFT in Keras graph (e2e)                  | **open**                                                          |
+| B2  | **Cache vs on-the-fly features** | MERT/mel `.npy` cache (fast) vs STFT in Keras graph (e2e)                  | **open** — AR: tide cache OK for gates; wire `final_data` MERT per `final-data-mert` before `gate-val-vs-dense` |
 | B3  | **Audio I/O**                    | 44.1 kHz mono, peak norm, 300 s cap — keep?                                | **decided** — matches rest of repo                                |
 | B4  | **Augmentation**                 | `apply_audio_augment` off for initial ablations?                           | **open** — recommend off until baseline works                     |
 
@@ -36,13 +36,55 @@
 
 ## C. Core model (middle)
 
+### Dense / K-query event track
+
 | #   | Decision               | Options / notes                                                                             | Status                                       |
 | --- | ---------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| C1  | **Output formulation** | K query slots (current) vs dense frames vs seq2seq                                          | **open** — stay on query slots for ablations |
+| C1  | **Output formulation (scoreboard)** | K query slots vs dense frames vs **AR tokens** | **open** — **dense** is current val baseline (0.686, EXP-20260610-03); K-query plateau ~30%; AR **v1 stack locked** in design doc but **not implemented** |
 | C2  | **`num_queries` K**    | 1024 vs tied to `n_max_onsets` — enforce `K >= max steps`                                   | **decided** — **2048** in `onset_event_audio_baseline.json` (align with `max_steps_per_chart`) |
-| C3  | **Time head**          | Learnable deltas + uniform grid (normal); GT refs only when `pipeline_check_shortcuts=true` | **decided**                                  |
-| C4  | **Encoder capacity**   | Current U-Net + 2 decoder layers — scale up only after pre ablation                         | **deferred**                                 |
-| C5  | **Loss weights**       | `lambda_cls`, `lambda_time` (tide overfit used 20 for time)                                 | **open** for full val train                  |
+| C3  | **Time head**          | Learnable deltas + uniform grid (normal); GT refs only when `pipeline_check_shortcuts=true` | **decided** — event track only |
+| C4  | **Encoder capacity**   | Current U-Net + 2 decoder layers — scale up only after pre ablation                         | **deferred** — dense/event |
+| C5  | **Loss weights**       | `lambda_cls`, `lambda_time` (tide overfit used 20 for time)                                 | **open** for full val train — event track |
+
+### AR onset — slug registry
+
+Locked **2026-06** in [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-registry). Use `` `slug` `` in EXP/NOTE text (not `AR1` numbering).
+
+**Architecture & data**
+
+| Slug              | Topic                         | Status      | Locked choice                                |
+| ----------------- | ----------------------------- | ----------- | -------------------------------------------- |
+| `package`         | Code layout                   | **decided** | `src/stepcovnet/onset_ar/`                   |
+| `alignment`       | Decoder step ↔ audio memory   | **decided** | pointer+residual                             |
+| `tokens`          | Time tokenization             | **decided** | `delta_bucketed`                             |
+| `patch-size`      | MERT frames per encoder token | **decided** | P=8 (80 ms)                                  |
+| `encoder-hop`     | PRE feature grid              | **decided** | 10 ms (`HOP_COEFF`)                          |
+| `mert-finetune`   | MERT weights                  | **decided** | frozen for `gate-tide-overfit`               |
+| `delta-buckets`   | Long-gap vocab edges          | **open**    | histogram on tide + 10-song before scale-up  |
+| `final-data-mert` | Nested MERT cache             | **decided** | after `gate-tide-overfit` + `gate-ar-decode` |
+
+**Training & eval**
+
+| Slug                       | Topic                | Status      | Locked choice               |
+| -------------------------- | -------------------- | ----------- | --------------------------- |
+| `train-checkpoint`         | Val model selection  | **decided** | decoded event F1            |
+| `train-scheduled-sampling` | Exposure bias        | **decided** | ramp p → ~0.5; **off** until `gate-tide-overfit` |
+| `train-aux-time-loss`      | λ_time on \|t̂−t\|    | **open**    | tune on tide (0.1 vs 1.0)   |
+| `eval-min-gap`             | 50 ms POST before F1 | **decided** | off for primary metric      |
+| `dense-baseline`           | Scoreboard vs dense  | **decided** | dense until AR beats val F1 |
+
+**v1 stack:** `onset_ar/` · pointer+residual · `delta_bucketed` · P=8 · frozen MERT · decoded F1 checkpoint · scheduled sampling ramp (post-tide) · eval min-gap off.
+
+### AR experiment gates (in order)
+
+| Slug                    | Pass criterion                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `gate-tide-overfit`     | Teacher forcing; scheduled sampling off; pointer+residual F1 ≈ 1.0 on tide (teacher-fed inputs) |
+| `gate-ar-decode`        | Same weights; free-running AR F1 ≥ 0.95 on tide + scheduled sampling ramp      |
+| `gate-10song-smoke`     | Batches build on `training_index_10songs.json`; loss ↓; no all-EOS collapse  |
+| `gate-val-vs-dense`     | Micro event F1 @ swept threshold vs dense baseline on `final_data` val         |
+
+Full protocol: [AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol).
 
 ---
 
@@ -75,7 +117,7 @@
 | --- | ------------------------------- | ------------------------------------------------------------- | ------------------------------------------------ |
 | F1  | **Fair feature ablation table** | Same event head + metric; swap pre only (A–D in planning doc) | **partial** — tide suite (EXP-07); val scale TBD |
 | F2  | **Success bar on val**          | Target F1 before mel-in-graph / seq2seq — TBD                 | **open**                                         |
-| F3  | **Ship path**                   | Dense MERT baseline vs event list for downstream generator    | **open**                                         |
+| F3  | **Ship path** (`ship-path`)     | Dense MERT baseline vs AR times vs K-query event list for downstream generator | **open** — AR `dense-baseline`: keep dense scoreboard until `gate-val-vs-dense` |
 
 ---
 
@@ -107,9 +149,9 @@
 4. ~~**100 ep tide suite**~~ — no overfit → EXP-09
 5. ~~**Threshold / loss / arch ablations**~~ — none break plateau → EXP-10
 6. ~~**Tide bisection (diagnose + half-cheat)**~~ — formulation ceiling, not bug → EXP-11
-7. **Full `final_data` dense val** — primary baseline on new dataset (unblocks F1/F3 comparisons)
+7. **Full `final_data` dense val** — primary baseline on new dataset (unblocks F1/F3/`gate-val-vs-dense`)
 8. **Dense MERT tide overfit** — formulation control experiment (`data/v2`)
-9. **Formulation prototype** — dense frames or seq2seq on event metric
+9. **AR onset implementation** — `onset_ar/` per locked v1 stack; gates in order: `gate-tide-overfit` → `gate-ar-decode` → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md))
 10. Multi-song event val on `final_data` — after dense baseline or explicit waive
 
 Update this file when a row moves to **decided**; link the deciding `EXP-…` or `NOTE-…`.

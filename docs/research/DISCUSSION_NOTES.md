@@ -2,7 +2,34 @@
 
 Insights, Q&A, and design reasoning (newest entries first) from research conversations. IDs: `NOTE-YYYYMMDD-NN`. Each entry includes **Timestamp** (`YYYY-MM-DD HH:MM:SS`, local system time at write).
 
-**Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md)
+**Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
+
+## Session 2026-06-14 — AR onset design locked
+
+### NOTE-20260614-01: Autoregressive onset v1 stack and gates
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-14 18:00:00                                                   |
+| **Topic**     | AR seq2seq onset formulation vs dense / K-query                       |
+
+**Context:** Dense MERT val best **0.686** (EXP-20260610-03); K-query event plateau ~30% with oracle ~31% (EXP-20260606-11). Chart times are an ordered sparse list — AR avoids Hungarian assignment and may interface with future chart generation.
+
+**Decisions locked (slug registry in [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-registry)):**
+
+- **Package:** `src/stepcovnet/onset_ar/` (not extending `onset_events/`)
+- **Model:** patched frozen MERT (P=8) → encoder–decoder; **pointer+residual** alignment + **`delta_bucketed`** token LM
+- **Eval:** primary event F1 **without** min-gap (`eval-min-gap`); checkpoint on **decoded** event F1 (`train-checkpoint`)
+- **Training:** teacher forcing first; scheduled sampling ramp **after** `gate-tide-overfit` (`gate-ar-decode`)
+- **Scoreboard:** keep dense baseline until `gate-val-vs-dense` (`dense-baseline`)
+
+**Open:** `delta-buckets` vocab edges, `train-aux-time-loss` (λ_time), `ship-path` (F3).
+
+**Implication:** Two parallel tracks — **Track A** full `final_data` dense baseline; **Track B** implement AR and run gates on tide → 10-song smoke → val vs dense.
+
+**Related:** [DECISIONS_CHECKLIST.md § C](DECISIONS_CHECKLIST.md#c-core-model-middle) · [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) (AR track)
+
+---
 
 ## Session 2026-06-24 — P8 complete + training manifest wiring
 
@@ -711,7 +738,7 @@ Gaussian wins +2.4 pp at matched protocol; approaches 100-train ceiling (0.635) 
 - Half-cheat A (GT refs + learn Δ): 32% F1 — anchoring helps slightly, not overfit.
 - Half-cheat B (uniform + frozen Δ): 40% F1 but **159 TP, 0 FP** — confidence-only on fixed grid tops out at oracle-like recall.
 
-**Implication:** Smoke gate failure is **formulation**, not wiring. Current head cannot memorize tide without shortcuts. Next: dense MERT control on tide, then formulation prototype.
+**Implication:** Smoke gate failure is **formulation**, not wiring. Current K-query head cannot memorize tide without shortcuts. Next: dense MERT control on tide (EXP-20260606-12), then **AR seq2seq** prototype ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md), NOTE-20260614-01).
 
 **Related:** EXP-11, `scripts/run_overfit_tide_bisection.py`, `diagnostics.oracle_uniform_grid_coverage`
 

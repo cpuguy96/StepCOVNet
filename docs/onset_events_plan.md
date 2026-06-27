@@ -2,7 +2,7 @@
 
 > **Historical:** Phases 1–6 were implemented in `src/stepcovnet/onset_events/`. For current architecture, training procedures, and next steps, use [PIPELINE_ARCHITECTURE.md](research/PIPELINE_ARCHITECTURE.md) and [EXPERIMENT_LOG.md](research/EXPERIMENT_LOG.md) § Current phase. This file is kept for WP/phase detail only.
 >
-> **Supersedes (2026-06-24):** Step/query caps are **2048** in `configs/onset_event_audio_baseline.json` (not 1024). Multi-song training on prep output uses `--training_index_path=data/final_data/training_index.json` — see [DATASET_PREP_PIPELINE.md](research/DATASET_PREP_PIPELINE.md) §2.
+> **Supersedes (2026-06-24):** Step/query caps are **2048** in `configs/onset_event_audio_baseline.json` (not 1024). Multi-song training on prep output uses `--training_index_path=data/final_data/training_index.json` — see [DATASET_PREP_PIPELINE.md](research/DATASET_PREP_PIPELINE.md) §2. **AR onset** (third formulation) is design-only — see [AR_ONSET_DESIGN.md](research/AR_ONSET_DESIGN.md); do not route new work here for AR.
 
 **Status:** Superseded for routing — see note above.
 
@@ -26,8 +26,8 @@ Your job:
 - Assign ONE work package (WP-ID) per sub-agent; never overlap "Owns" files.
 - After each WP: run its Verification command (Windows venv for pytest).
 - Update the Phase tracker table in the doc.
-- Enforce: raw audio in; times+confidence out; K=1024; 44100 Hz; 300s truncate;
-  skip charts >1024 steps; Hungarian matching; no HOP_COEFF in onset_events/;
+- Enforce: raw audio in; times+confidence out; K=2048; 44100 Hz; 300s truncate;
+  skip charts >2048 steps; Hungarian matching; no HOP_COEFF in onset_events/;
   do not modify dense onset path.
 - Phase 7 (generator) is OUT OF SCOPE.
 

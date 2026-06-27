@@ -26,7 +26,8 @@ Pre-push CI mirror: `python pre_submit.py` (from repository root).
 | Path | Contents |
 | ---- | -------- |
 | `src/stepcovnet/` | Main package (dense onset, arrows, shared utils) |
-| `src/stepcovnet/onset_events/` | Event-based onset pipeline (current research track) |
+| `src/stepcovnet/onset_events/` | K-query event onset pipeline (research track) |
+| `src/stepcovnet/onset_ar/` | **Planned** — autoregressive onset (`gate-tide-overfit` …); design in [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md); **not implemented** |
 | `src/stepcovnet/dataset_prep/` | Raw simfile → `final_data` preprocessing, `training_index`, `training_loader` (P8–P9) |
 | `src/stepcovnet/pairing.py` | Audio/chart pairing; `list_training_samples` for `final_data` |
 | `src/stepcovnet/mel_onset.py` | Mel spectrogram helpers (shared by dense path; breaks import cycles) |
@@ -55,6 +56,9 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `scripts/build_training_index.py` | Train/val split manifest (`training_index.json`) |
 | `configs/` | JSON experiment configs |
 | `configs/overfit_tide/` | Tide single-song overfit smoke configs |
+| `configs/onset_ar_*.json` | **Planned** — AR tide / 10-song smoke (see AR design doc) |
+
+**Planned (not in repo yet):** `scripts/train_onset_ar.py` — see [AR_ONSET_DESIGN.md §10](../research/AR_ONSET_DESIGN.md#103-suggested-commands-when-implemented).
 
 **Common entry points → skill:**
 
@@ -85,7 +89,7 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 
 | Path | Role |
 | ---- | ---- |
-| `docs/research/` | Lab notebook (EXP, NOTE, paper) |
+| `docs/research/` | Lab notebook (EXP, NOTE, paper) — incl. [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
 | `docs/agents/` | Agent state — [README](README.md), layout, self-journal |
 | `.cursor/skills/` | Task playbooks (procedures) |
 | `docs/onset_output_targets_planning.md` | Design planning |

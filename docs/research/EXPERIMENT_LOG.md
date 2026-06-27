@@ -4,13 +4,13 @@
 
 Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when drafting the paper — do not duplicate the full log there.
 
-**Related:** [discussion notes](DISCUSSION_NOTES.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [dataset prep plan](DATASET_PREP_PIPELINE.md)
+**Related:** [discussion notes](DISCUSSION_NOTES.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [dataset prep plan](DATASET_PREP_PIPELINE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
 ---
 
 ## Current phase
 
-**Updated:** 2026-06-24
+**Updated:** 2026-06-14
 
 ### Dataset prep (PRE ingestion)
 
@@ -18,18 +18,23 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | ----- | ------ |
 | P0–P9 | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val) |
 
-**Recommended next step:** First full multi-song **dense** training on `final_data` via `--training_index_path=data/final_data/training_index.json` (WSL GPU). Extract MERT features for `final_data` if not using mel baseline; then `eval_dense_onset.py` + threshold sweep on val.
+**Recommended next step (Track A — scoreboard):** First full multi-song **dense** training on `final_data` via `--training_index_path=data/final_data/training_index.json` (WSL GPU). Extract MERT features for `final_data` if not using mel baseline; then `eval_dense_onset.py` + threshold sweep on val.
 
 ### Onset detection (research track)
 
 | Item | Status |
 | ---- | ------ |
 | Dense val best (`data/v2`) | BiLSTM 256u — micro event F1 **0.686** @ thr=0.30 (EXP-20260610-03) |
-| Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) |
-| `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01) |
-| Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU train + eval |
+| Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
+| `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
+| Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
+| **AR onset (`onset_ar/`)** | **Design locked** (2026-06); **not implemented** — v1 stack + gates in [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §11 |
 
-**Recommended when resuming onset work:** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best. Event track: continue formulation probes on `data/v2` in parallel if not blocking dense baseline.
+**Recommended when resuming onset work:**
+
+- **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
+- **Track B (AR prototype):** Implement `onset_ar/` → `gate-tide-overfit` → `gate-ar-decode` → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol)).
+- **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
 
