@@ -181,21 +181,19 @@ class ArOnsetTrainingModel(keras.Model):
             tolerance_sec=run_config.tolerance_sec,
             name="event_onset_f1",
         )
-        self.ar_decode_f1_metric = ArEventOnsetF1Metric(
-            tolerance_sec=run_config.tolerance_sec,
-            name="ar_decode_event_f1",
-        )
-        self.ar_decode_length_metric = keras.metrics.Mean(name="ar_decode_length")
-        self.ar_decode_n_onsets_metric = keras.metrics.Mean(name="ar_decode_n_onsets")
-        self._last_ar_tp = 0.0
-        self._last_ar_fp = 0.0
-        self._last_ar_fn = 0.0
-        self._last_ar_decode_length = 0.0
-        self._last_ar_decode_n_onsets = 0.0
+        self.track_ar_decode = run_config.ar_decode_val_every_n_epochs > 0
+        self.ar_decode_f1_metric: ArEventOnsetF1Metric | None
+        if self.track_ar_decode:
+            self.ar_decode_f1_metric = ArEventOnsetF1Metric(
+                tolerance_sec=run_config.tolerance_sec,
+                name="ar_decode_event_f1",
+            )
+        else:
+            self.ar_decode_f1_metric = None
 
     @property
     def metrics(self):
-        return [
+        tracked = [
             self.loss_tracker,
             self.token_loss_tracker,
             self.pointer_loss_tracker,
@@ -203,10 +201,10 @@ class ArOnsetTrainingModel(keras.Model):
             self.residual_loss_tracker,
             self.token_accuracy,
             self.event_f1_metric,
-            self.ar_decode_f1_metric,
-            self.ar_decode_length_metric,
-            self.ar_decode_n_onsets_metric,
         ]
+        if self.ar_decode_f1_metric is not None:
+            tracked.append(self.ar_decode_f1_metric)
+        return tracked
 
     @staticmethod
     def _build_token_class_weights(
@@ -302,31 +300,20 @@ class ArOnsetTrainingModel(keras.Model):
         patch_mask: np.ndarray,
         gt_times: np.ndarray,
         gt_mask: np.ndarray,
-    ) -> tuple[float, float, float, float, float]:
-        """Free-running AR decode in eager mode; return TP/FP/FN and decode stats."""
-        tp, fp, fn, length, n_onsets = self._ar_decode_eval_wrapper(
+    ) -> tuple[float, float, float]:
+        """Free-running AR decode in eager mode; return TP/FP/FN counts."""
+        tp, fp, fn, _length, _n_onsets = self._ar_decode_eval_wrapper(
             mert_patches,
             patch_mask,
             gt_times,
             gt_mask,
         )
-        return (
-            float(tp),
-            float(fp),
-            float(fn),
-            float(length),
-            float(n_onsets),
-        )
+        return float(tp), float(fp), float(fn)
 
-    def set_ar_decode_metrics(
-        self,
-        tp: float,
-        fp: float,
-        fn: float,
-        decode_length: float,
-        n_onsets: float,
-    ) -> None:
-        """Publish AR-decode counts to metrics and the carry-forward cache."""
+    def set_ar_decode_f1_counts(self, tp: float, fp: float, fn: float) -> None:
+        """Publish free-run AR decode counts to the optional F1 metric."""
+        if self.ar_decode_f1_metric is None:
+            return
         self.ar_decode_f1_metric.true_positives.assign(
             tf.cast(tp, self.ar_decode_f1_metric.dtype),
         )
@@ -335,25 +322,6 @@ class ArOnsetTrainingModel(keras.Model):
         )
         self.ar_decode_f1_metric.false_negatives.assign(
             tf.cast(fn, self.ar_decode_f1_metric.dtype),
-        )
-        self.ar_decode_length_metric.reset_state()
-        self.ar_decode_n_onsets_metric.reset_state()
-        self.ar_decode_length_metric.update_state(decode_length)
-        self.ar_decode_n_onsets_metric.update_state(n_onsets)
-        self._last_ar_tp = tp
-        self._last_ar_fp = fp
-        self._last_ar_fn = fn
-        self._last_ar_decode_length = decode_length
-        self._last_ar_decode_n_onsets = n_onsets
-
-    def restore_ar_decode_metrics_from_cache(self) -> None:
-        """Reuse last AR-decode values when skipping expensive free-run val."""
-        self.set_ar_decode_metrics(
-            self._last_ar_tp,
-            self._last_ar_fp,
-            self._last_ar_fn,
-            self._last_ar_decode_length,
-            self._last_ar_decode_n_onsets,
         )
 
     def _ar_decode_eval_wrapper(
@@ -387,6 +355,10 @@ class ArOnsetTrainingModel(keras.Model):
             np.array(decode_stats.n_forward_steps, dtype=np.float64),
             np.array(decode_stats.n_onset_tokens, dtype=np.float64),
         )
+
+    def _reset_metrics(self) -> None:
+        for metric in self.metrics:
+            metric.reset_state()
 
     def train_step(self, data):
         batch = self._unpack_batch(data)
@@ -430,6 +402,7 @@ class ArOnsetTrainingModel(keras.Model):
         return {metric.name: metric.result() for metric in self.metrics}
 
     def test_step(self, data):
+        self._reset_metrics()
         batch = self._unpack_batch(data)
         total_loss, parts, outputs = self._forward_and_loss(batch, training=False)
         self.loss_tracker.update_state(total_loss)
@@ -495,6 +468,75 @@ def should_run_ar_decode_validation(
     return epoch_index % every_n_epochs == 0
 
 
+def overfit_gate_score(
+    *,
+    token_accuracy: float,
+    event_f1: float,
+    ar_decode_f1: float | None = None,
+) -> float:
+    """Min teacher-fed metrics; include free-run F1 when provided."""
+    scores = [token_accuracy, event_f1]
+    if ar_decode_f1 is not None:
+        scores.append(ar_decode_f1)
+    return float(min(scores))
+
+
+class OverfitGateCallback(keras.callbacks.Callback):
+    """Publish ``val_overfit_gate`` / ``val_ar_overfit_gate`` for checkpointing."""
+
+    def __init__(
+        self,
+        *,
+        include_ar_decode: bool,
+        early_stop: bool = False,
+        min_score: float = 0.9999,
+        patience: int = 3,
+    ) -> None:
+        super().__init__()
+        self.include_ar_decode = include_ar_decode
+        self.early_stop = early_stop
+        self.min_score = float(min_score)
+        self.patience = int(patience)
+        self._perfect_epochs = 0
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        if logs is None:
+            logs = {}
+        token_acc = float(logs.get("val_token_accuracy", 0.0))
+        event_f1 = float(logs.get("val_event_onset_f1", 0.0))
+        logs["val_overfit_gate"] = overfit_gate_score(
+            token_accuracy=token_acc,
+            event_f1=event_f1,
+        )
+        ar_f1: float | None = None
+        if self.include_ar_decode and "val_ar_decode_event_f1" in logs:
+            ar_f1 = float(logs["val_ar_decode_event_f1"])
+            logs["val_ar_overfit_gate"] = overfit_gate_score(
+                token_accuracy=token_acc,
+                event_f1=event_f1,
+                ar_decode_f1=ar_f1,
+            )
+        if not self.early_stop:
+            return
+        monitor = (
+            logs["val_ar_overfit_gate"]
+            if self.include_ar_decode and "val_ar_overfit_gate" in logs
+            else logs["val_overfit_gate"]
+        )
+        if monitor >= self.min_score:
+            self._perfect_epochs += 1
+        else:
+            self._perfect_epochs = 0
+        if self._perfect_epochs >= self.patience:
+            logging.info(
+                "Perfect overfit gate reached (%.4f >= %.4f for %d epochs); stopping.",
+                monitor,
+                self.min_score,
+                self.patience,
+            )
+            self.model.stop_training = True
+
+
 class ArDecodeValidationCallback(keras.callbacks.Callback):
     """Run free-running AR decode eagerly after fast teacher-fed validation."""
 
@@ -516,34 +558,21 @@ class ArDecodeValidationCallback(keras.callbacks.Callback):
     def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
         if logs is None:
             logs = {}
-        if should_run_ar_decode_validation(epoch, every_n_epochs=self.every_n_epochs):
-            tp, fp, fn, decode_length, n_onsets = (
-                self.training_model.run_ar_decode_eval_eager(
-                    self._val_batch["mert_patches"],
-                    self._val_batch["patch_mask"],
-                    self._val_batch["gt_times"],
-                    self._val_batch["gt_mask"],
-                )
+        if not should_run_ar_decode_validation(
+            epoch, every_n_epochs=self.every_n_epochs
+        ):
+            return
+        tp, fp, fn = self.training_model.run_ar_decode_eval_eager(
+            self._val_batch["mert_patches"],
+            self._val_batch["patch_mask"],
+            self._val_batch["gt_times"],
+            self._val_batch["gt_mask"],
+        )
+        self.training_model.set_ar_decode_f1_counts(tp, fp, fn)
+        if self.training_model.ar_decode_f1_metric is not None:
+            logs["val_ar_decode_event_f1"] = float(
+                self.training_model.ar_decode_f1_metric.result(),
             )
-            self.training_model.set_ar_decode_metrics(
-                tp,
-                fp,
-                fn,
-                decode_length,
-                n_onsets,
-            )
-        else:
-            self.training_model.restore_ar_decode_metrics_from_cache()
-
-        logs["val_ar_decode_event_f1"] = float(
-            self.training_model.ar_decode_f1_metric.result(),
-        )
-        logs["val_ar_decode_length"] = float(
-            self.training_model.ar_decode_length_metric.result(),
-        )
-        logs["val_ar_decode_n_onsets"] = float(
-            self.training_model.ar_decode_n_onsets_metric.result(),
-        )
 
 
 def scheduled_sampling_for_epoch(
@@ -698,6 +727,17 @@ def train_ar_onset(
                 every_n_epochs=run_config.ar_decode_val_every_n_epochs,
             ),
         )
+
+    overfit_insert = 1 if run_config.ar_decode_val_every_n_epochs > 0 else 0
+    callbacks.insert(
+        overfit_insert,
+        OverfitGateCallback(
+            include_ar_decode=run_config.ar_decode_val_every_n_epochs > 0,
+            early_stop=run_config.perfect_overfit_early_stop,
+            min_score=run_config.perfect_overfit_min_score,
+            patience=run_config.perfect_overfit_patience,
+        ),
+    )
 
     history = training_model.fit(
         train_ds,

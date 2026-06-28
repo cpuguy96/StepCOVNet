@@ -524,15 +524,15 @@ Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0
 
 **Config:** `configs/onset_ar_tide_decode_v2.json` · checkpoint `models_wsl/ar_tide_overfit_gate_decode_v2/` · log `logs/ar_tide_overfit_gate_decode_v2.log`.
 
-#### v2 training recipe (token-focused decode fine-tune)
+#### v2 training recipe (warm-start + full tide loss + SS)
 
 | Knob | Value | Purpose |
 | ---- | ----- | ------- |
 | `init_model_path` | `gate_v5` | Teacher-fed F1 **1.0** starting point |
-| `pointer_loss_weight: 0`, `lambda_time/residual: 0` | Freeze pointer/time heads; train token path under SS |
+| `lambda_time: 1`, `lambda_time_ramp_epochs: 100`, `lambda_residual: 5` | Same as `gate-tide-overfit` | Keep pointer/residual heads at F1 **1.0** under teacher forcing |
 | `eos_token_weight_scale: 0.2` | Reduce early-EOS under free-run |
 | `scheduled_sampling_warmup_epochs: 15`, `ramp_epochs: 100`, `max_p: 1` | Linear SS ramp after warmup |
-| `checkpoint_metric: val_event_onset_f1` | Save best during training; free-run gate checked offline |
+| `checkpoint_metric: val_event_onset_f1` | Save best teacher-fed checkpoint during training |
 | `ar_decode_val_every_n_epochs: 0` | Offline AR decode — no in-loop free-run val |
 | `epochs: 150` | Cap (was 200 in v1 sketch) |
 
@@ -550,9 +550,20 @@ Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
 | KV-cache decode | `kv_decode.ArOnsetKvDecoder` | Default `use_kv_cache=True` in `inference.decode_autoregressive_with_stats_numpy`; per-layer self hidden cache; encoder once per decode |
 | Legacy prefix decode | `inference._decode_autoregressive_prefix_numpy` | `use_kv_cache=False` for parity/debug |
 
-**Run 1 observations:** Ep 1–6 early-EOS (`val_ar_decode_length` **13**); ep 7+ full chart (**633–635**). Teacher-fed `val_event_onset_f1` dropped **1.0 → ~0.51** while AR F1 rose — token-only + SS shifts representations; monitor both metrics at gate check.
+**Run 1 observations:** Ep 1–6 early-EOS (`decode_length` **13** via offline `--ar_decode`); ep 7+ full chart (**633–635**). Token-only loss (v2 run 1) let teacher-fed `val_event_onset_f1` fall **1.0 → ~0.51** — recipe now restores full pointer/time/residual loss from `gate-tide-overfit`.
 
-**Pass criteria (unchanged):** teacher-fed F1 ≈ **1.0** **and** `val_ar_decode_event_f1` ≥ **0.95** on tide.
+**Pass criteria (unchanged):** teacher-fed F1 ≈ **1.0** **and** free-run F1 ≥ **0.95** on tide (free-run checked **offline** via `--ar_decode`, not in-loop).
+
+#### Perfect overfit metrics (`EXP-20260628-02`)
+
+| Metric | In-training | Offline gate |
+| ------ | ----------- | ------------ |
+| `val_token_accuracy` | yes (~0.5s val/ep) | — |
+| `val_event_onset_f1` | yes | `debug_ar_onset_overfit.py` |
+| `val_overfit_gate` | `min(token_acc, event_f1)` — checkpoint | — |
+| Free-run AR F1 | **never in-loop** | `--ar_decode` after training |
+
+Configs: `onset_ar_tide_overfit_perfect.json` (phase A: SS=0) · `onset_ar_tide_overfit_perfect_run2.json` (timing polish).
 
 ---
 

@@ -175,6 +175,10 @@ configs/**
 !configs/onset_final_data_mert_bilstm_scoreboard_50t_100v.json
 !configs/onset_ar_tide.json
 !configs/onset_ar_tide_decode_v2.json
+!configs/onset_ar_tide_overfit_perfect.json
+!configs/onset_ar_tide_decode_perfect.json
+!configs/onset_ar_tide_overfit_perfect_run2.json
+!configs/onset_ar_tide_overfit_perfect_run3.json
 !configs/onset_event_audio_baseline.json
 !configs/onset_event_overfit_one.json
 !configs/overfit_dense/dense_mert_3song.json

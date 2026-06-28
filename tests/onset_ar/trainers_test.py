@@ -87,6 +87,31 @@ class TrainersTest(unittest.TestCase):
             0.01,
         )
 
+    def test_overfit_gate_score_teacher_fed_only(self) -> None:
+        self.assertEqual(
+            trainers.overfit_gate_score(
+                token_accuracy=0.9,
+                event_f1=1.0,
+            ),
+            0.9,
+        )
+
+    def test_overfit_gate_score_includes_ar_decode(self) -> None:
+        self.assertEqual(
+            trainers.overfit_gate_score(
+                token_accuracy=1.0,
+                event_f1=1.0,
+                ar_decode_f1=0.8,
+            ),
+            0.8,
+        )
+
+    def test_overfit_gate_callback_publishes_metrics(self) -> None:
+        callback = trainers.OverfitGateCallback(include_ar_decode=False)
+        logs = {"val_token_accuracy": 0.95, "val_event_onset_f1": 1.0}
+        callback.on_epoch_end(0, logs)
+        self.assertEqual(logs["val_overfit_gate"], 0.95)
+
     def test_ar_decode_val_schedule_every_n(self) -> None:
         self.assertTrue(
             trainers.should_run_ar_decode_validation(0, every_n_epochs=10),
@@ -110,25 +135,14 @@ class TrainersTest(unittest.TestCase):
 
             def run_ar_decode_eval_eager(self, *_args, **_kwargs):
                 type(self).decode_calls += 1
-                return 1.0, 0.0, 0.0, 13.0, 12.0
+                return 1.0, 0.0, 0.0
 
-            def set_ar_decode_metrics(self, tp, fp, fn, decode_length, n_onsets):
-                self.last = (tp, fp, fn, decode_length, n_onsets)
-
-            def restore_ar_decode_metrics_from_cache(self):
-                self.last = "cached"
+            def set_ar_decode_f1_counts(self, tp, fp, fn):
+                self.last = (tp, fp, fn)
 
             @property
             def ar_decode_f1_metric(self):
                 return _StubMetric(0.5)
-
-            @property
-            def ar_decode_length_metric(self):
-                return _StubMetric(13.0)
-
-            @property
-            def ar_decode_n_onsets_metric(self):
-                return _StubMetric(12.0)
 
         class _StubMetric:
             def __init__(self, value: float) -> None:
@@ -165,12 +179,12 @@ class TrainersTest(unittest.TestCase):
         logs: dict[str, float] = {}
         callback.on_epoch_end(3, logs)
         self.assertEqual(_StubTrainingModel.decode_calls, 0)
-        self.assertEqual(stub.last, "cached")
-        self.assertEqual(logs["val_ar_decode_event_f1"], 0.5)
+        self.assertNotIn("val_ar_decode_event_f1", logs)
 
         callback.on_epoch_end(10, logs)
         self.assertEqual(_StubTrainingModel.decode_calls, 1)
-        self.assertEqual(stub.last[:2], (1.0, 0.0))
+        self.assertEqual(stub.last, (1.0, 0.0, 0.0))
+        self.assertEqual(logs["val_ar_decode_event_f1"], 0.5)
 
 
 if __name__ == "__main__":

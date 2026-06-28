@@ -81,12 +81,15 @@ class ArRunConfig(_DictSerializableMixin):
     scheduled_sampling_warmup_epochs: int = 0
     pointer_loss_weight: float = 1.0
     eos_token_weight_scale: float = 1.0
-    ar_decode_val_every_n_epochs: int = 1
+    ar_decode_val_every_n_epochs: int = 0
     init_model_path: str = ""
     length_normalize_ce: bool = True
     tolerance_sec: float = 0.02
     min_onset_distance_ms: float = 50.0
     checkpoint_metric: str = "val_event_onset_f1"
+    perfect_overfit_early_stop: bool = False
+    perfect_overfit_min_score: float = 0.9999
+    perfect_overfit_patience: int = 3
     model_output_dir: str = ""
     callback_root_dir: str = ""
     seed: int = 42
