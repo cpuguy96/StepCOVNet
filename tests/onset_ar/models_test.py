@@ -25,6 +25,22 @@ def _tiny_experiment_config() -> config.ArExperimentConfig:
 
 
 class ModelsTest(unittest.TestCase):
+    def test_pairwise_valid_mask_masks_padding(self) -> None:
+        layer = models.PairwiseValidMask()
+        valid = tf.constant([[1.0, 1.0, 0.0]], dtype=tf.float32)
+        mask = layer(valid)
+        self.assertTrue(bool(mask[0, 0, 0].numpy()) is False)
+        self.assertTrue(bool(mask[0, 2, 2].numpy()) is True)
+        self.assertTrue(bool(mask[0, 0, 2].numpy()) is True)
+
+    def test_decoder_self_attention_masks_future(self) -> None:
+        layer = models.DecoderSelfAttentionMask(max_decoder_len=4)
+        decoder_mask = tf.ones((1, 4), dtype=tf.float32)
+        mask = layer(decoder_mask)
+        self.assertTrue(bool(mask[0, 0, 0].numpy()) is False)
+        self.assertTrue(bool(mask[0, 0, 1].numpy()) is True)
+        self.assertTrue(bool(mask[0, 1, 0].numpy()) is False)
+
     def test_build_ar_onset_model_output_shapes(self) -> None:
         experiment_config = _tiny_experiment_config()
         model = models.build_ar_onset_model(experiment_config)

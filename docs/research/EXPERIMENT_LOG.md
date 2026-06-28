@@ -10,7 +10,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-06-14
+**Updated:** 2026-06-27
 
 ### Dataset prep (PRE ingestion)
 
@@ -28,12 +28,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
-| **AR onset (`onset_ar/`)** | **Design locked** (2026-06); **not implemented** — v1 stack + gates in [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §11 |
+| **AR onset (`onset_ar/`)** | **Phase 0+1 implemented** (2026-06-27); **`gate-tide-overfit` failing** — see EXP-20260627-02, [AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-debug-notes-2026-06-27) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** Implement `onset_ar/` → `gate-tide-overfit` → `gate-ar-decode` → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol)).
+- **Track B (AR prototype):** Debug **`gate-tide-overfit`** on tide (token accuracy ~0.48 plateau, F1 ≪ 1.0) → commit mask fix if validated → re-run gate → `gate-ar-decode` → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol)).
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -44,6 +44,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260627-02 | `train` + `model` | AR `gate-tide-overfit` WSL 300ep (tide) | **Fail** | Best `val_event_onset_f1` **~0.14**; `val_token_accuracy` **~0.48** plateau; gate not passed |
+| EXP-20260627-01 | `pre` + `model` | AR Phase 0+1 scaffold + tide verify | **Supported** | `onset_ar/` + `train_onset_ar.py`; tide batch loads (634 onsets, vocab 339) |
 | EXP-20260624-01 | `pre` + `train` | 10-song dense smoke via `training_index_path` | **Supported** | **10/10** train batches, 2 ep CPU; manifest-as-pointer OK |
 | EXP-20260624-02 | `pre` + `train` | 10-song event smoke @ 2048 caps | **Supported** | **10/10** train batches after `n_max_onsets` / `num_queries` / `max_steps_per_chart` = 2048 |
 | EXP-20260623-02 | `pre` | P8 `training_index.json` on full `final_data` | **Supported** | `stratified_song_v1`; 1010/110 songs; 1745/197 rows |
@@ -87,6 +89,30 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260627-02: AR `gate-tide-overfit` WSL 300ep (tide)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-27 18:30:00 |
+| **Track** | `train` + `model` (AR) |
+| **Gate** | `gate-tide-overfit` — **FAIL** |
+| **Config** | `configs/onset_ar_tide.json`; WSL GPU; 300 epochs; `lambda_time=1.0`; teacher forcing only |
+| **Code** | `a56f3aa` + local uncommitted attention-mask fix (`models.py`, `losses.py`) |
+| **Log** | `logs/ar_tide_overfit_gate_v2.log` |
+| **Outcome** | Best `val_event_onset_f1` **~0.137** (~epoch 29); final **0.0**; `val_token_accuracy` **0.4803** on 282/300 epochs; `val_token_loss` ↓ to ~1.7; `val_pointer_loss` ~6.46 |
+| **Conclusion** | Single-song overfit gate not met. **305/635** target steps use token 83 (Δ17 frames = 170 ms) — matches accuracy plateau numerically; likely majority-class / training-dynamics issue (see NOTE-20260627-01). Pointer head near uniform. Further root-cause work open. |
+
+### EXP-20260627-01: AR Phase 0+1 implementation + tide verify
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-27 12:00:00 |
+| **Track** | `pre` + `model` (AR) |
+| **Config** | `configs/onset_ar_tide.json`; `--verify-only` |
+| **Code** | `86117f9` (scaffold), `a56f3aa` (enc/dec + trainer), `e1ad6b9` (seed/F1 fixes) |
+| **Outcome** | Package `src/stepcovnet/onset_ar/`; `scripts/train_onset_ar.py`; tide assets load; 634 onsets, 1607 patches, decoder len 635, vocab 339 |
+| **Conclusion** | Locked v1 stack wired for tide overfit; proceed to `gate-tide-overfit` training |
 
 ### EXP-20260624-01: 10-song dense training smoke (`training_index_path`)
 

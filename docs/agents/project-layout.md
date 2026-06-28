@@ -27,7 +27,7 @@ Pre-push CI mirror: `python pre_submit.py` (from repository root).
 | ---- | -------- |
 | `src/stepcovnet/` | Main package (dense onset, arrows, shared utils) |
 | `src/stepcovnet/onset_events/` | K-query event onset pipeline (research track) |
-| `src/stepcovnet/onset_ar/` | **Planned** — autoregressive onset (`gate-tide-overfit` …); design in [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md); **not implemented** |
+| `src/stepcovnet/onset_ar/` | Autoregressive onset (`gate-tide-overfit` …); design [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md); **Phase 0+1 implemented** — gate failing (EXP-20260627-02) |
 | `src/stepcovnet/dataset_prep/` | Raw simfile → `final_data` preprocessing, `training_index`, `training_loader` (P8–P9) |
 | `src/stepcovnet/pairing.py` | Audio/chart pairing; `list_training_samples` for `final_data` |
 | `src/stepcovnet/mel_onset.py` | Mel spectrogram helpers (shared by dense path; breaks import cycles) |
@@ -56,9 +56,9 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `scripts/build_training_index.py` | Train/val split manifest (`training_index.json`) |
 | `configs/` | JSON experiment configs |
 | `configs/overfit_tide/` | Tide single-song overfit smoke configs |
-| `configs/onset_ar_*.json` | **Planned** — AR tide / 10-song smoke (see AR design doc) |
-
-**Planned (not in repo yet):** `scripts/train_onset_ar.py` — see [AR_ONSET_DESIGN.md §10](../research/AR_ONSET_DESIGN.md#103-suggested-commands-when-implemented).
+| `configs/onset_ar_tide.json` | AR tide overfit (`gate-tide-overfit`) |
+| `configs/onset_ar_*.json` | AR smoke configs (10-song etc.; see AR design doc) |
+| `scripts/train_onset_ar.py` | AR onset train / `--verify-only` — WSL GPU for full gate ([AR_ONSET_DESIGN.md §10](../research/AR_ONSET_DESIGN.md#10-experiment-protocol)) |
 
 **Common entry points → skill:**
 
@@ -66,6 +66,7 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | ------ | ----- |
 | `scripts/train_onset.py` | [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | `scripts/train_onset_event.py` | [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| `scripts/train_onset_ar.py` | [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) — AR tide gate |
 | `scripts/run_overfit_tide_suite.py` | [tide-overfit-protocol](../../.cursor/skills/tide-overfit-protocol/SKILL.md) |
 | `scripts/run_overfit_tide_ablations.py` | [tide-ablations](../../.cursor/skills/tide-ablations/SKILL.md) |
 | `scripts/run_overfit_tide_bisection.py` | `EXP-11` — no skill yet ([skills README § Scripts without skills](../../.cursor/skills/README.md#scripts-without-skills-yet)) |

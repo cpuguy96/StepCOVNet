@@ -12,15 +12,15 @@ def predicted_times_from_outputs(
     patch_frames: int,
     hop_sec: float,
 ) -> tf.Tensor:
-    """Soft expected onset times from pointer logits and residual head."""
+    """Expected onset times from pointer logits and residual head."""
     patch_frames_f = tf.cast(patch_frames, tf.float32)
     hop_sec_f = tf.cast(hop_sec, tf.float32)
     patch_duration = patch_frames_f * hop_sec_f
-    patch_indices = tf.cast(
-        tf.argmax(pointer_logits, axis=-1),
-        tf.float32,
-    )
-    return patch_indices * patch_duration + residual_sec
+    n_patches = tf.shape(pointer_logits)[-1]
+    patch_indices = tf.cast(tf.range(n_patches), tf.float32)
+    probs = tf.nn.softmax(pointer_logits, axis=-1)
+    expected_patch = tf.reduce_sum(probs * patch_indices, axis=-1)
+    return expected_patch * patch_duration + residual_sec
 
 
 def compute_ar_onset_loss(

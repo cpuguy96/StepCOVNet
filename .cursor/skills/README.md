@@ -32,7 +32,7 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | train/val split manifest for `final_data`             | `scripts/build_training_index.py`, [DATASET_PREP_PIPELINE.md](../../docs/research/DATASET_PREP_PIPELINE.md) §2 |
 | dense / event train on `final_data`                     | `scripts/train_onset.py` or `train_onset_event.py` + `--training_index_path`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
 | bisection, half-cheat, grid oracle, smoke gate bug hunt | `scripts/run_overfit_tide_bisection.py`, [EXP-11](../../docs/research/EXPERIMENT_LOG.md) |
-| AR onset train / gates (when implemented)             | `scripts/train_onset_ar.py` (planned), [AR_ONSET_DESIGN.md](../../docs/research/AR_ONSET_DESIGN.md) §10 |
+| AR onset train / `gate-tide-overfit` debug            | `scripts/train_onset_ar.py`, [AR_ONSET_DESIGN.md](../../docs/research/AR_ONSET_DESIGN.md) §10.5 |
 
 ## Adding a skill
 

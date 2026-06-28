@@ -83,7 +83,7 @@ audio
 | -------------------------- | --------------------------------------------- | --------------------------------------- |
 | **Event (`onset_events`)** | `pred_times` `(K,)`, `pred_confidence` `(K,)` | K query slots + cross-attention decoder |
 | **Dense (baseline)**       | Per-frame onset probability vector            | U-Net / BiLSTM frame classifier         |
-| **AR (`onset_ar`)**        | Token IDs + pointer/residual times per step   | Encoder–decoder seq2seq (**planned**)   |
+| **AR (`onset_ar`)**        | Token IDs + pointer/residual times per step   | Encoder–decoder seq2seq (**implemented**; gate failing) |
 
 **Swappable:** encoder depth/capacity, formulation (query slots vs dense vs AR tokens), token scheme, patch size, alignment (pointer vs free cross-attn). See [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-registry) for locked AR slugs.
 
@@ -176,9 +176,9 @@ Use dense MERT as the strongest in-repo baseline when judging whether event or A
 
 ---
 
-## AR path (planned — [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md))
+## AR path — [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)
 
-**Status:** Design locked 2026-06; **not implemented**. Experiment gates: `gate-tide-overfit` → `gate-ar-decode` → `gate-10song-smoke` → `gate-val-vs-dense`.
+**Status:** Design locked 2026-06; **Phase 0+1 implemented** (2026-06-27). **`gate-tide-overfit` not passing** (EXP-20260627-02). Gates in order: `gate-tide-overfit` → `gate-ar-decode` → `gate-10song-smoke` → `gate-val-vs-dense`.
 
 ```
 audio → cached MERT on 10 ms hop grid
@@ -188,15 +188,15 @@ audio → cached MERT on 10 ms hop grid
      → event F1 @ tolerance (primary: no min-gap)
 ```
 
-| Stage             | Module(s) (planned)                          | Notes                                                |
+| Stage             | Module(s)                                    | Notes                                                |
 | ----------------- | -------------------------------------------- | ---------------------------------------------------- |
 | PRE               | `ssl_features.py`, `dataset_prep/` loaders   | Same MERT hop grid as dense; reuse `training_index`  |
-| MODEL             | `onset_ar/` (TBD)                            | Frozen MERT; pointer+residual + token LM             |
+| MODEL             | `onset_ar/`                                  | Frozen MERT; pointer+residual + token LM             |
 | POST              | Detokenize pointer times                     | Min-gap off for primary eval                         |
 | METRICS           | `onset_events/matching.py`, `metrics.py`     | Same event F1 contract; sorted linear merge optional |
 | Training feedback | Token CE + aux time; decoded F1 checkpoint   | Scheduled sampling after tide gate                   |
 
-**Scripts (planned):** `scripts/train_onset_ar.py`, `configs/onset_ar_tide.json`, `configs/onset_ar_smoke.json`
+**Scripts:** `scripts/train_onset_ar.py`, `configs/onset_ar_tide.json` (in repo). `configs/onset_ar_smoke.json` planned for 10-song gate.
 
 ---
 

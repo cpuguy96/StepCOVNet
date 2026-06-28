@@ -6,7 +6,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | --------------- | ----- |
 | A **procedure** (train, overfit, WSL, log EXP/NOTE, debug playbooks) | [.cursor/skills/README.md](.cursor/skills/README.md) |
 | **Research** (experiments, design, pipeline; log runs in EXPERIMENT_LOG) | [docs/research/README.md](docs/research/README.md) |
-| **AR onset design** (locked stack, gates; not implemented) | [docs/research/AR_ONSET_DESIGN.md](docs/research/AR_ONSET_DESIGN.md) |
+| **AR onset design** (locked stack, gates, debug notes) | [docs/research/AR_ONSET_DESIGN.md](docs/research/AR_ONSET_DESIGN.md) |
 | **What's next** (current phase) | [docs/research/EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
 | GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |

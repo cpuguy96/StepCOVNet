@@ -1,6 +1,6 @@
 # Autoregressive onset detection — design draft
 
-**Status:** Design draft — **not implemented**. Architecture locked **2026-06** (§11). Captures seq2seq onset formulation vs dense frames and K-query event slots.
+**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` not passing** — see §10.5 and [EXP-20260627-02](EXPERIMENT_LOG.md#exp-20260627-02-gate-tide-overfit-wsl-300ep). Captures seq2seq onset formulation vs dense frames and K-query event slots.
 
 **Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) · [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md) § C · [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2 · §11 decision registry below · historical [onset_events plan](../onset_events_plan.md)
 
@@ -16,7 +16,7 @@ Chart player-step times are an **ordered sparse list** in seconds. Three MODEL f
 | ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------- | -------------- |
 | **Dense frames**         | Per-hop onset probability on MERT grid                  | Micro event F1 **0.686** @ thr=0.30 (`data/v2`, EXP-20260610-03) | ~98% event F1  |
 | **K-query event**        | K parallel `(time, confidence)` slots + Hungarian train | ~**0.30** F1 plateau; oracle ~**0.31** (EXP-20260606-11)         | ~28–30%        |
-| **AR tokens** (this doc) | Causal decoder emits ordered time tokens until EOS      | _Not run_                                                        | _Unknown_      |
+| **AR tokens** (this doc) | Causal decoder emits ordered time tokens until EOS      | _Not run on val_                                                 | **`gate-tide-overfit` fail** — best teacher-fed F1 **~0.14**; `val_token_accuracy` stuck **~0.48** (EXP-20260627-02) |
 
 **Why consider AR**
 
@@ -440,7 +440,11 @@ python scripts/train_onset_ar.py \
   --model_output_dir models/ar_10song_smoke
 ```
 
-Scripts and configs are **not in repo yet**. WSL GPU: run from repo root per [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+WSL GPU: run from repo root per [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md). Verify tide load without training:
+
+```bash
+python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-only
+```
 
 ### 10.4 Config sketch
 
@@ -475,7 +479,41 @@ Scripts and configs are **not in repo yet**. WSL GPU: run from repo root per [ws
 }
 ```
 
-**`configs/onset_ar_smoke.json`** — same model block; set `training_index_path` instead of overfit paths; `scheduled_sampling_max_p`: 0 until `gate-ar-decode`.
+**`configs/onset_ar_smoke.json`** — same model block; set `training_index_path` instead of overfit paths; `scheduled_sampling_max_p`: 0 until `gate-ar-decode`. (Smoke config **not in repo yet**.)
+
+### 10.5 `gate-tide-overfit` debug notes (2026-06-27)
+
+**Implementation:** commits `86117f9` (Phase 0 scaffold), `a56f3aa` (Phase 1 model + trainer), `e1ad6b9` (trainer seed / F1 metric fixes). Tests: `tests/onset_ar/`.
+
+**Tide batch (verified):** 634 onsets, 1607 encoder patches, vocab **339**, decoder length **635** (634 + EOS). Only **22 unique** target token IDs across 635 steps.
+
+**Run:** WSL GPU, 300 epochs, config `configs/onset_ar_tide.json`, log `logs/ar_tide_overfit_gate_v2.log` ([EXP-20260627-02](EXPERIMENT_LOG.md#exp-20260627-02-gate-tide-overfit-wsl-300ep)). Best checkpoint by `val_event_onset_f1` under `callbacks/ar_tide_overfit/models/…/best.keras`.
+
+| Metric | Observed pattern |
+| ------ | ---------------- |
+| `val_token_accuracy` | **0.4803** on most epochs (282/300) |
+| `val_token_loss` | Decreases (~4.3 → ~1.7) while accuracy flat |
+| `val_pointer_loss` | ~**6.4–6.5** (near uniform over 1607 patches; log-uniform ≈ 7.38) |
+| `val_time_loss` | ~15–30; often dominates total loss with `lambda_time=1.0` |
+| `val_event_onset_f1` | Brief peak **~0.137** (~epoch 29); **0.0** by epoch 300 |
+| Train vs val token acc (ep 1) | train **~0.02**, val **~0.48** (full trainer; may include metric reset / dropout) |
+| CPU 1-step probe | train **and** eval both → **0.4803** after one gradient step — collapse not eval-only |
+
+**Confirmed (tide target stats, not model-dependent):**
+
+- **305 / 635 = 0.4803** — the most frequent decoder target is token **83** on 305 steps.
+- Token **83** = dense delta **17 frames** = **170 ms** (305/633 inter-onset deltas are 17 frames on tide).
+- Random-init argmax token accuracy ≈ **0.005**, not 0.48 — the plateau is not a metric initialization artifact.
+
+**Hypotheses (open — do not treat as root cause until verified):**
+
+- Token head may collapse toward predicting the majority delta class everywhere; CE can fall via confidence without raising argmax accuracy.
+- `lambda_time=1.0` may overweight pointer/residual vs token CE; pointer head may stay near uniform.
+- F1 metric uses **soft expected patch** from pointer softmax (`inference.decode_teacher_fed_times_tf`), not argmax — may diverge from pointer CE training signal.
+- Attention mask polarity was wrong in committed code; **local fix** in uncommitted `models.py` / `losses.py` / `tests/onset_ar/models_test.py` (Keras `MultiHeadAttention`: `True` = masked out; causal mask direction). Re-verify masks and re-run gate after commit.
+- Class imbalance (22 unique tokens; one token ≈48% of steps) may need weighted CE, phased `lambda_time`, or dropout=0 for overfit debug.
+
+**Next debug steps:** dump per-step argmax tokens vs targets from best checkpoint; round-trip token encode/decode → times; ablate `lambda_time`; compare train/eval with dropout off. See [NOTE-20260627-01](DISCUSSION_NOTES.md#note-20260627-01-gate-tide-overfit-plateau-and-open-hypotheses).
 
 ---
 
@@ -556,7 +594,8 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 - GT times are **continuous seconds** from simfile; tokenize with §2.1 / §6.1 rules — not dense `int(time/HOP)` unless ablating parity.
 - Truncation: mirror `onset_events.datasets` — clip GT to waveform duration before building the token sequence.
 - Variable output length (no fixed `n_max_onsets` pad like event path unless batching requires it).
-- **Diagnostics to log:** token accuracy, pointer/residual vs token time agreement, mean |Δt| error, EOS step index, pointer monotonicity violations.
+- **Diagnostics to log:** token accuracy, pointer/residual vs token time agreement, mean |Δt| error, EOS step index, pointer monotonicity violations; **per-step argmax token histogram** when accuracy plateaus near a rational fraction of sequence length (majority-class baseline check).
+- **Code map:** `targets.py` (tokenization) · `datasets.py` (MERT patches + batch) · `models.py` (enc/dec + masks) · `losses.py` · `inference.py` (teacher-fed F1 times) · `trainers.py` · `scripts/train_onset_ar.py`.
 
 ---
 
@@ -568,7 +607,8 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 | GT clip / pad               | `onset_events/targets.py`, `onset_events/datasets.py`                    |
 | Chart times (manifest)      | `dataset_prep/training_loader.load_chart_times_sec`                      |
 | Chart times (legacy / tide) | `onset_events/charts.py` (`_parse_step_times`)                           |
-| Tide overfit paths          | `configs/onset_event_overfit_one.json`, `configs/overfit_tide/mert.json` |
+| Tide overfit paths          | `configs/onset_event_overfit_one.json`, `configs/overfit_tide/mert.json`, `configs/onset_ar_tide.json` |
+| AR trainer / gate debug     | `scripts/train_onset_ar.py`, `logs/ar_tide_overfit_gate_v2.log`, EXP-20260627-02 |
 | Dense frame targets         | `datasets._create_target`, `_create_target_gaussian` in `datasets.py`    |
 | Event plateau               | EXP-20260606-08 … 11 in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)           |
 | Formulation / gates         | [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md) § C                     |
@@ -576,4 +616,4 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 
 ---
 
-_Draft from design discussion; decision slugs in §11. Update when experiment gates pass or architecture changes._
+_Design locked 2026-06; Phase 0+1 implemented 2026-06-27. Update §10.5 when `gate-tide-overfit` passes or architecture changes._

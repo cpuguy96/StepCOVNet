@@ -4,6 +4,47 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-06-27 — AR Phase 0+1 + `gate-tide-overfit` failure
+
+### NOTE-20260627-01: `gate-tide-overfit` plateau and open hypotheses
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-27 18:46:29                                                   |
+| **Topic**     | AR tide overfit — `val_token_accuracy` ~0.48, F1 ≪ 1.0              |
+
+**Context:** Phase 0+1 landed in `onset_ar/` (EXP-20260627-01). First full WSL **`gate-tide-overfit`** run (300 ep, EXP-20260627-02) still fails pass criterion (teacher-fed event F1 ≈ 1.0). Dense tide overfit remains ~98% F1 (EXP-20260606-12) on the same song.
+
+**Confirmed observations:**
+
+- Tide decoder targets: **635** steps; token **83** appears **305** times → **305/635 ≈ 0.4803**, matching logged `val_token_accuracy` on most epochs.
+- Token 83 encodes inter-onset delta **17 frames (170 ms)** — dominant spacing on tide (305/633 raw deltas).
+- `val_token_loss` decreases while argmax accuracy stays at ~0.48 — consistent with a **fixed majority-class argmax**, not necessarily with learning per-step tokens.
+- `val_pointer_loss` ~**6.46** vs uniform baseline log(1607) ≈ **7.38** — pointer head only weakly better than uniform.
+- `val_event_onset_f1` peaked **~0.137** mid-training then fell to **0.0**; checkpoint metric is decoded event F1, not token accuracy.
+- Epoch 1: train token acc **~0.02**, val **~0.48** — large train/eval gap; dropout 0.1 may contribute.
+- **CPU 50-step probe (local, mask-fix code):** after **1** Adam step, train **and** eval accuracy both jump to **0.4803**; after 50 steps eval **0.52**, train **0.53**; argmax dominated by token **83** (544/635 steps). Collapse is not eval-only — happens immediately in both modes.
+- Random-init argmax accuracy **~0.005** — plateau is post-training behavior, not a metric init bug.
+
+**Fixes attempted (partial):**
+
+- Trainer: `apply_training_seed`; F1 metric tensor reshape (`e1ad6b9`).
+- Attention masks: Keras polarity (`True` = masked) + causal direction — **local uncommitted** change; 15-ep smoke showed moving F1 (~0.11) but full 300-ep run still failed gate.
+
+**Open hypotheses (needs verification):**
+
+- Token-head collapse to majority delta class; class-weighted / focal CE or phased training (`lambda_time=0` first).
+- Loss balance: `lambda_time=1.0` with `time_loss` ~15–30 may dominate gradients vs token CE ~1.7.
+- Metric/train mismatch: F1 from soft expected patch; pointer CE on hard patch index.
+- Label or mask bugs beyond attention (EOS step, padding, teacher-forcing alignment) — not ruled out.
+- Overfit hygiene: dropout off, LR, longer smoke before 300 ep.
+
+**Implication:** Do not advance to `gate-ar-decode` or multi-song until tide teacher-forced F1 ≈ 1.0. Next agent should separate **confirmed target stats** from **model collapse** via checkpoint prediction dumps and targeted ablations ([AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-debug-notes-2026-06-27)).
+
+**Related:** [EXP-20260627-01](EXPERIMENT_LOG.md#exp-20260627-01-ar-phase-01-implementation--tide-verify), [EXP-20260627-02](EXPERIMENT_LOG.md#exp-20260627-02-ar-gate-tide-overfit-wsl-300ep-tide)
+
+---
+
 ## Session 2026-06-14 — AR onset design locked
 
 ### NOTE-20260614-01: Autoregressive onset v1 stack and gates

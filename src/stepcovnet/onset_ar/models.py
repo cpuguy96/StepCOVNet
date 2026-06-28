@@ -44,13 +44,17 @@ class SinusoidalPositionEncoding(keras.layers.Layer):
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
 class PairwiseValidMask(keras.layers.Layer):
-    """Self-attention mask from per-position validity."""
+    """Self-attention mask from per-position validity.
+
+    Keras ``MultiHeadAttention`` uses ``True`` to **mask out** a position.
+    """
 
     def call(self, valid: tf.Tensor) -> tf.Tensor:
         valid_bool = keras.ops.cast(valid > 0.5, "bool")
         valid_q = keras.ops.expand_dims(valid_bool, axis=-1)
         valid_k = keras.ops.expand_dims(valid_bool, axis=-2)
-        return keras.ops.logical_and(valid_q, valid_k)
+        can_attend = keras.ops.logical_and(valid_q, valid_k)
+        return keras.ops.logical_not(can_attend)
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
@@ -63,7 +67,8 @@ class CrossAttentionMask(keras.layers.Layer):
         memory_bool = keras.ops.cast(memory_valid > 0.5, "bool")
         query_q = keras.ops.expand_dims(query_bool, axis=-1)
         memory_k = keras.ops.expand_dims(memory_bool, axis=-2)
-        return keras.ops.logical_and(query_q, memory_k)
+        can_attend = keras.ops.logical_and(query_q, memory_k)
+        return keras.ops.logical_not(can_attend)
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
@@ -72,20 +77,23 @@ class DecoderSelfAttentionMask(keras.layers.Layer):
 
     def __init__(self, max_decoder_len: int, **kwargs) -> None:
         super().__init__(**kwargs)
-        causal = np.tril(np.ones((max_decoder_len, max_decoder_len), dtype=bool))
-        self._causal_mask = tf.constant(causal[np.newaxis, ...])
+        positions = np.arange(max_decoder_len)
+        future = positions[:, np.newaxis] < positions[np.newaxis, :]
+        self._future_mask = tf.constant(future[np.newaxis, ...], dtype=tf.bool)
 
     def call(self, decoder_mask: tf.Tensor) -> tf.Tensor:
         dec_valid = keras.ops.cast(decoder_mask > 0.5, "bool")
         valid_q = keras.ops.expand_dims(dec_valid, axis=-1)
         valid_k = keras.ops.expand_dims(dec_valid, axis=-2)
-        valid_mask = keras.ops.logical_and(valid_q, valid_k)
-        return keras.ops.logical_and(self._causal_mask, valid_mask)
+        can_attend = keras.ops.logical_and(valid_q, valid_k)
+        return keras.ops.logical_or(
+            self._future_mask, keras.ops.logical_not(can_attend)
+        )
 
     def get_config(self) -> dict:
         config_dict = super().get_config()
         config_dict.update(
-            {"max_decoder_len": int(self._causal_mask.shape[1])},
+            {"max_decoder_len": int(self._future_mask.shape[1])},
         )
         return config_dict
 
