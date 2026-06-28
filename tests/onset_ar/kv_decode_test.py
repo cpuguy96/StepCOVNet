@@ -141,6 +141,60 @@ class KvDecodeTest(unittest.TestCase):
             prefix_stats.times, kv_stats.times, rtol=1e-4, atol=1e-4
         )
 
+    def test_kv_decode_token_time_source(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        max_patches = experiment_config.max_encoder_patches()
+        max_dec = experiment_config.max_decoder_len()
+        patch_dim = experiment_config.patch_input_dim()
+
+        rng = np.random.default_rng(0)
+        mert_patches = rng.standard_normal((1, max_patches, patch_dim)).astype(
+            np.float32
+        )
+        patch_mask = np.zeros((1, max_patches), dtype=np.float32)
+        patch_mask[0, :6] = 1.0
+
+        decode_kwargs = {
+            "max_decoder_len": max_dec,
+            "patch_frames": experiment_config.model.patch_frames,
+            "hop_sec": experiment_config.dataset.hop_sec,
+            "experiment_config": experiment_config,
+            "bos_id": targets.BOS_ID,
+            "eos_id": targets.EOS_ID,
+        }
+
+        pointer_stats = inference.decode_autoregressive_with_stats_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            use_kv_cache=True,
+            time_source="pointer_residual",
+            **decode_kwargs,
+        )
+        token_stats = inference.decode_autoregressive_with_stats_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            use_kv_cache=True,
+            time_source="tokens",
+            **decode_kwargs,
+        )
+
+        self.assertIsNotNone(pointer_stats.onset_token_ids)
+        np.testing.assert_array_equal(
+            pointer_stats.onset_token_ids,
+            token_stats.onset_token_ids,
+        )
+        expected_times = inference.decode_onset_tokens_to_times(
+            pointer_stats.onset_token_ids,
+            experiment_config=experiment_config,
+            patch_mask=patch_mask,
+        )
+        np.testing.assert_allclose(
+            token_stats.times, expected_times, rtol=1e-4, atol=1e-4
+        )
+
     def test_kv_decode_step_output_shapes(self) -> None:
         experiment_config = _tiny_experiment_config()
         model = models.build_ar_onset_model(experiment_config)

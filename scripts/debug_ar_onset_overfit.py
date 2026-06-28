@@ -5,6 +5,14 @@ Usage:
     python scripts/debug_ar_onset_overfit.py \\
         --config configs/onset_ar_tide.json \\
         --model_path models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras
+    python scripts/debug_ar_onset_overfit.py \\
+        --config configs/onset_ar_tide_overfit_perfect_run3.json \\
+        --model_path models_wsl/ar_tide_overfit_perfect_v3/ar_onset_model.keras \\
+        --ar_decode
+
+With ``--ar_decode``, top-level ``ar_decode`` metrics use **two-pass** timing
+(incremental free-run tokens + parallel pointer+residual re-forward). Incremental
+pointer+residual and GT timing parity live under ``ar_decode.diagnostics``.
 """
 
 from __future__ import annotations
@@ -31,7 +39,7 @@ _bootstrap_wsl_gpu()
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_ar import config, datasets, inference, models, targets, trainers
+from stepcovnet.onset_ar import config, datasets, inference, targets, trainers
 
 PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.")
 PARSER.add_argument(
@@ -55,7 +63,17 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--ar_decode",
     action="store_true",
-    help="Include free-running autoregressive decode diagnostics.",
+    help=(
+        "Offline free-run decode gate (two-pass timing). "
+        "Incremental pointer+residual under ar_decode.diagnostics."
+    ),
+)
+PARSER.add_argument(
+    "--ar_decode_time_source",
+    type=str,
+    choices=("pointer_residual", "tokens"),
+    default="pointer_residual",
+    help="How to convert free-run tokens into onset times (with --ar_decode).",
 )
 PARSER.add_argument(
     "--token_trace_steps",
@@ -199,14 +217,87 @@ def _worst_onsets(report: dict[str, object], worst_k: int) -> list[dict[str, flo
     return worst
 
 
+def _event_f1_report(
+    pred_times: np.ndarray,
+    gt_times: np.ndarray,
+    *,
+    tolerance_sec: float,
+) -> dict[str, float | int]:
+    pred_mask = np.ones(pred_times.shape, dtype=np.float32)
+    gt_mask = np.ones(gt_times.shape, dtype=np.float32)
+    tp, fp, fn = trainers._ar_event_onset_counts_numpy(  # noqa: SLF001
+        pred_times,
+        pred_mask,
+        gt_times,
+        gt_mask,
+        tolerance_sec=tolerance_sec,
+    )
+    precision = tp / (tp + fp + 1e-9)
+    recall = tp / (tp + fn + 1e-9)
+    event_f1 = 2.0 * precision * recall / (precision + recall + 1e-9)
+    return {
+        "n_pred_onsets": int(pred_times.size),
+        "n_gt_onsets": int(gt_times.size),
+        "event_f1": float(event_f1),
+        "true_positives": int(tp),
+        "false_positives": int(fp),
+        "false_negatives": int(fn),
+    }
+
+
+def _gt_timing_diagnostic(
+    model: tf.keras.Model,
+    batch_np: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+    gt_times: np.ndarray,
+    tolerance_sec: float,
+) -> dict[str, object]:
+    """Compare pointer+residual times under GT parallel vs GT incremental decode."""
+    mert = batch_np["mert_patches"]
+    patch_mask = batch_np["patch_mask"]
+    onset_mask = batch_np["onset_step_mask"][0] > 0.5
+    gt_tokens = batch_np["decoder_target_ids"][0][onset_mask]
+
+    parallel_times = inference.decode_parallel_pointer_times_numpy(
+        model,
+        mert,
+        patch_mask,
+        gt_tokens,
+        experiment_config=experiment_config,
+    )
+    incremental_times = inference.decode_gt_incremental_pointer_times_numpy(
+        model,
+        mert,
+        patch_mask,
+        batch_np["decoder_input_ids"][0],
+        batch_np["onset_step_mask"][0],
+        experiment_config=experiment_config,
+    )
+    return {
+        "gt_parallel": _event_f1_report(
+            parallel_times,
+            gt_times,
+            tolerance_sec=tolerance_sec,
+        ),
+        "gt_incremental": _event_f1_report(
+            incremental_times,
+            gt_times,
+            tolerance_sec=tolerance_sec,
+        ),
+    }
+
+
 def _ar_decode_report(
     model: tf.keras.Model,
     batch_np: dict[str, np.ndarray],
     *,
     experiment_config: config.ArExperimentConfig,
     token_trace_steps: int,
+    time_source: inference.ArTimeSource = "pointer_residual",
+    compare_time_sources: bool = False,
 ) -> dict[str, object]:
-    """Free-running decode metrics and optional token trace."""
+    """Two-pass gate metrics; incremental timing under ``diagnostics``."""
     run_config = experiment_config.run
     model_config = experiment_config.model
     max_decoder_len = experiment_config.max_decoder_len()
@@ -216,55 +307,82 @@ def _ar_decode_report(
     gt_target = batch_np["decoder_target_ids"][0]
     gt_mask = batch_np["decoder_mask"][0]
 
-    decode_stats = inference.decode_autoregressive_with_stats_numpy(
+    decode_kwargs = {
+        "max_decoder_len": max_decoder_len,
+        "patch_frames": model_config.patch_frames,
+        "hop_sec": experiment_config.dataset.hop_sec,
+        "experiment_config": experiment_config,
+    }
+
+    incremental_stats = inference.decode_autoregressive_with_stats_numpy(
         model,
         mert,
         patch_mask,
-        max_decoder_len=max_decoder_len,
-        patch_frames=model_config.patch_frames,
-        hop_sec=experiment_config.dataset.hop_sec,
-        experiment_config=experiment_config,
+        time_source=time_source,
+        **decode_kwargs,
     )
-    pred_times = decode_stats.times
-    pred_mask = np.ones(pred_times.shape, dtype=np.float32)
-    gt_mask_ones = np.ones(gt_times.shape, dtype=np.float32)
-    tp, fp, fn = trainers._ar_event_onset_counts_numpy(  # noqa: SLF001
-        pred_times,
-        pred_mask,
-        gt_times,
-        gt_mask_ones,
-        tolerance_sec=run_config.tolerance_sec,
+    gate_stats = inference.decode_autoregressive_two_pass_with_stats_numpy(
+        model,
+        mert,
+        patch_mask,
+        token_pass=incremental_stats,
+        **decode_kwargs,
     )
-    precision = tp / (tp + fp + 1e-9)
-    recall = tp / (tp + fn + 1e-9)
-    event_f1 = 2.0 * precision * recall / (precision + recall + 1e-9)
+
+    diagnostics: dict[str, object] = {
+        "incremental_pointer_residual": {
+            "time_source": time_source,
+            "ar_decode_length": incremental_stats.n_forward_steps,
+            "stopped_on_eos": incremental_stats.stopped_on_eos,
+            **_event_f1_report(
+                incremental_stats.times,
+                gt_times,
+                tolerance_sec=run_config.tolerance_sec,
+            ),
+        },
+        "gt_timing": _gt_timing_diagnostic(
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            gt_times=gt_times,
+            tolerance_sec=run_config.tolerance_sec,
+        ),
+    }
+
+    if compare_time_sources and incremental_stats.onset_token_ids is not None:
+        token_times = inference.decode_onset_tokens_to_times(
+            incremental_stats.onset_token_ids,
+            experiment_config=experiment_config,
+            patch_mask=patch_mask,
+        )
+        diagnostics["token_detokenize"] = _event_f1_report(
+            token_times,
+            gt_times,
+            tolerance_sec=run_config.tolerance_sec,
+        )
 
     report: dict[str, object] = {
-        "n_pred_onsets": int(pred_times.size),
-        "n_gt_onsets": int(gt_times.size),
-        "ar_decode_length": decode_stats.n_forward_steps,
-        "stopped_on_eos": decode_stats.stopped_on_eos,
-        "event_f1": float(event_f1),
-        "true_positives": int(tp),
-        "false_positives": int(fp),
-        "false_negatives": int(fn),
+        "timing_mode": "two_pass",
+        "ar_decode_length": gate_stats.n_forward_steps,
+        "stopped_on_eos": gate_stats.stopped_on_eos,
+        **_event_f1_report(
+            gate_stats.times,
+            gt_times,
+            tolerance_sec=run_config.tolerance_sec,
+        ),
+        "diagnostics": diagnostics,
     }
 
     if token_trace_steps <= 0:
         return report
 
-    built = models.build_ar_onset_model(experiment_config)
-    built.set_weights(model.get_weights())
-    encoder, decoder = models.build_ar_onset_inference_models(
-        built,
+    memory, pm_b = inference.get_encoder_memory_numpy(
+        model,
+        mert,
+        patch_mask,
         experiment_config,
     )
-    mert_b = mert[0:1] if mert.ndim == 3 else mert[np.newaxis, ...]
-    pm_b = patch_mask[0:1] if patch_mask.ndim == 2 else patch_mask[np.newaxis, ...]
-    memory = encoder(
-        {"mert_patches": mert_b, "patch_mask": pm_b},
-        training=False,
-    ).numpy()
+    _, decoder = inference.get_inference_encoder_decoder(model, experiment_config)
     dec_in = np.zeros((1, max_decoder_len), dtype=np.int32)
     dec_mask = np.zeros((1, max_decoder_len), dtype=np.float32)
     dec_in[0, 0] = targets.BOS_ID
@@ -301,9 +419,9 @@ def _ar_decode_report(
         dec_in[0, cur_len] = pred
         dec_mask[0, cur_len] = 1.0
 
-    report["token_trace"] = trace
-    report["eos_at_step"] = eos_at
-    report["first_mismatch_step"] = next(
+    report["diagnostics"]["token_trace"] = trace
+    report["diagnostics"]["eos_at_step"] = eos_at
+    report["diagnostics"]["first_mismatch_step"] = next(
         (row["step"] for row in trace if not row["match"]),
         None,
     )
@@ -335,6 +453,8 @@ def main() -> int:
             batch_np,
             experiment_config=experiment_config,
             token_trace_steps=args.token_trace_steps,
+            time_source=args.ar_decode_time_source,
+            compare_time_sources=True,
         )
     for key in list(report):
         if key.startswith("_"):

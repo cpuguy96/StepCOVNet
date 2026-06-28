@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet.onset_ar import config
+from stepcovnet.onset_ar import inference as ar_inference
 from stepcovnet.onset_ar import models as ar_models
 
 
@@ -108,7 +109,8 @@ def decode_autoregressive_with_kv_cache_numpy(
     hop_sec: float,
     bos_id: int,
     eos_id: int,
-) -> tuple[np.ndarray, int, int, bool]:
+    time_source: ar_inference.ArTimeSource = "pointer_residual",
+) -> tuple[np.ndarray, int, int, bool, np.ndarray]:
     """Free-run decode with cached encoder memory; returns times and decode stats."""
     mert_patches = np.asarray(mert_patches, dtype=np.float32)
     patch_mask = np.asarray(patch_mask, dtype=np.float32)
@@ -124,23 +126,27 @@ def decode_autoregressive_with_kv_cache_numpy(
             model, experiment_config
         )
         setattr(model, infer_key, infer_models)
-    encoder, decoder = infer_models
+    _, decoder = infer_models
 
     kv_decoder = getattr(model, cache_key, None)
     if kv_decoder is None:
         kv_decoder = ArOnsetKvDecoder.from_model(model, experiment_config, decoder)
         setattr(model, cache_key, kv_decoder)
 
-    memory = encoder(
-        {"mert_patches": mert_patches, "patch_mask": patch_mask},
-        training=False,
+    memory_np, patch_mask = ar_inference.get_encoder_memory_numpy(
+        model,
+        mert_patches,
+        patch_mask,
+        experiment_config,
     )
+    memory = tf.constant(memory_np, dtype=tf.float32)
     patch_mask_tf = tf.constant(patch_mask, dtype=tf.float32)
     kv_decoder.reset_decode_state(batch_size=int(patch_mask.shape[0]))
     kv_decoder.set_memory(memory)
 
     patch_duration = float(patch_frames) * float(hop_sec)
-    times: list[float] = []
+    pointer_times: list[float] = []
+    onset_token_ids: list[int] = []
     n_forward_steps = 0
     stopped_on_eos = False
     cur_len = 1
@@ -160,16 +166,28 @@ def decode_autoregressive_with_kv_cache_numpy(
         if next_token == eos_id:
             stopped_on_eos = True
             break
+        onset_token_ids.append(next_token)
         patch_idx = int(np.argmax(pointer_logits))
-        times.append(float(patch_idx) * patch_duration + residual_sec)
+        pointer_times.append(float(patch_idx) * patch_duration + residual_sec)
         if cur_len >= max_decoder_len - 1:
             break
         token_id = tf.constant([[next_token]], dtype=tf.int32)
         cur_len += 1
 
+    token_arr = np.asarray(onset_token_ids, dtype=np.int32)
+    if time_source == "tokens":
+        times = ar_inference.decode_onset_tokens_to_times(
+            token_arr,
+            experiment_config=experiment_config,
+            patch_mask=patch_mask,
+        )
+    else:
+        times = np.asarray(pointer_times, dtype=np.float32)
+
     return (
-        np.asarray(times, dtype=np.float32),
+        times,
         n_forward_steps,
-        len(times),
+        len(onset_token_ids),
         stopped_on_eos,
+        token_arr,
     )

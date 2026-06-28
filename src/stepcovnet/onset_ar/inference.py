@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import Literal
 
 import numpy as np
 import tensorflow as tf
 
 from stepcovnet.onset_ar import config, kv_decode, losses, targets
 from stepcovnet.onset_ar import models as ar_models
+
+ArTimeSource = Literal["pointer_residual", "tokens"]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -19,6 +22,400 @@ class ArDecodeStats:
     n_forward_steps: int
     n_onset_tokens: int
     stopped_on_eos: bool
+    onset_token_ids: np.ndarray | None = None
+
+
+@dataclasses.dataclass
+class _EncoderMemoryCache:
+    """Cached encoder output for one MERT patch sequence."""
+
+    fingerprint: tuple[int | float, ...]
+    memory: np.ndarray
+    patch_mask: np.ndarray
+
+
+_ENCODER_MEMORY_CACHE_ATTR = "_ar_onset_encoder_memory_cache"
+
+
+def _mert_input_fingerprint(
+    mert_patches: np.ndarray,
+    patch_mask: np.ndarray,
+) -> tuple[int | float, ...]:
+    mp = np.asarray(mert_patches, dtype=np.float32)
+    pm = np.asarray(patch_mask, dtype=np.float32)
+    if mp.ndim == 3:
+        mp = mp[0]
+    if pm.ndim == 2:
+        pm = pm[0]
+    valid = int(np.sum(pm > 0.5))
+    if valid == 0:
+        return (tuple(int(dim) for dim in mp.shape), 0)
+    last = valid - 1
+    return (
+        tuple(int(dim) for dim in mp.shape),
+        valid,
+        float(mp[0, 0]),
+        float(mp[last, 0]),
+        float(pm[last]),
+    )
+
+
+def clear_encoder_memory_cache(model: tf.keras.Model) -> None:
+    """Drop cached encoder memory on ``model`` (for tests or a new song)."""
+    if hasattr(model, _ENCODER_MEMORY_CACHE_ATTR):
+        delattr(model, _ENCODER_MEMORY_CACHE_ATTR)
+
+
+def get_encoder_memory_numpy(
+    model: tf.keras.Model,
+    mert_patches: np.ndarray,
+    patch_mask: np.ndarray,
+    experiment_config: config.ArExperimentConfig,
+    *,
+    use_cache: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run encoder once per unique MERT input; reuse cached memory when possible."""
+    mert_patches, patch_mask = _batch_mert_patch_mask(mert_patches, patch_mask)
+    fingerprint = _mert_input_fingerprint(mert_patches, patch_mask)
+    if use_cache:
+        cached = getattr(model, _ENCODER_MEMORY_CACHE_ATTR, None)
+        if (
+            isinstance(cached, _EncoderMemoryCache)
+            and cached.fingerprint == fingerprint
+        ):
+            return cached.memory, cached.patch_mask
+    encoder, _ = _infer_encoder_decoder(model, experiment_config)
+    memory = encoder(
+        {"mert_patches": mert_patches, "patch_mask": patch_mask},
+        training=False,
+    ).numpy()
+    if use_cache:
+        setattr(
+            model,
+            _ENCODER_MEMORY_CACHE_ATTR,
+            _EncoderMemoryCache(fingerprint, memory, patch_mask),
+        )
+    return memory, patch_mask
+
+
+def get_inference_encoder_decoder(
+    model: tf.keras.Model,
+    experiment_config: config.ArExperimentConfig,
+) -> tuple[tf.keras.Model, tf.keras.Model]:
+    """Return cached encoder/decoder inference submodels."""
+    return _infer_encoder_decoder(model, experiment_config)
+
+
+def _infer_encoder_decoder(
+    model: tf.keras.Model,
+    experiment_config: config.ArExperimentConfig,
+) -> tuple[tf.keras.Model, tf.keras.Model]:
+    cache_key = "_ar_onset_infer_models"
+    infer_models = getattr(model, cache_key, None)
+    if infer_models is None:
+        infer_models = ar_models.build_ar_onset_inference_models(
+            model,
+            experiment_config,
+        )
+        setattr(model, cache_key, infer_models)
+    return infer_models
+
+
+def _batch_mert_patch_mask(
+    mert_patches: np.ndarray,
+    patch_mask: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    mert_patches = np.asarray(mert_patches, dtype=np.float32)
+    patch_mask = np.asarray(patch_mask, dtype=np.float32)
+    if mert_patches.ndim == 2:
+        mert_patches = mert_patches[np.newaxis, ...]
+        patch_mask = patch_mask[np.newaxis, ...]
+    return mert_patches, patch_mask
+
+
+def build_decoder_inputs_for_onset_tokens(
+    onset_token_ids: np.ndarray,
+    *,
+    max_decoder_len: int,
+    bos_id: int = targets.BOS_ID,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build padded teacher-forcing inputs for ``[BOS, t0, …, t_{n-1}]``."""
+    tokens = np.asarray(onset_token_ids, dtype=np.int32).reshape(-1)
+    decoder_input_ids = np.zeros((1, max_decoder_len), dtype=np.int32)
+    decoder_mask = np.zeros((1, max_decoder_len), dtype=np.float32)
+    decoder_input_ids[0, 0] = bos_id
+    decoder_mask[0, 0] = 1.0
+    if tokens.size > 0:
+        decoder_input_ids[0, 1 : tokens.size + 1] = tokens
+        decoder_mask[0, : tokens.size + 1] = 1.0
+    return decoder_input_ids, decoder_mask
+
+
+def decode_parallel_pointer_times_numpy(
+    model: tf.keras.Model,
+    mert_patches: np.ndarray,
+    patch_mask: np.ndarray,
+    onset_token_ids: np.ndarray,
+    *,
+    experiment_config: config.ArExperimentConfig,
+    encoder_memory: np.ndarray | None = None,
+    patch_mask_batched: np.ndarray | None = None,
+) -> np.ndarray:
+    """One parallel decoder forward; pointer+residual times at each onset step."""
+    tokens = np.asarray(onset_token_ids, dtype=np.int32).reshape(-1)
+    max_decoder_len = experiment_config.max_decoder_len()
+    patch_frames = experiment_config.model.patch_frames
+    hop_sec = experiment_config.dataset.hop_sec
+    patch_duration = float(patch_frames) * float(hop_sec)
+
+    if encoder_memory is None or patch_mask_batched is None:
+        memory, patch_mask = get_encoder_memory_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            experiment_config,
+        )
+    else:
+        memory = encoder_memory
+        patch_mask = patch_mask_batched
+
+    _, decoder = _infer_encoder_decoder(model, experiment_config)
+    decoder_input_ids, decoder_mask = build_decoder_inputs_for_onset_tokens(
+        tokens,
+        max_decoder_len=max_decoder_len,
+    )
+    outputs = decoder(
+        {
+            "encoder_memory": memory,
+            "patch_mask": patch_mask,
+            "decoder_input_ids": decoder_input_ids,
+            "decoder_mask": decoder_mask,
+        },
+        training=False,
+    )
+    pointer_logits = np.asarray(outputs["pointer_logits"][0], dtype=np.float32)
+    residual_sec = np.asarray(outputs["residual_sec"][0], dtype=np.float32)
+    times: list[float] = []
+    for pos in range(int(tokens.size)):
+        patch_idx = int(np.argmax(pointer_logits[pos]))
+        times.append(float(patch_idx) * patch_duration + float(residual_sec[pos]))
+    return np.asarray(times, dtype=np.float32)
+
+
+def decode_gt_incremental_pointer_times_numpy(
+    model: tf.keras.Model,
+    mert_patches: np.ndarray,
+    patch_mask: np.ndarray,
+    decoder_input_ids: np.ndarray,
+    onset_step_mask: np.ndarray,
+    *,
+    experiment_config: config.ArExperimentConfig,
+    bos_id: int = targets.BOS_ID,
+    eos_id: int = targets.EOS_ID,
+) -> np.ndarray:
+    """GT tokens fed incrementally; pointer+residual at each onset step."""
+    mert_patches, patch_mask = _batch_mert_patch_mask(mert_patches, patch_mask)
+    decoder_input_ids = np.asarray(decoder_input_ids, dtype=np.int32).reshape(-1)
+    onset_step_mask = np.asarray(onset_step_mask, dtype=np.float32).reshape(-1)
+    max_decoder_len = experiment_config.max_decoder_len()
+    patch_frames = experiment_config.model.patch_frames
+    hop_sec = experiment_config.dataset.hop_sec
+    patch_duration = float(patch_frames) * float(hop_sec)
+
+    memory, patch_mask = get_encoder_memory_numpy(
+        model,
+        mert_patches,
+        patch_mask,
+        experiment_config,
+    )
+    _, decoder = _infer_encoder_decoder(model, experiment_config)
+
+    dec_in = np.zeros((1, max_decoder_len), dtype=np.int32)
+    dec_mask = np.zeros((1, max_decoder_len), dtype=np.float32)
+    dec_in[0, 0] = bos_id
+    dec_mask[0, 0] = 1.0
+
+    times: list[float] = []
+    cur_len = 1
+    while cur_len < max_decoder_len:
+        outputs = decoder(
+            {
+                "encoder_memory": memory,
+                "patch_mask": patch_mask,
+                "decoder_input_ids": dec_in,
+                "decoder_mask": dec_mask,
+            },
+            training=False,
+        )
+        pos = cur_len - 1
+        if onset_step_mask[pos] > 0.5:
+            pointer_logits = np.asarray(
+                outputs["pointer_logits"][0, pos], dtype=np.float32
+            )
+            residual_sec = float(outputs["residual_sec"][0, pos].numpy())
+            patch_idx = int(np.argmax(pointer_logits))
+            times.append(float(patch_idx) * patch_duration + residual_sec)
+        next_token = int(decoder_input_ids[cur_len])
+        if next_token == eos_id:
+            break
+        if cur_len >= max_decoder_len - 1:
+            break
+        dec_in[0, cur_len] = next_token
+        dec_mask[0, cur_len] = 1.0
+        cur_len += 1
+    return np.asarray(times, dtype=np.float32)
+
+
+def decode_autoregressive_two_pass_with_stats_numpy(
+    model: tf.keras.Model,
+    mert_patches: np.ndarray,
+    patch_mask: np.ndarray,
+    *,
+    max_decoder_len: int,
+    patch_frames: int,
+    hop_sec: float,
+    experiment_config: config.ArExperimentConfig,
+    bos_id: int = targets.BOS_ID,
+    eos_id: int = targets.EOS_ID,
+    use_kv_cache: bool = True,
+    token_pass: ArDecodeStats | None = None,
+) -> ArDecodeStats:
+    """Parallel pointer+residual re-forward for free-run (or supplied) onset tokens."""
+    if token_pass is None:
+        token_pass = decode_autoregressive_with_stats_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            max_decoder_len=max_decoder_len,
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+            experiment_config=experiment_config,
+            bos_id=bos_id,
+            eos_id=eos_id,
+            use_kv_cache=use_kv_cache,
+            time_source="pointer_residual",
+        )
+    if token_pass.onset_token_ids is None or token_pass.onset_token_ids.size == 0:
+        return ArDecodeStats(
+            times=np.zeros(0, dtype=np.float32),
+            n_forward_steps=token_pass.n_forward_steps + 1,
+            n_onset_tokens=0,
+            stopped_on_eos=token_pass.stopped_on_eos,
+            onset_token_ids=token_pass.onset_token_ids,
+        )
+    parallel_times = decode_parallel_pointer_times_numpy(
+        model,
+        mert_patches,
+        patch_mask,
+        token_pass.onset_token_ids,
+        experiment_config=experiment_config,
+    )
+    return ArDecodeStats(
+        times=parallel_times,
+        n_forward_steps=token_pass.n_forward_steps + 1,
+        n_onset_tokens=int(parallel_times.size),
+        stopped_on_eos=token_pass.stopped_on_eos,
+        onset_token_ids=token_pass.onset_token_ids,
+    )
+
+
+def decode_autoregressive_gate_with_stats_numpy(
+    model: tf.keras.Model,
+    mert_patches: np.ndarray,
+    patch_mask: np.ndarray,
+    *,
+    max_decoder_len: int,
+    patch_frames: int,
+    hop_sec: float,
+    experiment_config: config.ArExperimentConfig,
+    bos_id: int = targets.BOS_ID,
+    eos_id: int = targets.EOS_ID,
+    use_kv_cache: bool = True,
+) -> ArDecodeStats:
+    """Offline gate decode: incremental tokens, parallel pointer+residual times."""
+    return decode_autoregressive_two_pass_with_stats_numpy(
+        model,
+        mert_patches,
+        patch_mask,
+        max_decoder_len=max_decoder_len,
+        patch_frames=patch_frames,
+        hop_sec=hop_sec,
+        experiment_config=experiment_config,
+        bos_id=bos_id,
+        eos_id=eos_id,
+        use_kv_cache=use_kv_cache,
+    )
+
+
+def max_hop_frames_for_config(experiment_config: config.ArExperimentConfig) -> int:
+    """Upper hop-frame index used for first-token detokenization."""
+    return max(
+        1,
+        int(
+            round(
+                experiment_config.dataset.max_audio_seconds
+                / experiment_config.dataset.hop_sec
+            )
+        ),
+    )
+
+
+def max_hop_frames_from_patch_mask(
+    patch_mask: np.ndarray,
+    *,
+    patch_frames: int,
+) -> int:
+    """Hop-frame cap implied by valid encoder patches (matches training encode scale)."""
+    mask = np.asarray(patch_mask)
+    if mask.ndim == 2:
+        mask = mask[0]
+    valid_patches = int(np.sum(mask > 0.5))
+    return max(1, valid_patches * int(patch_frames) - 1)
+
+
+def decode_onset_tokens_to_times(
+    onset_token_ids: np.ndarray,
+    *,
+    experiment_config: config.ArExperimentConfig,
+    patch_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """Map predicted onset token ids to seconds via ``delta_bucketed`` detokenize."""
+    vocab = experiment_config.build_vocab()
+    if patch_mask is not None:
+        max_frame = max_hop_frames_from_patch_mask(
+            patch_mask,
+            patch_frames=experiment_config.model.patch_frames,
+        )
+    else:
+        max_frame = max_hop_frames_for_config(experiment_config)
+    return targets.decode_token_sequence_to_times(
+        onset_token_ids,
+        hop_sec=experiment_config.dataset.hop_sec,
+        vocab=vocab,
+        max_frame=max_frame,
+    )
+
+
+def _finalize_decode_times(
+    *,
+    time_source: ArTimeSource,
+    onset_token_ids: list[int],
+    pointer_times: list[float],
+    experiment_config: config.ArExperimentConfig | None,
+    patch_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    token_arr = np.asarray(onset_token_ids, dtype=np.int32)
+    if time_source == "tokens":
+        if experiment_config is None:
+            msg = "experiment_config is required when time_source='tokens'."
+            raise ValueError(msg)
+        times = decode_onset_tokens_to_times(
+            token_arr,
+            experiment_config=experiment_config,
+            patch_mask=patch_mask,
+        )
+        return times, token_arr
+    return np.asarray(pointer_times, dtype=np.float32), token_arr
 
 
 def build_scheduled_decoder_inputs(
@@ -48,11 +445,14 @@ def _decode_autoregressive_prefix_numpy(
     max_decoder_len: int,
     patch_duration: float,
     eos_id: int,
+    time_source: ArTimeSource = "pointer_residual",
+    experiment_config: config.ArExperimentConfig | None = None,
 ) -> ArDecodeStats:
     """Legacy full-prefix decode loop (one forward per token)."""
     decoder_input = decoder_inputs["decoder_input_ids"]
     decoder_mask_arr = decoder_inputs["decoder_mask"]
-    times: list[float] = []
+    pointer_times: list[float] = []
+    onset_token_ids: list[int] = []
     cur_len = 1
     n_forward_steps = 0
     stopped_on_eos = False
@@ -67,8 +467,9 @@ def _decode_autoregressive_prefix_numpy(
         if next_token == eos_id:
             stopped_on_eos = True
             break
+        onset_token_ids.append(next_token)
         patch_idx = int(np.argmax(pointer_logits))
-        times.append(float(patch_idx) * patch_duration + residual_sec)
+        pointer_times.append(float(patch_idx) * patch_duration + residual_sec)
         if cur_len >= max_decoder_len - 1:
             break
         decoder_input[0, cur_len] = next_token
@@ -76,11 +477,19 @@ def _decode_autoregressive_prefix_numpy(
         decoder_inputs["decoder_input_ids"] = decoder_input
         decoder_inputs["decoder_mask"] = decoder_mask_arr
         cur_len += 1
+    times, token_arr = _finalize_decode_times(
+        time_source=time_source,
+        onset_token_ids=onset_token_ids,
+        pointer_times=pointer_times,
+        experiment_config=experiment_config,
+        patch_mask=decoder_inputs.get("patch_mask"),
+    )
     return ArDecodeStats(
-        times=np.asarray(times, dtype=np.float32),
+        times=times,
         n_forward_steps=n_forward_steps,
-        n_onset_tokens=len(times),
+        n_onset_tokens=len(onset_token_ids),
         stopped_on_eos=stopped_on_eos,
+        onset_token_ids=token_arr,
     )
 
 
@@ -96,10 +505,11 @@ def decode_autoregressive_with_stats_numpy(
     bos_id: int = targets.BOS_ID,
     eos_id: int = targets.EOS_ID,
     use_kv_cache: bool = True,
+    time_source: ArTimeSource = "pointer_residual",
 ) -> ArDecodeStats:
     """Free-running decode until ``<EOS>`` or ``max_decoder_len``."""
     if experiment_config is not None and use_kv_cache:
-        times, n_forward_steps, n_onset_tokens, stopped_on_eos = (
+        times, n_forward_steps, n_onset_tokens, stopped_on_eos, onset_token_ids = (
             kv_decode.decode_autoregressive_with_kv_cache_numpy(
                 model,
                 mert_patches,
@@ -110,6 +520,7 @@ def decode_autoregressive_with_stats_numpy(
                 hop_sec=hop_sec,
                 bos_id=bos_id,
                 eos_id=eos_id,
+                time_source=time_source,
             )
         )
         return ArDecodeStats(
@@ -117,6 +528,7 @@ def decode_autoregressive_with_stats_numpy(
             n_forward_steps=n_forward_steps,
             n_onset_tokens=n_onset_tokens,
             stopped_on_eos=stopped_on_eos,
+            onset_token_ids=onset_token_ids,
         )
 
     mert_patches = np.asarray(mert_patches, dtype=np.float32)
@@ -131,20 +543,13 @@ def decode_autoregressive_with_stats_numpy(
     decoder_mask_arr[0, 0] = 1.0
 
     if experiment_config is not None:
-        cache_key = "_ar_onset_infer_models"
-        infer_models = getattr(model, cache_key, None)
-        if infer_models is None:
-            infer_models = ar_models.build_ar_onset_inference_models(
-                model,
-                experiment_config,
-            )
-            setattr(model, cache_key, infer_models)
-        encoder, decoder = infer_models
-        memory = encoder(
-            {"mert_patches": mert_patches, "patch_mask": patch_mask},
-            training=False,
+        memory_np, patch_mask = get_encoder_memory_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            experiment_config,
         )
-        memory_np = np.asarray(memory.numpy(), dtype=np.float32)
+        _, decoder = _infer_encoder_decoder(model, experiment_config)
         decoder_inputs = {
             "encoder_memory": memory_np,
             "patch_mask": patch_mask,
@@ -167,6 +572,8 @@ def decode_autoregressive_with_stats_numpy(
         max_decoder_len=max_decoder_len,
         patch_duration=patch_duration,
         eos_id=eos_id,
+        time_source=time_source,
+        experiment_config=experiment_config,
     )
 
 
@@ -181,6 +588,7 @@ def decode_autoregressive_times_numpy(
     experiment_config: config.ArExperimentConfig | None = None,
     bos_id: int = targets.BOS_ID,
     eos_id: int = targets.EOS_ID,
+    time_source: ArTimeSource = "pointer_residual",
 ) -> np.ndarray:
     """Free-running token decode until ``<EOS>``; return onset times in seconds."""
     return decode_autoregressive_with_stats_numpy(
@@ -193,6 +601,7 @@ def decode_autoregressive_times_numpy(
         experiment_config=experiment_config,
         bos_id=bos_id,
         eos_id=eos_id,
+        time_source=time_source,
     ).times
 
 
@@ -211,6 +620,7 @@ def decode_teacher_fed_times_numpy(
     if pointer_logits.ndim == 3:
         pointer_logits = pointer_logits[0]
         residual_sec = residual_sec[0]
+    if onset_step_mask.ndim > 1:
         onset_step_mask = onset_step_mask[0]
 
     patch_duration = float(patch_frames) * float(hop_sec)

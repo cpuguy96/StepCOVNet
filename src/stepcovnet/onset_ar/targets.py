@@ -88,6 +88,13 @@ class DeltaBucketVocab:
             return self._log_bucket_value(log_idx)
         raise ValueError(f"token_id {token_id} is not a delta token")
 
+    def is_first_abs_token(self, token_id: int) -> bool:
+        return self.first_abs_start <= int(token_id) < self.dense_delta_start
+
+    def is_delta_token(self, token_id: int) -> bool:
+        token_id = int(token_id)
+        return self.dense_delta_start <= token_id < self.vocab_size
+
     def _log_bucket_index(self, delta_frames: int) -> int:
         lo = self.delta_max_dense + 1
         hi = max(lo + 1, lo * (2**self.n_log_buckets))
@@ -241,13 +248,23 @@ def decode_token_sequence_to_times(
 ) -> np.ndarray:
     """Detokenize AR ids back to seconds (diagnostics / round-trip tests)."""
     ids = [
-        int(token) for token in np.asarray(token_ids).tolist() if int(token) != EOS_ID
+        int(token)
+        for token in np.asarray(token_ids).tolist()
+        if int(token) not in SPECIAL_TOKEN_IDS
     ]
     if not ids:
         return np.zeros(0, dtype=np.float32)
-    frame = vocab.decode_first_frame(ids[0], max_frame=max_frame)
+    first_idx = next(
+        (idx for idx, token in enumerate(ids) if vocab.is_first_abs_token(token)),
+        None,
+    )
+    if first_idx is None:
+        return np.zeros(0, dtype=np.float32)
+    frame = vocab.decode_first_frame(ids[first_idx], max_frame=max_frame)
     frames = [frame]
-    for token in ids[1:]:
+    for token in ids[first_idx + 1 :]:
+        if not vocab.is_delta_token(token):
+            continue
         frame += vocab.decode_delta_frames(token)
         frames.append(frame)
     return (np.asarray(frames, dtype=np.float64) * hop_sec).astype(np.float32)
