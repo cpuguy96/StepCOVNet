@@ -10,7 +10,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-06-27
+**Updated:** 2026-06-28
 
 ### Dataset prep (PRE ingestion)
 
@@ -28,12 +28,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
-| **AR onset (`onset_ar/`)** | **`gate-tide-overfit` passed** (EXP-20260627-04); teacher-fed F1 **1.0** on tide — next: **`gate-ar-decode`** ([AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-notes-2026-06-27)) |
+| **AR onset (`onset_ar/`)** | **`gate-ar-decode` in progress** (EXP-20260628-01) — warm-start `gate_v5`, scheduled sampling + free-run val; run 1 interrupted ep 68 (~**0.50** AR F1); **run 2 restarted** with eager AR-val callback + KV-cache decode |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** **`gate-ar-decode`** on tide (scheduled sampling ramp) → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol)).
+- **Track B (AR prototype):** Finish **`gate-ar-decode`** v2 (150 ep, checkpoint `val_ar_decode_event_f1`) → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28)).
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -44,6 +44,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260628-01 | `train` + `model` | AR `gate-ar-decode` v2 (SS ramp, token focus, AR-val) | **Running** | Run 1: best `val_ar_decode_event_f1` **~0.50** @ ep 51–57; restarted run 2 with KV-cache decode |
 | EXP-20260627-04 | `train` + `model` | AR `gate-tide-overfit` pass (residual MSE + λ ramp) | **Supported** | `val_event_onset_f1` **1.0** @ ep 180+; debug 634/634 within 20 ms |
 | EXP-20260627-03 | `train` + `model` | AR tide overfit training fixes (class weights, argmax decode, λ ramp) | **Supported** | F1 **~0.83** (`gate_v4`); residual head untrained — see NOTE-20260627-02 |
 | EXP-20260627-02 | `train` + `model` | AR `gate-tide-overfit` WSL 300ep (tide) | **Fail** | Best `val_event_onset_f1` **~0.14**; `val_token_accuracy` **~0.48** plateau; gate not passed |
@@ -91,6 +92,21 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260628-01: AR `gate-ar-decode` v2 (WSL 150ep, warm-start gate_v5)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-28 05:15:00 |
+| **Track** | `train` + `model` (AR) |
+| **Gate** | `gate-ar-decode` — **in progress** (pass: free-run F1 ≥ 0.95 + teacher-fed ≈ 1.0) |
+| **Config** | `configs/onset_ar_tide_decode_v2.json` — `init_model_path` → `gate_v5`; token-only loss (`pointer_loss_weight: 0`, `lambda_time/residual: 0`); `eos_token_weight_scale: 0.2`; SS warmup **15** + ramp **100** → `p=1`; `ar_decode_val_every_n_epochs: 10`; checkpoint **`val_ar_decode_event_f1`** |
+| **Code** | Scheduled sampling (`trainers.py`); eager `ArDecodeValidationCallback` (AR decode off compiled `test_step`); KV-cache free-run (`kv_decode.py`, default in `inference.py`) |
+| **Log (run 1)** | `logs/ar_tide_overfit_gate_decode_v2_run1.log` — interrupted ep **68**/150 |
+| **Log (run 2)** | `logs/ar_tide_overfit_gate_decode_v2.log` — restarted after KV-cache + eager-callback land |
+| **Model** | `models_wsl/ar_tide_overfit_gate_decode_v2/ar_onset_model.keras` |
+| **Run 1 outcome** | Ep 1: early-EOS (`val_ar_decode_length` **13**); ep 7+: full chart (**633–635** steps). Best `val_ar_decode_event_f1` **~0.50** (ep 51–57). Teacher-fed `val_event_onset_f1` fell **1.0 → ~0.51** under token-only + SS — expected tradeoff while AR path learns |
+| **Conclusion** | Gate not passed; run 2 continues with faster AR validation (KV cache). See [NOTE-20260628-01](DISCUSSION_NOTES.md#note-20260628-01-gate-ar-decode-v2-infra). |
 
 ### EXP-20260627-04: AR `gate-tide-overfit` pass (WSL 300ep)
 

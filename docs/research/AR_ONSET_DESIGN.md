@@ -1,6 +1,6 @@
 # Autoregressive onset detection — design draft
 
-**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` passed** (EXP-20260627-04) — see §10.5. Next gate: **`gate-ar-decode`**.
+**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` passed** (EXP-20260627-04) — see §10.5. **`gate-ar-decode` in progress** (EXP-20260628-01) — see §10.6.
 
 **Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) · [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md) § C · [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2 · §11 decision registry below · historical [onset_events plan](../onset_events_plan.md)
 
@@ -518,6 +518,42 @@ Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0
 
 **Next gate:** [`gate-ar-decode`](#101-experiment-gates-in-order) — scheduled sampling ramp; free-running decode F1 ≥ 0.95 on tide.
 
+### 10.6 `gate-ar-decode` notes (2026-06-28)
+
+**Status:** **In progress** ([EXP-20260628-01](EXPERIMENT_LOG.md#exp-20260628-01-ar-gate-ar-decode-v2-wsl-150ep-warm-start-gate_v5)). Warm-start from `gate_v5`; free-running `val_ar_decode_event_f1` peaked **~0.50** in run 1 (ep 51–57) — gate not passed.
+
+**Config:** `configs/onset_ar_tide_decode_v2.json` · checkpoint `models_wsl/ar_tide_overfit_gate_decode_v2/` · log `logs/ar_tide_overfit_gate_decode_v2.log`.
+
+#### v2 training recipe (token-focused decode fine-tune)
+
+| Knob | Value | Purpose |
+| ---- | ----- | ------- |
+| `init_model_path` | `gate_v5` | Teacher-fed F1 **1.0** starting point |
+| `pointer_loss_weight: 0`, `lambda_time/residual: 0` | Freeze pointer/time heads; train token path under SS |
+| `eos_token_weight_scale: 0.2` | Reduce early-EOS under free-run |
+| `scheduled_sampling_warmup_epochs: 15`, `ramp_epochs: 100`, `max_p: 1` | Linear SS ramp after warmup |
+| `checkpoint_metric: val_event_onset_f1` | Save best during training; free-run gate checked offline |
+| `ar_decode_val_every_n_epochs: 0` | Offline AR decode — no in-loop free-run val |
+| `epochs: 150` | Cap (was 200 in v1 sketch) |
+
+**Offline AR decode (2026-06-28):** Set `ar_decode_val_every_n_epochs: 0` to skip `ArDecodeValidationCallback` during training (~0.5s val/epoch). Run free-run gate check after training:
+
+```text
+python scripts/debug_ar_onset_overfit.py --config configs/onset_ar_tide_decode_v2.json --model_path models_wsl/.../ar_onset_model.keras --ar_decode
+```
+
+Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
+
+| Piece | Location | Notes |
+| ----- | -------- | ----- |
+| Eager AR-val callback | `trainers.ArDecodeValidationCallback` | Runs after fast teacher-fed `test_step`; inserts at callback index 0 so `ModelCheckpoint` sees `val_ar_decode_*` |
+| KV-cache decode | `kv_decode.ArOnsetKvDecoder` | Default `use_kv_cache=True` in `inference.decode_autoregressive_with_stats_numpy`; per-layer self hidden cache; encoder once per decode |
+| Legacy prefix decode | `inference._decode_autoregressive_prefix_numpy` | `use_kv_cache=False` for parity/debug |
+
+**Run 1 observations:** Ep 1–6 early-EOS (`val_ar_decode_length` **13**); ep 7+ full chart (**633–635**). Teacher-fed `val_event_onset_f1` dropped **1.0 → ~0.51** while AR F1 rose — token-only + SS shifts representations; monitor both metrics at gate check.
+
+**Pass criteria (unchanged):** teacher-fed F1 ≈ **1.0** **and** `val_ar_decode_event_f1` ≥ **0.95** on tide.
+
 ---
 
 ## 11. Decision registry
@@ -601,7 +637,7 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 - Truncation: mirror `onset_events.datasets` — clip GT to waveform duration before building the token sequence.
 - Variable output length (no fixed `n_max_onsets` pad like event path unless batching requires it).
 - **Diagnostics to log:** token accuracy, pointer/residual vs token time agreement, mean |Δt| error, EOS step index, pointer monotonicity violations; **per-step argmax token histogram** when accuracy plateaus near a rational fraction of sequence length (majority-class baseline check).
-- **Code map:** `targets.py` (tokenization) · `datasets.py` (MERT patches + batch) · `models.py` (enc/dec + masks) · `losses.py` · `inference.py` (teacher-fed F1 times) · `trainers.py` · `scripts/train_onset_ar.py`.
+- **Code map:** `targets.py` (tokenization) · `datasets.py` (MERT patches + batch) · `models.py` (enc/dec + masks) · `losses.py` · `inference.py` (teacher-fed + AR decode) · `kv_decode.py` (incremental AR decode) · `trainers.py` · `scripts/train_onset_ar.py`.
 
 ---
 
@@ -622,4 +658,4 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 
 ---
 
-_Update §10.5 when `gate-ar-decode` passes or architecture changes._
+_Update §10.6 when `gate-ar-decode` passes or architecture changes._

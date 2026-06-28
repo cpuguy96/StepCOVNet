@@ -4,6 +4,29 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-06-28 — AR `gate-ar-decode` v2
+
+### NOTE-20260628-01: `gate-ar-decode` v2 infra (eager AR-val + KV cache)
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-28 05:15:00                                                   |
+| **Topic**     | Free-running validation speed + scheduled-sampling decode training    |
+
+**Context:** After `gate-tide-overfit` pass, `gate_v5` free-runs fail early-EOS (~12/634 onsets). v2 recipe warm-starts `gate_v5`, ramps scheduled sampling, checkpoints on `val_ar_decode_event_f1` ([EXP-20260628-01](EXPERIMENT_LOG.md#exp-20260628-01-ar-gate-ar-decode-v2-wsl-150ep-warm-start-gate_v5)).
+
+**Infra fixes (2026-06-28):**
+
+1. **`ArDecodeValidationCallback`** — AR decode moved out of compiled `test_step` (was frozen by `tf.function`; `every_n_epochs` never skipped). Callback runs eagerly in `on_epoch_end`, writes `val_ar_decode_*` into logs before `ModelCheckpoint`.
+2. **KV-cache decode** — `kv_decode.ArOnsetKvDecoder` incremental self-attn; encoder once per sequence. Default in `inference.decode_autoregressive_with_stats_numpy`. Prefix loop kept as `use_kv_cache=False`.
+3. **Parity** — KV vs prefix logits can differ slightly (Keras MHA seq_len=1 vs full); metrics comparable, traces not bit-identical. Tests: `tests/onset_ar/kv_decode_test.py`.
+
+**Run 1 (pre-restart):** Best `val_ar_decode_event_f1` **~0.50**; full-chart decode from ep 7; teacher-fed F1 degraded under token-only SS. Log archived: `logs/ar_tide_overfit_gate_decode_v2_run1.log`.
+
+**Related:** [AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28), `configs/onset_ar_tide_decode_v2.json`
+
+---
+
 ## Session 2026-06-27 — AR `gate-tide-overfit` pass
 
 ### NOTE-20260627-02: `gate-tide-overfit` resolution
