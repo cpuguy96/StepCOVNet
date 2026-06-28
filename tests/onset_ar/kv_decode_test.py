@@ -62,22 +62,37 @@ class KvDecodeTest(unittest.TestCase):
             training=False,
         )
 
-        kv_decoder = kv_decode.ArOnsetKvDecoder.from_model(model, experiment_config)
+        kv_decoder = kv_decode.ArOnsetKvDecoder.from_model(
+            model,
+            experiment_config,
+            decoder,
+        )
         patch_mask_tf = tf.constant(patch_mask, dtype=tf.float32)
-        kv_decoder.precompute_cross_attention_kv(tf.constant(memory, dtype=tf.float32))
-        kv_outputs, _ = kv_decoder.decode_step(
+        kv_decoder.reset_decode_state()
+        kv_decoder.set_memory(tf.constant(memory, dtype=tf.float32))
+        kv_outputs = kv_decoder.decode_step(
             tf.constant([[targets.BOS_ID]], dtype=tf.int32),
             0,
             patch_mask=patch_mask_tf,
-            self_kv_cache=kv_decoder.initial_self_kv_cache(),
-            cross_attention_mask=kv_decoder.build_cross_attention_mask(patch_mask_tf),
         )
 
         np.testing.assert_allclose(
             np.asarray(prefix_outputs["token_logits"][0, 0]),
             np.asarray(kv_outputs["token_logits"][0, 0]),
             rtol=1e-4,
-            atol=2.0,
+            atol=1e-4,
+        )
+        np.testing.assert_allclose(
+            np.asarray(prefix_outputs["pointer_logits"][0, 0]),
+            np.asarray(kv_outputs["pointer_logits"][0, 0]),
+            rtol=1e-4,
+            atol=1e-4,
+        )
+        np.testing.assert_allclose(
+            float(prefix_outputs["residual_sec"][0, 0].numpy()),
+            float(np.asarray(kv_outputs["residual_sec"]).reshape(-1)[0]),
+            rtol=1e-4,
+            atol=1e-4,
         )
 
     def test_kv_decode_matches_prefix_decode(self) -> None:
@@ -122,50 +137,22 @@ class KvDecodeTest(unittest.TestCase):
         self.assertEqual(prefix_stats.n_onset_tokens, kv_stats.n_onset_tokens)
         self.assertEqual(prefix_stats.stopped_on_eos, kv_stats.stopped_on_eos)
         self.assertGreater(kv_stats.n_onset_tokens, 0)
-
-    def test_cross_kv_precompute_matches_cross_attn(self) -> None:
-        experiment_config = _tiny_experiment_config()
-        model = models.build_ar_onset_model(experiment_config)
-        kv_decoder = kv_decode.ArOnsetKvDecoder.from_model(model, experiment_config)
-        max_patches = experiment_config.max_encoder_patches()
-        memory = tf.random.normal((1, max_patches, experiment_config.model.d_model))
-        patch_mask = tf.concat(
-            [
-                tf.ones((1, 4), dtype=tf.float32),
-                tf.zeros((1, max_patches - 4), dtype=tf.float32),
-            ],
-            axis=1,
+        np.testing.assert_allclose(
+            prefix_stats.times, kv_stats.times, rtol=1e-4, atol=1e-4
         )
-        x = tf.random.normal((1, 1, experiment_config.model.d_model))
-        cross_mask = kv_decoder.build_cross_attention_mask(patch_mask)
-        kv_decoder.precompute_cross_attention_kv(memory)
-        for layer_idx, bundle in enumerate(kv_decoder.layer_bundles):
-            direct = bundle.cross_attn(
-                query=x,
-                value=memory,
-                key=memory,
-                attention_mask=cross_mask,
-                training=False,
-            )
-            cross_q = bundle.cross_attn.query_dense(x)
-            cached = kv_decode._mha_attention_output(
-                bundle.cross_attn,
-                cross_q,
-                kv_decoder._cross_keys[layer_idx],
-                kv_decoder._cross_values[layer_idx],
-                attention_mask=cross_mask,
-            )
-            np.testing.assert_allclose(
-                np.asarray(direct),
-                np.asarray(cached),
-                rtol=1e-5,
-                atol=1e-5,
-            )
 
     def test_kv_decode_step_output_shapes(self) -> None:
         experiment_config = _tiny_experiment_config()
         model = models.build_ar_onset_model(experiment_config)
-        kv_decoder = kv_decode.ArOnsetKvDecoder.from_model(model, experiment_config)
+        encoder, decoder = models.build_ar_onset_inference_models(
+            model,
+            experiment_config,
+        )
+        kv_decoder = kv_decode.ArOnsetKvDecoder.from_model(
+            model,
+            experiment_config,
+            decoder,
+        )
         max_patches = experiment_config.max_encoder_patches()
         patch_dim = experiment_config.patch_input_dim()
         vocab_size = experiment_config.build_vocab().vocab_size
@@ -177,27 +164,20 @@ class KvDecodeTest(unittest.TestCase):
             ],
             axis=1,
         )
-        memory = models._encode_patches(
-            mert_patches,
-            patch_mask,
-            max_patches=max_patches,
-            d_model=experiment_config.model.d_model,
-            num_heads=experiment_config.model.num_heads,
-            n_enc_layers=experiment_config.model.n_enc_layers,
-            dropout_rate=0.0,
+        memory = encoder(
+            {"mert_patches": mert_patches, "patch_mask": patch_mask},
+            training=False,
         )
-        cross_mask = kv_decoder.build_cross_attention_mask(patch_mask)
-        kv_decoder.precompute_cross_attention_kv(memory)
-        outputs, _ = kv_decoder.decode_step(
+        kv_decoder.reset_decode_state()
+        kv_decoder.set_memory(memory)
+        outputs = kv_decoder.decode_step(
             tf.constant([[targets.BOS_ID]], dtype=tf.int32),
             0,
             patch_mask=patch_mask,
-            self_kv_cache=kv_decoder.initial_self_kv_cache(),
-            cross_attention_mask=cross_mask,
         )
         self.assertEqual(outputs["token_logits"].shape, (1, 1, vocab_size))
         self.assertEqual(outputs["pointer_logits"].shape, (1, 1, max_patches))
-        self.assertEqual(outputs["residual_sec"].shape, (1, 1, 1))
+        self.assertEqual(outputs["residual_sec"].shape, (1, 1))
 
 
 if __name__ == "__main__":
