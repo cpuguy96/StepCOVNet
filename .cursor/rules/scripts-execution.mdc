@@ -23,6 +23,10 @@ Applies when running or editing files under `scripts/`.
 
 **Do not** create `tmp_*` at the repository root. Do not commit captures or scratch files.
 
+## GPU scheduling
+
+WSL GPU jobs are **serial**: one training run at a time; no parallel GPU training + GPU inference (see [wsl-gpu-stepcovnet skill](../../skills/wsl-gpu-stepcovnet/SKILL.md) § GPU scheduling).
+
 ## PowerShell note
 
 `exit_code: 1` from WSL stderr warnings is not failure by itself — read terminal or `logs/` output.

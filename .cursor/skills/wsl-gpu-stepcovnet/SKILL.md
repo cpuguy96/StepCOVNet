@@ -30,6 +30,19 @@ when the script calls `wsl_gpu.maybe_dispatch_for_training` (or MERT `--device=c
 
 Opt out: `STEPCOVNET_NO_WSL=1`.
 
+## GPU scheduling (one job at a time)
+
+The WSL GPU is **single-tenant** for the agent:
+
+| Rule | Detail |
+| ---- | ------ |
+| **One training job** | Do not start a second WSL GPU **training** run while one is already active (train, overfit, MERT extract with `--device=cuda`). |
+| **No train + infer overlap** | Do not run GPU **training** and GPU **inference** (`debug_*`, `--ar_decode`, `eval_dense_*`, `model.predict`) in **separate processes** at the same time. |
+| **Before launching** | Check active terminals / background shells; wait for the current job to finish or ask the user to stop it. |
+| **After training** | Offline decode/eval on GPU is fine **sequentially** once training has exited. |
+
+CPU scripts (pytest, lint, config edits) may run while a GPU job is active — they do not use the WSL CUDA device.
+
 ## Manual WSL (debugging or already inside WSL)
 
 ```bash

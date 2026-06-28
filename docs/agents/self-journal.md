@@ -75,6 +75,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 | **Action taken** | Decision tree favors skills/scoped rules; AGENTS.md slimmed; promotion skill runs optimization checklist each correction.               |
 | **Related**      | agent-self-improvement, JRN-20260628-04                                                                                               |
 
+### JRN-20260628-08: WSL GPU — one job at a time
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User: only one GPU training job at a time; do not run GPU training and GPU inference in separate processes concurrently.             |
+| **Artifact**     | `.cursor/skills/wsl-gpu-stepcovnet/SKILL.md` (§ GPU scheduling); `.cursor/rules/scripts-execution.mdc`                                |
+| **Action taken** | Agent checks active terminals before launching WSL GPU; train and infer (decode/eval) run sequentially, not in parallel.            |
+| **Related**      | wsl-gpu-stepcovnet, python-environment                                                                                                |
+
 ### JRN-20260628-07: Log full run series; check before re-run suggestions
 
 | Field            | Value                                                                                                                                 |
