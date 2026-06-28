@@ -156,7 +156,6 @@ docs/**
 !docs/agents/**
 !docs/research/
 !docs/research/**
-!docs/onset_events_plan.md
 
 # WSL-local artifacts (never commit)
 models_wsl/

@@ -15,7 +15,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 | [PAPER_OUTLINE.md](PAPER_OUTLINE.md)                                       | Paper draft skeleton — promote findings from log when drafting |
 | [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md)                           | Open decisions before ablation runs                           |
 | [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)                                   | **Autoregressive onset** — v1 stack locked 2026-06; **`gate-tide-overfit` passed** (EXP-20260627-04); next: **`gate-ar-decode`** |
-| [../onset_events_plan.md](../onset_events_plan.md)                         | Historical event-onset WP plan (superseded for routing)       |
+| [archive/onset_events_plan.md](archive/onset_events_plan.md)                 | Historical event-onset WP plan (superseded for routing)       |
 
 ## For agents and contributors
 

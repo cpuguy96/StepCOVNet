@@ -1,8 +1,8 @@
 # Event-based onset detection — implementation plan
 
-> **Historical:** Phases 1–6 were implemented in `src/stepcovnet/onset_events/`. For current architecture, training procedures, and next steps, use [PIPELINE_ARCHITECTURE.md](research/PIPELINE_ARCHITECTURE.md) and [EXPERIMENT_LOG.md](research/EXPERIMENT_LOG.md) § Current phase. This file is kept for WP/phase detail only.
+> **Historical:** Phases 1–6 were implemented in `src/stepcovnet/onset_events/`. For current architecture, training procedures, and next steps, use [PIPELINE_ARCHITECTURE.md](../PIPELINE_ARCHITECTURE.md) and [EXPERIMENT_LOG.md](../EXPERIMENT_LOG.md) § Current phase. This file is kept for WP/phase detail only.
 >
-> **Supersedes (2026-06-24):** Step/query caps are **2048** in `configs/onset_event_audio_baseline.json` (not 1024). Multi-song training on prep output uses `--training_index_path=data/final_data/training_index.json` — see [DATASET_PREP_PIPELINE.md](research/DATASET_PREP_PIPELINE.md) §2. **AR onset** (third formulation) is design-only — see [AR_ONSET_DESIGN.md](research/AR_ONSET_DESIGN.md); do not route new work here for AR.
+> **Supersedes (2026-06-24):** Step/query caps are **2048** in `configs/onset_event_audio_baseline.json` (not 1024). Multi-song training on prep output uses `--training_index_path=data/final_data/training_index.json` — see [DATASET_PREP_PIPELINE.md](../DATASET_PREP_PIPELINE.md) §2. **AR onset** (third formulation) is design-only — see [AR_ONSET_DESIGN.md](../AR_ONSET_DESIGN.md); do not route new work here for AR.
 
 **Status:** Superseded for routing — see note above.
 
@@ -17,7 +17,7 @@
 ```text
 You are the MONITOR agent for StepCOVNet event-based onset detection (v1).
 
-Read docs/onset_events_plan.md in this order:
+Read docs/research/archive/onset_events_plan.md in this order:
 1) Handoff prompt (this block) + Invariants + Work packages + Phase tracker
 2) Locked decisions (pre-build)
 3) Design sections only if you need detail
@@ -81,7 +81,7 @@ Sub-agents do **not** auto-coordinate. The monitor must enforce **file ownership
 - **Scope:** New code under `src/stepcovnet/onset_events/` and `tests/onset_events/` only, plus `scripts/train_onset_event.py`, `configs/onset_event_audio_baseline.json`, and edits to this doc’s phase tracker. **Do not** change dense onset (`train_onset.py`, frame `datasets.create_dataset`, `models.build_unet_wavenet_model` sigmoid head) except **reuse** via import/copy patterns noted in the plan.
 - **I/O:** Raw audio in; continuous **seconds** + confidence out; **no** `HOP_COEFF` in labels/outputs; **no** mel/MERT feature files for this track.
 - **Constants:** `target_sample_rate=44100`, `max_audio_seconds=300`, `num_queries=1024`, `n_max_onsets=1024`, skip charts with **>1024** steps, `batch_size=1`, Hungarian matching, `λ_cls=1`, `λ_time=5`, `tolerance_sec=0.02`.
-- **Python:** `python` from repository root with project venv activated (CPU). WSL GPU: `python` after `source scripts/wsl_gpu_env.sh` (override with `STEPCOVNET_WSL_PYTHON`). See [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+- **Python:** `python` from repository root with project venv activated (CPU). WSL GPU: `python` after `source scripts/wsl_gpu_env.sh` (override with `STEPCOVNET_WSL_PYTHON`). See [wsl-gpu-stepcovnet](../../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
 - **Tests (repo root):**  
   `python -m pytest tests/onset_events/ -m "not slow" --cov=stepcovnet.onset_events`  
   (per-package command in work packages may narrow path.)
@@ -160,7 +160,7 @@ WP-3a and WP-4a/4b do **not** depend on data pipeline; start them in wave 1 to s
 
 After each sub-agent returns:
 
-1. **Diff check** — only files in that package’s “Owns” column (plus `docs/onset_events_plan.md` phase tracker).
+1. **Diff check** — only files in that package’s “Owns” column (plus `docs/research/archive/onset_events_plan.md` phase tracker).
 2. **Run verification** — command from table; require pass before next dependent WP.
 3. **Invariant check** — no `HOP_COEFF` in `onset_events/`; no edits to dense onset path; sample rate 44100 in config.
 4. **Update** [Phase tracker](#phase-tracker) — mark WP complete, note PR/commit if any.
@@ -196,7 +196,7 @@ Paste into each sub-agent task (fill brackets):
 ```text
 You implement StepCOVNet event onset — work package [WP-ID] only.
 
-Read: docs/onset_events_plan.md — Locked decisions + Multi-agent execution + your WP row.
+Read: docs/research/archive/onset_events_plan.md — Locked decisions + Multi-agent execution + your WP row.
 
 Do NOT edit files outside your WP "Owns" list. Do NOT change dense onset code.
 
@@ -445,7 +445,9 @@ tests/onset_events/
   (mirror modules above)
 
 docs/
-  onset_events_plan.md   # this file
+  research/
+    archive/
+      onset_events_plan.md   # this file
 ```
 
 **Rule:** frame targets and `Conv1D(1, sigmoid)` stay in the dense path; list-of-times logic stays under `onset_events/`.
@@ -614,7 +616,7 @@ Training command (target):
 python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json
 ```
 
-GPU on Windows: use WSL from repo root per [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) (`STEPCOVNET_WSL_PYTHON` overrides the default WSL venv python).
+GPU on Windows: use WSL from repo root per [wsl-gpu-stepcovnet](../../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) (`STEPCOVNET_WSL_PYTHON` overrides the default WSL venv python).
 
 ---
 

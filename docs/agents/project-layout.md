@@ -91,6 +91,7 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | Path | Role |
 | ---- | ---- |
 | `docs/research/` | Lab notebook (EXP, NOTE, paper) — incl. [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
+| `docs/research/archive/` | Superseded research plans (e.g. event-onset WP handoff) |
 | `docs/agents/` | Agent state — [README](README.md), layout, self-journal |
 | `.cursor/skills/` | Task playbooks (procedures) |
 | `docs/onset_output_targets_planning.md` | Design planning |
