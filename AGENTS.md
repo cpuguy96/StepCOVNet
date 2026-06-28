@@ -12,22 +12,12 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |
 | Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |
 | Pre-push validation (same as CI) | [pre_submit.py](pre_submit.py) · [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml) |
+| Steering correction — how the agent decides / promotes lessons | [.cursor/skills/steering-correction-promotion/SKILL.md](.cursor/skills/steering-correction-promotion/SKILL.md) |
+| **Refresh agent brain** — audit rules, skills, catalogs | [.cursor/skills/agent-brain-refresh/SKILL.md](.cursor/skills/agent-brain-refresh/SKILL.md) |
 
 North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 
----
-
-## Always-on rules (`.cursor/rules/`)
-
-| Rule file | Topic |
-| --------- | ----- |
-| `agents-entry.mdc` | Route through this file; one index per task |
-| `state-and-paths.mdc` | Refresh repo state; no machine-specific paths in tracked files |
-| `python-environment.mdc` | CPU `python` (project venv) vs WSL GPU |
-| `python-style.mdc` | Ruff (`ruff check .`, incl. `PLC0415` top-level imports), pydoclint, pyright |
-| `python-tests.mdc` | Tests + coverage for code changes |
-| `research-logging.mdc` | EXP/NOTE in `EXPERIMENT_LOG` / `DISCUSSION_NOTES`; paper outline optional |
-| `long-running-console.mdc` | Training/long GPU jobs stream to visible terminal, not log-only |
+**Rules catalog** (always vs scoped — Cursor loads `alwaysApply` automatically): [docs/agents/agent-brain.md](docs/agents/agent-brain.md).
 
 ---
 

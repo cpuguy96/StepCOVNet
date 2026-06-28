@@ -83,6 +83,8 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `data/final_data/` | Preprocessed nested output (`{bundle}/{id}/*.chart.json` + audio); **1942** chart rows locally; `training_index.json` for train/val |
 | `models_wsl/` | WSL-trained checkpoints (gitignored patterns may apply) |
 | `callbacks/` | TensorBoard / checkpoint roots |
+| `logs/` | Local command captures (gitignored) — not repo-root `tmp_*` |
+| `_tmp/` | Disposable scratch files (gitignored); delete when task ends |
 
 ---
 

@@ -23,6 +23,22 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | start research session, log EXP/NOTE                                     | research-session-workflow | [research-session-workflow/SKILL.md](research-session-workflow/SKILL.md) |
 | WSL GPU training, MERT extract, TensorFlow CUDA on Windows               | wsl-gpu-stepcovnet        | [wsl-gpu-stepcovnet/SKILL.md](wsl-gpu-stepcovnet/SKILL.md)               |
 | agent mistake, process improvement, new repeated workflow                | agent-self-improvement    | [agent-self-improvement/SKILL.md](agent-self-improvement/SKILL.md)       |
+| steering correction, remember this, optimize agent brain / context       | steering-correction-promotion | [steering-correction-promotion/SKILL.md](steering-correction-promotion/SKILL.md) |
+| refresh agent brain, audit rules/skills, sync catalogs                   | agent-brain-refresh       | [agent-brain-refresh/SKILL.md](agent-brain-refresh/SKILL.md)               |
+
+## Agent brain (scoped rules)
+
+Canonical catalog: [docs/agents/agent-brain.md](../../docs/agents/agent-brain.md) (agent-maintained; verify with `python scripts/audit_agent_brain.py`). Scoped rules load on file match — not every turn.
+
+| Rule | Globs |
+| ---- | ----- |
+| `scripts-execution.mdc` | `scripts/**` |
+| `design-doc-fields.mdc` | `docs/**` |
+| `python-style.mdc` | `**/*.py` |
+| `python-tests.mdc` | `{src,scripts,tests}/**/*` |
+| `research-logging.mdc` | `docs/research/**` |
+
+Maintain this table during [agent-brain-refresh](agent-brain-refresh/SKILL.md).
 
 ## Scripts without skills (yet)
 

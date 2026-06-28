@@ -9,6 +9,8 @@ saved_models/
 ./data/
 logs/
 _tmp/
+tmp_*
+tmp/
 
 *.ini
 *.deb
@@ -214,6 +216,7 @@ scripts/*
 !scripts/train_onset_ar.py
 !scripts/debug_ar_onset_overfit.py
 !scripts/benchmark_ar_kv_decode.py
+!scripts/audit_agent_brain.py
 !scripts/visualize_arrow_data.py
 !scripts/wsl_*.sh
 

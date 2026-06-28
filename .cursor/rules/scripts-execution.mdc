@@ -1,0 +1,28 @@
+---
+description: Visible console, logs/_tmp captures, and no repo-root tmp when running or editing scripts
+globs: scripts/**
+alwaysApply: false
+---
+
+# Script execution — console and temp output
+
+Applies when running or editing files under `scripts/`.
+
+## Visible console
+
+- Stream train/decode/long jobs to a **visible Cursor terminal**; log-only redirect as the sole sink is not OK.
+- **Console + `logs/<topic>.log` (tee)** is fine — terminal remains primary.
+
+## Temp paths
+
+| Purpose            | Path                                                |
+| ------------------ | --------------------------------------------------- |
+| Command capture    | `logs/<topic>_<run>.log` (gitignored)               |
+| Disposable scratch | `_tmp/<topic>/...` (gitignored; delete when done)   |
+| Research record    | `EXPERIMENT_LOG.md` (`EXP-…`) — not raw logs in git |
+
+**Do not** create `tmp_*` at the repository root. Do not commit captures or scratch files.
+
+## PowerShell note
+
+`exit_code: 1` from WSL stderr warnings is not failure by itself — read terminal or `logs/` output.

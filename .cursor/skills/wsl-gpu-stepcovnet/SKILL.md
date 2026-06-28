@@ -69,3 +69,7 @@ Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
 ## Already inside WSL
 
 `cd` to repo root, `bash scripts/wsl_ensure_env.sh` if needed, `source scripts/wsl_gpu_env.sh`, `export STEPCOVNET_IN_WSL=1`, use `python` — do not nest another `wsl` call.
+
+## Console and logs
+
+When running scripts under `scripts/`, follow scoped rule [scripts-execution.mdc](../../rules/scripts-execution.mdc): visible terminal, captures under `logs/`, scratch under `_tmp/`.
