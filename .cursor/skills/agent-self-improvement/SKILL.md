@@ -1,42 +1,79 @@
 ---
 name: agent-self-improvement
-description: Appends agent self-journal entries and creates or updates project skills when repeated workflows or mistakes are discovered. Use after substantive sessions, when documenting agent mistakes, process improvements, or missing playbooks.
+description: On steering corrections and process learnings, create or update a rule, skill, or code artifact first, then prepend a self-journal receipt in the same turn. Journal alone is incomplete.
 disable-model-invocation: true
 ---
 
 # Agent self-improvement
 
+## Same-turn promotion (required)
+
+The journal is a **receipt**, not the enforcement layer. A process learning is **incomplete** until a durable artifact exists **in the same turn**.
+
+| Step | Action |
+| ---- | ------ |
+| 1 | **Create or update the artifact** (rule, skill, code, or `AGENTS.md` row) |
+| 2 | **Prepend JRN-…** citing the artifact path in **Artifact** |
+| 3 | **Confirm in chat** — artifact path(s) + journal id |
+
+**Order matters:** artifact **before** journal. Do not prepend a JRN with only a vague “Action taken” and plan to promote later.
+
+### Pick an artifact
+
+| Lesson type | Artifact |
+| ----------- | -------- |
+| Always-on constraint (every session) | `.cursor/rules/<name>.mdc` + row in `AGENTS.md` if new |
+| Repeatable multi-step workflow | `.cursor/skills/<name>/SKILL.md` + skills README row |
+| Mechanical / verifiable fix | Code or script + tests if applicable |
+| One-off, no durable rule yet | **No journal** — chat is enough; or journal only after user asks to defer |
+
+Journal-only entries are for **audit after promotion**, not a substitute for promotion.
+
 ## Two mechanisms
 
-| Mechanism      | Location                                                            | Purpose                              |
-| -------------- | ------------------------------------------------------------------- | ------------------------------------ |
-| Self-journal   | [docs/agents/self-journal.md](../../../docs/agents/self-journal.md) | Mistakes, fixes, conventions learned |
-| Project skills | [.cursor/skills/](../)                                              | Repeatable multi-step playbooks      |
+| Mechanism      | Location                                                            | Role                                      |
+| -------------- | ------------------------------------------------------------------- | ----------------------------------------- |
+| Rules / skills / code | `.cursor/rules/`, `.cursor/skills/`, repo code               | **Enforce** behavior in future sessions   |
+| Self-journal   | [docs/agents/self-journal.md](../../../docs/agents/self-journal.md) | **Receipt** — what changed and why        |
 
-**Rules** (`.cursor/rules/`) = always-on constraints. **Skills** = on-demand workflows. Do not duplicate rules into skills.
+**Rules** = always-on constraints. **Skills** = on-demand workflows. Do not duplicate rules into skills.
 
 ## “Remember this” (user key phrase)
 
-When the user says **remember this** (or close variants: “don’t forget”, “always do X”):
+1. **Artifact first** — rule, skill, or code per table above.
+2. **Journal second** — prepend JRN with **Artifact** path.
+3. **Confirm** artifact + journal id in chat.
 
-1. **Persist immediately** — do not only acknowledge in chat.
-2. **Choose mechanism:**
-   - Repeated mistake / convention → prepend [self-journal.md](../../../docs/agents/self-journal.md) **and** add or update an always-on rule in `.cursor/rules/` when the constraint should apply every session.
-   - Repeatable workflow → new or updated project skill + skills README row.
-3. **Confirm in chat** what was written and where (rule path, journal id).
+Treat “remember this” as permission to update tracked agent docs without a separate commit request (user still controls git commits).
 
-Treat “remember this” as explicit permission to update tracked agent docs without a separate commit request (user still controls git commits).
+## Steering corrections (immediate — same turn)
 
-## When to prepend the journal
+When the user steers **how you decide or operate** — priorities, tooling, output visibility, when to ask vs act, commit policy, routing, etc.:
 
-After substantive sessions when you discover:
+1. **Artifact first** (same turn).
+2. **Journal second** — category `convention` or `mistake`.
+3. **Confirm** artifact + journal id.
 
+Signals: “remember this”, “don’t …”, “always …”, “I want … instead”, “stop doing X”, or any correction of agent *process* (not task parameters like hyperparameters).
+
+## When to run the pipeline
+
+**Immediately** (same turn):
+
+- User **steering correction**
+- **“Remember this”** and close variants
 - A mistake that wasted time or misled conclusions
 - A fix or workaround that should become default
-- A user-established convention
-- A repeated workflow missing from skills
 
-### Entry format
+**Periodically** during work (not only session end):
+
+- After a discrete task where process mattered
+- When the same friction appears twice in one session
+- Before switching task areas if a lesson is not yet promoted
+
+**Session end:** catch any trigger above that still has no artifact + JRN pair.
+
+## JRN entry format
 
 ```markdown
 ### JRN-YYYYMMDD-NN: Short title
@@ -46,31 +83,31 @@ After substantive sessions when you discover:
 | **Timestamp**    | YYYY-MM-DD HH:MM:SS (system clock at write time) |
 | **Category**     | mistake \| fix \| convention \| skill-gap        |
 | **Summary**      | What happened                                    |
-| **Action taken** | Code, doc, skill, or rule change                 |
+| **Artifact**     | Path(s) created or updated (required)            |
+| **Action taken** | One line: what the artifact enforces             |
 | **Related**      | EXP-…, NOTE-…, skill name                        |
 ```
 
-Insert at the **top** of `## Entries` in [self-journal.md](../../../docs/agents/self-journal.md). Increment `NN` per day. Link research IDs when relevant.
+Insert at the **top** of `## Entries` in [self-journal.md](../../../docs/agents/self-journal.md). Increment `NN` per day.
 
 ## When to add or update a skill
 
-Trigger: same workflow requested twice, or journal entry category `skill-gap`.
+Trigger: same workflow requested twice, or journal category `skill-gap`.
 
-1. Create `.cursor/skills/<name>/SKILL.md` (YAML frontmatter, third-person description, under 500 lines)
+1. Create `.cursor/skills/<name>/SKILL.md`
 2. Add row to [skills README](../README.md)
 3. Optional routing hint in [AGENTS.md](../../../AGENTS.md)
-4. Prepend journal entry noting the skill-gap closure
-
-Omit `disable-model-invocation` only when the skill should auto-apply from task description (e.g. tide overfit).
+4. Prepend JRN with **Artifact** = skill path
 
 ## Session-end checklist
 
 - [ ] Research logged (`EXP-…` / `NOTE-…`) per [research-session-workflow](../research-session-workflow/SKILL.md)
-- [ ] Process learnings → self-journal
-- [ ] New repeated workflow → new skill + index row
-- [ ] Broken index links → fix immediately (skill-gap)
+- [ ] Every steering / process lesson this session → **artifact + JRN** (not JRN alone)
+- [ ] New repeated workflow → skill + README + JRN
+- [ ] Broken index links → fix immediately
 
 ## Do not
 
+- Prepend a JRN without an **Artifact** path in the same turn (except explicit user deferral)
 - Store research findings in the journal (use EXPERIMENT_LOG / DISCUSSION_NOTES)
 - Create skills in `~/.cursor/skills-cursor/` (Cursor internal)

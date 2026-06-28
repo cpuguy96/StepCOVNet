@@ -4,16 +4,22 @@ Iterative improvements to agent behavior, process, and conventions on this proje
 
 **Order:** newest entries first (prepend below).
 
+**Same-turn promotion:** The journal is a receipt, not the fix. Every entry must cite an **Artifact** path (rule, skill, or code) created or updated **in the same turn** before the JRN is written. See [agent-self-improvement skill](../../.cursor/skills/agent-self-improvement/SKILL.md).
+
 ## When to prepend
 
-After substantive sessions when you discover:
+**Immediately** when the user makes a **steering correction** — how you decide, prioritize, run commands, log output, route docs, commit, etc. Do not wait for a long or “substantive” session to end.
+
+**Also** when you discover:
 
 - A mistake that wasted time or produced wrong conclusions
 - A fix or workaround that should become default
 - A user-established convention worth preserving
 - A repeated workflow missing from `.cursor/skills/`
 
-Maintenance rule: prepend in the same session when possible; link `EXP-…` / `NOTE-…` when relevant. See [agent-self-improvement skill](../../.cursor/skills/agent-self-improvement/SKILL.md).
+**Periodically** during work: after discrete tasks with process lessons, when the same friction recurs, or before switching task areas — journal in the same session; do not defer everything to session end.
+
+Maintenance rule: **artifact first, journal second** in the same turn; link `EXP-…` / `NOTE-…` when relevant.
 
 ## Entry format
 
@@ -27,13 +33,36 @@ Insert **at the top** of [Entries](#entries) (below this section):
 | **Timestamp**    | YYYY-MM-DD HH:MM:SS (system clock at write time) |
 | **Category**     | mistake \| fix \| convention \| skill-gap        |
 | **Summary**      | What happened                                    |
-| **Action taken** | Code, doc, skill, or rule change                 |
+| **Artifact**     | Path(s) created or updated (required)            |
+| **Action taken** | One line: what the artifact enforces             |
 | **Related**      | EXP-…, NOTE-…, skill name                        |
 ```
 
 ---
 
 ## Entries
+
+### JRN-20260628-03: Same-turn promotion — artifact before journal
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | Journal entries are useless without durable promotion; user wants artifact (rule/skill/code) created first, JRN second, same turn.   |
+| **Artifact**     | `.cursor/skills/agent-self-improvement/SKILL.md`, `docs/agents/self-journal.md`, `.cursor/rules/agents-entry.mdc`                     |
+| **Action taken** | Enforces artifact-first workflow; JRN requires **Artifact** path; journal-only entries forbidden except explicit user deferral.      |
+| **Related**      | JRN-20260628-02, agent-self-improvement                                                                                               |
+
+### JRN-20260628-02: Journal on steering corrections, not only long sessions
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User wants self-journal updated periodically and **immediately** on steering corrections (how the agent decides/operates), not batched only after long sessions. |
+| **Artifact**     | `.cursor/skills/agent-self-improvement/SKILL.md`, `docs/agents/self-journal.md`, `.cursor/rules/agents-entry.mdc`                     |
+| **Action taken** | Journal on steering corrections in same turn; periodic journaling during work.                                                        |
+| **Related**      | agent-self-improvement, JRN-20260628-01                                                                                               |
 
 ### JRN-20260628-01: Training output hidden in log files
 
@@ -42,7 +71,8 @@ Insert **at the top** of [Entries](#entries) (below this section):
 | **Timestamp**    | 2026-06-28 12:00:00                                                                                                                   |
 | **Category**     | convention                                                                                                                            |
 | **Summary**      | Agent ran WSL GPU training/decode with `*> logs/...` or `Tee-Object`, so the user could not watch epoch progress or errors live.      |
-| **Action taken** | Added always-on rule `.cursor/rules/long-running-console.mdc`; extended agent-self-improvement skill with **“remember this”** trigger. |
+| **Artifact**     | `.cursor/rules/long-running-console.mdc`, `.cursor/skills/agent-self-improvement/SKILL.md`, `AGENTS.md`                               |
+| **Action taken** | Long-running jobs must stream to visible terminal; optional log file via tee; remember-this trigger documented.                         |
 | **Related**      | agent-self-improvement, wsl-gpu-stepcovnet                                                                                            |
 
 ### JRN-20260606-09: Dense seed after model init caused train lottery
