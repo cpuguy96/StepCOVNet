@@ -173,6 +173,7 @@ configs/**
 !configs/onset_baseline.json
 !configs/onset_final_data_mert_bilstm.json
 !configs/onset_final_data_mert_bilstm_scoreboard_50t_100v.json
+!configs/onset_ar_tide.json
 !configs/onset_event_audio_baseline.json
 !configs/onset_event_overfit_one.json
 !configs/overfit_dense/dense_mert_3song.json
@@ -206,6 +207,7 @@ scripts/*
 !scripts/train_arrow.py
 !scripts/train_onset.py
 !scripts/train_onset_event.py
+!scripts/train_onset_ar.py
 !scripts/visualize_arrow_data.py
 !scripts/wsl_*.sh
 

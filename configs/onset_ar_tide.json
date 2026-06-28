@@ -1,0 +1,26 @@
+{
+  "dataset": {
+    "overfit_audio_path": "data/v2/test/tide.ogg",
+    "overfit_chart_path": "data/v2/test/tide.txt",
+    "mert_features_dir": "data/v2/test",
+    "max_audio_seconds": 300,
+    "max_steps_per_chart": 2048
+  },
+  "model": {
+    "patch_frames": 8,
+    "d_model": 256,
+    "n_enc_layers": 4,
+    "n_dec_layers": 4,
+    "token_scheme": "delta_bucketed",
+    "alignment": "pointer_residual",
+    "max_decode_steps": 2048
+  },
+  "run": {
+    "overfit_one_song": true,
+    "lambda_time": 1.0,
+    "scheduled_sampling_max_p": 0.0,
+    "length_normalize_ce": true,
+    "tolerance_sec": 0.02,
+    "checkpoint_metric": "val_event_onset_f1"
+  }
+}
