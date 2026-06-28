@@ -23,6 +23,8 @@ Plan docs with JSON/schemas: [design-doc-fields.mdc](../../rules/design-doc-fiel
 
 ## Log experiment (`EXP-YYYYMMDD-NN`)
 
+**Same turn, no ask:** After any measurable run or offline eval (`debug_ar_onset_overfit.py`, `eval_dense_onset.py`, threshold sweep, training finish), prepend or update [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) in the **same session** — do not offer to log or wait for user confirmation.
+
 Prepend to [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) after measurable runs:
 
 - Top of `## Experiment entries` + new index row at top

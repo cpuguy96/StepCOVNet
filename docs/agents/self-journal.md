@@ -75,6 +75,28 @@ Insert **at the top** of [Entries](#entries) (below this section):
 | **Action taken** | Decision tree favors skills/scoped rules; AGENTS.md slimmed; promotion skill runs optimization checklist each correction.               |
 | **Related**      | agent-self-improvement, JRN-20260628-04                                                                                               |
 
+### JRN-20260628-06: Tide overfit free-run bar = 1.0
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User corrected free-run gate from 0.95 to 1.0 — single-chart overfit must reproduce all onsets exactly.                               |
+| **Artifact**     | `docs/research/AR_ONSET_DESIGN.md` (§10.1, §10.6, `overfit-free-run-f1`); `DECISIONS_CHECKLIST.md`; `DISCUSSION_NOTES.md` NOTE-20260628-02; `EXPERIMENT_LOG.md` EXP-20260628-02 conclusion |
+| **Action taken** | Locked **1.0** for tide free-run F1; reclassified run1/run2 as gate fail under corrected bar.                                         |
+| **Related**      | NOTE-20260628-02, gate-ar-decode                                                                                                      |
+
+### JRN-20260628-05: Auto-log EXP after offline eval — no ask
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User corrected agent for offering to log offline decode numbers in EXPERIMENT_LOG instead of doing it automatically in the same turn. |
+| **Artifact**     | `.cursor/skills/research-session-workflow/SKILL.md` (§ Log experiment — same turn, no ask); `docs/research/EXPERIMENT_LOG.md` (EXP-20260628-02 run2 offline numbers) |
+| **Action taken** | Measurable runs and offline evals → prepend/update EXP immediately; never prompt user to approve logging.                             |
+| **Related**      | research-logging.mdc, JRN-20260628-04                                                                                                 |
+
 ### JRN-20260628-04: Systematic temp file handling
 
 | Field            | Value                                                                                                                                 |
