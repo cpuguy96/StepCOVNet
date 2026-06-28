@@ -42,6 +42,50 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260628-07: Audit script read-only; no alwaysApply budget
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User: no script writes to agent brain docs; model updates catalogs; no hard alwaysApply cap but stay mindful of always-on rules.       |
+| **Artifact**     | `scripts/audit_agent_brain.py`, `tests/audit_agent_brain_test.py`, `agent-brain-refresh/SKILL.md`, `steering-correction-promotion/SKILL.md` |
+| **Action taken** | Script prints disk inventory + drift only; agent maintains agent-brain.md; alwaysApply budget removed from audit.                      |
+| **Related**      | JRN-20260628-06, agent-brain-refresh                                                                                                  |
+
+### JRN-20260628-06: Agent brain refresh skill and canonical catalog
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User wants holistic agent-brain maintenance; AGENTS.md wrongly listed scoped rules as always-on; periodic/user-triggered refresh.      |
+| **Artifact**     | `.cursor/skills/agent-brain-refresh/SKILL.md`, `scripts/audit_agent_brain.py`, `docs/agents/agent-brain.md`; slimmed `AGENTS.md`      |
+| **Action taken** | Catalog regenerated from disk; alwaysApply table removed from AGENTS.md; refresh after promotion + session end + user phrase.         |
+| **Related**      | steering-correction-promotion, JRN-20260628-05                                                                                        |
+
+### JRN-20260628-05: Context-efficient agent brain — promotion skill
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User: alwaysApply rules for every steering correction wastes context; optimize agent brain on each correction via smallest durable layer. |
+| **Artifact**     | `.cursor/skills/steering-correction-promotion/SKILL.md`, `.cursor/rules/scripts-execution.mdc` (scoped); demoted `long-running-console`, `temp-artifacts` |
+| **Action taken** | Decision tree favors skills/scoped rules; AGENTS.md slimmed; promotion skill runs optimization checklist each correction.               |
+| **Related**      | agent-self-improvement, JRN-20260628-04                                                                                               |
+
+### JRN-20260628-04: Systematic temp file handling
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | Agents left `tmp_*` at repo root from command redirects; user asked for a systematic policy for any temp output.                      |
+| **Artifact**     | `.cursor/rules/temp-artifacts.mdc` (later merged into `scripts-execution.mdc`), `.gitignore`, `AGENTS.md`, `docs/agents/project-layout.md` |
+| **Action taken** | Captures go to `logs/` or `_tmp/` (gitignored); delete `_tmp` when done; never commit or use repo-root `tmp_*`.                       |
+| **Related**      | long-running-console, JRN-20260628-01, temp-artifacts                                                                               |
+
 ### JRN-20260628-03: Same-turn promotion — artifact before journal
 
 | Field            | Value                                                                                                                                 |
