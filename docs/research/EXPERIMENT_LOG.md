@@ -28,7 +28,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
-| **AR onset (`onset_ar/`)** | **Perfect overfit** (EXP-20260628-02) — teacher **1.0**; free-run AR **0.978** (run2) — **gate not passed** (bar **1.0**); tokens exact |
+| **AR onset (`onset_ar/`)** | **Perfect overfit** (EXP-20260628-02) — best free-run AR **0.978** (run2); v4 teacher timing best, free-run **0.975** — gate **not passed** (bar **1.0**) |
 
 **Recommended when resuming onset work:**
 
@@ -44,7 +44,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
-| EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (`val_overfit_gate`, token acc) | **Partial** | Run2: teacher **1.0**, offline AR **0.978** — **below 1.0 free-run bar**; tokens exact; timing polish ongoing (v4 local) |
+| EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (`val_overfit_gate`, token acc) | **Partial** | Best free-run AR **0.978** (run2); v4 teacher **633/634** @ 20 ms but AR **0.975** — below **1.0** bar |
 | EXP-20260628-01 | `train` + `model` | AR `gate-ar-decode` v2–v4 (SS ramp) | **Supported** | v4: teacher F1 **1.0**; offline AR F1 **~0.35**; see EXP-20260628-02 for token-perfect path |
 | EXP-20260627-04 | `train` + `model` | AR `gate-tide-overfit` pass (residual MSE + λ ramp) | **Supported** | `val_event_onset_f1` **1.0** @ ep 180+; debug 634/634 within 20 ms |
 | EXP-20260627-03 | `train` + `model` | AR tide overfit training fixes (class weights, argmax decode, λ ramp) | **Supported** | F1 **~0.83** (`gate_v4`); residual head untrained — see NOTE-20260627-02 |
@@ -111,8 +111,16 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Model (run2)** | `models_wsl/ar_tide_overfit_perfect_v2/ar_onset_model.keras` |
 | **Run2 training** | Ep 2 dip (`val_overfit_gate` **~0.64**); recovered ep 12+: `val_token_accuracy` **1.0**, `val_event_onset_f1` **1.0**, `val_overfit_gate` **1.0** |
 | **Run2 offline (teacher)** | `debug_ar_onset_overfit.py` — event F1 **~1.0** (634/634 TP); **632/634** within 20 ms; mean abs err **5.09 ms**, max **23.67 ms** |
-| **Run2 offline (`--ar_decode`)** | Two-pass AR F1 **0.978** (620 TP / 14 FP / 14 FN); **634/634** tokens, `first_mismatch_step: null`, decode length **636**, EOS OK; incremental pointer+residual F1 **0.957** |
-| **Conclusion** | Teacher path at **1.0** (run2); tokens exact free-run; offline AR F1 **0.978** — **does not pass** tide overfit free-run bar (**1.0**, NOTE-20260628-02). Gap is event matching under free-run timing (14 FP/FN), not token LM. Follow-on v3/v4 (local) tighten teacher timing — re-check `--ar_decode` on best ckpt. |
+| **Run2 offline (`--ar_decode`)** | Two-pass AR F1 **0.978** (620 TP / 14 FP / 14 FN); decode length **636**, EOS OK; incremental pointer+residual F1 **0.957** |
+| **Config (run3)** | `configs/onset_ar_tide_overfit_perfect_run3.json` — warm-start v2; `lambda_residual: 10`, LR **5e-5**, **200 ep**, no perfect early stop |
+| **Log (run3)** | `logs/ar_tide_overfit_perfect_run3.log` — 200 ep |
+| **Model (run3)** | `models_wsl/ar_tide_overfit_perfect_v3/ar_onset_model.keras` |
+| **Run3 offline (teacher)** | `logs/ar_perfect_v3_baseline_decode.json.txt` — event F1 **~1.0**; **633/634** within 20 ms; mean abs err **4.0 ms** (no `--ar_decode`) |
+| **Log (run4 / v4 train)** | `logs/ar_perfect_v4_train.log` — **200 ep**; adds **`incremental_consistency_loss`** in train metrics |
+| **Model (run4 / v4)** | `models_wsl/ar_tide_overfit_perfect_v4/ar_onset_model.keras` |
+| **Run4 offline (teacher)** | `logs/ar_perfect_v4_decode.log` — event F1 **~1.0** (634/634 TP); **633/634** within 20 ms; mean abs err **3.6 ms**, max **22.75 ms** |
+| **Run4 offline (`--ar_decode`)** | Two-pass AR F1 **0.975** (618 TP / 16 FP / 16 FN); decode length **636**; incremental pointer+residual F1 **0.942**; GT-parallel on free-run tokens **1.0** |
+| **Conclusion** | Teacher path **1.0** on run2/v3/v4. **Best free-run gate metric: run2 (0.978)** — v4 improves teacher sub-20 ms timing but **regresses** free-run AR vs run2. None pass tide free-run bar (**1.0**, NOTE-20260628-02). Gap remains pointer+residual under model prefix, not token LM alone. Next: train toward **incremental** free-run timing (v4 consistency loss direction) with checkpoint on offline `--ar_decode`. |
 
 ### EXP-20260628-01: AR `gate-ar-decode` v2 (WSL 150ep, warm-start gate_v5)
 

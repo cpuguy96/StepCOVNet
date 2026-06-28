@@ -75,6 +75,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 | **Action taken** | Decision tree favors skills/scoped rules; AGENTS.md slimmed; promotion skill runs optimization checklist each correction.               |
 | **Related**      | agent-self-improvement, JRN-20260628-04                                                                                               |
 
+### JRN-20260628-07: Log full run series; check before re-run suggestions
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User: “Remember that” — agent logged run2 but left v3/v4 offline decode as vague notes, asked whether to log, and suggested re-running v4 decode that already existed in `logs/ar_perfect_v4_decode.log`. |
+| **Artifact**     | `.cursor/skills/research-session-workflow/SKILL.md` (complete the series, grep before re-run); `.cursor/rules/research-logging.mdc`; `docs/research/EXPERIMENT_LOG.md` (run3/v4 numbers) |
+| **Action taken** | Same-turn EXP updates for every run in a thread; read existing `logs/*decode*` before proposing jobs; never ask to log.               |
+| **Related**      | JRN-20260628-05, research-session-workflow                                                                                            |
+
 ### JRN-20260628-06: Tide overfit free-run bar = 1.0
 
 | Field            | Value                                                                                                                                 |

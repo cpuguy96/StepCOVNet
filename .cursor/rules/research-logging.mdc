@@ -16,6 +16,8 @@ When work under `docs/research/` produces runs, design decisions, or durable ins
 
 **Timestamp** on every entry: `YYYY-MM-DD HH:MM:SS` from system clock at write time.
 
+**Agent:** Log in the same turn — never ask the user to approve logging. Log all runs in a thread (including offline `--ar_decode` from `logs/`). Check the log and `logs/` before suggesting a re-run.
+
 **Training seeds:** `reproducibility.apply_training_seed(seed)` before model construction and dataset creation.
 
 Full workflow: [research-session-workflow skill](../../.cursor/skills/research-session-workflow/SKILL.md). Log runs in `EXPERIMENT_LOG.md`; `PAPER_OUTLINE.md` only when drafting the paper.
