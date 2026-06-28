@@ -1,0 +1,32 @@
+---
+description: Keep training and long GPU jobs visible in the Cursor terminal for human review
+alwaysApply: true
+---
+
+# Long-running jobs — visible console
+
+## When this applies
+
+Training, WSL GPU overfit runs, multi-minute decode/diagnostic scripts, and any job where a human may need to spot OOM, divergence, stalls, or stderr warnings in real time.
+
+## Do
+
+- Stream output to a **visible Cursor terminal** (foreground or background shell — user can open the terminal panel).
+- **File logging is fine** — use it alongside the console, not instead of it.
+- Good patterns:
+  - Plain run (console only): `venv\Scripts\python.exe scripts/train_onset_ar.py --config ...`
+  - Console **and** file: PowerShell `Tee-Object -FilePath logs/run.log` (duplex), or equivalent tee on other shells.
+- After the run, keep log files under `logs/` for later grep / EXP notes when useful.
+
+## Do not
+
+- Use **log-only** redirection as the sole sink (`*> logs/...`, `2>&1 | Out-File`, redirect with no live terminal stream).
+- Treat `exit_code: 1` from PowerShell stderr (WSL warnings) as failure without reading the terminal or log — verify whether the job actually completed.
+
+## Summary
+
+| Pattern                  | OK?                                                 |
+| ------------------------ | --------------------------------------------------- |
+| Console only             | Yes                                                 |
+| Console + log file (tee) | Yes — preferred when a durable log helps            |
+| Log file only            | No — unless user explicitly asked for log-only mode |

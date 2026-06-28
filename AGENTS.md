@@ -27,6 +27,7 @@ North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 | `python-style.mdc` | Ruff (`ruff check .`, incl. `PLC0415` top-level imports), pydoclint, pyright |
 | `python-tests.mdc` | Tests + coverage for code changes |
 | `research-logging.mdc` | EXP/NOTE in `EXPERIMENT_LOG` / `DISCUSSION_NOTES`; paper outline optional |
+| `long-running-console.mdc` | Training/long GPU jobs stream to visible terminal, not log-only |
 
 ---
 

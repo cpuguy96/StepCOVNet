@@ -35,6 +35,16 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260628-01: Training output hidden in log files
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-28 12:00:00                                                                                                                   |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | Agent ran WSL GPU training/decode with `*> logs/...` or `Tee-Object`, so the user could not watch epoch progress or errors live.      |
+| **Action taken** | Added always-on rule `.cursor/rules/long-running-console.mdc`; extended agent-self-improvement skill with **“remember this”** trigger. |
+| **Related**      | agent-self-improvement, wsl-gpu-stepcovnet                                                                                            |
+
 ### JRN-20260606-09: Dense seed after model init caused train lottery
 
 | Field            | Value                                                                                                                                                              |

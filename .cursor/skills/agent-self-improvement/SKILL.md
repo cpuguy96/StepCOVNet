@@ -15,6 +15,18 @@ disable-model-invocation: true
 
 **Rules** (`.cursor/rules/`) = always-on constraints. **Skills** = on-demand workflows. Do not duplicate rules into skills.
 
+## “Remember this” (user key phrase)
+
+When the user says **remember this** (or close variants: “don’t forget”, “always do X”):
+
+1. **Persist immediately** — do not only acknowledge in chat.
+2. **Choose mechanism:**
+   - Repeated mistake / convention → prepend [self-journal.md](../../../docs/agents/self-journal.md) **and** add or update an always-on rule in `.cursor/rules/` when the constraint should apply every session.
+   - Repeatable workflow → new or updated project skill + skills README row.
+3. **Confirm in chat** what was written and where (rule path, journal id).
+
+Treat “remember this” as explicit permission to update tracked agent docs without a separate commit request (user still controls git commits).
+
 ## When to prepend the journal
 
 After substantive sessions when you discover:
