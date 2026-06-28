@@ -74,6 +74,8 @@ class ArRunConfig(_DictSerializableMixin):
     lambda_time: float = 0.0
     lambda_time_ramp_epochs: int = 0
     lambda_residual: float = 0.0
+    lambda_incremental_consistency: float = 0.0
+    incremental_consistency_max_steps: int = 0
     token_class_weight: str = "none"
     use_soft_pointer_time: bool = False
     scheduled_sampling_max_p: float = 0.0

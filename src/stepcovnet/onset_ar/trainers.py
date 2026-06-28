@@ -155,6 +155,10 @@ class ArOnsetTrainingModel(keras.Model):
         self.length_normalize_ce = run_config.length_normalize_ce
         self.use_soft_pointer_time = run_config.use_soft_pointer_time
         self.lambda_residual = run_config.lambda_residual
+        self.lambda_incremental_consistency = run_config.lambda_incremental_consistency
+        self.incremental_consistency_max_steps = (
+            run_config.incremental_consistency_max_steps
+        )
         self.pointer_loss_weight = run_config.pointer_loss_weight
         self.scheduled_sampling_max_p = run_config.scheduled_sampling_max_p
         self.scheduled_sampling_ramp_epochs = run_config.scheduled_sampling_ramp_epochs
@@ -171,11 +175,16 @@ class ArOnsetTrainingModel(keras.Model):
         self.tolerance_sec = run_config.tolerance_sec
         self.experiment_config = experiment_config
         self.token_class_weights = self._build_token_class_weights(experiment_config)
+        self._infer_encoder: keras.Model | None = None
+        self._infer_decoder: keras.Model | None = None
         self.loss_tracker = keras.metrics.Mean(name="loss")
         self.token_loss_tracker = keras.metrics.Mean(name="token_loss")
         self.pointer_loss_tracker = keras.metrics.Mean(name="pointer_loss")
         self.time_loss_tracker = keras.metrics.Mean(name="time_loss")
         self.residual_loss_tracker = keras.metrics.Mean(name="residual_loss")
+        self.incremental_consistency_loss_tracker = keras.metrics.Mean(
+            name="incremental_consistency_loss",
+        )
         self.token_accuracy = keras.metrics.Mean(name="token_accuracy")
         self.event_f1_metric = ArEventOnsetF1Metric(
             tolerance_sec=run_config.tolerance_sec,
@@ -199,6 +208,7 @@ class ArOnsetTrainingModel(keras.Model):
             self.pointer_loss_tracker,
             self.time_loss_tracker,
             self.residual_loss_tracker,
+            self.incremental_consistency_loss_tracker,
             self.token_accuracy,
             self.event_f1_metric,
         ]
@@ -247,6 +257,80 @@ class ArOnsetTrainingModel(keras.Model):
             "decoder_mask": batch["decoder_mask"],
         }
 
+    def _ensure_infer_models(self) -> tuple[keras.Model, keras.Model]:
+        if self._infer_encoder is None or self._infer_decoder is None:
+            encoder, decoder = models.build_ar_onset_inference_models(
+                self.base_model,
+                self.experiment_config,
+            )
+            self._infer_encoder = encoder
+            self._infer_decoder = decoder
+        return self._infer_encoder, self._infer_decoder
+
+    def _forward_parallel_infer(
+        self,
+        batch: dict[str, tf.Tensor],
+        *,
+        training: bool,
+        decoder_input_ids: tf.Tensor | None = None,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
+        encoder, decoder = self._ensure_infer_models()
+        memory = encoder(
+            {
+                "mert_patches": batch["mert_patches"],
+                "patch_mask": batch["patch_mask"],
+            },
+            training=training,
+        )
+        dec_in = (
+            decoder_input_ids
+            if decoder_input_ids is not None
+            else batch["decoder_input_ids"]
+        )
+        outputs = decoder(
+            {
+                "encoder_memory": memory,
+                "patch_mask": batch["patch_mask"],
+                "decoder_input_ids": dec_in,
+                "decoder_mask": batch["decoder_mask"],
+            },
+            training=training,
+        )
+        return memory, outputs
+
+    def _incremental_consistency_term(
+        self,
+        parallel_outputs: dict[str, tf.Tensor],
+        batch: dict[str, tf.Tensor],
+        *,
+        encoder_memory: tf.Tensor,
+    ) -> tf.Tensor:
+        _, decoder = self._ensure_infer_models()
+        parallel_times = losses.predicted_times_from_outputs(
+            parallel_outputs["pointer_logits"],
+            parallel_outputs["residual_sec"],
+            patch_frames=self.patch_frames,
+            hop_sec=self.hop_sec,
+            use_soft_expected=self.use_soft_pointer_time,
+        )
+        n_samples = self.incremental_consistency_max_steps
+        if n_samples <= 0:
+            n_samples = 1
+        return losses.sampled_incremental_consistency_loss_tf(
+            decoder,
+            encoder_memory,
+            batch["patch_mask"],
+            batch["decoder_input_ids"],
+            batch["decoder_mask"],
+            parallel_times,
+            batch["onset_step_mask"],
+            max_decoder_len=self.max_decoder_len,
+            patch_frames=self.patch_frames,
+            hop_sec=self.hop_sec,
+            use_soft_pointer_time=self.use_soft_pointer_time,
+            n_samples=n_samples,
+        )
+
     def _forward_and_loss(
         self,
         batch: dict[str, tf.Tensor],
@@ -254,13 +338,22 @@ class ArOnsetTrainingModel(keras.Model):
         training: bool,
         decoder_input_ids: tf.Tensor | None = None,
     ) -> tuple[tf.Tensor, dict[str, tf.Tensor], dict[str, tf.Tensor]]:
-        model_inputs = self._model_inputs(batch)
-        if decoder_input_ids is not None:
-            model_inputs = {
-                **model_inputs,
-                "decoder_input_ids": decoder_input_ids,
-            }
-        outputs = self.base_model(model_inputs, training=training)
+        use_incremental = self.lambda_incremental_consistency > 0.0
+        if use_incremental:
+            memory, outputs = self._forward_parallel_infer(
+                batch,
+                training=training,
+                decoder_input_ids=decoder_input_ids,
+            )
+        else:
+            model_inputs = self._model_inputs(batch)
+            if decoder_input_ids is not None:
+                model_inputs = {
+                    **model_inputs,
+                    "decoder_input_ids": decoder_input_ids,
+                }
+            outputs = self.base_model(model_inputs, training=training)
+            memory = None
         total_loss, parts = losses.compute_ar_onset_loss(
             outputs,
             batch,
@@ -273,6 +366,22 @@ class ArOnsetTrainingModel(keras.Model):
             token_class_weights=self.token_class_weights,
             use_soft_pointer_time=self.use_soft_pointer_time,
         )
+        if use_incremental:
+            assert memory is not None
+            inc_loss = self._incremental_consistency_term(
+                outputs,
+                batch,
+                encoder_memory=memory,
+            )
+            total_loss = (
+                total_loss
+                + tf.cast(
+                    self.lambda_incremental_consistency,
+                    tf.float32,
+                )
+                * inc_loss
+            )
+            parts = {**parts, "incremental_consistency_loss": inc_loss}
         return total_loss, parts, outputs
 
     def _update_teacher_fed_f1(
@@ -331,7 +440,7 @@ class ArOnsetTrainingModel(keras.Model):
         gt_times: np.ndarray,
         gt_mask: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        decode_stats = inference.decode_autoregressive_with_stats_numpy(
+        decode_stats = inference.decode_autoregressive_gate_with_stats_numpy(
             self.base_model,
             mert_patches,
             patch_mask,
@@ -391,6 +500,10 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
         self.residual_loss_tracker.update_state(parts["residual_loss"])
+        if "incremental_consistency_loss" in parts:
+            self.incremental_consistency_loss_tracker.update_state(
+                parts["incremental_consistency_loss"],
+            )
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],
@@ -410,6 +523,10 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
         self.residual_loss_tracker.update_state(parts["residual_loss"])
+        if "incremental_consistency_loss" in parts:
+            self.incremental_consistency_loss_tracker.update_state(
+                parts["incremental_consistency_loss"],
+            )
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],

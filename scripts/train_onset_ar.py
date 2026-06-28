@@ -12,6 +12,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
+import sys
+
+from stepcovnet import wsl_gpu
+
+SCRIPT_REL = "scripts/train_onset_ar.py"
+
+
+def _bootstrap_wsl_gpu() -> None:
+    script_path = str(pathlib.Path(__file__).resolve())
+    argv = [script_path, *sys.argv[1:]]
+    wsl_gpu.maybe_dispatch_for_training(SCRIPT_REL, argv)
+    wsl_gpu.reexec_with_tensorflow_gpu_env_if_needed(argv)
+
+
+_bootstrap_wsl_gpu()
 
 from stepcovnet.onset_ar import config, datasets, trainers
 

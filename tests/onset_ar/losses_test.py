@@ -3,7 +3,9 @@ import unittest
 import numpy as np
 import tensorflow as tf
 
+from stepcovnet.onset_ar import config as ar_config
 from stepcovnet.onset_ar import losses, targets
+from stepcovnet.onset_ar import models as ar_models
 
 
 class LossesTest(unittest.TestCase):
@@ -148,6 +150,69 @@ class LossesTest(unittest.TestCase):
             length_normalize_ce=True,
         )
         self.assertAlmostEqual(float(parts["residual_loss"].numpy()), 0.0, places=6)
+
+    def test_incremental_consistency_loss_zero_when_times_match(self) -> None:
+        parallel = tf.constant([[0.1, 0.2, 0.0]], dtype=tf.float32)
+        incremental = tf.constant([[0.1, 0.2, 0.0]], dtype=tf.float32)
+        mask = tf.constant([[1.0, 1.0, 0.0]], dtype=tf.float32)
+        loss = losses.incremental_consistency_loss(parallel, incremental, mask)
+        self.assertAlmostEqual(float(loss.numpy()), 0.0, places=6)
+
+    def test_incremental_predicted_times_shape(self) -> None:
+        experiment_config = ar_config.ArExperimentConfig(
+            dataset=ar_config.ArDatasetConfig(max_audio_seconds=1.0, hop_sec=0.01),
+            model=ar_config.ArModelConfig(
+                patch_frames=4,
+                d_model=32,
+                n_enc_layers=1,
+                n_dec_layers=2,
+                num_heads=2,
+                max_decode_steps=16,
+                dropout_rate=0.0,
+            ),
+            run=ar_config.ArRunConfig(epochs=1, model_output_dir=""),
+        )
+        model = ar_models.build_ar_onset_model(experiment_config)
+        encoder, decoder = ar_models.build_ar_onset_inference_models(
+            model,
+            experiment_config,
+        )
+        max_dec = experiment_config.max_decoder_len()
+        max_patches = experiment_config.max_encoder_patches()
+        patch_dim = experiment_config.patch_input_dim()
+        memory = encoder(
+            {
+                "mert_patches": tf.zeros((1, max_patches, patch_dim), dtype=tf.float32),
+                "patch_mask": tf.concat(
+                    [tf.ones((1, 3), dtype=tf.float32), tf.zeros((1, max_patches - 3))],
+                    axis=1,
+                ),
+            },
+            training=False,
+        )
+        dec_in = tf.zeros((1, max_dec), dtype=tf.int32)
+        dec_mask = tf.concat(
+            [
+                tf.ones((1, 4), dtype=tf.float32),
+                tf.zeros((1, max_dec - 4), dtype=tf.float32),
+            ],
+            axis=1,
+        )
+        times = losses.incremental_predicted_times_tf(
+            decoder,
+            memory,
+            tf.concat(
+                [tf.ones((1, 3), dtype=tf.float32), tf.zeros((1, max_patches - 3))],
+                axis=1,
+            ),
+            dec_in,
+            dec_mask,
+            max_decoder_len=max_dec,
+            patch_frames=4,
+            hop_sec=0.01,
+            max_unroll_steps=4,
+        )
+        self.assertEqual(times.shape, (1, max_dec))
 
 
 if __name__ == "__main__":

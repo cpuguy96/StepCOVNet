@@ -61,6 +61,164 @@ def predicted_times_from_outputs(
     return patch_idx * patch_duration + residual_sec
 
 
+def predicted_time_at_decoder_position(
+    pointer_logits: tf.Tensor,
+    residual_sec: tf.Tensor,
+    *,
+    patch_frames: int,
+    hop_sec: float,
+    use_soft_expected: bool = False,
+) -> tf.Tensor:
+    """Scalar onset time per batch item from one decoder position."""
+    pointer_logits = tf.expand_dims(pointer_logits, axis=1)
+    residual_sec = tf.expand_dims(residual_sec, axis=1)
+    times = predicted_times_from_outputs(
+        pointer_logits,
+        residual_sec,
+        patch_frames=patch_frames,
+        hop_sec=hop_sec,
+        use_soft_expected=use_soft_expected,
+    )
+    return times[:, 0]
+
+
+def incremental_predicted_times_tf(
+    decoder: tf.keras.Model,
+    encoder_memory: tf.Tensor,
+    patch_mask: tf.Tensor,
+    decoder_input_ids: tf.Tensor,
+    decoder_mask: tf.Tensor,
+    *,
+    max_decoder_len: int,
+    patch_frames: int,
+    hop_sec: float,
+    use_soft_pointer_time: bool = False,
+    max_unroll_steps: int = 0,
+) -> tf.Tensor:
+    """Prefix decoder unrolls; predicted time written at each visited position."""
+    batch_size = tf.shape(decoder_input_ids)[0]
+    times = tf.zeros((batch_size, max_decoder_len), dtype=tf.float32)
+    seq_len = tf.cast(tf.reduce_sum(decoder_mask[0]), tf.int32)
+    if max_unroll_steps > 0:
+        seq_len = tf.minimum(seq_len, tf.cast(max_unroll_steps, tf.int32))
+
+    def cond(cur_len: tf.Tensor, _times: tf.Tensor) -> tf.Tensor:
+        return cur_len <= seq_len
+
+    def body(cur_len: tf.Tensor, step_times: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
+        cur_len_f = tf.cast(cur_len, tf.float32)
+        positions = tf.cast(tf.range(max_decoder_len), tf.float32)[tf.newaxis, :]
+        prefix_mask = tf.cast(positions < cur_len_f, tf.float32) * decoder_mask
+        outputs = decoder(
+            {
+                "encoder_memory": encoder_memory,
+                "patch_mask": patch_mask,
+                "decoder_input_ids": decoder_input_ids,
+                "decoder_mask": prefix_mask,
+            },
+            training=True,
+        )
+        pos = cur_len - 1
+        step_time = predicted_time_at_decoder_position(
+            outputs["pointer_logits"][:, pos, :],
+            outputs["residual_sec"][:, pos],
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+            use_soft_expected=use_soft_pointer_time,
+        )
+        batch_indices = tf.range(batch_size, dtype=tf.int32)
+        scatter_indices = tf.stack(
+            [batch_indices, tf.fill((batch_size,), pos)],
+            axis=1,
+        )
+        step_times = tf.tensor_scatter_nd_update(
+            step_times,
+            scatter_indices,
+            step_time,
+        )
+        return cur_len + 1, step_times
+
+    _, times = tf.while_loop(
+        cond,
+        body,
+        (tf.constant(1, dtype=tf.int32), times),
+        maximum_iterations=max_decoder_len,
+    )
+    return times
+
+
+def sampled_incremental_consistency_loss_tf(
+    decoder: tf.keras.Model,
+    encoder_memory: tf.Tensor,
+    patch_mask: tf.Tensor,
+    decoder_input_ids: tf.Tensor,
+    decoder_mask: tf.Tensor,
+    parallel_times: tf.Tensor,
+    onset_step_mask: tf.Tensor,
+    *,
+    max_decoder_len: int,
+    patch_frames: int,
+    hop_sec: float,
+    use_soft_pointer_time: bool = False,
+    n_samples: int,
+) -> tf.Tensor:
+    """L_inc at one random onset position per step (GPU-safe on tide).
+
+    ``n_samples`` is reserved for future gradient accumulation; only one prefix
+    decode is differentiated per train step so cross-attn is not stacked in-graph.
+    """
+    del n_samples
+    parallel_times = tf.stop_gradient(parallel_times)
+    encoder_memory = tf.stop_gradient(encoder_memory)
+    onset_positions = tf.reshape(
+        tf.where(onset_step_mask[0] > 0.5)[:, 0],
+        (-1,),
+    )
+    n_onsets = tf.shape(onset_positions)[0]
+
+    def _zero_loss() -> tf.Tensor:
+        return tf.constant(0.0, dtype=tf.float32)
+
+    def _single_sample_loss() -> tf.Tensor:
+        pos = tf.random.shuffle(onset_positions)[0]
+        cur_len_f = tf.cast(pos + 1, tf.float32)
+        positions = tf.cast(tf.range(max_decoder_len), tf.float32)[tf.newaxis, :]
+        prefix_mask = tf.cast(positions < cur_len_f, tf.float32) * decoder_mask
+        outputs = decoder(
+            {
+                "encoder_memory": encoder_memory,
+                "patch_mask": patch_mask,
+                "decoder_input_ids": decoder_input_ids,
+                "decoder_mask": prefix_mask,
+            },
+            training=True,
+        )
+        inc_time = predicted_time_at_decoder_position(
+            outputs["pointer_logits"][:, pos, :],
+            outputs["residual_sec"][:, pos],
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+            use_soft_expected=use_soft_pointer_time,
+        )
+        par_time = parallel_times[0, pos]
+        return tf.abs(par_time - inc_time[0])
+
+    return tf.cond(n_onsets > 0, _single_sample_loss, _zero_loss)
+
+
+def incremental_consistency_loss(
+    parallel_times: tf.Tensor,
+    incremental_times: tf.Tensor,
+    onset_step_mask: tf.Tensor,
+) -> tf.Tensor:
+    """Mean absolute gap between parallel and prefix-incremental predicted times."""
+    parallel_times = tf.stop_gradient(parallel_times)
+    mask = tf.cast(onset_step_mask, tf.float32)
+    diff = tf.abs(parallel_times - incremental_times) * mask
+    count = tf.reduce_sum(mask) + 1e-9
+    return tf.reduce_sum(diff) / count
+
+
 def compute_ar_onset_loss(
     outputs: dict[str, tf.Tensor],
     batch: dict[str, tf.Tensor],
