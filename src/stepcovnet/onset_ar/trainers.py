@@ -103,6 +103,9 @@ class ArEventOnsetF1Metric(keras.metrics.Metric):
             ],
             [tf.float64, tf.float64, tf.float64],
         )
+        tp = tf.reshape(tp, [])
+        fp = tf.reshape(fp, [])
+        fn = tf.reshape(fn, [])
         self.true_positives.assign_add(tf.cast(tp, self.dtype))
         self.false_positives.assign_add(tf.cast(fp, self.dtype))
         self.false_negatives.assign_add(tf.cast(fn, self.dtype))
@@ -290,7 +293,7 @@ def train_ar_onset(
     if not run_config.model_output_dir:
         raise ValueError("run.model_output_dir is required")
 
-    reproducibility.set_global_seed(run_config.seed)
+    reproducibility.apply_training_seed(run_config.seed)
     base_model = models.build_ar_onset_model(experiment_config)
     training_model = ArOnsetTrainingModel(
         base_model,
