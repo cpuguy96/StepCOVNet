@@ -81,7 +81,7 @@ Locked **2026-06** in [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-r
 | Slug                    | Pass criterion                                                                 |
 | ----------------------- | ------------------------------------------------------------------------------ |
 | `gate-tide-overfit`     | Teacher forcing; scheduled sampling off; pointer+residual F1 ≈ 1.0 on tide (teacher-fed inputs) |
-| `gate-ar-decode`        | Same weights; free-running AR F1 ≥ 0.95 on tide + scheduled sampling ramp      |
+| `gate-ar-decode`        | Same weights; free-running AR F1 **1.0** on tide (634/634) + scheduled sampling ramp |
 | `gate-10song-smoke`     | Batches build on `training_index_10songs.json`; loss ↓; no all-EOS collapse  |
 | `gate-val-vs-dense`     | Micro event F1 @ swept threshold vs dense baseline on `final_data` val         |
 

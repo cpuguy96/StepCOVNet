@@ -4,6 +4,25 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-06-28 — Tide overfit free-run bar
+
+### NOTE-20260628-02: Tide overfit free-run bar **1.0**
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-28 15:00:45                                                   |
+| **Topic**     | `gate-ar-decode` / perfect-overfit pass criterion on tide             |
+
+**Context:** EXP-20260628-02 run2 reached offline AR F1 **0.978** with exact tokens; prior docs used a **0.95** free-run threshold inherited from exposure-bias intuition, not single-chart overfit.
+
+**Decision:** On tide (one chart, 634 onsets), **free-run autoregressive decode event F1 must be 1.0** — same bar as teacher-fed overfit. Partial match is unacceptable when the training set is a single example the model must memorize.
+
+**Implication:** Run1 (**~0.954**) and run2 (**0.978**) remain **fail** on `gate-ar-decode` / perfect-overfit until offline `--ar_decode` hits **634/634** Hungarian matches. `gate-val-vs-dense` on multi-song val keeps a separate, lower scoreboard bar.
+
+**Related:** [AR_ONSET_DESIGN.md §10.1](AR_ONSET_DESIGN.md#101-experiment-gates-in-order), [EXP-20260628-02](EXPERIMENT_LOG.md#exp-20260628-02-ar-tide-perfect-overfit-val_overfit_gate)
+
+---
+
 ## Session 2026-06-28 — AR `gate-ar-decode` v2
 
 ### NOTE-20260628-01: `gate-ar-decode` v2 infra (eager AR-val + KV cache)
@@ -49,7 +68,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Diagnostics:** `scripts/debug_ar_onset_overfit.py` — per-onset patch vs residual error split.
 
-**Next:** **`gate-ar-decode`** — scheduled sampling; free-running decode F1 ≥ 0.95 on tide.
+**Next:** **`gate-ar-decode`** — scheduled sampling; free-running decode F1 **1.0** on tide (see [NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
 
 **Related:** [EXP-20260627-03](EXPERIMENT_LOG.md#exp-20260627-03-ar-tide-overfit-training-fixes-λ-ramp-ablation), [EXP-20260627-04](EXPERIMENT_LOG.md#exp-20260627-04-ar-gate-tide-overfit-pass-wsl-300ep), [NOTE-20260627-01](DISCUSSION_NOTES.md#note-20260627-01-gate-tide-overfit-plateau-and-open-hypotheses)
 

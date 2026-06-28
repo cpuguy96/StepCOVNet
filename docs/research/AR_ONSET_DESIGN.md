@@ -405,7 +405,7 @@ Gate slugs name pass/fail milestones; log them in EXP entries.
 | Slug                    | Config                                                                                    | Pass criterion                                                                                    |
 | ----------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | **`gate-tide-overfit`** | Locked v1 stack (§11); teacher-forced training; scheduled sampling **off**                | Token CE → ~0; pointer+residual times with **teacher-fed** decoder inputs: event F1 ≈ 1.0 on tide |
-| **`gate-ar-decode`**    | Same weights as `gate-tide-overfit`; ramp scheduled sampling (`train-scheduled-sampling`) | Teacher-fed decode F1 ≈ 1.0 **and** free-running autoregressive decode F1 ≥ 0.95 on tide          |
+| **`gate-ar-decode`**    | Same weights as `gate-tide-overfit`; ramp scheduled sampling (`train-scheduled-sampling`) | Teacher-fed decode F1 **1.0** **and** free-running autoregressive decode F1 **1.0** on tide (634/634; single-chart overfit) |
 | **`gate-10song-smoke`** | `training_index_10songs.json` (local subset)                                              | Batches build; loss decreases; decode F1 > 0; no all-EOS collapse                                 |
 | **`gate-val-vs-dense`** | Full val split vs best dense run                                                          | Micro event F1 @ swept threshold                                                                  |
 
@@ -516,7 +516,7 @@ First 300-ep run (`gate_v2`, pre-fix) failed: `val_token_accuracy` stuck **0.480
 
 Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0 patch errors**, **103 residual errors** (`n_patch_ok_timing_wrong`). Residual MSE closed the gap to **1.0**.
 
-**Next gate:** [`gate-ar-decode`](#101-experiment-gates-in-order) — scheduled sampling ramp; free-running decode F1 ≥ 0.95 on tide.
+**Next gate:** [`gate-ar-decode`](#101-experiment-gates-in-order) — scheduled sampling ramp; free-running decode F1 **1.0** on tide.
 
 ### 10.6 `gate-ar-decode` notes (2026-06-28)
 
@@ -552,7 +552,7 @@ Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
 
 **Run 1 observations:** Ep 1–6 early-EOS (`decode_length` **13** via offline `--ar_decode`); ep 7+ full chart (**633–635**). Token-only loss (v2 run 1) let teacher-fed `val_event_onset_f1` fall **1.0 → ~0.51** — recipe now restores full pointer/time/residual loss from `gate-tide-overfit`.
 
-**Pass criteria (unchanged):** teacher-fed F1 ≈ **1.0** **and** free-run F1 ≥ **0.95** on tide (free-run checked **offline** via `--ar_decode`, not in-loop).
+**Pass criteria:** teacher-fed F1 **1.0** **and** free-run F1 **1.0** on tide (634/634 events; offline `--ar_decode`, not in-loop). A relaxed **0.95** bar was rejected — single-chart overfit must reproduce the chart exactly ([NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
 
 #### Perfect overfit metrics (`EXP-20260628-02`)
 
@@ -561,7 +561,7 @@ Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
 | `val_token_accuracy` | yes (~0.5s val/ep) | — |
 | `val_event_onset_f1` | yes | `debug_ar_onset_overfit.py` |
 | `val_overfit_gate` | `min(token_acc, event_f1)` — checkpoint | — |
-| Free-run AR F1 | **never in-loop** | `--ar_decode` after training |
+| Free-run AR F1 | **never in-loop** | `--ar_decode` after training — pass **1.0** (634/634) |
 
 Configs: `onset_ar_tide_overfit_perfect.json` (phase A: SS=0) · `onset_ar_tide_overfit_perfect_run2.json` (timing polish).
 
@@ -595,6 +595,7 @@ Configs: `onset_ar_tide_overfit_perfect.json` (phase A: SS=0) · `onset_ar_tide_
 | `token-class-weight`       | Token CE class weights | none vs inverse_freq                 | **decided** | **inverse_freq** on tide |
 | `decode-pointer`           | F1 / time loss decode  | soft expected patch vs argmax          | **decided** | **argmax** (`use_soft_pointer_time: false`) |
 | `eval-min-gap`             | 50 ms POST before F1 | off primary vs report both vs on primary  | **decided** | off for primary metric      |
+| `overfit-free-run-f1`      | Tide single-chart free-run gate | 0.95 vs **1.0**                  | **decided** | **1.0** — must match all onsets (NOTE-20260628-02) |
 | `dense-baseline`           | Scoreboard vs dense  | replace vs supplement                     | **decided** | dense until AR beats val F1 |
 
 ### Strategic (outside v1 impl)
