@@ -6,6 +6,7 @@ import dataclasses
 import pathlib
 
 import numpy as np
+import tensorflow as tf
 
 from stepcovnet import constants, ssl_features
 from stepcovnet.onset_ar import config, targets
@@ -209,3 +210,78 @@ def verify_config_loads_one_batch(
         },
     )
     return summary, sample
+
+
+def sample_to_training_batch(
+    sample: ArSample,
+    experiment_config: config.ArExperimentConfig,
+) -> dict[str, np.ndarray]:
+    """Convert one :class:`ArSample` into padded numpy batch arrays."""
+    model_config = experiment_config.model
+    dataset_config = experiment_config.dataset
+    max_patches = experiment_config.max_encoder_patches()
+    patch_dim = experiment_config.patch_input_dim()
+    max_dec = experiment_config.max_decoder_len()
+    max_gt = int(model_config.max_decode_steps)
+
+    patches = np.zeros((1, max_patches, patch_dim), dtype=np.float32)
+    patch_mask = np.zeros((1, max_patches), dtype=np.float32)
+    n_patches = int(sample.n_patches)
+    patches[0, :n_patches] = sample.mert_patches
+    patch_mask[0, :n_patches] = 1.0
+
+    dec_in = sample.token_seq.decoder_input_ids
+    dec_tgt = sample.token_seq.decoder_target_ids
+    dec_len = int(dec_tgt.size)
+    decoder_input_ids = np.zeros((1, max_dec), dtype=np.int32)
+    decoder_target_ids = np.zeros((1, max_dec), dtype=np.int32)
+    decoder_mask = np.zeros((1, max_dec), dtype=np.float32)
+    decoder_input_ids[0, :dec_len] = dec_in
+    decoder_target_ids[0, :dec_len] = dec_tgt
+    decoder_mask[0, :dec_len] = 1.0
+
+    n_steps = sample.token_seq.n_steps
+    target_patch_indices = np.zeros((1, max_dec), dtype=np.int32)
+    target_residual_sec = np.zeros((1, max_dec), dtype=np.float32)
+    target_times = np.zeros((1, max_dec), dtype=np.float32)
+    onset_step_mask = np.zeros((1, max_dec), dtype=np.float32)
+    if n_steps > 0:
+        target_patch_indices[0, :n_steps] = sample.token_seq.patch_indices
+        target_residual_sec[0, :n_steps] = sample.token_seq.residual_sec
+        target_times[0, :n_steps] = targets.decode_pointer_residual_to_times(
+            sample.token_seq.patch_indices,
+            sample.token_seq.residual_sec,
+            patch_frames=model_config.patch_frames,
+            hop_sec=dataset_config.hop_sec,
+        )
+        onset_step_mask[0, :n_steps] = 1.0
+
+    gt_times = np.zeros((1, max_gt), dtype=np.float32)
+    gt_mask = np.zeros((1, max_gt), dtype=np.float32)
+    n_gt = int(sample.gt_times_sec.size)
+    gt_times[0, :n_gt] = sample.gt_times_sec
+    gt_mask[0, :n_gt] = 1.0
+
+    return {
+        "mert_patches": patches,
+        "patch_mask": patch_mask,
+        "decoder_input_ids": decoder_input_ids,
+        "decoder_target_ids": decoder_target_ids,
+        "decoder_mask": decoder_mask,
+        "target_patch_indices": target_patch_indices,
+        "target_residual_sec": target_residual_sec,
+        "target_times": target_times,
+        "onset_step_mask": onset_step_mask,
+        "gt_times": gt_times,
+        "gt_mask": gt_mask,
+        "duration": np.asarray([sample.duration_sec], dtype=np.float32),
+    }
+
+
+def create_overfit_tf_dataset(
+    experiment_config: config.ArExperimentConfig,
+) -> tf.data.Dataset:
+    """Repeat a single overfit batch for ``model.fit``."""
+    sample = load_overfit_sample(experiment_config)
+    batch = sample_to_training_batch(sample, experiment_config)
+    return tf.data.Dataset.from_tensors(batch)

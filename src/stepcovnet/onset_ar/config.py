@@ -61,6 +61,8 @@ class ArModelConfig(_DictSerializableMixin):
     delta_max_dense: int = targets.DEFAULT_DELTA_MAX_DENSE
     n_log_buckets: int = targets.DEFAULT_N_LOG_BUCKETS
     n_first_abs_bins: int = targets.DEFAULT_N_FIRST_ABS_BINS
+    num_heads: int = 4
+    dropout_rate: float = 0.1
 
 
 @dataclasses.dataclass
@@ -78,6 +80,7 @@ class ArRunConfig(_DictSerializableMixin):
     model_output_dir: str = ""
     callback_root_dir: str = ""
     seed: int = 42
+    learning_rate: float = 2e-3
 
 
 @dataclasses.dataclass
@@ -123,3 +126,20 @@ class ArExperimentConfig:
             n_first_abs_bins=self.model.n_first_abs_bins,
             hop_sec=self.dataset.hop_sec,
         )
+
+    def max_encoder_patches(self) -> int:
+        """Maximum patch count for padded encoder memory."""
+        max_frames = max(
+            1,
+            int(round(self.dataset.max_audio_seconds / self.dataset.hop_sec)),
+        )
+        patch_frames = max(1, int(self.model.patch_frames))
+        return (max_frames + patch_frames - 1) // patch_frames
+
+    def patch_input_dim(self) -> int:
+        """Flattened MERT patch feature width ``P * 1024``."""
+        return int(self.model.patch_frames) * constants.MERT_HIDDEN_SIZE
+
+    def max_decoder_len(self) -> int:
+        """Padded decoder sequence length including ``<EOS>``."""
+        return int(self.model.max_decode_steps) + 1

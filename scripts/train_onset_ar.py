@@ -1,14 +1,11 @@
 r"""Train autoregressive onset detection (``gate-tide-overfit`` and follow-on gates).
 
-Phase 0: ``--verify-only`` checks tide assets and loads one AR sample batch.
-Phase 1+: full encoder-decoder training (not implemented yet).
-
 Usage:
     python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-only
 
-    # Future gate-tide-overfit training (Phase 1):
     python scripts/train_onset_ar.py --config configs/onset_ar_tide.json \
-        --model_output_dir models/ar_tide_overfit
+        --model_output_dir models/ar_tide_overfit \
+        --callback_root_dir callbacks/ar_tide_overfit
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ import argparse
 import json
 import sys
 
-from stepcovnet.onset_ar import config, datasets
+from stepcovnet.onset_ar import config, datasets, trainers
 
 PARSER = argparse.ArgumentParser(description="Train AR onset detection model.")
 PARSER.add_argument(
@@ -50,10 +47,22 @@ PARSER.add_argument(
     help="Override dataset.overfit_chart_path.",
 )
 PARSER.add_argument(
+    "--epochs",
+    type=int,
+    default=None,
+    help="Override run.epochs.",
+)
+PARSER.add_argument(
     "--model_output_dir",
     type=str,
     default=None,
     help="Override run.model_output_dir.",
+)
+PARSER.add_argument(
+    "--callback_root_dir",
+    type=str,
+    default=None,
+    help="Override run.callback_root_dir.",
 )
 
 
@@ -69,8 +78,12 @@ def _apply_overrides(
         dataset_config.overfit_audio_path = args.overfit_audio_path
     if args.overfit_chart_path is not None:
         dataset_config.overfit_chart_path = args.overfit_chart_path
+    if args.epochs is not None:
+        run_config.epochs = args.epochs
     if args.model_output_dir:
         run_config.model_output_dir = args.model_output_dir
+    if args.callback_root_dir is not None:
+        run_config.callback_root_dir = args.callback_root_dir
 
 
 def main() -> None:
@@ -84,18 +97,17 @@ def main() -> None:
         return
 
     if not experiment_config.run.model_output_dir:
-        PARSER.error(
-            "AR training is not implemented yet (Phase 1). "
-            "Use --verify-only to smoke-test Phase 0 assets and data loading, "
-            "or set run.model_output_dir once the trainer lands.",
-        )
+        PARSER.error("--model_output_dir is required (config or CLI)")
 
-    print(
-        "AR encoder-decoder training is Phase 1 (gate-tide-overfit). "
-        "Phase 0 verify passed if you ran --verify-only.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    if experiment_config.run.scheduled_sampling_max_p > 0.0:
+        print(
+            "scheduled_sampling_max_p > 0 is Phase 3 (gate-ar-decode); "
+            "gate-tide-overfit uses teacher forcing only.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    trainers.train_ar_onset(experiment_config)
 
 
 if __name__ == "__main__":
