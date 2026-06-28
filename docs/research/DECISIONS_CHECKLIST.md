@@ -40,7 +40,7 @@
 
 | #   | Decision               | Options / notes                                                                             | Status                                       |
 | --- | ---------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| C1  | **Output formulation (scoreboard)** | K query slots vs dense frames vs **AR tokens** | **open** — **dense** is current val baseline (0.686, EXP-20260610-03); K-query plateau ~30%; AR **implemented** (`onset_ar/`) but **`gate-tide-overfit` failing** (EXP-20260627-02) |
+| C1  | **Output formulation (scoreboard)** | K query slots vs dense frames vs **AR tokens** | **open** — **dense** is current val baseline (0.686, EXP-20260610-03); K-query plateau ~30%; AR **`gate-tide-overfit` passed** on tide (EXP-20260627-04); val TBD |
 | C2  | **`num_queries` K**    | 1024 vs tied to `n_max_onsets` — enforce `K >= max steps`                                   | **decided** — **2048** in `onset_event_audio_baseline.json` (align with `max_steps_per_chart`) |
 | C3  | **Time head**          | Learnable deltas + uniform grid (normal); GT refs only when `pipeline_check_shortcuts=true` | **decided** — event track only |
 | C4  | **Encoder capacity**   | Current U-Net + 2 decoder layers — scale up only after pre ablation                         | **deferred** — dense/event |
@@ -68,8 +68,9 @@ Locked **2026-06** in [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-r
 | Slug                       | Topic                | Status      | Locked choice               |
 | -------------------------- | -------------------- | ----------- | --------------------------- |
 | `train-checkpoint`         | Val model selection  | **decided** | decoded event F1            |
-| `train-scheduled-sampling` | Exposure bias        | **decided** | ramp p → ~0.5; **off** until `gate-tide-overfit` |
-| `train-aux-time-loss`      | λ_time on \|t̂−t\|    | **open**    | tune on tide (0.1 vs 1.0)   |
+| `train-scheduled-sampling` | Exposure bias        | **decided** | ramp p → ~0.5; **off** until `gate-tide-overfit` **(passed EXP-20260627-04)** — enable for `gate-ar-decode` |
+| `train-aux-time-loss`      | λ_time on \|t̂−t\|    | **decided** | ramp **0→1.0** over **100 ep** on tide (`lambda_time_ramp_epochs`) |
+| `train-aux-residual-loss`  | λ_residual MSE        | **decided** | **5.0** on tide overfit (EXP-20260627-04) |
 | `eval-min-gap`             | 50 ms POST before F1 | **decided** | off for primary metric      |
 | `dense-baseline`           | Scoreboard vs dense  | **decided** | dense until AR beats val F1 |
 
@@ -151,7 +152,7 @@ Full protocol: [AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protoc
 6. ~~**Tide bisection (diagnose + half-cheat)**~~ — formulation ceiling, not bug → EXP-11
 7. **Full `final_data` dense val** — primary baseline on new dataset (unblocks F1/F3/`gate-val-vs-dense`)
 8. **Dense MERT tide overfit** — formulation control experiment (`data/v2`)
-9. **AR onset — debug `gate-tide-overfit`** — `onset_ar/` implemented; tide overfit not passing (EXP-20260627-02). Fix training / masks → re-run gate → then `gate-ar-decode` → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-debug-notes-2026-06-27))
+9. **AR onset — `gate-ar-decode`** — `gate-tide-overfit` **passed** (EXP-20260627-04). Ramp scheduled sampling → free-running decode on tide → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-notes-2026-06-27))
 10. Multi-song event val on `final_data` — after dense baseline or explicit waive
 
 Update this file when a row moves to **decided**; link the deciding `EXP-…` or `NOTE-…`.

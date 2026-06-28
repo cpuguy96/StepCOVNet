@@ -1,6 +1,6 @@
 # Autoregressive onset detection — design draft
 
-**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` not passing** — see §10.5 and [EXP-20260627-02](EXPERIMENT_LOG.md#exp-20260627-02-gate-tide-overfit-wsl-300ep). Captures seq2seq onset formulation vs dense frames and K-query event slots.
+**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` passed** (EXP-20260627-04) — see §10.5. Next gate: **`gate-ar-decode`**.
 
 **Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) · [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md) § C · [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2 · §11 decision registry below · historical [onset_events plan](../onset_events_plan.md)
 
@@ -16,7 +16,7 @@ Chart player-step times are an **ordered sparse list** in seconds. Three MODEL f
 | ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------- | -------------- |
 | **Dense frames**         | Per-hop onset probability on MERT grid                  | Micro event F1 **0.686** @ thr=0.30 (`data/v2`, EXP-20260610-03) | ~98% event F1  |
 | **K-query event**        | K parallel `(time, confidence)` slots + Hungarian train | ~**0.30** F1 plateau; oracle ~**0.31** (EXP-20260606-11)         | ~28–30%        |
-| **AR tokens** (this doc) | Causal decoder emits ordered time tokens until EOS      | _Not run on val_                                                 | **`gate-tide-overfit` fail** — best teacher-fed F1 **~0.14**; `val_token_accuracy` stuck **~0.48** (EXP-20260627-02) |
+| **AR tokens** (this doc) | Causal decoder emits ordered time tokens until EOS      | _Not run on val_                                                 | **`gate-tide-overfit` pass** — teacher-fed F1 **1.0** on tide (EXP-20260627-04) |
 
 **Why consider AR**
 
@@ -446,6 +446,14 @@ WSL GPU: run from repo root per [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gp
 python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-only
 ```
 
+Diagnose a saved checkpoint (dispatches to WSL when needed):
+
+```bash
+python scripts/debug_ar_onset_overfit.py \
+  --config configs/onset_ar_tide.json \
+  --model_path models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras
+```
+
 ### 10.4 Config sketch
 
 **`configs/onset_ar_tide.json`** (`gate-tide-overfit`):
@@ -466,11 +474,16 @@ python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-on
     "n_dec_layers": 4,
     "token_scheme": "delta_bucketed",
     "alignment": "pointer_residual",
-    "max_decode_steps": 2048
+    "max_decode_steps": 2048,
+    "dropout_rate": 0.0
   },
   "run": {
     "overfit_one_song": true,
     "lambda_time": 1.0,
+    "lambda_time_ramp_epochs": 100,
+    "lambda_residual": 5.0,
+    "token_class_weight": "inverse_freq",
+    "use_soft_pointer_time": false,
     "scheduled_sampling_max_p": 0.0,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
@@ -481,39 +494,29 @@ python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-on
 
 **`configs/onset_ar_smoke.json`** — same model block; set `training_index_path` instead of overfit paths; `scheduled_sampling_max_p`: 0 until `gate-ar-decode`. (Smoke config **not in repo yet**.)
 
-### 10.5 `gate-tide-overfit` debug notes (2026-06-27)
+### 10.5 `gate-tide-overfit` notes (2026-06-27)
 
-**Implementation:** commits `86117f9` (Phase 0 scaffold), `a56f3aa` (Phase 1 model + trainer), `e1ad6b9` (trainer seed / F1 metric fixes). Tests: `tests/onset_ar/`.
+**Status:** **PASS** ([EXP-20260627-04](EXPERIMENT_LOG.md#exp-20260627-04-ar-gate-tide-overfit-pass-wsl-300ep)). Teacher-fed `val_event_onset_f1` **1.0** on tide (634/634 within 20 ms). Checkpoint: `models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras`; log `logs/ar_tide_overfit_gate_v5.log`.
 
-**Tide batch (verified):** 634 onsets, 1607 encoder patches, vocab **339**, decoder length **635** (634 + EOS). Only **22 unique** target token IDs across 635 steps.
+**Tide batch:** 634 onsets, 1607 encoder patches, vocab **339**, decoder length **635**. Tests: `tests/onset_ar/`; diagnose: `scripts/debug_ar_onset_overfit.py`.
 
-**Run:** WSL GPU, 300 epochs, config `configs/onset_ar_tide.json`, log `logs/ar_tide_overfit_gate_v2.log` ([EXP-20260627-02](EXPERIMENT_LOG.md#exp-20260627-02-gate-tide-overfit-wsl-300ep)). Best checkpoint by `val_event_onset_f1` under `callbacks/ar_tide_overfit/models/…/best.keras`.
+#### Failure history (EXP-20260627-02)
 
-| Metric | Observed pattern |
-| ------ | ---------------- |
-| `val_token_accuracy` | **0.4803** on most epochs (282/300) |
-| `val_token_loss` | Decreases (~4.3 → ~1.7) while accuracy flat |
-| `val_pointer_loss` | ~**6.4–6.5** (near uniform over 1607 patches; log-uniform ≈ 7.38) |
-| `val_time_loss` | ~15–30; often dominates total loss with `lambda_time=1.0` |
-| `val_event_onset_f1` | Brief peak **~0.137** (~epoch 29); **0.0** by epoch 300 |
-| Train vs val token acc (ep 1) | train **~0.02**, val **~0.48** (full trainer; may include metric reset / dropout) |
-| CPU 1-step probe | train **and** eval both → **0.4803** after one gradient step — collapse not eval-only |
+First 300-ep run (`gate_v2`, pre-fix) failed: `val_token_accuracy` stuck **0.4803** (= majority token 83 frequency **305/635**), pointer near uniform, F1 peaked **~0.14** then **0.0**. Root causes: inverted attention masks (fixed `be08a5d`), majority-class token collapse, soft expected-patch F1/time path, `lambda_time=1.0` from step 0 without residual supervision. See [NOTE-20260627-01](DISCUSSION_NOTES.md#note-20260627-01-gate-tide-overfit-plateau-and-open-hypotheses).
 
-**Confirmed (tide target stats, not model-dependent):**
+#### Winning training recipe (EXP-20260627-03 → 04)
 
-- **305 / 635 = 0.4803** — the most frequent decoder target is token **83** on 305 steps.
-- Token **83** = dense delta **17 frames** = **170 ms** (305/633 inter-onset deltas are 17 frames on tide).
-- Random-init argmax token accuracy ≈ **0.005**, not 0.48 — the plateau is not a metric initialization artifact.
+| Change | Purpose |
+| ------ | ------- |
+| `dropout_rate: 0.0` | Match dense/event overfit gates |
+| `token_class_weight: inverse_freq` | Break majority delta collapse |
+| `use_soft_pointer_time: false` | Argmax patch for F1 metric and time loss |
+| `lambda_time: 1.0`, `lambda_time_ramp_epochs: 100` | Phase pointer CE first; ramp L1 on seconds |
+| `lambda_residual: 5.0` | Direct MSE on `residual_sec` (pointer CE alone leaves sub-patch error) |
 
-**Hypotheses (open — do not treat as root cause until verified):**
+Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0 patch errors**, **103 residual errors** (`n_patch_ok_timing_wrong`). Residual MSE closed the gap to **1.0**.
 
-- Token head may collapse toward predicting the majority delta class everywhere; CE can fall via confidence without raising argmax accuracy.
-- `lambda_time=1.0` may overweight pointer/residual vs token CE; pointer head may stay near uniform.
-- F1 metric uses **soft expected patch** from pointer softmax (`inference.decode_teacher_fed_times_tf`), not argmax — may diverge from pointer CE training signal.
-- Attention mask polarity was wrong in committed code; **local fix** in uncommitted `models.py` / `losses.py` / `tests/onset_ar/models_test.py` (Keras `MultiHeadAttention`: `True` = masked out; causal mask direction). Re-verify masks and re-run gate after commit.
-- Class imbalance (22 unique tokens; one token ≈48% of steps) may need weighted CE, phased `lambda_time`, or dropout=0 for overfit debug.
-
-**Next debug steps:** dump per-step argmax tokens vs targets from best checkpoint; round-trip token encode/decode → times; ablate `lambda_time`; compare train/eval with dropout off. See [NOTE-20260627-01](DISCUSSION_NOTES.md#note-20260627-01-gate-tide-overfit-plateau-and-open-hypotheses).
+**Next gate:** [`gate-ar-decode`](#101-experiment-gates-in-order) — scheduled sampling ramp; free-running decode F1 ≥ 0.95 on tide.
 
 ---
 
@@ -540,7 +543,10 @@ python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-on
 | -------------------------- | -------------------- | ----------------------------------------- | ----------- | --------------------------- |
 | `train-checkpoint`         | Val model selection  | decoded event F1 vs token CE              | **decided** | decoded event F1            |
 | `train-scheduled-sampling` | Exposure bias        | ramp p vs fixed p vs off until gate fails | **decided** | ramp p → ~0.5               |
-| `train-aux-time-loss`      | λ_time on \|t̂−t\|    | 0.1 vs 1.0 vs off                         | **open**    | tune on tide                |
+| `train-aux-time-loss`      | λ_time on \|t̂−t\|    | ramp vs fixed vs off                      | **decided** | **1.0**, linear ramp **100 ep** from 0 (`lambda_time_ramp_epochs`) |
+| `train-aux-residual-loss`  | λ_residual MSE on residual head | off vs 1–5                         | **decided** | **5.0** on tide overfit (EXP-20260627-04) |
+| `token-class-weight`       | Token CE class weights | none vs inverse_freq                 | **decided** | **inverse_freq** on tide |
+| `decode-pointer`           | F1 / time loss decode  | soft expected patch vs argmax          | **decided** | **argmax** (`use_soft_pointer_time: false`) |
 | `eval-min-gap`             | 50 ms POST before F1 | off primary vs report both vs on primary  | **decided** | off for primary metric      |
 | `dense-baseline`           | Scoreboard vs dense  | replace vs supplement                     | **decided** | dense until AR beats val F1 |
 
@@ -616,4 +622,4 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 
 ---
 
-_Design locked 2026-06; Phase 0+1 implemented 2026-06-27. Update §10.5 when `gate-tide-overfit` passes or architecture changes._
+_Update §10.5 when `gate-ar-decode` passes or architecture changes._

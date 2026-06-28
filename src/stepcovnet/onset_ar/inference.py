@@ -41,6 +41,7 @@ def decode_teacher_fed_times_tf(
     *,
     patch_frames: int,
     hop_sec: float,
+    use_soft_expected: bool = False,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Tensor wrapper returning padded predicted times and a validity mask."""
     pred_times = losses.predicted_times_from_outputs(
@@ -48,6 +49,7 @@ def decode_teacher_fed_times_tf(
         outputs["residual_sec"],
         patch_frames=patch_frames,
         hop_sec=hop_sec,
+        use_soft_expected=use_soft_expected,
     )
     pred_mask = tf.cast(batch["onset_step_mask"], tf.float32)
     return pred_times, pred_mask

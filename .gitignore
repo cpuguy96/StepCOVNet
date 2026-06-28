@@ -208,6 +208,7 @@ scripts/*
 !scripts/train_onset.py
 !scripts/train_onset_event.py
 !scripts/train_onset_ar.py
+!scripts/debug_ar_onset_overfit.py
 !scripts/visualize_arrow_data.py
 !scripts/wsl_*.sh
 

@@ -13,11 +13,16 @@
     "n_dec_layers": 4,
     "token_scheme": "delta_bucketed",
     "alignment": "pointer_residual",
-    "max_decode_steps": 2048
+    "max_decode_steps": 2048,
+    "dropout_rate": 0.0
   },
   "run": {
     "overfit_one_song": true,
     "lambda_time": 1.0,
+    "lambda_time_ramp_epochs": 100,
+    "lambda_residual": 5.0,
+    "token_class_weight": "inverse_freq",
+    "use_soft_pointer_time": false,
     "scheduled_sampling_max_p": 0.0,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,

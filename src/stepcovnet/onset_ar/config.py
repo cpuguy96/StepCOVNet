@@ -71,7 +71,11 @@ class ArRunConfig(_DictSerializableMixin):
 
     epochs: int = 300
     overfit_one_song: bool = False
-    lambda_time: float = 1.0
+    lambda_time: float = 0.0
+    lambda_time_ramp_epochs: int = 0
+    lambda_residual: float = 0.0
+    token_class_weight: str = "none"
+    use_soft_pointer_time: bool = False
     scheduled_sampling_max_p: float = 0.0
     length_normalize_ce: bool = True
     tolerance_sec: float = 0.02

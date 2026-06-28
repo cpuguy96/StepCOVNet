@@ -178,7 +178,7 @@ Use dense MERT as the strongest in-repo baseline when judging whether event or A
 
 ## AR path — [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)
 
-**Status:** Design locked 2026-06; **Phase 0+1 implemented** (2026-06-27). **`gate-tide-overfit` not passing** (EXP-20260627-02). Gates in order: `gate-tide-overfit` → `gate-ar-decode` → `gate-10song-smoke` → `gate-val-vs-dense`.
+**Status:** Design locked 2026-06; **Phase 0+1 implemented** (2026-06-27). **`gate-tide-overfit` passed** (EXP-20260627-04). Gates in order: ~~`gate-tide-overfit`~~ → **`gate-ar-decode`** → `gate-10song-smoke` → `gate-val-vs-dense`.
 
 ```
 audio → cached MERT on 10 ms hop grid

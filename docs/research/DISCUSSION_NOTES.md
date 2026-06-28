@@ -4,6 +4,34 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-06-27 — AR `gate-tide-overfit` pass
+
+### NOTE-20260627-02: `gate-tide-overfit` resolution
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-27 19:53:03                                                   |
+| **Topic**     | AR tide overfit — training recipe that reaches teacher-fed F1 ≈ 1.0   |
+
+**Context:** After EXP-20260627-02 failure and fix chain (EXP-20260627-03), **`gate-tide-overfit` passed** (EXP-20260627-04) with `val_event_onset_f1` **1.0** on tide.
+
+**Root cause (confirmed):**
+
+1. **Token collapse** — unweighted CE + majority token 83 (**305/635**) → argmax accuracy stuck at **0.4803** after one step; fixed with **`token_class_weight: inverse_freq`** and **`dropout_rate: 0`**.
+2. **Soft vs hard decode** — F1 and early `time_loss` used soft expected patch; fixed with **`use_soft_pointer_time: false`** (argmax).
+3. **Missing residual gradient** — with `lambda_time=0`, only pointer CE trained patch index; F1 uses `patch × duration + residual`. At F1 **~0.83**, debug showed **`n_patch_wrong: 0`**, **`n_patch_ok_timing_wrong: 103`**. Fixed with **`lambda_residual: 5.0`** (MSE on `target_residual_sec`).
+4. **λ_time phasing** — immediate `lambda_time=1.0` destabilized early training; **`lambda_time_ramp_epochs: 100`** (linear 0→1) allowed pointer to learn first.
+
+**Locked tide config:** see [AR_ONSET_DESIGN.md §10.4](AR_ONSET_DESIGN.md#104-config-sketch) and `configs/onset_ar_tide.json`.
+
+**Diagnostics:** `scripts/debug_ar_onset_overfit.py` — per-onset patch vs residual error split.
+
+**Next:** **`gate-ar-decode`** — scheduled sampling; free-running decode F1 ≥ 0.95 on tide.
+
+**Related:** [EXP-20260627-03](EXPERIMENT_LOG.md#exp-20260627-03-ar-tide-overfit-training-fixes-λ-ramp-ablation), [EXP-20260627-04](EXPERIMENT_LOG.md#exp-20260627-04-ar-gate-tide-overfit-pass-wsl-300ep), [NOTE-20260627-01](DISCUSSION_NOTES.md#note-20260627-01-gate-tide-overfit-plateau-and-open-hypotheses)
+
+---
+
 ## Session 2026-06-27 — AR Phase 0+1 + `gate-tide-overfit` failure
 
 ### NOTE-20260627-01: `gate-tide-overfit` plateau and open hypotheses
@@ -39,7 +67,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 - Label or mask bugs beyond attention (EOS step, padding, teacher-forcing alignment) — not ruled out.
 - Overfit hygiene: dropout off, LR, longer smoke before 300 ep.
 
-**Implication:** Do not advance to `gate-ar-decode` or multi-song until tide teacher-forced F1 ≈ 1.0. Next agent should separate **confirmed target stats** from **model collapse** via checkpoint prediction dumps and targeted ablations ([AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-debug-notes-2026-06-27)).
+**Implication:** Resolved in [NOTE-20260627-02](DISCUSSION_NOTES.md#note-20260627-02-gate-tide-overfit-resolution) / [EXP-20260627-04](EXPERIMENT_LOG.md#exp-20260627-04-ar-gate-tide-overfit-pass-wsl-300ep). Historical context only.
 
 **Related:** [EXP-20260627-01](EXPERIMENT_LOG.md#exp-20260627-01-ar-phase-01-implementation--tide-verify), [EXP-20260627-02](EXPERIMENT_LOG.md#exp-20260627-02-ar-gate-tide-overfit-wsl-300ep-tide)
 

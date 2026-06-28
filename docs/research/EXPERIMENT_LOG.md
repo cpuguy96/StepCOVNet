@@ -28,12 +28,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
-| **AR onset (`onset_ar/`)** | **Phase 0+1 implemented** (2026-06-27); **`gate-tide-overfit` failing** — see EXP-20260627-02, [AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-debug-notes-2026-06-27) |
+| **AR onset (`onset_ar/`)** | **`gate-tide-overfit` passed** (EXP-20260627-04); teacher-fed F1 **1.0** on tide — next: **`gate-ar-decode`** ([AR_ONSET_DESIGN.md §10.5](AR_ONSET_DESIGN.md#105-gate-tide-overfit-notes-2026-06-27)) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** Debug **`gate-tide-overfit`** on tide (token accuracy ~0.48 plateau, F1 ≪ 1.0) → commit mask fix if validated → re-run gate → `gate-ar-decode` → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol)).
+- **Track B (AR prototype):** **`gate-ar-decode`** on tide (scheduled sampling ramp) → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol)).
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -44,6 +44,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260627-04 | `train` + `model` | AR `gate-tide-overfit` pass (residual MSE + λ ramp) | **Supported** | `val_event_onset_f1` **1.0** @ ep 180+; debug 634/634 within 20 ms |
+| EXP-20260627-03 | `train` + `model` | AR tide overfit training fixes (class weights, argmax decode, λ ramp) | **Supported** | F1 **~0.83** (`gate_v4`); residual head untrained — see NOTE-20260627-02 |
 | EXP-20260627-02 | `train` + `model` | AR `gate-tide-overfit` WSL 300ep (tide) | **Fail** | Best `val_event_onset_f1` **~0.14**; `val_token_accuracy` **~0.48** plateau; gate not passed |
 | EXP-20260627-01 | `pre` + `model` | AR Phase 0+1 scaffold + tide verify | **Supported** | `onset_ar/` + `train_onset_ar.py`; tide batch loads (634 onsets, vocab 339) |
 | EXP-20260624-01 | `pre` + `train` | 10-song dense smoke via `training_index_path` | **Supported** | **10/10** train batches, 2 ep CPU; manifest-as-pointer OK |
@@ -89,6 +91,31 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260627-04: AR `gate-tide-overfit` pass (WSL 300ep)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-27 19:53:03 |
+| **Track** | `train` + `model` (AR) |
+| **Gate** | `gate-tide-overfit` — **PASS** |
+| **Config** | `configs/onset_ar_tide.json`; `lambda_time=1.0`, `lambda_time_ramp_epochs=100`, `lambda_residual=5.0`, `token_class_weight=inverse_freq`, `dropout_rate=0`, argmax decode |
+| **Log** | `logs/ar_tide_overfit_gate_v5.log` |
+| **Model** | `models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras` |
+| **Outcome** | Best/final `val_event_onset_f1` **1.0** (from ep ~180); `debug_ar_onset_overfit`: **634/634** within 20 ms, 0 patch errors |
+| **Conclusion** | Residual MSE (`lambda_residual=5`) required after pointer-only + λ ramp reached F1 ~0.83. Proceed to **`gate-ar-decode`**. |
+
+### EXP-20260627-03: AR tide overfit training fixes (λ ramp ablation)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-27 19:00:00 |
+| **Track** | `train` + `model` (AR) |
+| **Gate** | `gate-tide-overfit` — partial (**F1 ~0.83**, not pass) |
+| **Changes** | Class-weighted token CE, argmax F1/time decode, `dropout=0`, linear `lambda_time` ramp 0→1 over 100 ep |
+| **Log** | `logs/ar_tide_overfit_gate_v4.log` |
+| **Outcome** | Best `val_event_onset_f1` **~0.834**; pointer CE **~0.0015**; debug: **0** patch errors, **103** residual timing errors |
+| **Conclusion** | Pointer learns; residual head needs direct supervision — led to EXP-20260627-04. See [NOTE-20260627-02](DISCUSSION_NOTES.md#note-20260627-02-gate-tide-overfit-resolution). |
 
 ### EXP-20260627-02: AR `gate-tide-overfit` WSL 300ep (tide)
 

@@ -145,12 +145,22 @@ class ArOnsetTrainingModel(keras.Model):
         model_config = experiment_config.model
         self.patch_frames = model_config.patch_frames
         self.hop_sec = experiment_config.dataset.hop_sec
-        self.lambda_time = run_config.lambda_time
+        self.lambda_time_final = run_config.lambda_time
+        self.lambda_time_ramp_epochs = run_config.lambda_time_ramp_epochs
+        self.lambda_time = lambda_time_for_epoch(
+            -1,
+            lambda_time_final=self.lambda_time_final,
+            ramp_epochs=self.lambda_time_ramp_epochs,
+        )
         self.length_normalize_ce = run_config.length_normalize_ce
+        self.use_soft_pointer_time = run_config.use_soft_pointer_time
+        self.lambda_residual = run_config.lambda_residual
+        self.token_class_weights = self._build_token_class_weights(experiment_config)
         self.loss_tracker = keras.metrics.Mean(name="loss")
         self.token_loss_tracker = keras.metrics.Mean(name="token_loss")
         self.pointer_loss_tracker = keras.metrics.Mean(name="pointer_loss")
         self.time_loss_tracker = keras.metrics.Mean(name="time_loss")
+        self.residual_loss_tracker = keras.metrics.Mean(name="residual_loss")
         self.token_accuracy = keras.metrics.Mean(name="token_accuracy")
         self.event_f1_metric = ArEventOnsetF1Metric(
             tolerance_sec=run_config.tolerance_sec,
@@ -164,9 +174,32 @@ class ArOnsetTrainingModel(keras.Model):
             self.token_loss_tracker,
             self.pointer_loss_tracker,
             self.time_loss_tracker,
+            self.residual_loss_tracker,
             self.token_accuracy,
             self.event_f1_metric,
         ]
+
+    @staticmethod
+    def _build_token_class_weights(
+        experiment_config: config.ArExperimentConfig,
+    ) -> tf.Tensor | None:
+        """Precompute tide/overfit token CE weights from the single training batch."""
+        scheme = experiment_config.run.token_class_weight
+        if scheme == "none":
+            return None
+        batch_np = datasets.sample_to_training_batch(
+            datasets.load_overfit_sample(experiment_config),
+            experiment_config,
+        )
+        weights = losses.build_token_class_weights_numpy(
+            batch_np["decoder_target_ids"][0],
+            batch_np["decoder_mask"][0],
+            vocab_size=experiment_config.build_vocab().vocab_size,
+            scheme=scheme,
+        )
+        if weights is None:
+            return None
+        return tf.constant(weights, dtype=tf.float32)
 
     @staticmethod
     def _unpack_batch(data) -> dict[str, tf.Tensor]:
@@ -199,7 +232,10 @@ class ArOnsetTrainingModel(keras.Model):
             patch_frames=self.patch_frames,
             hop_sec=self.hop_sec,
             lambda_time=self.lambda_time,
+            lambda_residual=self.lambda_residual,
             length_normalize_ce=self.length_normalize_ce,
+            token_class_weights=self.token_class_weights,
+            use_soft_pointer_time=self.use_soft_pointer_time,
         )
         return total_loss, parts, outputs
 
@@ -214,6 +250,7 @@ class ArOnsetTrainingModel(keras.Model):
         self.token_loss_tracker.update_state(parts["token_loss"])
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
+        self.residual_loss_tracker.update_state(parts["residual_loss"])
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],
@@ -226,6 +263,7 @@ class ArOnsetTrainingModel(keras.Model):
             batch,
             patch_frames=self.patch_frames,
             hop_sec=self.hop_sec,
+            use_soft_expected=self.use_soft_pointer_time,
         )
         self.event_f1_metric.update_state(
             pred_times,
@@ -242,6 +280,7 @@ class ArOnsetTrainingModel(keras.Model):
         self.token_loss_tracker.update_state(parts["token_loss"])
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
+        self.residual_loss_tracker.update_state(parts["residual_loss"])
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],
@@ -254,6 +293,7 @@ class ArOnsetTrainingModel(keras.Model):
             batch,
             patch_frames=self.patch_frames,
             hop_sec=self.hop_sec,
+            use_soft_expected=self.use_soft_pointer_time,
         )
         self.event_f1_metric.update_state(
             pred_times,
@@ -281,6 +321,45 @@ def _get_experiment_name(experiment_config: config.ArExperimentConfig) -> str:
         f"enc{experiment_config.model.n_enc_layers}-"
         f"dec{experiment_config.model.n_dec_layers}"
     )
+
+
+def lambda_time_for_epoch(
+    epoch_index: int,
+    *,
+    lambda_time_final: float,
+    ramp_epochs: int,
+) -> float:
+    """Linear ramp of ``lambda_time`` from 0 to ``lambda_time_final``."""
+    if ramp_epochs <= 0:
+        return float(lambda_time_final)
+    if lambda_time_final <= 0.0:
+        return 0.0
+    progress = min(1.0, float(epoch_index + 1) / float(ramp_epochs))
+    return float(lambda_time_final) * progress
+
+
+class LambdaTimeRampCallback(keras.callbacks.Callback):
+    """Update ``ArOnsetTrainingModel.lambda_time`` each epoch."""
+
+    def __init__(
+        self,
+        training_model: ArOnsetTrainingModel,
+        *,
+        lambda_time_final: float,
+        ramp_epochs: int,
+    ) -> None:
+        super().__init__()
+        self.training_model = training_model
+        self.lambda_time_final = float(lambda_time_final)
+        self.ramp_epochs = int(ramp_epochs)
+
+    def on_epoch_begin(self, epoch: int, logs: dict | None = None) -> None:
+        _ = logs
+        self.training_model.lambda_time = lambda_time_for_epoch(
+            epoch,
+            lambda_time_final=self.lambda_time_final,
+            ramp_epochs=self.ramp_epochs,
+        )
 
 
 def train_ar_onset(
@@ -324,6 +403,15 @@ def train_ar_onset(
         )
         _save_config(experiment_config, run_config.callback_root_dir, callback_name)
         callbacks.extend(tb_callbacks)
+
+    if run_config.lambda_time_ramp_epochs > 0 and run_config.lambda_time > 0.0:
+        callbacks.append(
+            LambdaTimeRampCallback(
+                training_model,
+                lambda_time_final=run_config.lambda_time,
+                ramp_epochs=run_config.lambda_time_ramp_epochs,
+            ),
+        )
 
     history = training_model.fit(
         train_ds,
