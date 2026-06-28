@@ -20,6 +20,29 @@ class LossesTest(unittest.TestCase):
         assert weights is not None
         self.assertGreater(float(weights[50]), float(weights[83]))
 
+    def test_eos_weight_scale_reduces_eos_weight(self) -> None:
+        decoder_target_ids = np.asarray([83, targets.EOS_ID], dtype=np.int32)
+        decoder_mask = np.ones(2, dtype=np.float32)
+        base = losses.build_token_class_weights_numpy(
+            decoder_target_ids,
+            decoder_mask,
+            vocab_size=100,
+            scheme="inverse_freq",
+            eos_token_weight_scale=1.0,
+        )
+        scaled = losses.build_token_class_weights_numpy(
+            decoder_target_ids,
+            decoder_mask,
+            vocab_size=100,
+            scheme="inverse_freq",
+            eos_token_weight_scale=0.2,
+        )
+        assert base is not None and scaled is not None
+        self.assertAlmostEqual(
+            float(scaled[targets.EOS_ID]),
+            float(base[targets.EOS_ID]) * 0.2,
+        )
+
     def test_argmax_and_soft_predicted_times_differ_for_uniform_logits(self) -> None:
         pointer_logits = tf.zeros((1, 2, 4), dtype=tf.float32)
         residual_sec = tf.zeros((1, 2), dtype=tf.float32)
@@ -83,6 +106,7 @@ class LossesTest(unittest.TestCase):
             hop_sec=0.01,
             lambda_time=0.0,
             lambda_residual=0.0,
+            pointer_loss_weight=1.0,
             length_normalize_ce=True,
         )
         weighted, _ = losses.compute_ar_onset_loss(
@@ -92,6 +116,7 @@ class LossesTest(unittest.TestCase):
             hop_sec=0.01,
             lambda_time=0.0,
             lambda_residual=0.0,
+            pointer_loss_weight=1.0,
             length_normalize_ce=True,
             token_class_weights=token_class_weights,
         )
@@ -119,6 +144,7 @@ class LossesTest(unittest.TestCase):
             hop_sec=0.01,
             lambda_time=0.0,
             lambda_residual=5.0,
+            pointer_loss_weight=1.0,
             length_normalize_ce=True,
         )
         self.assertAlmostEqual(float(parts["residual_loss"].numpy()), 0.0, places=6)

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 
 from stepcovnet.onset_ar import config, datasets, trainers
 
@@ -98,14 +97,6 @@ def main() -> None:
 
     if not experiment_config.run.model_output_dir:
         PARSER.error("--model_output_dir is required (config or CLI)")
-
-    if experiment_config.run.scheduled_sampling_max_p > 0.0:
-        print(
-            "scheduled_sampling_max_p > 0 is Phase 3 (gate-ar-decode); "
-            "gate-tide-overfit uses teacher forcing only.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
     trainers.train_ar_onset(experiment_config)
 

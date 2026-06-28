@@ -31,7 +31,7 @@ _bootstrap_wsl_gpu()
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_ar import config, datasets, inference, trainers
+from stepcovnet.onset_ar import config, datasets, inference, models, targets, trainers
 
 PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.")
 PARSER.add_argument(
@@ -51,6 +51,17 @@ PARSER.add_argument(
     type=int,
     default=20,
     help="Number of largest-error onsets to include in the report.",
+)
+PARSER.add_argument(
+    "--ar_decode",
+    action="store_true",
+    help="Include free-running autoregressive decode diagnostics.",
+)
+PARSER.add_argument(
+    "--token_trace_steps",
+    type=int,
+    default=20,
+    help="With --ar_decode, log first N decode steps (pred vs target token).",
 )
 
 
@@ -188,6 +199,117 @@ def _worst_onsets(report: dict[str, object], worst_k: int) -> list[dict[str, flo
     return worst
 
 
+def _ar_decode_report(
+    model: tf.keras.Model,
+    batch_np: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+    token_trace_steps: int,
+) -> dict[str, object]:
+    """Free-running decode metrics and optional token trace."""
+    run_config = experiment_config.run
+    model_config = experiment_config.model
+    max_decoder_len = experiment_config.max_decoder_len()
+    mert = batch_np["mert_patches"]
+    patch_mask = batch_np["patch_mask"]
+    gt_times = batch_np["gt_times"][0][batch_np["gt_mask"][0] > 0.5]
+    gt_target = batch_np["decoder_target_ids"][0]
+    gt_mask = batch_np["decoder_mask"][0]
+
+    decode_stats = inference.decode_autoregressive_with_stats_numpy(
+        model,
+        mert,
+        patch_mask,
+        max_decoder_len=max_decoder_len,
+        patch_frames=model_config.patch_frames,
+        hop_sec=experiment_config.dataset.hop_sec,
+        experiment_config=experiment_config,
+    )
+    pred_times = decode_stats.times
+    pred_mask = np.ones(pred_times.shape, dtype=np.float32)
+    gt_mask_ones = np.ones(gt_times.shape, dtype=np.float32)
+    tp, fp, fn = trainers._ar_event_onset_counts_numpy(  # noqa: SLF001
+        pred_times,
+        pred_mask,
+        gt_times,
+        gt_mask_ones,
+        tolerance_sec=run_config.tolerance_sec,
+    )
+    precision = tp / (tp + fp + 1e-9)
+    recall = tp / (tp + fn + 1e-9)
+    event_f1 = 2.0 * precision * recall / (precision + recall + 1e-9)
+
+    report: dict[str, object] = {
+        "n_pred_onsets": int(pred_times.size),
+        "n_gt_onsets": int(gt_times.size),
+        "ar_decode_length": decode_stats.n_forward_steps,
+        "stopped_on_eos": decode_stats.stopped_on_eos,
+        "event_f1": float(event_f1),
+        "true_positives": int(tp),
+        "false_positives": int(fp),
+        "false_negatives": int(fn),
+    }
+
+    if token_trace_steps <= 0:
+        return report
+
+    built = models.build_ar_onset_model(experiment_config)
+    built.set_weights(model.get_weights())
+    encoder, decoder = models.build_ar_onset_inference_models(
+        built,
+        experiment_config,
+    )
+    mert_b = mert[0:1] if mert.ndim == 3 else mert[np.newaxis, ...]
+    pm_b = patch_mask[0:1] if patch_mask.ndim == 2 else patch_mask[np.newaxis, ...]
+    memory = encoder(
+        {"mert_patches": mert_b, "patch_mask": pm_b},
+        training=False,
+    ).numpy()
+    dec_in = np.zeros((1, max_decoder_len), dtype=np.int32)
+    dec_mask = np.zeros((1, max_decoder_len), dtype=np.float32)
+    dec_in[0, 0] = targets.BOS_ID
+    dec_mask[0, 0] = 1.0
+
+    trace: list[dict[str, int | bool]] = []
+    eos_at: int | None = None
+    n_valid = int((gt_mask > 0.5).sum())
+    for cur_len in range(1, min(n_valid + 2, token_trace_steps + 1)):
+        outputs = decoder(
+            {
+                "encoder_memory": memory,
+                "patch_mask": pm_b,
+                "decoder_input_ids": dec_in,
+                "decoder_mask": dec_mask,
+            },
+            training=False,
+        )
+        pos = cur_len - 1
+        pred = int(np.argmax(outputs["token_logits"].numpy()[0, pos]))
+        tgt = int(gt_target[pos])
+        trace.append(
+            {
+                "step": pos,
+                "input_id": int(dec_in[0, pos]),
+                "pred_id": pred,
+                "target_id": tgt,
+                "match": pred == tgt,
+            },
+        )
+        if pred == targets.EOS_ID:
+            eos_at = pos
+            break
+        dec_in[0, cur_len] = pred
+        dec_mask[0, cur_len] = 1.0
+
+    report["token_trace"] = trace
+    report["eos_at_step"] = eos_at
+    report["first_mismatch_step"] = next(
+        (row["step"] for row in trace if not row["match"]),
+        None,
+    )
+    return report
+
+
 def main() -> int:
     args = PARSER.parse_args()
     experiment_config = config.ArExperimentConfig.from_json(args.config)
@@ -207,6 +329,13 @@ def main() -> int:
     report = _diagnose_batch(outputs, batch_np, experiment_config=experiment_config)
     report["model_path"] = str(model_path)
     report["worst_onsets"] = _worst_onsets(report, args.worst_k)
+    if args.ar_decode:
+        report["ar_decode"] = _ar_decode_report(
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            token_trace_steps=args.token_trace_steps,
+        )
     for key in list(report):
         if key.startswith("_"):
             del report[key]

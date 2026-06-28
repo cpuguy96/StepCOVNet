@@ -220,6 +220,199 @@ def _transformer_decoder_block(
     return x
 
 
+def _encode_patches(
+    mert_patches: tf.Tensor,
+    patch_mask: tf.Tensor,
+    *,
+    max_patches: int,
+    d_model: int,
+    num_heads: int,
+    n_enc_layers: int,
+    dropout_rate: float,
+) -> tf.Tensor:
+    """Run the patch encoder stack and return memory."""
+    memory = keras.layers.Dense(d_model, name="patch_embed")(mert_patches)
+    memory = SinusoidalPositionEncoding(max_patches, d_model, name="enc_pos")(
+        memory,
+    )
+    enc_mask = PairwiseValidMask(name="enc_mask")(patch_mask)
+    for layer_idx in range(n_enc_layers):
+        memory = _transformer_encoder_block(
+            memory,
+            attention_mask=enc_mask,
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            name=f"enc_{layer_idx}",
+        )
+    return memory
+
+
+def _decode_from_memory(
+    memory: tf.Tensor,
+    patch_mask: tf.Tensor,
+    decoder_input_ids: tf.Tensor,
+    decoder_mask: tf.Tensor,
+    *,
+    max_decoder_len: int,
+    max_patches: int,
+    vocab_size: int,
+    d_model: int,
+    num_heads: int,
+    n_dec_layers: int,
+    dropout_rate: float,
+    patch_duration: float,
+) -> dict[str, tf.Tensor]:
+    """Run the causal decoder and return logits and residual outputs."""
+    token_embed = keras.layers.Embedding(
+        vocab_size,
+        d_model,
+        name="token_embed",
+    )
+    decoder = token_embed(decoder_input_ids)
+    decoder = SinusoidalPositionEncoding(
+        max_decoder_len,
+        d_model,
+        name="dec_pos",
+    )(decoder)
+
+    dec_self_mask = DecoderSelfAttentionMask(
+        max_decoder_len,
+        name="dec_self_mask",
+    )(decoder_mask)
+    cross_mask = CrossAttentionMask(name="cross_mask")([decoder_mask, patch_mask])
+    for layer_idx in range(n_dec_layers):
+        decoder = _transformer_decoder_block(
+            decoder,
+            memory,
+            self_attention_mask=dec_self_mask,
+            cross_attention_mask=cross_mask,
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            name=f"dec_{layer_idx}",
+        )
+
+    token_logits = keras.layers.Dense(vocab_size, name="token_logits")(decoder)
+    pointer_logits = keras.layers.Dense(max_patches, name="pointer_logits")(decoder)
+    pointer_logits = MaskPointerLogits(name="mask_pointer_logits")(
+        [pointer_logits, patch_mask],
+    )
+    residual_ratio = keras.layers.Dense(
+        1,
+        activation="sigmoid",
+        name="residual_ratio",
+    )(decoder)
+    residual_ratio = keras.layers.Reshape(
+        (max_decoder_len,), name="residual_ratio_flat"
+    )(
+        residual_ratio,
+    )
+    residual_sec = ScaleByPatchDuration(
+        patch_duration,
+        max_decoder_len,
+        name="residual_sec",
+    )(residual_ratio)
+    return {
+        "token_logits": token_logits,
+        "pointer_logits": pointer_logits,
+        "residual_sec": residual_sec,
+    }
+
+
+def build_ar_onset_inference_models(
+    full_model: keras.Model,
+    experiment_config: config.ArExperimentConfig,
+) -> tuple[keras.Model, keras.Model]:
+    """Encoder + decoder submodels sharing weights with ``full_model``."""
+    model_config = experiment_config.model
+    n_enc_layers = model_config.n_enc_layers
+    n_dec_layers = model_config.n_dec_layers
+    max_patches = experiment_config.max_encoder_patches()
+    max_decoder_len = experiment_config.max_decoder_len()
+    d_model = model_config.d_model
+
+    memory_tensor = full_model.get_layer(f"enc_{n_enc_layers - 1}_ln2").output
+    encoder = keras.Model(
+        inputs={
+            "mert_patches": full_model.input["mert_patches"],
+            "patch_mask": full_model.input["patch_mask"],
+        },
+        outputs=memory_tensor,
+        name="ar_onset_encoder_infer",
+    )
+
+    memory = keras.Input(
+        shape=(max_patches, d_model),
+        name="encoder_memory",
+        dtype=tf.float32,
+    )
+    patch_mask = keras.Input(
+        shape=(max_patches,),
+        name="patch_mask",
+        dtype=tf.float32,
+    )
+    decoder_input_ids = keras.Input(
+        shape=(max_decoder_len,),
+        name="decoder_input_ids",
+        dtype=tf.int32,
+    )
+    decoder_mask = keras.Input(
+        shape=(max_decoder_len,),
+        name="decoder_mask",
+        dtype=tf.float32,
+    )
+
+    decoder = full_model.get_layer("token_embed")(decoder_input_ids)
+    decoder = full_model.get_layer("dec_pos")(decoder)
+    dec_self_mask = full_model.get_layer("dec_self_mask")(decoder_mask)
+    cross_mask = full_model.get_layer("cross_mask")([decoder_mask, patch_mask])
+    for layer_idx in range(n_dec_layers):
+        prefix = f"dec_{layer_idx}"
+        self_attn = full_model.get_layer(f"{prefix}_self_attn")
+        self_out = self_attn(
+            query=decoder,
+            value=decoder,
+            key=decoder,
+            attention_mask=dec_self_mask,
+        )
+        decoder = full_model.get_layer(f"{prefix}_self_ln")(decoder + self_out)
+        cross_attn = full_model.get_layer(f"{prefix}_cross_attn")
+        cross_out = cross_attn(
+            query=decoder,
+            value=memory,
+            key=memory,
+            attention_mask=cross_mask,
+        )
+        decoder = full_model.get_layer(f"{prefix}_cross_ln")(decoder + cross_out)
+        ffn = full_model.get_layer(f"{prefix}_ffn")
+        decoder = full_model.get_layer(f"{prefix}_ffn_ln")(decoder + ffn(decoder))
+
+    token_logits = full_model.get_layer("token_logits")(decoder)
+    pointer_logits = full_model.get_layer("pointer_logits")(decoder)
+    pointer_logits = full_model.get_layer("mask_pointer_logits")(
+        [pointer_logits, patch_mask],
+    )
+    residual_ratio = full_model.get_layer("residual_ratio")(decoder)
+    residual_ratio = full_model.get_layer("residual_ratio_flat")(residual_ratio)
+    residual_sec = full_model.get_layer("residual_sec")(residual_ratio)
+    decoder_model = keras.Model(
+        inputs={
+            "encoder_memory": memory,
+            "patch_mask": patch_mask,
+            "decoder_input_ids": decoder_input_ids,
+            "decoder_mask": decoder_mask,
+        },
+        outputs={
+            "token_logits": token_logits,
+            "pointer_logits": pointer_logits,
+            "residual_sec": residual_sec,
+        },
+        name="ar_onset_decoder_infer",
+    )
+    return encoder, decoder_model
+
+
 def build_ar_onset_model(
     experiment_config: config.ArExperimentConfig,
 ) -> keras.Model:
@@ -254,73 +447,32 @@ def build_ar_onset_model(
         dtype=tf.float32,
     )
 
-    memory = keras.layers.Dense(d_model, name="patch_embed")(mert_patches)
-    memory = SinusoidalPositionEncoding(max_patches, d_model, name="enc_pos")(
-        memory,
-    )
-    enc_mask = PairwiseValidMask(name="enc_mask")(patch_mask)
-    for layer_idx in range(model_config.n_enc_layers):
-        memory = _transformer_encoder_block(
-            memory,
-            attention_mask=enc_mask,
-            d_model=d_model,
-            num_heads=num_heads,
-            dropout_rate=dropout_rate,
-            name=f"enc_{layer_idx}",
-        )
-
-    token_embed = keras.layers.Embedding(
-        vocab_size,
-        d_model,
-        name="token_embed",
-    )
-    decoder = token_embed(decoder_input_ids)
-    decoder = SinusoidalPositionEncoding(
-        max_decoder_len,
-        d_model,
-        name="dec_pos",
-    )(decoder)
-
-    dec_self_mask = DecoderSelfAttentionMask(
-        max_decoder_len,
-        name="dec_self_mask",
-    )(decoder_mask)
-    cross_mask = CrossAttentionMask(name="cross_mask")([decoder_mask, patch_mask])
-    for layer_idx in range(model_config.n_dec_layers):
-        decoder = _transformer_decoder_block(
-            decoder,
-            memory,
-            self_attention_mask=dec_self_mask,
-            cross_attention_mask=cross_mask,
-            d_model=d_model,
-            num_heads=num_heads,
-            dropout_rate=dropout_rate,
-            name=f"dec_{layer_idx}",
-        )
-
-    token_logits = keras.layers.Dense(vocab_size, name="token_logits")(decoder)
-    pointer_logits = keras.layers.Dense(max_patches, name="pointer_logits")(decoder)
-    pointer_logits = MaskPointerLogits(name="mask_pointer_logits")(
-        [pointer_logits, patch_mask],
-    )
-    residual_ratio = keras.layers.Dense(
-        1,
-        activation="sigmoid",
-        name="residual_ratio",
-    )(decoder)
-    residual_ratio = keras.layers.Reshape(
-        (max_decoder_len,), name="residual_ratio_flat"
-    )(
-        residual_ratio,
+    memory = _encode_patches(
+        mert_patches,
+        patch_mask,
+        max_patches=max_patches,
+        d_model=d_model,
+        num_heads=num_heads,
+        n_enc_layers=model_config.n_enc_layers,
+        dropout_rate=dropout_rate,
     )
     patch_duration = float(model_config.patch_frames) * float(
         experiment_config.dataset.hop_sec,
     )
-    residual_sec = ScaleByPatchDuration(
-        patch_duration,
-        max_decoder_len,
-        name="residual_sec",
-    )(residual_ratio)
+    outputs = _decode_from_memory(
+        memory,
+        patch_mask,
+        decoder_input_ids,
+        decoder_mask,
+        max_decoder_len=max_decoder_len,
+        max_patches=max_patches,
+        vocab_size=vocab_size,
+        d_model=d_model,
+        num_heads=num_heads,
+        n_dec_layers=model_config.n_dec_layers,
+        dropout_rate=dropout_rate,
+        patch_duration=patch_duration,
+    )
 
     return keras.Model(
         inputs={
@@ -329,10 +481,6 @@ def build_ar_onset_model(
             "decoder_input_ids": decoder_input_ids,
             "decoder_mask": decoder_mask,
         },
-        outputs={
-            "token_logits": token_logits,
-            "pointer_logits": pointer_logits,
-            "residual_sec": residual_sec,
-        },
+        outputs=outputs,
         name="ar_onset_model",
     )

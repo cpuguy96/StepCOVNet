@@ -77,6 +77,12 @@ class ArRunConfig(_DictSerializableMixin):
     token_class_weight: str = "none"
     use_soft_pointer_time: bool = False
     scheduled_sampling_max_p: float = 0.0
+    scheduled_sampling_ramp_epochs: int = 0
+    scheduled_sampling_warmup_epochs: int = 0
+    pointer_loss_weight: float = 1.0
+    eos_token_weight_scale: float = 1.0
+    ar_decode_val_every_n_epochs: int = 1
+    init_model_path: str = ""
     length_normalize_ce: bool = True
     tolerance_sec: float = 0.02
     min_onset_distance_ms: float = 50.0

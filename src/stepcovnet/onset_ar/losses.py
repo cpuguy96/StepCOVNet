@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import tensorflow as tf
 
+from stepcovnet.onset_ar import targets
+
 
 def build_token_class_weights_numpy(
     decoder_target_ids: np.ndarray,
@@ -12,13 +14,14 @@ def build_token_class_weights_numpy(
     *,
     vocab_size: int,
     scheme: str,
+    eos_token_weight_scale: float = 1.0,
 ) -> np.ndarray | None:
     """Return per-vocab-id CE weights for the active decoder targets."""
     if scheme == "none":
         return None
     mask = np.asarray(decoder_mask, dtype=np.float64).reshape(-1) > 0.5
-    targets = np.asarray(decoder_target_ids, dtype=np.int64).reshape(-1)[mask]
-    counts = np.bincount(targets, minlength=vocab_size).astype(np.float64)
+    target_ids = np.asarray(decoder_target_ids, dtype=np.int64).reshape(-1)[mask]
+    counts = np.bincount(target_ids, minlength=vocab_size).astype(np.float64)
     freq = counts / max(float(counts.sum()), 1.0)
     if scheme == "inverse_freq":
         weights = 1.0 / np.maximum(freq, 1e-6)
@@ -27,6 +30,8 @@ def build_token_class_weights_numpy(
     else:
         raise ValueError(f"unsupported token_class_weight scheme: {scheme!r}")
     weights = weights / max(float(weights.mean()), 1e-6)
+    if eos_token_weight_scale != 1.0:
+        weights[targets.EOS_ID] *= float(eos_token_weight_scale)
     return weights.astype(np.float32)
 
 
@@ -64,6 +69,7 @@ def compute_ar_onset_loss(
     hop_sec: float,
     lambda_time: float,
     lambda_residual: float,
+    pointer_loss_weight: float,
     length_normalize_ce: bool,
     token_class_weights: tf.Tensor | None = None,
     use_soft_pointer_time: bool = False,
@@ -115,9 +121,10 @@ def compute_ar_onset_loss(
     residual_sq = tf.square(residual_sec - target_residual_sec) * onset_step_mask
     residual_loss = tf.reduce_sum(residual_sq) / pointer_count
 
+    pointer_term = tf.cast(pointer_loss_weight, tf.float32) * pointer_loss
     total_loss = (
         token_loss
-        + pointer_loss
+        + pointer_term
         + tf.cast(lambda_time, tf.float32) * time_loss
         + tf.cast(lambda_residual, tf.float32) * residual_loss
     )
