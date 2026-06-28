@@ -13,7 +13,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |
 | Pre-push validation (same as CI) | [pre_submit.py](pre_submit.py) · [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml) |
 | Steering correction — how the agent decides / promotes lessons | [.cursor/skills/steering-correction-promotion/SKILL.md](.cursor/skills/steering-correction-promotion/SKILL.md) |
-| **Refresh agent brain** — audit rules, skills, catalogs | [.cursor/skills/agent-brain-refresh/SKILL.md](.cursor/skills/agent-brain-refresh/SKILL.md) |
+| **Refresh agent brain** / **refresh all rules** — audit rules, skills, catalogs | [.cursor/skills/agent-brain-refresh/SKILL.md](.cursor/skills/agent-brain-refresh/SKILL.md) |
 
 North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 

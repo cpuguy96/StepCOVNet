@@ -24,7 +24,7 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | WSL GPU training, MERT extract, TensorFlow CUDA on Windows               | wsl-gpu-stepcovnet        | [wsl-gpu-stepcovnet/SKILL.md](wsl-gpu-stepcovnet/SKILL.md)               |
 | agent mistake, process improvement, new repeated workflow                | agent-self-improvement    | [agent-self-improvement/SKILL.md](agent-self-improvement/SKILL.md)       |
 | steering correction, remember this, optimize agent brain / context       | steering-correction-promotion | [steering-correction-promotion/SKILL.md](steering-correction-promotion/SKILL.md) |
-| refresh agent brain, audit rules/skills, sync catalogs                   | agent-brain-refresh       | [agent-brain-refresh/SKILL.md](agent-brain-refresh/SKILL.md)               |
+| refresh all rules, refresh agent brain, audit rules/skills, sync catalogs | agent-brain-refresh       | [agent-brain-refresh/SKILL.md](agent-brain-refresh/SKILL.md)               |
 
 ## Agent brain (scoped rules)
 

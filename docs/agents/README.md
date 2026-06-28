@@ -24,5 +24,5 @@ Project context for Cursor agents — **not** research findings. Routed from [AG
 | Open decisions / gates | [DECISIONS_CHECKLIST.md](../research/DECISIONS_CHECKLIST.md) |
 | How to run a procedure (train, overfit, WSL, debug) | [.cursor/skills/README.md](../../.cursor/skills/README.md) |
 | Steering correction / agent brain optimization | [steering-correction-promotion/SKILL.md](../../.cursor/skills/steering-correction-promotion/SKILL.md) |
-| Refresh agent brain, audit rules and skills | [agent-brain-refresh/SKILL.md](../../.cursor/skills/agent-brain-refresh/SKILL.md) |
+| Refresh agent brain / refresh all rules, audit rules and skills | [agent-brain-refresh/SKILL.md](../../.cursor/skills/agent-brain-refresh/SKILL.md) |
 | Code style, tests, Python env | [agent-brain.md](agent-brain.md) — Cursor loads rules from `.cursor/rules/` |
