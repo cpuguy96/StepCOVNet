@@ -27,19 +27,11 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 | Event multi-song baseline     | `configs/event/audio_baseline.json`         |
 | Tide overfit suite            | `configs/overfit_tide/mert.json` (etc.)     |
 
-## Onset timing metrics (all tracks)
+## Onset timing metrics
 
-**Primary (compare models / pass gate):** `timing_match` — sorted predicted vs reference onsets; count ordered pairs with `|pred[i] − ref[i]| ≤ 20 ms`; score = **n_matched / max(n_pred, n_ref)** (e.g. **634/634** on tide overfit when counts match).
+See **[docs/research/ONSET_METRICS.md](../docs/research/ONSET_METRICS.md)** for the full definition (`timing_match`, gates, Hungarian F1 aux, per-track log names).
 
-| Track | Training / eval name | Offline script |
-| ----- | -------------------- | -------------- |
-| AR | `val_ordered_onset_match` (alias) | `debug_ar_onset_overfit.py` (`--ar_decode` for free-run) |
-| Dense | `val_timing_match` | `eval_dense_onset.py` → `micro_timing_match` |
-| Event | `timing_match` in diagnostic JSON | `debug_onset_overfit.py` |
-
-**Checkpoint (AR perfect overfit):** `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`.
-
-Hungarian `event_f1` / `val_event_onset_f1` remains **auxiliary** only.
+**Summary:** primary score = ordered match @ 20 ms, rate = `n_matched / max(n_pred, n_ref)`; tide overfit pass = **1.0** (634/634 when counts match).
 
 ## Migration (2026-06)
 

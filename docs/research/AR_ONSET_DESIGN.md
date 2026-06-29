@@ -552,7 +552,7 @@ Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
 
 **Run 1 observations:** Ep 1–6 early-EOS (`decode_length` **13** via offline `--ar_decode`); ep 7+ full chart (**633–635**). Token-only loss (v2 run 1) let teacher-fed `val_event_onset_f1` fall **1.0 → ~0.51** — recipe now restores full pointer/time/residual loss from `gate-tide-overfit`.
 
-**Pass criteria:** teacher-fed **634/634 ordered @ 20 ms** **and** free-run **634/634 ordered @ 20 ms** on tide (offline `--ar_decode`, two-pass). Hungarian F1 is auxiliary only. A relaxed **0.95** bar was rejected — single-chart overfit must reproduce the chart exactly ([NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
+**Pass criteria:** teacher-fed and free-run **timing_match rate 1.0** @ 20 ms on tide (offline `--ar_decode`, two-pass; **634/634** when `n_pred == n_ref == 634`). Hungarian F1 is auxiliary only. Spec: [ONSET_METRICS.md](ONSET_METRICS.md). A relaxed **0.95** bar was rejected — single-chart overfit must reproduce the chart exactly ([NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
 
 #### Perfect overfit metrics (`EXP-20260628-02`)
 

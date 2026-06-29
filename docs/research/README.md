@@ -9,6 +9,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 | File                                                                       | Role                                                          |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md)                       | **Target pipeline** — PRE → MODEL → POST → METRICS → feedback |
+| [ONSET_METRICS.md](ONSET_METRICS.md)                                       | **Onset metrics** — `timing_match` (primary), Hungarian F1 (aux), gates |
 | [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md)                       | **Raw simfile → `final_data`** — prep phases P0–P9 (complete) |
 | [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)                                     | **Authoritative** run log — § Current phase for routing (`EXP-YYYYMMDD-NN`) |
 | [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md)                                 | Conversation insights — newest first (`NOTE-YYYYMMDD-NN`)     |

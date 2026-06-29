@@ -35,8 +35,8 @@ flowchart LR
   POST --> LIST["Final onset list\n(times in seconds)"]
   LIST --> METRICS
   subgraph METRICS["METRICS — evaluation"]
-    E1[Hungarian match @ tolerance]
-    E2[TP / FP / FN → F1]
+    E1[Ordered timing_match @ tolerance]
+    E2[Optional Hungarian F1 aux]
     E1 --> E2
   end
   METRICS --> FEEDBACK["Training feedback\n(loss, val metrics)"]
@@ -52,7 +52,7 @@ audio
   → [MODEL]   frontend (if not pre-cached) → temporal encoder → head
               → raw outputs: K query slots OR dense frame probs OR AR token stream (+ pointer times)
   → [POST]    threshold / detokenize → sort → optional min-gap → sparse onset list
-  → [METRICS] match predictions to GT (Hungarian @ tolerance) → TP/FP/FN → F1
+  → [METRICS] ordered timing_match @ tolerance (primary); optional Hungarian F1 (aux)
   → training feedback (loss + val metrics) → updates MODEL (and optionally PRE if e2e)
 ```
 
@@ -111,17 +111,26 @@ audio
 
 ### METRICS — compare to ground truth
 
-**Input:** predictions (raw K slots or post-filtered list) + chart GT times + mask  
-**Output:** TP, FP, FN, precision, recall, F1
+**Canonical reference:** [ONSET_METRICS.md](ONSET_METRICS.md)
 
-| Setting             | Default          | Role                                               |
-| ------------------- | ---------------- | -------------------------------------------------- |
-| Match tolerance     | 20 ms            | Valid pred–GT pair if \|Δt\| ≤ tolerance           |
-| Matching            | Hungarian        | One-to-one, minimize total \|Δt\|                  |
-| Confidence gate     | 0.5              | Matched pred counts as TP only if conf ≥ threshold |
+**Input:** POST-exported sorted onset lists + chart GT  
+**Primary output:** `timing_match` rate = `n_matched / max(n_pred, n_ref)` at `tolerance_sec`
+
+| Setting | Default | Role |
+| ------- | ------- | ---- |
+| Match tolerance | 20 ms | Pair `i` matches if `\|pred[i] − ref[i]\| ≤ tolerance` |
+| Ordering | Sorted by time | `i`th pred vs `i`th ref — not Hungarian |
+| Count penalty | `max(n_pred, n_ref)` | Extra or missing onsets reduce rate |
+
+**Auxiliary (Hungarian event F1):**
+
+| Setting | Default | Role |
+| ------- | ------- | ---- |
+| Matching | Hungarian | One-to-one, minimize total \|Δt\| |
+| Confidence gate | 0.5 | TP only if conf ≥ threshold |
 | Min-gap metric path | 50 ms (optional) | `event_onset_f1_mingap` — post-filter before match |
 
-**Swappable:** tolerance, threshold, matching algorithm (train vs eval alignment), whether min-gap is in the primary metric.
+**Swappable:** tolerance, threshold, whether F1 or timing_match drives checkpointing (see [ONSET_METRICS.md § Choosing a metric](ONSET_METRICS.md#choosing-a-metric-for-an-experiment)).
 
 ---
 
@@ -153,7 +162,7 @@ audio
 | PRE features      | `onset_events/frontend.py`, `onset_events/preprocess.py` | Conv1d in-graph; mel/MERT `.npy` cache      |
 | MODEL             | `onset_events/encoder.py`, `onset_events/models.py`      | U-Net encoder + query head                  |
 | POST (inference)  | `onset_events/inference.py`                              | Threshold, sort, min-gap                    |
-| METRICS           | `onset_events/matching.py`, `onset_events/metrics.py`    | Hungarian eval, F1, mingap path             |
+| METRICS           | `timing_match.py`, `onset_events/matching.py`, `onset_events/metrics.py` | Primary ordered match; Hungarian F1 aux |
 | Training feedback | `onset_events/losses.py`, `onset_events/trainers.py`     | Combined loss, custom train/val steps       |
 | Diagnostics       | `onset_events/diagnostics.py`                            | Confidence/assignment sweeps on checkpoints |
 

@@ -32,9 +32,9 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Context:** Teacher Hungarian `event_f1` could read **1.0** while per-step timing was **633/634** @ 20 ms (residual error ~25 ms on one onset). That is not chart-perfect on a single-song overfit.
 
-**Decision:** On tide overfit, **primary** metrics are **`ordered_onset_match`** (teacher) and **`ar_decode_ordered_onset_match`** (free-run, two-pass): count of steps where `|pred[i] − gt[i]| ≤ 20 ms` out of **634**. Pass only at **634/634**. Hungarian `event_f1` remains logged as **aux**. `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`.
+**Decision:** On tide overfit, **primary** metrics are **`ordered_onset_match`** / **`timing_match`** (teacher) and **`ar_decode_ordered_onset_match`** (free-run, two-pass): ordered pairs with `|pred[i] − gt[i]| ≤ 20 ms`; rate = **`n_matched / max(n_pred, n_ref)`**. Pass only at **rate 1.0** (634/634 when counts match). Hungarian `event_f1` remains logged as **aux**. `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`. Full spec: [ONSET_METRICS.md](ONSET_METRICS.md).
 
-**Related:** `src/stepcovnet/onset_ar/trainers.py` (`ArOrderedOnsetMatchMetric`), `scripts/debug_ar_onset_overfit.py`
+**Related:** `src/stepcovnet/timing_match.py`, `src/stepcovnet/onset_ar/trainers.py` (`ArOrderedOnsetMatchMetric`), `scripts/debug_ar_onset_overfit.py`
 
 ---
 
