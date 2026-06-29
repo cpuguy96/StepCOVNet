@@ -1,0 +1,484 @@
+"""Write iteration experiment configs from the champion template."""
+
+from __future__ import annotations
+
+import copy
+import json
+import pathlib
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+CHAMPION = REPO / "configs" / "ar" / "tide_overfit.json"
+OUT = REPO / "logs" / "ar_tide_iter" / "configs"
+
+EXPERIMENTS: list[dict] = [
+    {
+        "id": "iter01",
+        "notes": "Resume champion weights; 150ep; early stop @ val_overfit_gate 0.9999",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit/ar_onset_model.keras",
+            "epochs": 150,
+            "perfect_overfit_early_stop": True,
+            "perfect_overfit_min_score": 0.9999,
+            "perfect_overfit_patience": 3,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter01",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter01",
+        },
+    },
+    {
+        "id": "iter02",
+        "notes": "Warm-start run2 (best decode length); v3 polish λ_res=10, no λ_inc, lr=1e-4",
+        "run": {
+            "init_model_path": "models_wsl/ar/perfect_overfit/run2/ar_onset_model.keras",
+            "lambda_time_ramp_epochs": 0,
+            "lambda_residual": 10.0,
+            "lambda_incremental_consistency": None,
+            "incremental_consistency_max_steps": None,
+            "learning_rate": 0.0001,
+            "epochs": 150,
+            "perfect_overfit_early_stop": True,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter02",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter02",
+        },
+    },
+    {
+        "id": "iter03",
+        "notes": "Resume champion; lower λ_inc=0.01; λ_res=12",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.01,
+            "lambda_residual": 12.0,
+            "learning_rate": 0.00003,
+            "epochs": 150,
+            "perfect_overfit_early_stop": True,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter03",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter03",
+        },
+    },
+    {
+        "id": "iter04",
+        "notes": "Warm-start run2; higher λ_inc=0.25",
+        "run": {
+            "init_model_path": "models_wsl/ar/perfect_overfit/run2/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.25,
+            "lambda_residual": 10.0,
+            "learning_rate": 0.00005,
+            "epochs": 150,
+            "perfect_overfit_early_stop": True,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter04",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter04",
+        },
+    },
+    {
+        "id": "iter05",
+        "notes": "Resume champion; drop λ_inc; λ_res=15; lr=2e-5",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit/ar_onset_model.keras",
+            "lambda_incremental_consistency": None,
+            "incremental_consistency_max_steps": None,
+            "lambda_residual": 15.0,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "perfect_overfit_early_stop": True,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter05",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter05",
+        },
+    },
+    {
+        "id": "iter06",
+        "notes": "Warm-start run2; eos_token_weight_scale=0.2 (discourage early EOS)",
+        "run": {
+            "init_model_path": "models_wsl/ar/perfect_overfit/run2/ar_onset_model.keras",
+            "eos_token_weight_scale": 0.2,
+            "lambda_incremental_consistency": 0.1,
+            "epochs": 150,
+            "perfect_overfit_early_stop": True,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter06",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter06",
+        },
+    },
+    {
+        "id": "iter07",
+        "notes": "From scratch v1 recipe capped 150ep (inverse_freq, λ ramp) — long shot free-run",
+        "run": {
+            "init_model_path": None,
+            "lambda_time_ramp_epochs": 100,
+            "lambda_residual": 5.0,
+            "token_class_weight": "inverse_freq",
+            "lambda_incremental_consistency": None,
+            "learning_rate": 0.002,
+            "epochs": 150,
+            "perfect_overfit_early_stop": True,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter07",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter07",
+        },
+    },
+    {
+        "id": "iter08",
+        "notes": "Resume iter01; NO early stop — full 150ep (teacher gate was stopping ~ep51)",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "learning_rate": 0.00005,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter08",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter08",
+        },
+    },
+    {
+        "id": "iter09",
+        "notes": "Resume iter01; no early stop; higher lambda_inc=0.2; lr=3e-5",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.2,
+            "learning_rate": 0.00003,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter09",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter09",
+        },
+    },
+    {
+        "id": "iter10",
+        "notes": "Resume iter01; no early stop; lambda_inc=0.3; lambda_res=12",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.3,
+            "lambda_residual": 12.0,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter10",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter10",
+        },
+    },
+    {
+        "id": "iter11",
+        "notes": "Resume champion; no early stop; full 150ep (baseline continuation)",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit/ar_onset_model.keras",
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter11",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter11",
+        },
+    },
+    {
+        "id": "iter12",
+        "notes": "Resume iter01; no early stop; incremental_consistency_max_steps=32",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "incremental_consistency_max_steps": 32,
+            "lambda_incremental_consistency": 0.15,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter12",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter12",
+        },
+    },
+    {
+        "id": "iter13",
+        "notes": "Resume iter01; in-loop AR decode val every 5ep; ckpt val_ar_decode_ordered; early stop val_ar_overfit_gate",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "ar_decode_val_every_n_epochs": 5,
+            "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+            "perfect_overfit_early_stop": True,
+            "perfect_overfit_min_score": 0.9999,
+            "perfect_overfit_patience": 3,
+            "learning_rate": 0.00003,
+            "epochs": 150,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter13",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter13",
+        },
+    },
+    {
+        "id": "iter14",
+        "notes": "Resume iter01; scheduled sampling p→0.4 over 120ep (warmup 20); no early stop",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "scheduled_sampling_max_p": 0.4,
+            "scheduled_sampling_ramp_epochs": 120,
+            "scheduled_sampling_warmup_epochs": 20,
+            "learning_rate": 0.00003,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter14",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter14",
+        },
+    },
+    {
+        "id": "iter15",
+        "notes": "Resume iter01; heavy λ_inc=0.4; max_steps=64; lr=2e-5",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.4,
+            "incremental_consistency_max_steps": 64,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter15",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter15",
+        },
+    },
+    {
+        "id": "iter16",
+        "notes": "Resume iter10 (612 free-run); AR decode val every 10ep; ckpt free-run metric",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter10/ar_onset_model.keras",
+            "ar_decode_val_every_n_epochs": 10,
+            "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter16",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter16",
+        },
+    },
+    {
+        "id": "iter17",
+        "notes": "Resume iter01; λ_inc=0.2 + AR decode every 10ep + early stop on val_ar_overfit_gate",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.2,
+            "incremental_consistency_max_steps": 32,
+            "ar_decode_val_every_n_epochs": 10,
+            "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+            "perfect_overfit_early_stop": True,
+            "perfect_overfit_min_score": 0.999,
+            "perfect_overfit_patience": 5,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter17",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter17",
+        },
+    },
+    {
+        "id": "iter18",
+        "notes": "Resume iter01; lambda_residual=20; lr=2e-5 polish",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "lambda_residual": 20.0,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter18",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter18",
+        },
+    },
+    {
+        "id": "iter19",
+        "notes": "Resume iter01; use_soft_pointer_time=true; lambda_inc=0.2",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "use_soft_pointer_time": True,
+            "lambda_incremental_consistency": 0.2,
+            "incremental_consistency_max_steps": 32,
+            "learning_rate": 0.00003,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter19",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter19",
+        },
+    },
+    {
+        "id": "iter20",
+        "notes": "Resume iter01; ultra-low lr=5e-6; 150ep micro-polish",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "learning_rate": 0.000005,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter20",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter20",
+        },
+    },
+    {
+        "id": "iter21",
+        "notes": "Resume iter01; SS p=0.2 warmup 50 ramp 80 + lambda_inc=0.15",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "scheduled_sampling_max_p": 0.2,
+            "scheduled_sampling_ramp_epochs": 80,
+            "scheduled_sampling_warmup_epochs": 50,
+            "lambda_incremental_consistency": 0.15,
+            "incremental_consistency_max_steps": 32,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter21",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter21",
+        },
+    },
+    {
+        "id": "iter22",
+        "notes": "Resume iter17 (614 free-run); full 150ep no early stop",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "learning_rate": 0.00002,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter22",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter22",
+        },
+    },
+    {
+        "id": "iter23",
+        "notes": "Resume iter17; lambda_inc=0.25 max_steps=48; lr=1.5e-5",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.25,
+            "incremental_consistency_max_steps": 48,
+            "learning_rate": 0.000015,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter23",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter23",
+        },
+    },
+    {
+        "id": "iter24",
+        "notes": "Resume iter17; AR decode every 5ep; ckpt free-run; lr=1e-5",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+            "ar_decode_val_every_n_epochs": 5,
+            "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+            "learning_rate": 0.00001,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter24",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter24",
+        },
+    },
+    {
+        "id": "iter25",
+        "notes": "Resume iter17; combine λ_inc=0.2 + λ_res=20 (iter17+iter18 recipe)",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.2,
+            "incremental_consistency_max_steps": 32,
+            "lambda_residual": 20.0,
+            "learning_rate": 0.000015,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter25",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter25",
+        },
+    },
+    {
+        "id": "iter26",
+        "notes": "Resume iter18 (614); add λ_inc=0.2 max_steps=32 from iter17",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter18/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.2,
+            "incremental_consistency_max_steps": 32,
+            "lambda_residual": 20.0,
+            "learning_rate": 0.000015,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter26",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter26",
+        },
+    },
+    {
+        "id": "iter27",
+        "notes": "Resume iter17; λ_inc=0.2 + λ_res=15 + lr=1.5e-5",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.2,
+            "incremental_consistency_max_steps": 32,
+            "lambda_residual": 15.0,
+            "learning_rate": 0.000015,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter27",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter27",
+        },
+    },
+    {
+        "id": "iter28",
+        "notes": "Resume iter21 (614); add λ_res=20; lr=1.5e-5 polish",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter21/ar_onset_model.keras",
+            "lambda_residual": 20.0,
+            "lambda_incremental_consistency": 0.15,
+            "incremental_consistency_max_steps": 32,
+            "scheduled_sampling_max_p": 0.2,
+            "scheduled_sampling_ramp_epochs": 80,
+            "scheduled_sampling_warmup_epochs": 50,
+            "learning_rate": 0.000015,
+            "epochs": 150,
+            "perfect_overfit_early_stop": False,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter28",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter28",
+        },
+    },
+    {
+        "id": "iter29",
+        "notes": "iter17 recipe (mistake: in-loop AR decode every 10; use iter30 offline)",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.2,
+            "incremental_consistency_max_steps": 32,
+            "ar_decode_val_every_n_epochs": 10,
+            "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+            "perfect_overfit_early_stop": True,
+            "perfect_overfit_min_score": 0.999,
+            "perfect_overfit_patience": 5,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter29",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter29",
+        },
+    },
+    {
+        "id": "iter30",
+        "notes": "iter17 recipe, offline AR decode only (champion policy)",
+        "run": {
+            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter01/ar_onset_model.keras",
+            "lambda_incremental_consistency": 0.2,
+            "incremental_consistency_max_steps": 32,
+            "ar_decode_val_every_n_epochs": 0,
+            "checkpoint_metric": "val_overfit_gate",
+            "perfect_overfit_early_stop": True,
+            "perfect_overfit_min_score": 0.999,
+            "perfect_overfit_patience": 5,
+            "learning_rate": 0.00002,
+            "epochs": 150,
+            "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter30",
+            "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter30",
+        },
+    },
+]
+
+
+def _strip_nones(run: dict) -> dict:
+    return {k: v for k, v in run.items() if v is not None}
+
+
+def main() -> None:
+    base = json.loads(CHAMPION.read_text(encoding="utf-8"))
+    OUT.mkdir(parents=True, exist_ok=True)
+    for spec in EXPERIMENTS:
+        cfg = copy.deepcopy(base)
+        run_updates = _strip_nones(spec["run"])
+        if run_updates.get("init_model_path") is None:
+            run_updates.pop("init_model_path", None)
+            cfg["run"].pop("init_model_path", None)
+        cfg["run"].update(run_updates)
+        for key in (
+            "lambda_incremental_consistency",
+            "incremental_consistency_max_steps",
+        ):
+            if (
+                key not in run_updates
+                and key in spec["run"]
+                and spec["run"][key] is None
+            ):
+                cfg["run"].pop(key, None)
+        path = OUT / f"{spec['id']}.json"
+        path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        print(path.relative_to(REPO))
+
+
+if __name__ == "__main__":
+    main()

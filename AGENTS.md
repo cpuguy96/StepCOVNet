@@ -9,6 +9,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | **Onset metrics** (`timing_match`, F1, gates) | [docs/research/ONSET_METRICS.md](docs/research/ONSET_METRICS.md) |
 | **AR onset design** (locked stack, gates, debug notes) | [docs/research/AR_ONSET_DESIGN.md](docs/research/AR_ONSET_DESIGN.md) |
 | **What's next** (current phase) | [docs/research/EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
+| **AR tide overfit overnight loop** (634/634 free-run) | [docs/agents/ar-tide-overnight-prompt.md](docs/agents/ar-tide-overnight-prompt.md) |
 | GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |
 | Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |

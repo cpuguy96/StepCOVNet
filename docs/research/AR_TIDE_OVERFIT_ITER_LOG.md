@@ -2,17 +2,20 @@
 
 Goal: free-run ordered **634/634 @ 20 ms**. Machine logs: `logs/ar_tide_iter/` (gitignored).
 
-Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-28T22:15 (session in progress)
+Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (session closed — handoff to overnight agent)
 
-## Session summary (as of iter27)
+## Session summary (closed 2026-06-29)
 
-|                          |                                                               |
-| ------------------------ | ------------------------------------------------------------- |
-| **Best free-run**        | **614/634 (96.85%)** — `iter17`, `iter18`, `iter21` (tied)    |
-| **Best checkpoint path** | `models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras` |
-| **Champion baseline**    | 611/634 (teacher 633/634)                                     |
-| **Experiments run**      | 27 configs (iter07/iter16/iter24 skipped or pending)          |
-| **Goal**                 | Not reached — 20 onsets still miss @ 20 ms tolerance          |
+| | |
+|--|--|
+| **Best free-run (offline)** | **614/634 (96.85%)** — `iter17`, `iter18`, `iter21` (tied) |
+| **Best checkpoint** | `models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras` |
+| **Champion baseline** | 611/634 offline re-eval (manifest lists 619/634) |
+| **Experiments run** | iter01–iter30 (iter29 aborted; iter30 offline-only → 612/634) |
+| **Goal** | **Not reached** — ~20 onsets miss @ 20 ms in free-run |
+| **Overnight handoff** | [docs/agents/ar-tide-overnight-prompt.md](../agents/ar-tide-overnight-prompt.md) — start at **iter31** |
+
+## Prior session notes (iter01–iter27)
 
 ### Failure mode (diagnostics on iter01)
 

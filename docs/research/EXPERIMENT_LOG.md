@@ -10,7 +10,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-06-28
+**Updated:** 2026-06-29
 
 ### Dataset prep (PRE ingestion)
 
@@ -33,7 +33,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) tracks best free-run (**619/634**, graduated from v7). **Agent iteration session (2026-06-28):** best **614/634** (`iter17`/`iter18`/`iter21`) — see [`AR_TIDE_OVERFIT_ITER_LOG.md`](AR_TIDE_OVERFIT_ITER_LOG.md). Promote any better version via `scripts/graduate_ar_tide_overfit.py`. Ultimate bar: offline **634/634** @ 20 ms.
+- **Track B (AR prototype):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json). Iteration session best **614/634** offline (`iter17`/`iter18`/`iter21`); `iter30` **612/634**. Harness: `scripts/ar_tide_iter/`. **Overnight agent:** [ar-tide-overnight-prompt.md](../agents/ar-tide-overnight-prompt.md) (start `iter31`, in-loop AR decode for research). Graduate via `scripts/graduate_ar_tide_overfit.py`. Bar: offline **634/634** @ 20 ms.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---

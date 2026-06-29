@@ -202,6 +202,8 @@ scripts/*
 !scripts/train_onset_ar.py
 !scripts/debug_ar_onset_overfit.py
 !scripts/graduate_ar_tide_overfit.py
+!scripts/ar_tide_iter/
+!scripts/ar_tide_iter/**
 !scripts/benchmark_ar_kv_decode.py
 !scripts/audit_agent_brain.py
 !scripts/visualize_arrow_data.py
