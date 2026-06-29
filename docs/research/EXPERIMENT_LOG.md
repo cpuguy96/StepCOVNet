@@ -33,7 +33,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** Champion config [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) (graduated from v1); best free-run experiment **v3** still **612/634** — see [`configs/ar/versions/tide_overfit/README.md`](../../configs/ar/versions/tide_overfit/README.md). Offline `--ar_decode` gate only ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28)).
+- **Track B (AR prototype):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) tracks best free-run (**619/634**, graduated from v7). Promote any better version via `scripts/graduate_ar_tide_overfit.py`. Ultimate bar: offline **634/634** @ 20 ms.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---

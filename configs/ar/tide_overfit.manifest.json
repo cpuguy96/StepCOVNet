@@ -1,0 +1,17 @@
+{
+  "graduated_from": "configs/ar/versions/tide_overfit/v7.json",
+  "updated": "2026-06-28",
+  "checkpoint": "models_wsl/ar/tide_overfit/ar_onset_model.keras",
+  "primary_metric": "ar_decode_ordered_onset_match",
+  "free_run": {
+    "n_matched": 619,
+    "n_denom": 634,
+    "rate": 0.9763406940063091
+  },
+  "teacher": {
+    "n_matched": 633,
+    "n_denom": 634,
+    "rate": 0.998422712915456
+  },
+  "notes": "Graduated from v7 (run5 weights). v1 teacher 634/634 but free-run 12/634; v3 free-run 612/634."
+}
