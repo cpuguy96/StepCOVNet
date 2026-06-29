@@ -4,12 +4,11 @@
 
 | Item | Value |
 | ---- | ----- |
-| **Goal** | Free-run **634/634** ordered onset match @ 20 ms on tide (no cheating) |
+| **Goal** | Free-run **634/634** ordered onset match @ 20 ms on tide (scratch train, no cheating) |
 | **Time budget** | ~7 hours unattended |
-| **Session best (offline)** | **614/634** — `iter17` / `iter18` / `iter21` (tied) |
-| **Last run** | `iter30` — offline **612/634** (iter17 recipe, teacher ckpt only) |
-| **Warm-start** | `models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras` |
-| **Next experiment id** | `iter31` |
+| **Scratch policy** | **Random init every run** — `init_model_path` is stripped; loading prior checkpoints is **cheating** |
+| **Last run** | `iter43` — scratch, teacher **56/634** @ 200 ep (SS=0.2, lr=2e-5) |
+| **Next experiment id** | `iter44` (agent picks via `session_brief.py`) |
 | **Harness** | `scripts/ar_tide_iter/` · log to `docs/research/AR_TIDE_OVERFIT_ITER_LOG.md` |
 | **Do not commit** | Anything under `logs/` |
 
@@ -34,6 +33,7 @@ You are an autonomous research agent on **StepCOVNet** (`master`). Your job for 
 
 Do **not** count success from:
 
+- **`init_model_path` / warm-start** — every tide iter run must memorize tide from **random init** on that single chart. Prior checkpoint weights are not allowed (harness strips `init_model_path`). Historical 614/634 runs that warm-started are **not** valid pass bars.
 - Teacher-forced / gold-prefix decode at eval time
 - `min length = n_gt` or other train-time length hacks (debug only per design doc)
 - `use_soft_pointer_time: true` or anything that leaks GT timing into decode
@@ -72,25 +72,26 @@ Same as champion — **offline AR decode only** (~0.5s val/epoch during training
 | Constraint | Value |
 |------------|-------|
 | Max epochs per run | **200** |
-| Early stop | **Required** on flat learning — do not burn 200 ep on dead configs |
-| GPU | **One WSL job at a time** — `wsl_gpu.assert_wsl_gpu_free_for_training()` is automatic |
-| Runs | Prefer **many small experiments** over one long run |
+| Early stop | Use when teacher is **climbing** and plateaus; **do not** early-stop a run still below teacher **0.99** on a single-song overfit |
+| GPU | **One job at a time** — file lock + `pgrep train_onset_ar` in WSL (see `training_lock.py`) |
+| Runs | Prefer **many experiments** over one long run; **never** leave old `run_overnight` shells running |
 
-**Kill / pivot heuristics:**
+**Kill / pivot heuristics (scratch):**
 
-- If `val_overfit_gate` flat **15–20 epochs** and teacher ordered match below **0.998**, stop and change hypothesis
-- If teacher ≥ 0.998 but offline free-run stuck &lt; 0.97 after polish → exposure-bias / decode-path issue, not more epochs
+- If `val_ordered_onset_match` **&lt; 0.5** after **~30 epochs**, stop and change recipe (iter43-style SS+low lr failed to memorize)
+- If teacher ≥ **0.999** but flat **15–20 epochs**, pivot decode/exposure recipe (e.g. add mild SS), not more epochs alone
+- If teacher ≥ **0.999** but offline free-run stuck **&lt; 0.97**, decode-path / exposure-bias issue — fix or tune `lambda_inc`, not warm-start
 
-### Warm starts
+### Scratch-only training (mandatory)
 
-| Checkpoint | Free-run (offline) | Notes |
-|------------|-------------------|-------|
-| `models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras` | **614/634** | `λ_inc=0.2`, `max_steps=32`, `lr=2e-5` |
-| `models_wsl/ar/tide_overfit_iter/iter18/ar_onset_model.keras` | **614/634** | `λ_residual=20` |
-| `models_wsl/ar/tide_overfit_iter/iter21/ar_onset_model.keras` | **614/634** | mild scheduled sampling |
-| `models_wsl/ar/tide_overfit/ar_onset_model.keras` | ~611–619 | champion baseline |
+Single-chart overfit **must** work from random initialization — that is the point of the tide gate. The harness merges overrides onto `configs/ar/tide_overfit.json` and **always removes** `init_model_path`.
 
-Every tide iter run trains **from scratch** (random init). Compare runs by recipe diffs and free-run score — not by chaining checkpoints.
+**First priority on scratch:** reach teacher **634/634** (memorize the chart) before tuning free-run decode. Typical order:
+
+1. **Memorize** — champion-like recipe: `learning_rate` **5e-5** (or **1e-4** if slow), **`scheduled_sampling_max_p: 0`**, `perfect_overfit_early_stop: false` until teacher perfect
+2. **Decode** — add mild scheduled sampling / `lambda_incremental_consistency` only after teacher is perfect
+
+Do **not** copy warm-start checkpoint paths from old log entries.
 
 ### Hypotheses
 
@@ -102,19 +103,25 @@ Use **session_brief** config diffs (`config_changes_vs_previous`, `last_run_vs_s
 
 ### How to run
 
-**Agent-driven overnight loop** (you reason; code does not pick knobs):
+**Unattended overnight (scratch auto-plan, recommended):**
+
+```text
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --hours 7
+```
+
+Loops until deadline or **634/634** free-run: `overnight_planner.py` ranks **all** session runs, picks a parent from the best outcomes (not just the last row), and searches neighbor recipes from values seen in champion + historical configs — no fixed hyperparameter ladder. One GPU job at a time.
+
+**Manual single experiment** (you write the plan):
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
 ```
 
-Read the brief + `docs/research/AR_TIDE_OVERFIT_ITER_LOG.md`, decide the next hypothesis from **config diffs and scores**, write `logs/ar_tide_iter/next_experiment.json` with **only the overrides you want to change** (see `next_experiment.example.json`), then:
+Write `logs/ar_tide_iter/next_experiment.json`, then:
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once
 ```
-
-Repeat until time budget or **634/634** free-run.
 
 **Single experiment** (when you already registered the recipe in `experiments.json`):
 
@@ -173,7 +180,7 @@ venv\Scripts\python.exe scripts/graduate_ar_tide_overfit.py ^
 6. Offline free-run only when teacher is perfect (automatic in `run_exp.py`)
 7. **634/634** free-run → `graduate_ar_tide_overfit.py` → stop
 
-Example reasoning: iter33 tied session best 614/634 with mild SS — next run trains from scratch with slightly higher `lambda_incremental_consistency` to test decode-time consistency, not λ_inc=0.35 (iter35 failed teacher gate).
+Example reasoning: iter43 scratch with SS=0.2 and lr=2e-5 only reached 56/634 teacher — iter44 returns to champion memorization defaults (lr=5e-5, no SS, full 200 ep) before any decode knobs.
 
 ### Stop conditions
 
@@ -187,4 +194,4 @@ Example reasoning: iter33 tied session best 614/634 with mild SS — next run tr
 - GPU override: `STEPCOVNET_FORCE_GPU=1` or `run_exp.py --force`
 - Skills: [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md)
 
-**Mandate:** debug + research, not blind hyperparameter spam. Teacher path proves representational capacity — the gap is **autoregressive decode fidelity**.
+**Mandate:** single-song overfit from **scratch** must reach teacher 634/634, then close free-run decode gap — no checkpoint chaining.

@@ -695,5 +695,160 @@
       "perfect_overfit_min_score": 0.999,
       "perfect_overfit_patience": 5
     }
+  },
+  {
+    "id": "iter43",
+    "notes": "Scratch train; iter36-class recipe (lambda_inc=0.15, SS=0.2, 32 inc steps)",
+    "run": {
+      "lambda_incremental_consistency": 0.15,
+      "incremental_consistency_max_steps": 32,
+      "scheduled_sampling_max_p": 0.2,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "learning_rate": 2e-05,
+      "lambda_residual": 10.0,
+      "epochs": 200,
+      "perfect_overfit_early_stop": true,
+      "perfect_overfit_min_score": 0.999,
+      "perfect_overfit_patience": 5,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter43",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter43"
+    }
+  },
+  {
+    "id": "iter44",
+    "notes": "Scratch memorization: champion lr, no SS, full 200ep",
+    "run": {
+      "learning_rate": 5e-05,
+      "scheduled_sampling_max_p": 0.0,
+      "perfect_overfit_early_stop": false,
+      "lambda_incremental_consistency": 0.1,
+      "incremental_consistency_max_steps": 16,
+      "lambda_residual": 10.0,
+      "epochs": 200,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter44",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter44"
+    }
+  },
+  {
+    "id": "iter45",
+    "notes": "Scratch memorization: lr=0.0001, no SS",
+    "run": {
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "scheduled_sampling_warmup_epochs": 50,
+      "scheduled_sampling_ramp_epochs": 80,
+      "perfect_overfit_early_stop": false,
+      "lambda_incremental_consistency": 0.1,
+      "incremental_consistency_max_steps": 16,
+      "lambda_residual": 10.0,
+      "epochs": 200,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter45",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter45"
+    }
+  },
+  {
+    "id": "iter46",
+    "notes": "Scratch memorization: lr=0.0002, lower lambda_inc",
+    "run": {
+      "learning_rate": 0.0002,
+      "scheduled_sampling_max_p": 0.0,
+      "scheduled_sampling_warmup_epochs": 50,
+      "scheduled_sampling_ramp_epochs": 80,
+      "perfect_overfit_early_stop": false,
+      "lambda_incremental_consistency": 0.05,
+      "incremental_consistency_max_steps": 16,
+      "lambda_residual": 10.0,
+      "epochs": 200,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter46",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter46"
+    }
+  },
+  {
+    "id": "iter47",
+    "notes": "Scratch search from iter45: ar_decode_val_every_n_epochs None->10, learning_rate 5e-05->0.0001, scheduled_sampling_ramp_epochs None->80, scheduled_sampling_warmup_epochs None->50",
+    "run": {
+      "learning_rate": 0.0001,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "ar_decode_val_every_n_epochs": 10,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter47",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter47"
+    }
+  },
+  {
+    "id": "iter48",
+    "notes": "Scratch search from iter45: ar_decode_val_every_n_epochs None->10, learning_rate 5e-05->0.0001, scheduled_sampling_ramp_epochs None->80, scheduled_sampling_warmup_epochs None->50",
+    "run": {
+      "learning_rate": 0.0001,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "ar_decode_val_every_n_epochs": 10,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter48",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter48"
+    }
+  },
+  {
+    "id": "iter49",
+    "notes": "Scratch search from iter44: checkpoint_metric 'val_overfit_gate'->'val_ar_decode_ordered_onset_match'",
+    "run": {
+      "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter49",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter49"
+    }
+  },
+  {
+    "id": "iter50",
+    "notes": "Scratch search from iter45: checkpoint_metric 'val_overfit_gate'->'val_ar_decode_ordered_onset_match', learning_rate 5e-05->0.0001, scheduled_sampling_ramp_epochs None->80, scheduled_sampling_warmup_epochs None->50",
+    "run": {
+      "learning_rate": 0.0001,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter50",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter50"
+    }
+  },
+  {
+    "id": "iter51",
+    "notes": "Scratch search from iter50: checkpoint_metric 'val_overfit_gate'->'val_ar_decode_ordered_onset_match', epochs 200->150, learning_rate 5e-05->0.0001, scheduled_sampling_ramp_epochs None->80, +1 more",
+    "run": {
+      "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+      "learning_rate": 0.0001,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "epochs": 150,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter51",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter51"
+    }
+  },
+  {
+    "id": "iter52",
+    "notes": "Scratch search from iter51: checkpoint_metric 'val_overfit_gate'->'val_ar_decode_ordered_onset_match', epochs 200->150, incremental_consistency_max_steps 16->32, learning_rate 5e-05->0.0001, +2 more",
+    "run": {
+      "checkpoint_metric": "val_ar_decode_ordered_onset_match",
+      "epochs": 150,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "incremental_consistency_max_steps": 32,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter52",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter52"
+    }
+  },
+  {
+    "id": "iter53",
+    "notes": "from iter45: incremental_consistency_max_steps=32, learning_rate=0.0001, scheduled_sampling_ramp_epochs=80, scheduled_sampling_warmup_epochs=50",
+    "run": {
+      "learning_rate": 0.0001,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "incremental_consistency_max_steps": 32,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "epochs": 200,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter53",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter53"
+    }
   }
 ]

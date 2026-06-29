@@ -717,3 +717,138 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session 
 | Free-run ordered | **614/634 (0.9685)** |
 | Decode steps | 636 |
 | Eval wall (s) | 93.08 |
+
+### iter42 (2026-06-29T04:01:54)
+
+**Hypothesis:** Adaptive: incremental_consistency_max_steps 32 -> 16; warm-start iter41; lambda_inc=0.1 steps=16.0 lambda_res=10.0 SS=0.2 lr=2e-05
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter42`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter42.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter42\ar_onset_model.keras` |
+| Train exit | 15 |
+| Train log | `logs\ar_tide_iter\train_logs\iter42.log` |
+| Error | checkpoint missing after train |
+
+### iter43 (2026-06-29T04:02:12)
+
+**Hypothesis:** Scratch train; iter36-class recipe (lambda_inc=0.15, SS=0.2, 32 inc steps)
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter43`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter43.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter43\ar_onset_model.keras` |
+| Train exit | 1 |
+| Train log | `logs\ar_tide_iter\train_logs\iter43.log` |
+| Error | checkpoint missing after train |
+
+### iter43 (2026-06-29T04:02:38)
+
+**Hypothesis:** Adaptive: incremental_consistency_max_steps 32 -> 16; warm-start iter41; lambda_inc=0.1 steps=16.0 lambda_res=10.0 SS=0.2 lr=2e-05
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter43`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter43.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter43\ar_onset_model.keras` |
+| Train exit | 9 |
+| Train log | `logs\ar_tide_iter\train_logs\iter43.log` |
+| Error | checkpoint missing after train |
+
+### iter43 · attempt 3 (2026-06-29T04:12:24)
+
+**Hypothesis:** 
+
+| | |
+|--|--|
+| Kind | retry — restart after killing duplicate GPU jobs |
+| Attempt | 3 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter43`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter43.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter43\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter43.attempt3.log` |
+| Error | teacher metrics not perfect (ordered=56/634 (0.0883), event_f1=0.1640); skipped free-run eval |
+
+### iter44 (2026-06-29T04:20:28)
+
+**Hypothesis:** Scratch memorization: champion lr, no SS, full 200ep
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter44`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter44.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter44\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter44.log` |
+| Error | teacher metrics not perfect (ordered=257/634 (0.4054), event_f1=0.4385); skipped free-run eval |
+
+### iter45 (2026-06-29T04:29:09)
+
+**Hypothesis:** Scratch memorization: lr=0.0001, no SS
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter45`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter45.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter45\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter45.log` |
+| Error | teacher metrics not perfect (ordered=492/634 (0.7760), event_f1=0.7571); skipped free-run eval |
+
+### iter48 (2026-06-29T04:33:05)
+
+**Hypothesis:** Scratch search from iter45: ar_decode_val_every_n_epochs None->10, learning_rate 5e-05->0.0001, scheduled_sampling_ramp_epochs None->80, scheduled_sampling_warmup_epochs None->50
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter48`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter48.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter48\ar_onset_model.keras` |
+| Train exit | 15 |
+| Train log | `logs\ar_tide_iter\train_logs\iter48.log` |
+| Error | checkpoint missing after train |
+
+### iter50 (2026-06-29T04:36:18)
+
+**Hypothesis:** Scratch search from iter45: checkpoint_metric 'val_overfit_gate'->'val_ar_decode_ordered_onset_match', learning_rate 5e-05->0.0001, scheduled_sampling_ramp_epochs None->80, scheduled_sampling_warmup_epochs None->50
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter50`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter50.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter50\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter50.log` |
+| Error | teacher metrics not perfect (ordered=492/634 (0.7760), event_f1=0.7571); skipped free-run eval |
+
+### iter51 (2026-06-29T04:38:53)
+
+**Hypothesis:** Scratch search from iter50: checkpoint_metric 'val_overfit_gate'->'val_ar_decode_ordered_onset_match', epochs 200->150, learning_rate 5e-05->0.0001, scheduled_sampling_ramp_epochs None->80, +1 more
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter51`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter51.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter51\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter51.log` |
+| Error | teacher metrics not perfect (ordered=357/634 (0.5631), event_f1=0.5599); skipped free-run eval |
