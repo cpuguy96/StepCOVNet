@@ -54,9 +54,9 @@ venv\Scripts\python.exe -m pytest tests/onset_ar/ -q --tb=short
 venv\Scripts\python.exe pre_submit.py --fast
 ```
 
-3. **Do not train** on unverified code — a 150-epoch run on a broken decode path wastes the whole GPU window.
+3. **Do not train** on unverified code — a 200-epoch run on a broken decode path wastes the whole GPU window.
 
-Config-only experiments (hyperparameters, init checkpoint, loss weights in JSON) need no new tests. **Logic fixes** (decode, losses, callbacks, metrics) always do.
+Config-only experiments (hyperparameters, loss weights in JSON) need no new tests. **Logic fixes** (decode, losses, callbacks, metrics) always do. Tide iteration never warm-starts (`init_model_path` is stripped).
 
 ### Research eval policy (overnight iteration)
 
@@ -71,8 +71,8 @@ Same as champion — **offline AR decode only** (~0.5s val/epoch during training
 
 | Constraint | Value |
 |------------|-------|
-| Max epochs per run | **150** |
-| Early stop | **Required** on flat learning — do not burn 150 ep on dead configs |
+| Max epochs per run | **200** |
+| Early stop | **Required** on flat learning — do not burn 200 ep on dead configs |
 | GPU | **One WSL job at a time** — `wsl_gpu.assert_wsl_gpu_free_for_training()` is automatic |
 | Runs | Prefer **many small experiments** over one long run |
 
@@ -90,19 +90,33 @@ Same as champion — **offline AR decode only** (~0.5s val/epoch during training
 | `models_wsl/ar/tide_overfit_iter/iter21/ar_onset_model.keras` | **614/634** | mild scheduled sampling |
 | `models_wsl/ar/tide_overfit/ar_onset_model.keras` | ~611–619 | champion baseline |
 
-Default init for new runs: **iter17** unless hypothesis needs otherwise.
+Every tide iter run trains **from scratch** (random init). Compare runs by recipe diffs and free-run score — not by chaining checkpoints.
 
-### Hypotheses (priority order)
+### Hypotheses
 
-1. **Decode-path bugs** — compare teacher vs `ar_decode` in `src/stepcovnet/onset_ar/`; fix + test if real bug found
-2. **Incremental consistency** — `λ_incremental_consistency` 0.2–0.35, `incremental_consistency_max_steps` 32–64
-3. **Residual head** — `lambda_residual` 15–30 with tuned `lr`
-4. **Scheduled sampling** — `scheduled_sampling_max_p` 0.1–0.3, warmup 50, ramp 80 (from iter17)
-5. **EOS / length** — `eos_token_weight_scale` (secondary; EOS not current failure mode)
+Use **session_brief** config diffs (`config_changes_vs_previous`, `last_run_vs_session_best`) and free-run scores — not a fixed knob checklist. Any key in `configs/ar/tide_overfit.json` or a prior snapshot is fair game (`run`, `model`, `dataset`). When code adds a new training feature, the new config key appears in the template and brief automatically.
+
+**Eval metrics stay fixed** across runs: free-run `ordered_onset_match` @ 20 ms, teacher gate before `--ar_decode`, `val_overfit_gate` for checkpointing. Compare runs only on those metrics.
 
 **Already tried (low yield):** heavy SS (`p=0.4`), `use_soft_pointer_time`, continuing iter17 without new recipe (iter22/23), iter17+offline-only ckpt alone (iter30 → 612/634).
 
 ### How to run
+
+**Agent-driven overnight loop** (you reason; code does not pick knobs):
+
+```text
+venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
+```
+
+Read the brief + `docs/research/AR_TIDE_OVERFIT_ITER_LOG.md`, decide the next hypothesis from **config diffs and scores**, write `logs/ar_tide_iter/next_experiment.json` with **only the overrides you want to change** (see `next_experiment.example.json`), then:
+
+```text
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once
+```
+
+Repeat until time budget or **634/634** free-run.
+
+**Single experiment** (when you already registered the recipe in `experiments.json`):
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/run_exp.py --id iter31 ^
@@ -149,12 +163,17 @@ venv\Scripts\python.exe scripts/graduate_ar_tide_overfit.py ^
 
 ### Loop (repeat until time or 634/634)
 
-1. GPU free → one hypothesis → `iterXX.json` (offline ckpt on `val_overfit_gate`)
-2. **If code changed:** write tests → `pytest` → `pre_submit.py --fast` → then train
-3. Train ≤150 ep, early stop if flat
-4. Record teacher peak `val_overfit_gate` from train log
-5. Offline `--ar_decode` after every run; confirm session bests
-6. Offline 634/634 → `graduate_ar_tide_overfit.py` → stop
+**You** choose each experiment. Do not march a fixed `iter34→iter38` queue and do not rely on Python to auto-mutate hyperparameters.
+
+1. `session_brief.py` — read session best, config diffs vs prior runs, val metrics, tried recipes
+2. Read `AR_TIDE_OVERFIT_ITER_LOG.md` for qualitative learnings
+3. **Decide** from diffs what to change next; write `next_experiment.json` with only those overrides plus `reasoning`
+4. **If code changed:** tests → `pre_submit.py --fast` → then train
+5. `run_overnight.py --once` — trains/evals the plan you wrote
+6. Offline free-run only when teacher is perfect (automatic in `run_exp.py`)
+7. **634/634** free-run → `graduate_ar_tide_overfit.py` → stop
+
+Example reasoning: iter33 tied session best 614/634 with mild SS — next run trains from scratch with slightly higher `lambda_incremental_consistency` to test decode-time consistency, not λ_inc=0.35 (iter35 failed teacher gate).
 
 ### Stop conditions
 

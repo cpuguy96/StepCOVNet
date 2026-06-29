@@ -45,3 +45,13 @@ New experiment (preferred for a different hypothesis):
 # add iter39 to experiments.json, then:
 venv\Scripts\python.exe scripts/ar_tide_iter/run_exp.py --id iter39
 ```
+
+## Agent-planned runs (overnight)
+
+The **agent** chooses the next recipe from training results — not a fixed queue and not auto-mutation code.
+
+1. `venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py`
+2. Agent writes `logs/ar_tide_iter/next_experiment.json` with **only the overrides** to apply (`run`, and optionally `model` / `dataset`). Diffs vs champion and prior runs are in the brief — there is no fixed knob list.
+3. `venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once`
+
+`run_overnight.py` registers the plan into `experiments.json`, archives it under `logs/ar_tide_iter/applied_plans/`, and calls `run_exp.py`. Eval metrics and gates stay fixed across runs (see `recipe_diff.FIXED_EVAL_METRICS`). **`init_model_path` is stripped** — each run trains from scratch.

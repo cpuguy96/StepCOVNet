@@ -27,7 +27,6 @@
     "eos_token_weight_scale": 1.0,
     "scheduled_sampling_max_p": 0.0,
     "use_soft_pointer_time": false,
-    "init_model_path": "models_wsl/ar/perfect_overfit/run2/ar_onset_model.keras",
     "learning_rate": 0.00005,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,

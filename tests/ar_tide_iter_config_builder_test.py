@@ -13,10 +13,7 @@ class ArTideIterConfigBuilderTest(unittest.TestCase):
 
         spec = config_builder.get_experiment("iter31")
         cfg = config_builder.build_config(spec)
-        self.assertEqual(
-            cfg["run"]["init_model_path"],
-            "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
-        )
+        self.assertNotIn("init_model_path", cfg["run"])
         self.assertEqual(cfg["run"]["checkpoint_metric"], "val_overfit_gate")
         self.assertEqual(
             cfg["run"]["model_output_dir"],
@@ -57,6 +54,44 @@ class ArTideIterConfigBuilderTest(unittest.TestCase):
             config_builder.config_path_for("iter31", 2).name,
             "iter31.attempt2.json",
         )
+
+    def test_prepare_experiment_spec_partial_run(self) -> None:
+        sys_path = str(REPO / "scripts" / "ar_tide_iter")
+        if sys_path not in __import__("sys").path:
+            __import__("sys").path.insert(0, sys_path)
+        import config_builder  # noqa: PLC0415
+
+        spec = config_builder.prepare_experiment_spec(
+            {
+                "id": "iter99",
+                "notes": "delta only",
+                "run": {"learning_rate": 1e-5},
+            },
+        )
+        cfg = config_builder.build_config(spec)
+        self.assertEqual(cfg["run"]["learning_rate"], 1e-5)
+        self.assertEqual(cfg["run"]["epochs"], 200)
+        self.assertNotIn("init_model_path", cfg["run"])
+
+    def test_prepare_experiment_spec_strips_init_model_path(self) -> None:
+        sys_path = str(REPO / "scripts" / "ar_tide_iter")
+        if sys_path not in __import__("sys").path:
+            __import__("sys").path.insert(0, sys_path)
+        import config_builder  # noqa: PLC0415
+
+        spec = config_builder.prepare_experiment_spec(
+            {
+                "id": "iter99",
+                "notes": "should not warm-start",
+                "run": {
+                    "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+                    "learning_rate": 1e-5,
+                },
+            },
+        )
+        self.assertNotIn("init_model_path", spec["run"])
+        cfg = config_builder.build_config(spec)
+        self.assertNotIn("init_model_path", cfg["run"])
 
     def test_run_blocks_equal_detects_recipe_change(self) -> None:
         sys_path = str(REPO / "scripts" / "ar_tide_iter")

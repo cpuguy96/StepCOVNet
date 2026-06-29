@@ -15,6 +15,8 @@ _NULLABLE_RUN_KEYS = (
     "lambda_incremental_consistency",
     "incremental_consistency_max_steps",
 )
+# Tide iteration trains from scratch — warm-start traps runs in local minima.
+_STRIP_RUN_KEYS = frozenset({"init_model_path"})
 
 
 def load_experiments() -> list[dict]:
@@ -40,15 +42,43 @@ def build_config(spec: dict) -> dict:
     """Merge a registry spec onto the champion template."""
     base = json.loads(CHAMPION.read_text(encoding="utf-8"))
     cfg = copy.deepcopy(base)
-    run_updates = _strip_nones(spec["run"])
-    if run_updates.get("init_model_path") is None:
-        run_updates.pop("init_model_path", None)
-        cfg["run"].pop("init_model_path", None)
-    cfg["run"].update(run_updates)
-    for key in _NULLABLE_RUN_KEYS:
-        if key not in run_updates and key in spec["run"] and spec["run"][key] is None:
-            cfg["run"].pop(key, None)
+    for section in ("dataset", "model", "run"):
+        if section not in spec:
+            continue
+        block = spec[section]
+        if not isinstance(block, dict):
+            continue
+        if section == "run":
+            run_updates = _strip_nones(block)
+            for key in _STRIP_RUN_KEYS:
+                run_updates.pop(key, None)
+            cfg["run"].update(run_updates)
+            for key in _NULLABLE_RUN_KEYS:
+                if key not in run_updates and key in block and block[key] is None:
+                    cfg["run"].pop(key, None)
+        else:
+            cfg[section].update(_strip_nones(block))
+    for key in _STRIP_RUN_KEYS:
+        cfg["run"].pop(key, None)
     return cfg
+
+
+def prepare_experiment_spec(plan: dict) -> dict:
+    """Normalize an agent plan: partial overrides + per-id artifact dirs."""
+    exp_id = str(plan["id"])
+    spec: dict = {
+        "id": exp_id,
+        "notes": str(plan.get("notes", "")),
+    }
+    for section in ("dataset", "model", "run"):
+        if section in plan and isinstance(plan[section], dict):
+            spec[section] = dict(plan[section])
+    run = spec.setdefault("run", {})
+    for key in _STRIP_RUN_KEYS:
+        run.pop(key, None)
+    run.setdefault("model_output_dir", f"models_wsl/ar/tide_overfit_iter/{exp_id}")
+    run.setdefault("callback_root_dir", f"callbacks/ar/tide_overfit_iter/{exp_id}")
+    return spec
 
 
 def config_path_for(exp_id: str, attempt: int = 1) -> pathlib.Path:
@@ -95,3 +125,42 @@ def write_config(
 def write_all_configs() -> list[pathlib.Path]:
     """Build current registry recipes (attempt-1 snapshots only)."""
     return [write_config(spec["id"], attempt=1) for spec in load_experiments()]
+
+
+def upsert_experiment(spec: dict) -> None:
+    """Insert or replace one registry entry (adaptive overnight loop)."""
+    experiments = load_experiments()
+    for index, entry in enumerate(experiments):
+        if entry["id"] == spec["id"]:
+            experiments[index] = spec
+            break
+    else:
+        experiments.append(spec)
+    EXPERIMENTS_PATH.write_text(
+        json.dumps(experiments, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def register_adaptive_experiment(
+    exp_id: str,
+    *,
+    notes: str,
+    run: dict | None = None,
+    model: dict | None = None,
+    dataset: dict | None = None,
+    plan: dict | None = None,
+) -> dict:
+    """Publish an agent-planned recipe to the registry and return the spec."""
+    if plan is not None:
+        spec = prepare_experiment_spec(plan)
+    else:
+        spec = {"id": exp_id, "notes": notes}
+        if run is not None:
+            spec["run"] = _strip_nones(run)
+        if model is not None:
+            spec["model"] = _strip_nones(model)
+        if dataset is not None:
+            spec["dataset"] = _strip_nones(dataset)
+    upsert_experiment(spec)
+    return spec

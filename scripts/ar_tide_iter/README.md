@@ -4,7 +4,11 @@ Train/eval loop for free-run **634/634 @ 20 ms** experiments on tide.
 
 | Path | Role |
 | ---- | ---- |
+| `scripts/ar_tide_iter/session_brief.py` | **Agent decision brief** — session best, config diffs vs prior runs, tried recipes |
+| `logs/ar_tide_iter/next_experiment.json` | **Agent-written** next plan (gitignored); see `next_experiment.example.json` |
+| `scripts/ar_tide_iter/run_overnight.py` | Runs the agent's `next_experiment.json` once (`--once`); does not pick knobs |
 | `scripts/ar_tide_iter/run_exp.py` | One experiment: build config, train (WSL GPU), offline `--ar_decode` eval, append logs |
+| `scripts/ar_tide_iter/results_history.py` | Parse `results.jsonl` and config snapshots for briefs |
 | `scripts/ar_tide_iter/experiments.json` | Registry — one recipe per id (tracked) |
 | `scripts/ar_tide_iter/experiments.README.md` | Registry vs retries vs config snapshots |
 | `scripts/ar_tide_iter/config_builder.py` | Merge registry + champion template → full config JSON |
@@ -13,12 +17,23 @@ Train/eval loop for free-run **634/634 @ 20 ms** experiments on tide.
 
 ## Quick start
 
+**Agent-driven session** (read results → you decide → run one plan):
+
+```text
+venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
+REM write logs/ar_tide_iter/next_experiment.json — only overrides to change (see next_experiment.example.json)
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once
+```
+
+**Single manual experiment** (recipe already in `experiments.json`):
+
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/run_exp.py --id iter31 ^
     --notes "overnight hypothesis"
 ```
 
 `run_exp.py` freezes a per-attempt config snapshot under `logs/ar_tide_iter/configs/`.
+**Scratch training:** `init_model_path` is never used for tide iteration — every run starts from random init (stripped in `config_builder`). Old registry entries may still list it for history; built configs omit it.
 To regenerate attempt-1 snapshots for every registry id without training:
 
 ```text
@@ -52,4 +67,4 @@ venv\Scripts\python.exe scripts/ar_tide_iter/show_status.py --id iter30 --watch
 
 `show_status` reads the gitignored train log and writes a snapshot to `logs/ar_tide_iter/status/<id>.json` (also gitignored — use the command above, not the file tree). Foreground `run_exp.py` also prints epoch lines and val metrics to the terminal.
 
-**One GPU workload at a time.** Before training, StepCOVNet queries WSL `nvidia-smi` for **any** active GPU compute process (`wsl_gpu.assert_wsl_gpu_free_for_training`). This runs automatically in `maybe_dispatch_for_training` and `train_onset_ar.py`. Override with `STEPCOVNET_FORCE_GPU=1` or `run_exp.py --force`.
+**One GPU workload at a time.** Before training, `run_exp.py` takes an exclusive lock at `logs/ar_tide_iter/gpu_training.lock` and checks WSL `nvidia-smi` (`training_lock.assert_gpu_training_available`). This prevents two shells (e.g. a manual `run_exp` loop and `run_overnight.py`) from starting training in the same race window. Override with `STEPCOVNET_FORCE_GPU=1` or `run_exp.py --force` only when you are sure no other iteration is running. Run **one** driver shell at a time — do not leave an old `run_overnight.py --hours` process running after switching to `--once`.

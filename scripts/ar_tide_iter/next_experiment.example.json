@@ -1,0 +1,8 @@
+{
+  "id": "iter40",
+  "notes": "One-line hypothesis for the iter log",
+  "reasoning": "Why this follows from session_best and the last run. Cite config diffs from session_brief, not a fixed knob list.",
+  "run": {
+    "lambda_incremental_consistency": 0.2
+  }
+}
