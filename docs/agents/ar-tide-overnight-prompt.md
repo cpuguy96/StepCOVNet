@@ -103,9 +103,21 @@ Use **session_brief** config diffs (`config_changes_vs_previous`, `last_run_vs_s
 
 ### How to run
 
-**Agent autoresearch (meaningful changes — recommended):**
+**One prompt (keep Cursor open — recommended):**
 
-Load [.cursor/skills/ar-tide-autoresearch/SKILL.md](../../.cursor/skills/ar-tide-autoresearch/SKILL.md), then each cycle:
+```text
+Run autoresearch.
+Profile: ar-tide-overfit
+Goal: scratch teacher 634/634 then free-run 634/634 on tide @ 20 ms.
+Budget: 7 hours.
+Go — do not ask me between runs.
+```
+
+Agent follows [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md) + [ar-tide-overfit profile](../../.cursor/skills/autoresearch/profiles/ar-tide-overfit.md). **Not** `run_overnight --hours`.
+
+**Agent autoresearch (manual steps):**
+
+Load [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md), then each cycle:
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py

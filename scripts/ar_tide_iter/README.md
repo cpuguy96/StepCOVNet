@@ -8,7 +8,8 @@ Train/eval loop for free-run **634/634 @ 20 ms** experiments on tide.
 | `logs/ar_tide_iter/next_experiment.json` | **Agent-written** next plan (gitignored); see `next_experiment.example.json` |
 | `scripts/ar_tide_iter/run_overnight.py` | Agent: `--once` + `next_experiment.json`; unattended: `--hours` (planner only) |
 | `scripts/ar_tide_iter/overnight_planner.py` | Unattended JSON lattice search (not for meaningful autoresearch) |
-| `.cursor/skills/ar-tide-autoresearch/SKILL.md` | **Agent autoresearch loop** — tiers, anti-spam, `--once` workflow |
+| `.cursor/skills/autoresearch/SKILL.md` | Generic one-prompt autoresearch loop |
+| `.cursor/skills/autoresearch/profiles/ar-tide-overfit.md` | Tide iter: brief, `next_experiment.json`, `--once` |
 | `scripts/ar_tide_iter/run_exp.py` | One experiment: build config, train (WSL GPU), offline `--ar_decode` eval, append logs |
 | `scripts/ar_tide_iter/results_history.py` | Parse `results.jsonl` and config snapshots for briefs |
 | `scripts/ar_tide_iter/experiments.json` | Registry — one recipe per id (tracked) |
