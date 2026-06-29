@@ -402,7 +402,9 @@ class ArOnsetTrainingModel(keras.Model):
         training: bool,
         decoder_input_ids: tf.Tensor | None = None,
     ) -> tuple[tf.Tensor, dict[str, tf.Tensor], dict[str, tf.Tensor]]:
-        use_incremental = self.lambda_incremental_consistency > 0.0
+        # Incremental consistency needs split encoder/decoder only while training.
+        # Validation and offline debug use the full ``base_model`` forward path.
+        use_incremental = self.lambda_incremental_consistency > 0.0 and training
         if use_incremental:
             memory, outputs = self._forward_parallel_infer(
                 batch,

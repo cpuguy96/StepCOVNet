@@ -2,9 +2,18 @@
 
 Goal: free-run ordered **634/634 @ 20 ms**. Machine logs: `logs/ar_tide_iter/` (gitignored).
 
-Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session — iter31+)
+Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session resumed — iter32+)
 
-## Overnight session (2026-06-29)
+## Overnight session (2026-06-29, resumed)
+
+| | |
+|--|--|
+| **Start** | iter32 — warm-start `iter17` (614/634 session best) |
+| **Last completed** | iter31 attempt 2 — **610/634** offline |
+| **Goal** | Free-run **634/634 @ 20 ms** |
+| **Budget** | ~7 h unattended |
+
+## Overnight session (2026-06-29, first pass)
 
 | | |
 |--|--|
@@ -530,3 +539,39 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session 
 | Free-run ordered | **610/634 (0.9621)** |
 | Decode steps | 636 |
 | Eval wall (s) | 106.26 |
+
+### iter32 (2026-06-29T03:10:39)
+
+**Hypothesis:** Resume iter17; λ_inc=0.25 max_steps=48; offline ckpt
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter32`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter32.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter32\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter32.log` |
+| Teacher ordered | 633/634 (0.9984) |
+| Free-run ordered | **611/634 (0.9637)** |
+| Decode steps | 636 |
+| Eval wall (s) | 100.41 |
+
+### iter33 (2026-06-29T03:14:24)
+
+**Hypothesis:** Resume iter17; mild SS p=0.15 + λ_inc=0.15; offline ckpt
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter33`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter33.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter33\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter33.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **614/634 (0.9685)** |
+| Decode steps | 636 |
+| Eval wall (s) | 90.63 |

@@ -3,7 +3,8 @@ import unittest
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_ar import config, datasets, models, targets, trainers
+from stepcovnet import timing_match
+from stepcovnet.onset_ar import config, datasets, losses, models, targets, trainers
 
 
 def _tiny_experiment_config() -> config.ArExperimentConfig:
@@ -150,6 +151,91 @@ class TrainersTest(unittest.TestCase):
         )
         metrics = training_model.train_step((tf_batch,))
         self.assertIn("incremental_consistency_loss", metrics)
+
+    def test_test_step_metrics_match_base_model_with_incremental_loss(self) -> None:
+        """Val metrics must use full-model forward (same path as offline debug)."""
+        experiment_config = _tiny_experiment_config()
+        experiment_config.run.overfit_one_song = True
+        experiment_config.run.lambda_incremental_consistency = 1.0
+        experiment_config.run.incremental_consistency_max_steps = 4
+        times = np.asarray([0.05, 0.12, 0.20], dtype=np.float64)
+        token_seq = targets.encode_onset_times(
+            times,
+            duration_sec=1.0,
+            hop_sec=experiment_config.dataset.hop_sec,
+            patch_frames=experiment_config.model.patch_frames,
+            vocab=experiment_config.build_vocab(),
+            max_steps=16,
+        )
+        sample = datasets.ArSample(
+            mert_patches=np.random.randn(3, experiment_config.patch_input_dim()).astype(
+                np.float32,
+            ),
+            n_patches=3,
+            n_frames=10,
+            duration_sec=1.0,
+            token_seq=token_seq,
+            gt_times_sec=times.astype(np.float32),
+            audio_path="a.ogg",
+            chart_path="a.txt",
+        )
+        batch = datasets.sample_to_training_batch(sample, experiment_config)
+        tf_batch = {key: tf.constant(value) for key, value in batch.items()}
+
+        base_model = models.build_ar_onset_model(experiment_config)
+        training_model = trainers.ArOnsetTrainingModel(
+            base_model,
+            experiment_config=experiment_config,
+        )
+        training_model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+        )
+        val_metrics = training_model.test_step((tf_batch,))
+
+        model_inputs = training_model._model_inputs(tf_batch)  # noqa: SLF001
+        outputs = base_model(model_inputs, training=False)
+        pred_times = losses.predicted_times_from_outputs(
+            outputs["pointer_logits"],
+            outputs["residual_sec"],
+            patch_frames=experiment_config.model.patch_frames,
+            hop_sec=experiment_config.dataset.hop_sec,
+            use_soft_expected=False,
+        )
+        pred_np = pred_times.numpy()[0]
+        mask = batch["onset_step_mask"][0] > 0.5
+        pred_kept = pred_np[mask]
+        target_kept = batch["target_times"][0][mask]
+        n_matched, n_ref = timing_match.timing_match_counts_numpy(
+            pred_kept,
+            target_kept,
+            tolerance_sec=experiment_config.run.tolerance_sec,
+        )
+        expected_ordered = timing_match.timing_match_rate_from_counts(
+            n_matched,
+            int(pred_kept.size),
+            n_ref,
+        )
+        tp, fp, fn = trainers._ar_event_onset_counts_numpy(  # noqa: SLF001
+            pred_np,
+            batch["onset_step_mask"][0],
+            batch["gt_times"][0],
+            batch["gt_mask"][0],
+            tolerance_sec=experiment_config.run.tolerance_sec,
+        )
+        precision = tp / (tp + fp + 1e-9)
+        recall = tp / (tp + fn + 1e-9)
+        expected_f1 = 2.0 * precision * recall / (precision + recall + 1e-9)
+
+        self.assertAlmostEqual(
+            float(val_metrics["ordered_onset_match"].numpy()),
+            expected_ordered,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            float(val_metrics["event_onset_f1"].numpy()),
+            expected_f1,
+            places=5,
+        )
 
 
 if __name__ == "__main__":

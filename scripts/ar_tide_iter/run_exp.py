@@ -32,6 +32,7 @@ from training_log import (  # noqa: E402
     count_logged_attempts,
     format_log_heading,
     run_kind,
+    teacher_report_perfect,
     train_log_path,
 )
 
@@ -143,7 +144,12 @@ def _parse_eval_json(blob: str) -> dict:
     return json.loads(blob[start:])
 
 
-def _eval(config: pathlib.Path, model_path: pathlib.Path) -> dict:
+def _eval(
+    config: pathlib.Path,
+    model_path: pathlib.Path,
+    *,
+    ar_decode: bool = False,
+) -> dict:
     cmd = [
         str(PY),
         str(DEBUG),
@@ -151,9 +157,10 @@ def _eval(config: pathlib.Path, model_path: pathlib.Path) -> dict:
         str(config.relative_to(REPO)),
         "--model_path",
         str(model_path.relative_to(REPO)),
-        "--ar_decode",
         "--json-only",
     ]
+    if ar_decode:
+        cmd.append("--ar_decode")
     t0 = time.perf_counter()
     proc = subprocess.run(
         cmd,
@@ -388,11 +395,31 @@ def main() -> int:
             _append_logs(_log_entry(error="checkpoint missing after train"))
             return 1
 
-    print(f"[{args.id}] eval free-run")
-    report = _eval(config, model_path)
-    teacher = report.get("ordered_onset_match", {})
-    free = report["ar_decode"]["ordered_onset_match"]
+    print(f"[{args.id}] eval teacher-fed")
+    teacher_report = _eval(config, model_path, ar_decode=False)
+    teacher = teacher_report.get("ordered_onset_match", {})
     t_str = f"{teacher.get('n_matched')}/{teacher.get('n_denom')} ({teacher.get('rate'):.4f})"
+    event_f1 = float(teacher_report.get("event_f1", 0.0))
+
+    if not teacher_report_perfect(teacher_report):
+        msg = (
+            "teacher metrics not perfect "
+            f"(ordered={t_str}, event_f1={event_f1:.4f}); "
+            "skipped free-run eval"
+        )
+        print(msg, file=sys.stderr)
+        _append_logs(
+            _log_entry(
+                error=msg,
+                teacher=t_str,
+                teacher_event_f1=round(event_f1, 6),
+            ),
+        )
+        return 1
+
+    print(f"[{args.id}] eval free-run")
+    report = _eval(config, model_path, ar_decode=True)
+    free = report["ar_decode"]["ordered_onset_match"]
     f_str = f"{free.get('n_matched')}/{free.get('n_denom')} ({free.get('rate'):.4f})"
     passed = (
         int(free.get("n_matched", 0)) == 634

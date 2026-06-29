@@ -17,7 +17,42 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _PROGRESS_RE = re.compile(r"[\u2580-\u259f\u2500-\u257f]")
 _EPOCH_RE = re.compile(r"^Epoch (\d+)/(\d+)$")
 _ATTEMPT_LOG_RE = re.compile(r"\.attempt(\d+)\.log$")
-_VAL_KEYS = ("val_overfit_gate", "val_ordered_onset_match", "val_loss")
+_VAL_KEYS = (
+    "val_overfit_gate",
+    "val_ordered_onset_match",
+    "val_event_onset_f1",
+    "val_token_accuracy",
+    "val_loss",
+)
+
+TEACHER_PERFECT_EPS = 1e-6
+
+
+def teacher_metrics_perfect(metrics: dict[str, float]) -> bool:
+    """True when in-loop teacher-fed metrics are all 1.0 (tide overfit bar)."""
+    required = (
+        "val_token_accuracy",
+        "val_ordered_onset_match",
+        "val_event_onset_f1",
+        "val_overfit_gate",
+    )
+    if not all(key in metrics for key in required):
+        return False
+    return all(float(metrics[key]) >= 1.0 - TEACHER_PERFECT_EPS for key in required)
+
+
+def teacher_report_perfect(report: dict) -> bool:
+    """True when offline teacher-fed eval hits the perfect-overfit bar."""
+    ordered = report.get("ordered_onset_match", {})
+    if not isinstance(ordered, dict):
+        return False
+    n_matched = int(ordered.get("n_matched", 0))
+    n_denom = int(ordered.get("n_denom", 0))
+    if n_matched != n_denom or n_denom <= 0:
+        return False
+    rate = float(ordered.get("rate", 0.0))
+    event_f1 = float(report.get("event_f1", 0.0))
+    return rate >= 1.0 - TEACHER_PERFECT_EPS and event_f1 >= 1.0 - TEACHER_PERFECT_EPS
 
 
 def count_logged_attempts(exp_id: str) -> int:
@@ -172,7 +207,18 @@ def format_status(status: dict) -> str:
         lines.append(
             "val_overfit_gate={val_overfit_gate:.4f} "
             "val_ordered_onset_match={val_ordered_onset_match:.4f} "
-            "val_loss={val_loss:.4f}".format(**last_val)
+            "val_event_onset_f1={val_event_onset_f1:.4f} "
+            "val_token_accuracy={val_token_accuracy:.4f} "
+            "val_loss={val_loss:.4f}".format(
+                val_overfit_gate=last_val.get("val_overfit_gate", 0.0),
+                val_ordered_onset_match=last_val.get(
+                    "val_ordered_onset_match",
+                    0.0,
+                ),
+                val_event_onset_f1=last_val.get("val_event_onset_f1", 0.0),
+                val_token_accuracy=last_val.get("val_token_accuracy", 0.0),
+                val_loss=last_val.get("val_loss", 0.0),
+            )
         )
     if status.get("last_error"):
         lines.append(f"ERROR: {status['last_error']}")

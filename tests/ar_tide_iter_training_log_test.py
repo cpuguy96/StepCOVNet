@@ -64,6 +64,56 @@ class ArTideIterTrainingLogTest(unittest.TestCase):
             self.assertEqual(training_log.count_logged_attempts("iter31"), 2)
             self.assertEqual(training_log.count_logged_attempts("iter32"), 1)
 
+    def test_teacher_metrics_perfect_requires_all_val_keys(self) -> None:
+        training_log = self._import_training_log()
+        self.assertFalse(
+            training_log.teacher_metrics_perfect(
+                {
+                    "val_token_accuracy": 1.0,
+                    "val_ordered_onset_match": 0.9984,
+                    "val_event_onset_f1": 1.0,
+                    "val_overfit_gate": 0.9984,
+                },
+            ),
+        )
+        self.assertTrue(
+            training_log.teacher_metrics_perfect(
+                {
+                    "val_token_accuracy": 1.0,
+                    "val_ordered_onset_match": 1.0,
+                    "val_event_onset_f1": 1.0,
+                    "val_overfit_gate": 1.0,
+                },
+            ),
+        )
+
+    def test_teacher_report_perfect_requires_full_ordered_match(self) -> None:
+        training_log = self._import_training_log()
+        self.assertFalse(
+            training_log.teacher_report_perfect(
+                {
+                    "ordered_onset_match": {
+                        "n_matched": 633,
+                        "n_denom": 634,
+                        "rate": 633 / 634,
+                    },
+                    "event_f1": 1.0,
+                },
+            ),
+        )
+        self.assertTrue(
+            training_log.teacher_report_perfect(
+                {
+                    "ordered_onset_match": {
+                        "n_matched": 634,
+                        "n_denom": 634,
+                        "rate": 1.0,
+                    },
+                    "event_f1": 1.0,
+                },
+            ),
+        )
+
     def test_train_log_path_versions_attempts(self) -> None:
         training_log = self._import_training_log()
         with tempfile.TemporaryDirectory() as tmp:
