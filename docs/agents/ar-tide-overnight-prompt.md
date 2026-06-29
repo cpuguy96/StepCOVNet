@@ -42,6 +42,22 @@ Do **not** count success from:
 
 Scheduled sampling during **training** is allowed. Inference must be **pure free-run** `ar_decode`.
 
+### Code changes (hard rule — before any GPU training)
+
+Any change to **`src/`**, **`scripts/`** (other than iteration JSON configs under `logs/`), or training/eval behavior:
+
+1. **Add or update tests** that cover the changed behavior (prefer `tests/onset_ar/` for AR stack).
+2. **Run and pass** targeted pytest **before** starting a WSL training job:
+
+```text
+venv\Scripts\python.exe -m pytest tests/onset_ar/ -q --tb=short
+venv\Scripts\python.exe pre_submit.py --fast
+```
+
+3. **Do not train** on unverified code — a 150-epoch run on a broken decode path wastes the whole GPU window.
+
+Config-only experiments (hyperparameters, init checkpoint, loss weights in JSON) need no new tests. **Logic fixes** (decode, losses, callbacks, metrics) always do.
+
 ### Research eval policy (overnight iteration)
 
 For **this research loop** (differs from champion `configs/ar/tide_overfit.json`):
@@ -133,15 +149,15 @@ venv\Scripts\python.exe scripts/graduate_ar_tide_overfit.py ^
 | `docs/research/EXPERIMENT_LOG.md` | Bug fixes or graduation only |
 | `logs/` | Machine output — **never commit** |
 
-**Commits:** code fixes with tests (`pre_submit.py --fast`); batch research-log updates every few hours or on session best. No `logs/`, no checkpoints.
+**Commits:** code fixes **only with passing tests** (`pytest` + `pre_submit.py --fast`); batch research-log updates every few hours or on session best. No `logs/`, no checkpoints.
 
 ### Loop (repeat until time or 634/634)
 
 1. GPU free → one hypothesis → `iterXX.json` (in-loop decode, free-run ckpt)
-2. Train ≤150 ep, early stop if flat
-3. Record in-loop peak `val_ar_decode_ordered_onset_match`
-4. New session best → offline `--ar_decode`
-5. Bug found → fix + pytest → minimal repro
+2. **If code changed:** write tests → `pytest` → `pre_submit.py --fast` → then train
+3. Train ≤150 ep, early stop if flat
+4. Record in-loop peak `val_ar_decode_ordered_onset_match`
+5. New session best → offline `--ar_decode`
 6. Offline 634/634 → `graduate_ar_tide_overfit.py` → stop
 
 ### Stop conditions

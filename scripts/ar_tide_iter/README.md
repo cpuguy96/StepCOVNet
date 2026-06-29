@@ -22,7 +22,7 @@ Primary metric: `ar_decode.ordered_onset_match` @ 20 ms tolerance (634 onsets).
 
 **Champion policy** (`configs/ar/tide_overfit.json`): `ar_decode_val_every_n_epochs: 0`, `checkpoint_metric: val_overfit_gate`.
 
-**Overnight research policy** ([ar-tide-overnight-prompt.md](../../docs/agents/ar-tide-overnight-prompt.md)): in-loop decode every 5–10 ep, checkpoint on `val_ar_decode_ordered_onset_match`, offline confirm on session bests only.
+**Overnight research policy** ([ar-tide-overnight-prompt.md](../../docs/agents/ar-tide-overnight-prompt.md)): in-loop decode every 5–10 ep, checkpoint on `val_ar_decode_ordered_onset_match`, offline confirm on session bests only. **Code changes require tests + pytest before GPU training.**
 
 ## Watching a run
 
