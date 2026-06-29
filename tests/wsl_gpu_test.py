@@ -59,6 +59,41 @@ class WslGpuTest(unittest.TestCase):
         ):
             wsl_gpu.require_tensorflow_gpu()
 
+    def test_wsl_gpu_compute_busy_when_active_apps(self):
+        with mock.patch.object(
+            wsl_gpu,
+            "active_wsl_gpu_compute_apps",
+            return_value=[(17, "python", "620 MiB")],
+            autospec=True,
+        ):
+            self.assertTrue(wsl_gpu.wsl_gpu_compute_busy())
+
+    def test_active_compute_apps_skip_dead_pids(self):
+        with (
+            mock.patch.object(
+                wsl_gpu,
+                "list_wsl_gpu_compute_apps",
+                return_value=[(99, "python", "100 MiB")],
+                autospec=True,
+            ),
+            mock.patch.object(
+                wsl_gpu, "wsl_pid_is_alive", return_value=False, autospec=True
+            ),
+        ):
+            self.assertEqual(wsl_gpu.active_wsl_gpu_compute_apps(), [])
+
+    def test_assert_wsl_gpu_free_raises_when_busy(self):
+        with (
+            mock.patch.object(
+                wsl_gpu,
+                "active_wsl_gpu_compute_apps",
+                return_value=[(17, "python", "620 MiB")],
+                autospec=True,
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            wsl_gpu.assert_wsl_gpu_free_for_training()
+
 
 if __name__ == "__main__":
     unittest.main()

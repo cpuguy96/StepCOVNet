@@ -112,6 +112,8 @@ def main() -> None:
     if not experiment_config.run.model_output_dir:
         PARSER.error("--model_output_dir is required (config or CLI)")
 
+    wsl_gpu.assert_wsl_gpu_free_for_training()
+
     trainers.train_ar_onset(experiment_config)
 
 

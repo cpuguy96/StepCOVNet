@@ -38,7 +38,7 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-28T22:15 (session in p
 
 - WSL `pkg_resources` missing mid-session — fixed with `pip install setuptools` in `~/stepcovnet-venv-wsl`.
 - **Fixed (2026-06-29):** in-loop `val_ar_decode_ordered_onset_match` logged **0.0** because `test_step` reset/published AR-decode metrics before `ArDecodeValidationCallback` ran — broke checkpoint-on-free-run. See `src/stepcovnet/onset_ar/trainers.py` (`_batch_metrics` excludes callback-only metrics).
-- Harness: `logs/ar_tide_iter/run_exp.py`, configs `logs/ar_tide_iter/build_configs.py`.
+- Harness: `scripts/ar_tide_iter/run_exp.py`, `scripts/ar_tide_iter/build_configs.py` (outputs under `logs/ar_tide_iter/`).
 
 ---
 
@@ -443,3 +443,42 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-28T22:15 (session in p
 | Free-run ordered | **611/634 (0.9637)**                                          |
 | Decode steps     | 636                                                           |
 | Eval wall (s)    | 103.72                                                        |
+
+### iter29 (2026-06-29T02:19:16)
+
+**Hypothesis:** iter17 recipe retry post trainer fix (AR decode ckpt)
+
+| | |
+|--|--|
+| Config | `logs\ar_tide_iter\configs\iter29.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter29\ar_onset_model.keras` |
+| Train exit | 15 |
+| Train log | `logs\ar_tide_iter\train_logs\iter29.log` |
+| Error | checkpoint missing after train |
+
+### iter29 (2026-06-29T02:28:26)
+
+**Hypothesis:** iter17 recipe retry post trainer fix (AR decode ckpt)
+
+| | |
+|--|--|
+| Config | `logs\ar_tide_iter\configs\iter29.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter29\ar_onset_model.keras` |
+| Train exit | 15 |
+| Train log | `logs\ar_tide_iter\train_logs\iter29.log` |
+| Error | checkpoint missing after train |
+
+### iter30 (2026-06-29T02:32:39)
+
+**Hypothesis:** iter17 recipe, offline decode only (replaces iter29)
+
+| | |
+|--|--|
+| Config | `logs\ar_tide_iter\configs\iter30.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter30\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter30.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **612/634 (0.9653)** |
+| Decode steps | 636 |
+| Eval wall (s) | 104.86 |

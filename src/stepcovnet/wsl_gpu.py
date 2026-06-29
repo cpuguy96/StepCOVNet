@@ -349,6 +349,103 @@ def maybe_dispatch_for_mert_extract(script_rel: str, argv: list[str]) -> bool:
     raise SystemExit(code)
 
 
+def _query_wsl_bash(
+    command: str, *, timeout: float = 30.0
+) -> subprocess.CompletedProcess[str]:
+    """Run a bash command in WSL from Windows, or locally when already in WSL."""
+    if is_windows():
+        return subprocess.run(
+            ["wsl", "-e", "bash", "-lc", command],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    return subprocess.run(
+        ["bash", "-lc", command],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def wsl_pid_is_alive(pid: int) -> bool:
+    """Return whether ``pid`` exists in the WSL/Linux process table."""
+    if pid <= 0:
+        return False
+    result = _query_wsl_bash(f"test -d /proc/{pid}")
+    return result.returncode == 0
+
+
+def list_wsl_gpu_compute_apps() -> list[tuple[int, str, str]]:
+    """Return WSL GPU compute processes as ``(pid, name, used_memory)``."""
+    result = _query_wsl_bash(
+        "nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory "
+        "--format=csv,noheader",
+    )
+    if result.returncode != 0:
+        return []
+    apps: list[tuple[int, str, str]] = []
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        parts = [part.strip() for part in stripped.split(",")]
+        if len(parts) < 3 or parts[0] in {"", "[N/A]"}:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        apps.append((pid, parts[1], parts[2]))
+    return apps
+
+
+def active_wsl_gpu_compute_apps() -> list[tuple[int, str, str]]:
+    """Compute apps with live PIDs (filters stale ``nvidia-smi`` rows)."""
+    return [
+        (pid, name, used_mem)
+        for pid, name, used_mem in list_wsl_gpu_compute_apps()
+        if wsl_pid_is_alive(pid)
+    ]
+
+
+def wsl_gpu_compute_busy() -> bool:
+    """Return True when any process holds the WSL GPU for compute."""
+    return bool(active_wsl_gpu_compute_apps())
+
+
+def wsl_gpu_training_busy() -> bool:
+    """Return True when the WSL GPU already has an active compute workload."""
+    return wsl_gpu_compute_busy()
+
+
+def gpu_force_enabled() -> bool:
+    """Return True when ``STEPCOVNET_FORCE_GPU=1`` (skip busy-GPU guard)."""
+    return os.environ.get("STEPCOVNET_FORCE_GPU") == "1"
+
+
+def _format_compute_apps(apps: list[tuple[int, str, str]]) -> str:
+    if not apps:
+        return "none"
+    return ", ".join(f"{name}:{pid} ({used})" for pid, name, used in apps)
+
+
+def assert_wsl_gpu_free_for_training(*, force: bool | None = None) -> None:
+    """Raise ``RuntimeError`` when the WSL GPU already has a compute workload."""
+    if force is None:
+        force = gpu_force_enabled()
+    if force or not wsl_gpu_compute_busy():
+        return
+    apps = active_wsl_gpu_compute_apps()
+    raise RuntimeError(
+        "WSL GPU is in use "
+        f"({len(apps)} active compute process(es): {_format_compute_apps(apps)}). "
+        "Wait for the current workload to finish or set STEPCOVNET_FORCE_GPU=1."
+    )
+
+
 def maybe_dispatch_for_training(script_rel: str, argv: list[str]) -> bool:
     """Dispatch TensorFlow training to WSL on Windows when a GPU is available.
 
@@ -363,5 +460,6 @@ def maybe_dispatch_for_training(script_rel: str, argv: list[str]) -> bool:
         return False
     if not wsl_gpu_available():
         return False
+    assert_wsl_gpu_free_for_training()
     code = run_script_in_wsl(script_rel, argv)
     raise SystemExit(code)
