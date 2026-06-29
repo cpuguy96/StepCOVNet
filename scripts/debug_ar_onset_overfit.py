@@ -42,6 +42,7 @@ _bootstrap_wsl_gpu()
 import numpy as np
 import tensorflow as tf
 
+from stepcovnet import timing_match
 from stepcovnet.onset_ar import config, datasets, inference, targets, trainers
 
 PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.")
@@ -124,27 +125,27 @@ def _ordered_onset_report(
     *,
     tolerance_sec: float,
 ) -> dict[str, float | int]:
-    n_matched, n_gt = trainers.ordered_onset_match_counts_numpy(
+    report = timing_match.timing_match_report(
         pred_times,
         target_times,
         tolerance_sec=tolerance_sec,
     )
-    rate = float(n_matched) / float(n_gt) if n_gt else 0.0
     return {
-        "n_matched": int(n_matched),
-        "n_gt": int(n_gt),
-        "rate": rate,
+        "n_matched": int(report["n_matched"]),
+        "n_pred": int(report["n_pred"]),
+        "n_gt": int(report["n_ref"]),
+        "n_ref": int(report["n_ref"]),
+        "n_denom": int(report["n_denom"]),
+        "rate": float(report["rate"]),
     }
 
 
 def _ordered_gate_line(block: dict[str, object], *, tol_ms: float) -> str:
     n_matched = int(block["n_matched"])
-    n_gt = int(block["n_gt"])
-    status = "PASS" if n_matched == n_gt and n_gt > 0 else "FAIL"
-    return (
-        f"Ordered @ {tol_ms:.0f} ms: {n_matched}/{n_gt} "
-        f"({float(block['rate']):.4f}) — {status}"
-    )
+    n_denom = int(block.get("n_denom", block["n_gt"]))
+    rate = float(block["rate"])
+    status = "PASS" if rate >= 1.0 - 1e-9 and n_denom > 0 else "FAIL"
+    return f"Ordered @ {tol_ms:.0f} ms: {n_matched}/{n_denom} ({rate:.4f}) — {status}"
 
 
 def _print_teacher_summary(
@@ -269,7 +270,7 @@ def _print_debug_summary(
     assert isinstance(ordered, dict)
     _log(
         f"Primary metric: ordered onset match @ {tolerance_sec * 1000.0:.0f} ms "
-        f"({int(ordered['n_matched'])}/{int(ordered['n_gt'])})",
+        f"({int(ordered['n_matched'])}/{int(ordered['n_denom'])})",
         quiet=quiet,
     )
     _print_teacher_summary(report, tolerance_sec=tolerance_sec, quiet=quiet)
@@ -369,6 +370,7 @@ def _diagnose_batch(
 
     return {
         "n_onsets": int(pred_times.size),
+        "timing_match": ordered,
         "ordered_onset_match": ordered,
         "event_f1": float(event_f1),
         "true_positives": int(tp),
@@ -569,13 +571,15 @@ def _ar_decode_report(
             tolerance_sec=run_config.tolerance_sec,
         )
 
+    ordered = _ordered_onset_report(
+        gate_stats.times,
+        gt_times,
+        tolerance_sec=run_config.tolerance_sec,
+    )
     report: dict[str, object] = {
         "timing_mode": "two_pass",
-        "ordered_onset_match": _ordered_onset_report(
-            gate_stats.times,
-            gt_times,
-            tolerance_sec=run_config.tolerance_sec,
-        ),
+        "timing_match": ordered,
+        "ordered_onset_match": ordered,
         "ar_decode_length": gate_stats.n_forward_steps,
         "stopped_on_eos": gate_stats.stopped_on_eos,
         **_event_f1_report(

@@ -9,10 +9,13 @@ import keras
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import reproducibility
+from stepcovnet import reproducibility, timing_match
 from stepcovnet.onset_ar import config, datasets, inference, losses, models
 from stepcovnet.onset_events import matching
 from stepcovnet.onset_events import trainers as event_trainers
+
+ordered_onset_match_counts_numpy = timing_match.timing_match_counts_numpy
+ordered_onset_match_rate_numpy = timing_match.timing_match_rate_numpy
 
 
 def _ar_event_onset_counts_numpy(
@@ -67,81 +70,9 @@ def _ar_event_onset_counts_numpy_wrapper(
     )
 
 
-def ordered_onset_match_counts_numpy(
-    pred_times: np.ndarray,
-    target_times: np.ndarray,
-    *,
-    tolerance_sec: float,
-) -> tuple[int, int]:
-    """Per-step onset match: ``pred[i]`` vs ``target[i]`` within tolerance.
-
-    Returns ``(n_matched, n_gt)``. Extra or missing predictions reduce the rate
-    because only ``min(n_pred, n_gt)`` pairs are compared against ``n_gt``.
-    """
-    pred = np.asarray(pred_times, dtype=np.float64).reshape(-1)
-    target = np.asarray(target_times, dtype=np.float64).reshape(-1)
-    n_gt = int(target.size)
-    if n_gt == 0:
-        return 0, 0
-    n_compare = min(int(pred.size), n_gt)
-    if n_compare == 0:
-        return 0, n_gt
-    diffs = np.abs(pred[:n_compare] - target[:n_compare])
-    n_matched = int(np.sum(diffs <= tolerance_sec))
-    return n_matched, n_gt
-
-
-def ordered_onset_match_rate_numpy(
-    pred_times: np.ndarray,
-    target_times: np.ndarray,
-    *,
-    tolerance_sec: float,
-) -> float:
-    n_matched, n_gt = ordered_onset_match_counts_numpy(
-        pred_times,
-        target_times,
-        tolerance_sec=tolerance_sec,
-    )
-    if n_gt == 0:
-        return 0.0
-    return float(n_matched) / float(n_gt)
-
-
-def _ordered_onset_match_wrapper(
-    pred_times: np.ndarray,
-    target_times: np.ndarray,
-    tolerance_sec: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    n_matched, n_gt = ordered_onset_match_counts_numpy(
-        pred_times,
-        target_times,
-        tolerance_sec=float(tolerance_sec.reshape(-1)[0]),
-    )
-    return (
-        np.array(n_matched, dtype=np.float64),
-        np.array(n_gt, dtype=np.float64),
-    )
-
-
-def _teacher_ordered_onset_match_wrapper(
-    pred_times: np.ndarray,
-    target_times: np.ndarray,
-    onset_mask: np.ndarray,
-    tolerance_sec: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    mask = np.asarray(onset_mask, dtype=np.float64).reshape(-1) > 0.5
-    pred_kept = np.asarray(pred_times, dtype=np.float64).reshape(-1)[mask]
-    target_kept = np.asarray(target_times, dtype=np.float64).reshape(-1)[mask]
-    return _ordered_onset_match_wrapper(
-        pred_kept,
-        target_kept,
-        tolerance_sec,
-    )
-
-
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
 class ArOrderedOnsetMatchMetric(keras.metrics.Metric):
-    """Primary tide overfit metric: ``n_matched / n_gt`` at aligned onset steps."""
+    """Primary tide overfit metric: ordered match @ tolerance / max(n_pred, n_gt)."""
 
     def __init__(
         self,
@@ -153,6 +84,7 @@ class ArOrderedOnsetMatchMetric(keras.metrics.Metric):
         self.tolerance_sec = tolerance_sec
         self.n_matched = self.add_weight(name="n_matched", initializer="zeros")
         self.n_gt = self.add_weight(name="n_gt", initializer="zeros")
+        self.n_pred = self.add_weight(name="n_pred", initializer="zeros")
 
     def update_state(
         self,
@@ -161,24 +93,27 @@ class ArOrderedOnsetMatchMetric(keras.metrics.Metric):
         sample_weight: tf.Tensor | None = None,
     ) -> None:
         _ = sample_weight
-        n_matched, n_gt = tf.numpy_function(
-            _ordered_onset_match_wrapper,
+        n_matched, n_gt, n_pred = tf.numpy_function(
+            timing_match.timing_match_wrapper,
             [
                 pred_times,
                 target_times,
                 np.array([self.tolerance_sec], dtype=np.float64),
             ],
-            [tf.float64, tf.float64],
+            [tf.float64, tf.float64, tf.float64],
         )
         self.n_matched.assign_add(tf.cast(tf.reshape(n_matched, []), self.dtype))
         self.n_gt.assign_add(tf.cast(tf.reshape(n_gt, []), self.dtype))
+        self.n_pred.assign_add(tf.cast(tf.reshape(n_pred, []), self.dtype))
 
     def result(self) -> tf.Tensor:
-        return self.n_matched / (self.n_gt + 1e-9)
+        denom = tf.maximum(self.n_pred, self.n_gt)
+        return self.n_matched / (denom + 1e-9)
 
     def reset_state(self) -> None:
         self.n_matched.assign(0.0)
         self.n_gt.assign(0.0)
+        self.n_pred.assign(0.0)
 
     def get_config(self) -> dict:
         config_dict = super().get_config()
@@ -545,21 +480,24 @@ class ArOnsetTrainingModel(keras.Model):
         )
         if self.ordered_match_metric is None:
             return
-        n_matched, n_gt = tf.numpy_function(
-            _teacher_ordered_onset_match_wrapper,
+        n_matched, n_gt, n_pred = tf.numpy_function(
+            timing_match.timing_match_teacher_wrapper,
             [
                 pred_times,
                 batch["target_times"],
                 batch["onset_step_mask"],
                 np.array([self.tolerance_sec], dtype=np.float64),
             ],
-            [tf.float64, tf.float64],
+            [tf.float64, tf.float64, tf.float64],
         )
         self.ordered_match_metric.n_matched.assign_add(
             tf.cast(tf.reshape(n_matched, []), self.ordered_match_metric.dtype),
         )
         self.ordered_match_metric.n_gt.assign_add(
             tf.cast(tf.reshape(n_gt, []), self.ordered_match_metric.dtype),
+        )
+        self.ordered_match_metric.n_pred.assign_add(
+            tf.cast(tf.reshape(n_pred, []), self.ordered_match_metric.dtype),
         )
 
     def run_ar_decode_eval_eager(
@@ -568,15 +506,17 @@ class ArOnsetTrainingModel(keras.Model):
         patch_mask: np.ndarray,
         gt_times: np.ndarray,
         gt_mask: np.ndarray,
-    ) -> tuple[float, float, float, int, int]:
+    ) -> tuple[float, float, float, int, int, int]:
         """Free-running AR decode in eager mode; return TP/FP/FN and ordered match."""
-        tp, fp, fn, _length, _n_onsets, n_matched, n_gt = self._ar_decode_eval_wrapper(
-            mert_patches,
-            patch_mask,
-            gt_times,
-            gt_mask,
+        tp, fp, fn, _length, _n_onsets, n_matched, n_gt, n_pred = (
+            self._ar_decode_eval_wrapper(
+                mert_patches,
+                patch_mask,
+                gt_times,
+                gt_mask,
+            )
         )
-        return float(tp), float(fp), float(fn), int(n_matched), int(n_gt)
+        return float(tp), float(fp), float(fn), int(n_matched), int(n_gt), int(n_pred)
 
     def set_ar_decode_f1_counts(self, tp: float, fp: float, fn: float) -> None:
         """Publish free-run Hungarian counts to the auxiliary F1 metric."""
@@ -592,7 +532,12 @@ class ArOnsetTrainingModel(keras.Model):
             tf.cast(fn, self.ar_decode_f1_metric.dtype),
         )
 
-    def set_ar_decode_ordered_counts(self, n_matched: int, n_gt: int) -> None:
+    def set_ar_decode_ordered_counts(
+        self,
+        n_matched: int,
+        n_gt: int,
+        n_pred: int,
+    ) -> None:
         """Publish free-run ordered onset match to the primary overfit metric."""
         if self.ar_decode_ordered_match_metric is None:
             return
@@ -602,6 +547,9 @@ class ArOnsetTrainingModel(keras.Model):
         self.ar_decode_ordered_match_metric.n_gt.assign(
             tf.cast(n_gt, self.ar_decode_ordered_match_metric.dtype),
         )
+        self.ar_decode_ordered_match_metric.n_pred.assign(
+            tf.cast(n_pred, self.ar_decode_ordered_match_metric.dtype),
+        )
 
     def _ar_decode_eval_wrapper(
         self,
@@ -610,6 +558,7 @@ class ArOnsetTrainingModel(keras.Model):
         gt_times: np.ndarray,
         gt_mask: np.ndarray,
     ) -> tuple[
+        np.ndarray,
         np.ndarray,
         np.ndarray,
         np.ndarray,
@@ -638,11 +587,12 @@ class ArOnsetTrainingModel(keras.Model):
             np.asarray(gt_mask).reshape(-1),
             tolerance_sec=self.tolerance_sec,
         )
-        n_matched, n_gt = ordered_onset_match_counts_numpy(
+        n_matched, n_gt = timing_match.timing_match_counts_numpy(
             decode_stats.times,
             gt_kept,
             tolerance_sec=self.tolerance_sec,
         )
+        n_pred = int(decode_stats.times.size)
         return (
             np.array(tp, dtype=np.float64),
             np.array(fp, dtype=np.float64),
@@ -651,6 +601,7 @@ class ArOnsetTrainingModel(keras.Model):
             np.array(decode_stats.n_onset_tokens, dtype=np.float64),
             np.array(n_matched, dtype=np.float64),
             np.array(n_gt, dtype=np.float64),
+            np.array(n_pred, dtype=np.float64),
         )
 
     def _reset_metrics(self) -> None:
@@ -879,14 +830,16 @@ class ArDecodeValidationCallback(keras.callbacks.Callback):
             epoch, every_n_epochs=self.every_n_epochs
         ):
             return
-        tp, fp, fn, n_matched, n_gt = self.training_model.run_ar_decode_eval_eager(
-            self._val_batch["mert_patches"],
-            self._val_batch["patch_mask"],
-            self._val_batch["gt_times"],
-            self._val_batch["gt_mask"],
+        tp, fp, fn, n_matched, n_gt, n_pred = (
+            self.training_model.run_ar_decode_eval_eager(
+                self._val_batch["mert_patches"],
+                self._val_batch["patch_mask"],
+                self._val_batch["gt_times"],
+                self._val_batch["gt_mask"],
+            )
         )
         self.training_model.set_ar_decode_f1_counts(tp, fp, fn)
-        self.training_model.set_ar_decode_ordered_counts(n_matched, n_gt)
+        self.training_model.set_ar_decode_ordered_counts(n_matched, n_gt, n_pred)
         if self.training_model.ar_decode_f1_metric is not None:
             logs["val_ar_decode_event_f1"] = float(
                 self.training_model.ar_decode_f1_metric.result(),

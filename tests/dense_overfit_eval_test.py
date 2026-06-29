@@ -444,3 +444,22 @@ def test_dense_event_onset_counts_from_arrays_perfect_match() -> None:
     assert fp == pytest.approx(0.0)
     assert fn == pytest.approx(0.0)
     assert dense_overfit_eval.micro_f1_from_counts(tp, fp, fn) == pytest.approx(1.0)
+
+
+def test_dense_timing_match_from_arrays_perfect_peak_pick() -> None:
+    y_true = np.zeros((1, 50, 1), dtype=np.float32)
+    y_pred = np.zeros((1, 50, 1), dtype=np.float32)
+    y_true[0, 10, 0] = 1.0
+    y_true[0, 30, 0] = 1.0
+    y_pred[0, 10, 0] = 0.9
+    y_pred[0, 30, 0] = 0.85
+    n_matched, n_ref, n_pred = dense_overfit_eval.dense_timing_match_from_arrays(
+        y_true,
+        y_pred,
+        tolerance_sec=0.02,
+        confidence_threshold=0.5,
+        min_onset_distance_ms=50.0,
+    )
+    assert n_matched == pytest.approx(2.0)
+    assert n_ref == pytest.approx(2.0)
+    assert n_pred == pytest.approx(2.0)

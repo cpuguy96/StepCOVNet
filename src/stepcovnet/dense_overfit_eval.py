@@ -5,13 +5,14 @@ import numpy as np
 import scipy.signal
 import tensorflow as tf
 
-from stepcovnet import config, datasets
+from stepcovnet import config, datasets, timing_match
 from stepcovnet.onset_events import charts, metrics
 
 DEFAULT_MIN_ONSET_DISTANCE_MS = 50.0
-DEFAULT_TOLERANCE_SEC = 0.02
+DEFAULT_TOLERANCE_SEC = timing_match.DEFAULT_TOLERANCE_SEC
 DEFAULT_CONFIDENCE_THRESHOLD = 0.05
 DENSE_EVENT_ONSET_F1_METRIC_NAME = "dense_event_onset_f1"
+DENSE_TIMING_MATCH_METRIC_NAME = timing_match.TIMING_MATCH_METRIC_NAME
 DEFAULT_EVENT_F1_SWEEP_THRESHOLDS = (
     0.05,
     0.1,
@@ -109,6 +110,65 @@ def _dense_event_onset_counts_for_sample(
     return float(tp), float(fp), float(fn)
 
 
+def _dense_timing_match_for_sample(
+    y_true_sample: np.ndarray,
+    y_pred_sample: np.ndarray,
+    *,
+    tolerance_sec: float,
+    confidence_threshold: float,
+    min_onset_distance_ms: float,
+    hop_sec: float,
+) -> tuple[float, float, float]:
+    pred_probs = np.asarray(y_pred_sample, dtype=np.float64).reshape(-1)
+    pred_times, _pred_conf = peak_times_and_confidence(
+        pred_probs,
+        confidence_threshold=confidence_threshold,
+        min_onset_distance_ms=min_onset_distance_ms,
+        hop_sec=hop_sec,
+    )
+    ref_times = gt_onset_times_from_frame_target(y_true_sample, hop_sec=hop_sec)
+    n_matched, n_ref = timing_match.timing_match_counts_numpy(
+        pred_times,
+        ref_times,
+        tolerance_sec=tolerance_sec,
+    )
+    return float(n_matched), float(n_ref), float(pred_times.size)
+
+
+def dense_timing_match_from_arrays(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    *,
+    tolerance_sec: float,
+    confidence_threshold: float,
+    min_onset_distance_ms: float,
+    hop_sec: float = datasets.HOP_COEFF,
+) -> tuple[float, float, float]:
+    """Return micro (n_matched, n_ref, n_pred) for dense peak-pick vs frame GT."""
+    y_true_array = np.asarray(y_true, dtype=np.float32)
+    y_pred_array = np.asarray(y_pred, dtype=np.float32)
+    if y_true_array.ndim == 2:
+        y_true_array = y_true_array[:, :, np.newaxis]
+    if y_pred_array.ndim == 2:
+        y_pred_array = y_pred_array[:, :, np.newaxis]
+    total_matched = 0.0
+    total_ref = 0.0
+    total_pred = 0.0
+    for sample_idx in range(y_true_array.shape[0]):
+        n_matched, n_ref, n_pred = _dense_timing_match_for_sample(
+            y_true_array[sample_idx],
+            y_pred_array[sample_idx],
+            tolerance_sec=tolerance_sec,
+            confidence_threshold=confidence_threshold,
+            min_onset_distance_ms=min_onset_distance_ms,
+            hop_sec=hop_sec,
+        )
+        total_matched += n_matched
+        total_ref += n_ref
+        total_pred += n_pred
+    return total_matched, total_ref, total_pred
+
+
 def _dense_event_onset_counts_numpy_wrapper(
     y_true: np.ndarray,
     y_pred: np.ndarray,
@@ -202,10 +262,21 @@ class DenseValEventF1Callback(keras.callbacks.Callback):
         total_tp = 0.0
         total_fp = 0.0
         total_fn = 0.0
+        total_matched = 0.0
+        total_ref = 0.0
+        total_pred = 0.0
         for features, target in self.val_dataset:
+            target_arr = np.asarray(target)
             pred = self.model.predict(features, verbose=0)
             tp, fp, fn = dense_event_onset_counts_from_arrays(
-                np.asarray(target),
+                target_arr,
+                np.asarray(pred),
+                tolerance_sec=self.tolerance_sec,
+                confidence_threshold=self.confidence_threshold,
+                min_onset_distance_ms=self.min_onset_distance_ms,
+            )
+            n_matched, n_ref, n_pred = dense_timing_match_from_arrays(
+                target_arr,
                 np.asarray(pred),
                 tolerance_sec=self.tolerance_sec,
                 confidence_threshold=self.confidence_threshold,
@@ -214,10 +285,20 @@ class DenseValEventF1Callback(keras.callbacks.Callback):
             total_tp += tp
             total_fp += fp
             total_fn += fn
+            total_matched += n_matched
+            total_ref += n_ref
+            total_pred += n_pred
         logs[f"val_{self.metric_name}"] = micro_f1_from_counts(
             total_tp,
             total_fp,
             total_fn,
+        )
+        logs[f"val_{DENSE_TIMING_MATCH_METRIC_NAME}"] = (
+            timing_match.micro_timing_match_rate(
+                total_matched,
+                total_ref,
+                total_pred,
+            )
         )
 
 
@@ -285,6 +366,8 @@ def _event_metrics_from_batches(
     confidence_threshold: float,
     min_onset_distance_ms: float,
     num_peaks: int,
+    flat_pred_times: np.ndarray | None = None,
+    flat_ref_times: np.ndarray | None = None,
 ) -> dict[str, float]:
     tp, fp, fn = metrics.count_event_onset_errors_numpy(
         pred_times_batch,
@@ -304,13 +387,25 @@ def _event_metrics_from_batches(
         confidence_threshold,
         min_onset_distance_ms,
     )
-    return {
+    result: dict[str, float] = {
         "event_f1": float(f1),
         "event_tp": float(tp),
         "event_fp": float(fp),
         "event_fn": float(fn),
         "num_peaks": float(num_peaks),
     }
+    if flat_pred_times is not None and flat_ref_times is not None:
+        timing = timing_match.timing_match_report(
+            flat_pred_times,
+            flat_ref_times,
+            tolerance_sec=tolerance_sec,
+        )
+        result["timing_match_n_matched"] = float(timing["n_matched"])
+        result["timing_match_n_pred"] = float(timing["n_pred"])
+        result["timing_match_n_ref"] = float(timing["n_ref"])
+        result["timing_match_n_denom"] = float(timing["n_denom"])
+        result["timing_match_rate"] = float(timing["rate"])
+    return result
 
 
 def predict_dense_probs_for_pair(
@@ -355,6 +450,7 @@ def event_metrics_from_probs(
     pred_times_batch, pred_conf_batch, gt_times_batch, gt_mask_batch = (
         _align_event_batches(pred_times, pred_conf, gt_times, gt_mask)
     )
+    ref_times = timing_match.reference_times_from_mask(gt_times[0], gt_mask[0])
     return _event_metrics_from_batches(
         pred_times_batch,
         pred_conf_batch,
@@ -364,6 +460,8 @@ def event_metrics_from_probs(
         confidence_threshold=confidence_threshold,
         min_onset_distance_ms=min_onset_distance_ms,
         num_peaks=n_peaks,
+        flat_pred_times=pred_times,
+        flat_ref_times=ref_times,
     )
 
 
@@ -420,6 +518,9 @@ def eval_dense_val_event_f1(
     total_fp = 0.0
     total_fn = 0.0
     f1_sum = 0.0
+    total_matched = 0.0
+    total_ref = 0.0
+    total_pred = 0.0
     for audio_path, chart_path, chart_index in samples:
         sample_key = datasets.dense_eval_sample_key(
             audio_path,
@@ -443,9 +544,17 @@ def eval_dense_val_event_f1(
         total_fp += sample_metrics["event_fp"]
         total_fn += sample_metrics["event_fn"]
         f1_sum += sample_metrics["event_f1"]
+        total_matched += sample_metrics.get("timing_match_n_matched", 0.0)
+        total_ref += sample_metrics.get("timing_match_n_ref", 0.0)
+        total_pred += sample_metrics.get("timing_match_n_pred", 0.0)
     n_samples = len(per_sample)
     mean_f1 = float(f1_sum / n_samples) if n_samples else 0.0
     micro_f1 = _micro_event_f1(total_tp, total_fp, total_fn)
+    micro_timing_match = timing_match.micro_timing_match_rate(
+        total_matched,
+        total_ref,
+        total_pred,
+    )
     micro_p_denom = total_tp + total_fp
     micro_r_denom = total_tp + total_fn
     return {
@@ -455,6 +564,13 @@ def eval_dense_val_event_f1(
         "num_songs": n_samples,
         "mean_event_f1": mean_f1,
         "micro_event_f1": micro_f1,
+        "micro_timing_match": micro_timing_match,
+        "timing_match_n_matched": total_matched,
+        "timing_match_n_pred": total_pred,
+        "timing_match_n_ref": total_ref,
+        "timing_match_n_denom": float(
+            timing_match.timing_match_denom(int(total_pred), int(total_ref)),
+        ),
         "micro_precision": float(total_tp / micro_p_denom) if micro_p_denom else 0.0,
         "micro_recall": float(total_tp / micro_r_denom) if micro_r_denom else 0.0,
         "micro_tp": total_tp,
@@ -608,6 +724,7 @@ def eval_dense_event_f1(
     pred_times_batch, pred_conf_batch, gt_times_batch, gt_mask_batch = (
         _align_event_batches(pred_times, pred_conf, gt_times, gt_mask)
     )
+    ref_times = timing_match.reference_times_from_mask(gt_times[0], gt_mask[0])
     return _event_metrics_from_batches(
         pred_times_batch,
         pred_conf_batch,
@@ -617,4 +734,6 @@ def eval_dense_event_f1(
         confidence_threshold=confidence_threshold,
         min_onset_distance_ms=min_onset_distance_ms,
         num_peaks=n_peaks,
+        flat_pred_times=pred_times,
+        flat_ref_times=ref_times,
     )

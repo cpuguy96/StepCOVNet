@@ -1,8 +1,6 @@
 import unittest
 from unittest import mock
 
-import numpy as np
-
 from stepcovnet.onset_ar import trainers
 
 
@@ -108,23 +106,6 @@ class TrainersTest(unittest.TestCase):
             619 / 634,
         )
 
-    def test_ordered_onset_match_counts_exact_and_short(self) -> None:
-        tol = 0.02
-        pred = np.array([0.0, 0.05, 0.10], dtype=np.float64)
-        target = np.array([0.0, 0.04, 0.10], dtype=np.float64)
-        self.assertEqual(
-            trainers.ordered_onset_match_counts_numpy(pred, target, tolerance_sec=tol),
-            (3, 3),
-        )
-        self.assertEqual(
-            trainers.ordered_onset_match_counts_numpy(
-                pred[:2],
-                target,
-                tolerance_sec=tol,
-            ),
-            (2, 3),
-        )
-
     def test_overfit_gate_callback_publishes_metrics(self) -> None:
         callback = trainers.OverfitGateCallback(include_ar_decode=False)
         logs = {"val_token_accuracy": 0.95, "val_ordered_onset_match": 633 / 634}
@@ -154,13 +135,13 @@ class TrainersTest(unittest.TestCase):
 
             def run_ar_decode_eval_eager(self, *_args, **_kwargs):
                 type(self).decode_calls += 1
-                return 1.0, 0.0, 0.0, 619, 634
+                return 1.0, 0.0, 0.0, 619, 634, 619
 
             def set_ar_decode_f1_counts(self, tp, fp, fn):
                 self.last = (tp, fp, fn)
 
-            def set_ar_decode_ordered_counts(self, n_matched, n_gt):
-                self.last_ordered = (n_matched, n_gt)
+            def set_ar_decode_ordered_counts(self, n_matched, n_gt, n_pred):
+                self.last_ordered = (n_matched, n_gt, n_pred)
 
             @property
             def ar_decode_f1_metric(self):
@@ -210,7 +191,7 @@ class TrainersTest(unittest.TestCase):
         callback.on_epoch_end(10, logs)
         self.assertEqual(_StubTrainingModel.decode_calls, 1)
         self.assertEqual(stub.last, (1.0, 0.0, 0.0))
-        self.assertEqual(stub.last_ordered, (619, 634))
+        self.assertEqual(stub.last_ordered, (619, 634, 619))
         self.assertEqual(logs["val_ar_decode_event_f1"], 0.5)
         self.assertAlmostEqual(logs["val_ar_decode_ordered_onset_match"], 619 / 634)
 

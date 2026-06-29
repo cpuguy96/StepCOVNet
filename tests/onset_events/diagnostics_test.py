@@ -48,6 +48,8 @@ class OnsetEventDiagnosticsTest(unittest.TestCase):
         self.assertEqual(report.eval_f1, 0.0)
         self.assertEqual(report.eval_tp, 0.0)
         self.assertEqual(report.confidence["count_ge_0.5"], 0)
+        self.assertEqual(report.timing_match_n_ref, 2)
+        self.assertEqual(report.timing_match_n_matched, 0)
 
     def test_sweep_confidence_thresholds_finds_best(self):
         pred_times = np.array([[1.0, 5.0]])

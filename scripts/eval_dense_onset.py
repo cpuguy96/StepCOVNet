@@ -90,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
         f"  songs={report['num_songs']} "
         f"mean_event_f1={report['mean_event_f1']:.4f} "
         f"micro_event_f1={report['micro_event_f1']:.4f} "
+        f"micro_timing_match={report['micro_timing_match']:.4f} "
+        f"({int(report['timing_match_n_matched'])}/{int(report['timing_match_n_denom'])}) "
         f"@ threshold={threshold}",
     )
     return 0

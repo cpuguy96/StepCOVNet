@@ -27,13 +27,19 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 | Event multi-song baseline     | `configs/event/audio_baseline.json`         |
 | Tide overfit suite            | `configs/overfit_tide/mert.json` (etc.)     |
 
-## Tide AR overfit metrics
+## Onset timing metrics (all tracks)
 
-**Primary (compare models / pass gate):** `ordered_onset_match` — **634/634** onsets with `|pred[i] − gt[i]| ≤ 20 ms` (teacher in training; free-run via `debug_ar_onset_overfit.py --ar_decode`).
+**Primary (compare models / pass gate):** `timing_match` — sorted predicted vs reference onsets; count ordered pairs with `|pred[i] − ref[i]| ≤ 20 ms`; score = **n_matched / max(n_pred, n_ref)** (e.g. **634/634** on tide overfit when counts match).
 
-**Checkpoint:** `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)` on perfect-overfit configs.
+| Track | Training / eval name | Offline script |
+| ----- | -------------------- | -------------- |
+| AR | `val_ordered_onset_match` (alias) | `debug_ar_onset_overfit.py` (`--ar_decode` for free-run) |
+| Dense | `val_timing_match` | `eval_dense_onset.py` → `micro_timing_match` |
+| Event | `timing_match` in diagnostic JSON | `debug_onset_overfit.py` |
 
-Hungarian `val_event_onset_f1` is logged as auxiliary only on overfit runs.
+**Checkpoint (AR perfect overfit):** `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`.
+
+Hungarian `event_f1` / `val_event_onset_f1` remains **auxiliary** only.
 
 ## Migration (2026-06)
 

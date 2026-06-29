@@ -4,6 +4,7 @@ import dataclasses
 
 import numpy as np
 
+from stepcovnet import timing_match
 from stepcovnet.onset_events import config, matching, metrics
 
 
@@ -127,6 +128,11 @@ class OverfitDiagnosticReport:
     eval_tp: float
     eval_fp: float
     eval_fn: float
+    timing_match_n_matched: int
+    timing_match_n_pred: int
+    timing_match_n_ref: int
+    timing_match_n_denom: int
+    timing_match_rate: float
     pred_time_min_sec: float
     pred_time_max_sec: float
 
@@ -146,6 +152,13 @@ class OverfitDiagnosticReport:
                 "tp": self.eval_tp,
                 "fp": self.eval_fp,
                 "fn": self.eval_fn,
+            },
+            "timing_match": {
+                "n_matched": self.timing_match_n_matched,
+                "n_pred": self.timing_match_n_pred,
+                "n_ref": self.timing_match_n_ref,
+                "n_denom": self.timing_match_n_denom,
+                "rate": self.timing_match_rate,
             },
             "pred_time_range_sec": [
                 self.pred_time_min_sec,
@@ -181,6 +194,18 @@ def diagnose_overfit_outputs(
         experiment.run.tolerance_sec,
         experiment.run.confidence_threshold,
     )
+    filtered_times, _filtered_conf = metrics.filter_predicted_onsets_numpy(
+        pred_times.reshape(-1),
+        pred_confidence.reshape(-1),
+        experiment.run.confidence_threshold,
+        experiment.run.min_onset_distance_ms,
+    )
+    ref_times = timing_match.reference_times_from_mask(gt_times[0], gt_mask[0])
+    timing = timing_match.timing_match_report(
+        filtered_times,
+        ref_times,
+        tolerance_sec=experiment.run.tolerance_sec,
+    )
     return OverfitDiagnosticReport(
         model_path=model_path,
         frontend=experiment.model.frontend,
@@ -199,6 +224,11 @@ def diagnose_overfit_outputs(
         eval_tp=float(tp),
         eval_fp=float(fp),
         eval_fn=float(fn),
+        timing_match_n_matched=int(timing["n_matched"]),
+        timing_match_n_pred=int(timing["n_pred"]),
+        timing_match_n_ref=int(timing["n_ref"]),
+        timing_match_n_denom=int(timing["n_denom"]),
+        timing_match_rate=float(timing["rate"]),
         pred_time_min_sec=float(np.min(pred_times)),
         pred_time_max_sec=float(np.max(pred_times)),
     )
