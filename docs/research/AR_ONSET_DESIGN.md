@@ -423,11 +423,11 @@ Do not co-vary encoder patch and token scheme in one EXP unless hypothesis requi
 
 ### 10.3 Suggested commands (when implemented)
 
-**`gate-tide-overfit`** — single song (`data/v2/test/tide`; same paths as `configs/onset_event_overfit_one.json`):
+**`gate-tide-overfit`** — single song (`data/v2/test/tide`; same paths as `configs/event/overfit_one.json`):
 
 ```bash
 python scripts/train_onset_ar.py \
-  --config configs/onset_ar_tide.json \
+  --config configs/ar/tide.json \
   --model_output_dir models/ar_tide_overfit
 ```
 
@@ -435,7 +435,7 @@ python scripts/train_onset_ar.py \
 
 ```bash
 python scripts/train_onset_ar.py \
-  --config configs/onset_ar_smoke.json \
+  --config configs/ar/smoke.json \
   --training_index_path data/final_data/training_index_10songs.json \
   --model_output_dir models/ar_10song_smoke
 ```
@@ -443,20 +443,20 @@ python scripts/train_onset_ar.py \
 WSL GPU: run from repo root per [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md). Verify tide load without training:
 
 ```bash
-python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-only
+python scripts/train_onset_ar.py --config configs/ar/tide.json --verify-only
 ```
 
 Diagnose a saved checkpoint (dispatches to WSL when needed):
 
 ```bash
 python scripts/debug_ar_onset_overfit.py \
-  --config configs/onset_ar_tide.json \
+  --config configs/ar/tide.json \
   --model_path models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras
 ```
 
 ### 10.4 Config sketch
 
-**`configs/onset_ar_tide.json`** (`gate-tide-overfit`):
+**`configs/ar/tide.json`** (`gate-tide-overfit`):
 
 ```json
 {
@@ -492,7 +492,7 @@ python scripts/debug_ar_onset_overfit.py \
 }
 ```
 
-**`configs/onset_ar_smoke.json`** — same model block; set `training_index_path` instead of overfit paths; `scheduled_sampling_max_p`: 0 until `gate-ar-decode`. (Smoke config **not in repo yet**.)
+**`configs/ar/smoke.json`** — same model block; set `training_index_path` instead of overfit paths; `scheduled_sampling_max_p`: 0 until `gate-ar-decode`. (Smoke config **not in repo yet**.)
 
 ### 10.5 `gate-tide-overfit` notes (2026-06-27)
 
@@ -522,7 +522,7 @@ Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0
 
 **Status:** **In progress** ([EXP-20260628-01](EXPERIMENT_LOG.md#exp-20260628-01-ar-gate-ar-decode-v2-wsl-150ep-warm-start-gate_v5)). Warm-start from `gate_v5`; free-running `val_ar_decode_event_f1` peaked **~0.50** in run 1 (ep 51–57) — gate not passed.
 
-**Config:** `configs/onset_ar_tide_decode_v2.json` · checkpoint `models_wsl/ar_tide_overfit_gate_decode_v2/` · log `logs/ar_tide_overfit_gate_decode_v2.log`.
+**Config:** `configs/ar/decode/v2.json` · checkpoint `models_wsl/ar_tide_overfit_gate_decode_v2/` · log `logs/ar_tide_overfit_gate_decode_v2.log`.
 
 #### v2 training recipe (warm-start + full tide loss + SS)
 
@@ -539,7 +539,7 @@ Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0
 **Offline AR decode (2026-06-28):** Set `ar_decode_val_every_n_epochs: 0` to skip `ArDecodeValidationCallback` during training (~0.5s val/epoch). Run free-run gate check after training:
 
 ```text
-python scripts/debug_ar_onset_overfit.py --config configs/onset_ar_tide_decode_v2.json --model_path models_wsl/.../ar_onset_model.keras --ar_decode
+python scripts/debug_ar_onset_overfit.py --config configs/ar/decode/v2.json --model_path models_wsl/.../ar_onset_model.keras --ar_decode
 ```
 
 Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
@@ -552,18 +552,19 @@ Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
 
 **Run 1 observations:** Ep 1–6 early-EOS (`decode_length` **13** via offline `--ar_decode`); ep 7+ full chart (**633–635**). Token-only loss (v2 run 1) let teacher-fed `val_event_onset_f1` fall **1.0 → ~0.51** — recipe now restores full pointer/time/residual loss from `gate-tide-overfit`.
 
-**Pass criteria:** teacher-fed F1 **1.0** **and** free-run F1 **1.0** on tide (634/634 events; offline `--ar_decode`, not in-loop). A relaxed **0.95** bar was rejected — single-chart overfit must reproduce the chart exactly ([NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
+**Pass criteria:** teacher-fed **634/634 ordered @ 20 ms** **and** free-run **634/634 ordered @ 20 ms** on tide (offline `--ar_decode`, two-pass). Hungarian F1 is auxiliary only. A relaxed **0.95** bar was rejected — single-chart overfit must reproduce the chart exactly ([NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
 
 #### Perfect overfit metrics (`EXP-20260628-02`)
 
-| Metric | In-training | Offline gate |
-| ------ | ----------- | ------------ |
-| `val_token_accuracy` | yes (~0.5s val/ep) | — |
-| `val_event_onset_f1` | yes | `debug_ar_onset_overfit.py` |
-| `val_overfit_gate` | `min(token_acc, event_f1)` — checkpoint | — |
-| Free-run AR F1 | **never in-loop** | `--ar_decode` after training — pass **1.0** (634/634) |
+| Metric | In-training | Offline gate | Role |
+| ------ | ----------- | ------------ | ---- |
+| `val_ordered_onset_match` | yes | `debug_ar_onset_overfit.py` teacher block | **Primary** — per-step `@ 20 ms` |
+| `val_ar_decode_ordered_onset_match` | optional (slow) | `--ar_decode` top-level `ordered_onset_match` | **Primary** free-run |
+| `val_overfit_gate` | `min(token_acc, ordered_match)` | — | Checkpoint on perfect-overfit configs |
+| `val_token_accuracy` | yes | token trace in `--ar_decode` | Prerequisite (aux until free-run passes) |
+| `val_event_onset_f1` | yes | Hungarian block in debug JSON | **Aux** — multi-song legacy; can hide per-step errors |
 
-Configs: `onset_ar_tide_overfit_perfect.json` (phase A: SS=0) · `onset_ar_tide_overfit_perfect_run2.json` (timing polish).
+Configs: `ar/overfit_perfect/base.json` (phase A: SS=0) · `ar/overfit_perfect/run2.json` (timing polish).
 
 ---
 
@@ -661,7 +662,7 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 | GT clip / pad               | `onset_events/targets.py`, `onset_events/datasets.py`                    |
 | Chart times (manifest)      | `dataset_prep/training_loader.load_chart_times_sec`                      |
 | Chart times (legacy / tide) | `onset_events/charts.py` (`_parse_step_times`)                           |
-| Tide overfit paths          | `configs/onset_event_overfit_one.json`, `configs/overfit_tide/mert.json`, `configs/onset_ar_tide.json` |
+| Tide overfit paths          | `configs/event/overfit_one.json`, `configs/overfit_tide/mert.json`, `configs/ar/tide.json` |
 | AR trainer / gate debug     | `scripts/train_onset_ar.py`, `logs/ar_tide_overfit_gate_v2.log`, EXP-20260627-02 |
 | Dense frame targets         | `datasets._create_target`, `_create_target_gaussian` in `datasets.py`    |
 | Event plateau               | EXP-20260606-08 … 11 in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)           |

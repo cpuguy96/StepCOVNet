@@ -1,18 +1,21 @@
 """Diagnose AR onset overfit checkpoints (per-onset timing errors).
 
 Usage:
-    python scripts/debug_ar_onset_overfit.py --config configs/onset_ar_tide.json
+    python scripts/debug_ar_onset_overfit.py --config configs/ar/tide.json
     python scripts/debug_ar_onset_overfit.py \\
-        --config configs/onset_ar_tide.json \\
+        --config configs/ar/tide.json \\
         --model_path models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras
     python scripts/debug_ar_onset_overfit.py \\
-        --config configs/onset_ar_tide_overfit_perfect_run3.json \\
+        --config configs/ar/overfit_perfect/run3.json \\
         --model_path models_wsl/ar_tide_overfit_perfect_v3/ar_onset_model.keras \\
         --ar_decode
 
 With ``--ar_decode``, top-level ``ar_decode`` metrics use **two-pass** timing
 (incremental free-run tokens + parallel pointer+residual re-forward). Incremental
 pointer+residual and GT timing parity live under ``ar_decode.diagnostics``.
+
+Human-readable progress and a completion summary go to **stderr**; full JSON stays
+on **stdout** (pipe-friendly).
 """
 
 from __future__ import annotations
@@ -45,7 +48,7 @@ PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.
 PARSER.add_argument(
     "--config",
     type=str,
-    default="configs/onset_ar_tide.json",
+    default="configs/ar/tide.json",
     help="AR experiment config JSON.",
 )
 PARSER.add_argument(
@@ -76,11 +79,210 @@ PARSER.add_argument(
     help="How to convert free-run tokens into onset times (with --ar_decode).",
 )
 PARSER.add_argument(
+    "--json-only",
+    action="store_true",
+    help="Skip human-readable stderr progress/summary; emit JSON only.",
+)
+PARSER.add_argument(
     "--token_trace_steps",
     type=int,
     default=20,
     help="With --ar_decode, log first N decode steps (pred vs target token).",
 )
+
+
+def _log(message: str, *, quiet: bool) -> None:
+    if not quiet:
+        print(message, file=sys.stderr, flush=True)
+
+
+def _fmt_f1(value: float) -> str:
+    return f"{value:.4f}"
+
+
+def _fmt_ms(stats: dict[str, float]) -> str:
+    return (
+        f"mean {stats['mean']:.1f} ms, p50 {stats['p50']:.1f} ms, "
+        f"p90 {stats['p90']:.1f} ms, max {stats['max']:.1f} ms"
+    )
+
+
+def _event_f1_line(block: dict[str, object]) -> str:
+    tp = int(block["true_positives"])
+    fp = int(block["false_positives"])
+    fn = int(block["false_negatives"])
+    n_gt = int(block.get("n_gt_onsets", tp + fn))
+    return (
+        f"F1 {_fmt_f1(float(block['event_f1']))} "
+        f"({tp} TP, {fp} FP, {fn} FN; {n_gt} GT onsets)"
+    )
+
+
+def _ordered_onset_report(
+    pred_times: np.ndarray,
+    target_times: np.ndarray,
+    *,
+    tolerance_sec: float,
+) -> dict[str, float | int]:
+    n_matched, n_gt = trainers.ordered_onset_match_counts_numpy(
+        pred_times,
+        target_times,
+        tolerance_sec=tolerance_sec,
+    )
+    rate = float(n_matched) / float(n_gt) if n_gt else 0.0
+    return {
+        "n_matched": int(n_matched),
+        "n_gt": int(n_gt),
+        "rate": rate,
+    }
+
+
+def _ordered_gate_line(block: dict[str, object], *, tol_ms: float) -> str:
+    n_matched = int(block["n_matched"])
+    n_gt = int(block["n_gt"])
+    status = "PASS" if n_matched == n_gt and n_gt > 0 else "FAIL"
+    return (
+        f"Ordered @ {tol_ms:.0f} ms: {n_matched}/{n_gt} "
+        f"({float(block['rate']):.4f}) — {status}"
+    )
+
+
+def _print_teacher_summary(
+    report: dict[str, object],
+    *,
+    tolerance_sec: float,
+    quiet: bool,
+) -> None:
+    tol_ms = tolerance_sec * 1000.0
+    ordered = report["ordered_onset_match"]
+    assert isinstance(ordered, dict)
+    _log("", quiet=quiet)
+    _log("=== Teacher-fed gate ===", quiet=quiet)
+    _log(f"  {_ordered_gate_line(ordered, tol_ms=tol_ms)}", quiet=quiet)
+    _log("", quiet=quiet)
+    _log("--- Aux (Hungarian / timing detail) ---", quiet=quiet)
+    _log(f"  {_event_f1_line(report)}", quiet=quiet)
+    _log(
+        f"  Per-step within {tol_ms:.0f} ms: "
+        f"{report['n_within_tolerance']}/{report['n_onsets']}",
+        quiet=quiet,
+    )
+    _log(
+        f"  Timing: {_fmt_ms(report['abs_error_ms'])}",
+        quiet=quiet,
+    )
+    _log(
+        "  Patch errors: "
+        f"{report['n_patch_wrong']} | "
+        f"patch OK, timing wrong: {report['n_patch_ok_timing_wrong']}",
+        quiet=quiet,
+    )
+
+
+def _print_ar_decode_summary(
+    ar_decode: dict[str, object],
+    *,
+    tolerance_sec: float,
+    quiet: bool,
+) -> None:
+    tol_ms = tolerance_sec * 1000.0
+    ordered = ar_decode["ordered_onset_match"]
+    assert isinstance(ordered, dict)
+    diagnostics = ar_decode.get("diagnostics", {})
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+
+    _log("", quiet=quiet)
+    _log("=== Free-run AR gate (two-pass) ===", quiet=quiet)
+    _log(
+        f"  Decode length: {ar_decode['ar_decode_length']} | "
+        f"EOS: {'yes' if ar_decode['stopped_on_eos'] else 'no'}",
+        quiet=quiet,
+    )
+    _log(f"  {_ordered_gate_line(ordered, tol_ms=tol_ms)}", quiet=quiet)
+    _log("", quiet=quiet)
+    _log("--- Aux ---", quiet=quiet)
+    _log(f"  Hungarian F1: {_event_f1_line(ar_decode)}", quiet=quiet)
+
+    inc = diagnostics.get("incremental_pointer_residual")
+    if isinstance(inc, dict):
+        _log(
+            f"  Incremental ptr+residual: {_event_f1_line(inc)}",
+            quiet=quiet,
+        )
+
+    gt_timing = diagnostics.get("gt_timing")
+    if isinstance(gt_timing, dict):
+        gt_par = gt_timing.get("gt_parallel")
+        gt_inc = gt_timing.get("gt_incremental")
+        if isinstance(gt_par, dict):
+            _log(
+                f"  GT tokens + parallel pointer: {_event_f1_line(gt_par)}",
+                quiet=quiet,
+            )
+        if isinstance(gt_inc, dict):
+            _log(
+                f"  GT tokens + incremental pointer: {_event_f1_line(gt_inc)}",
+                quiet=quiet,
+            )
+
+    token_detok = diagnostics.get("token_detokenize")
+    if isinstance(token_detok, dict):
+        _log(
+            f"  Token detokenize only: {_event_f1_line(token_detok)}",
+            quiet=quiet,
+        )
+
+    first_mismatch = diagnostics.get("first_mismatch_step")
+    eos_at = diagnostics.get("eos_at_step")
+    trace = diagnostics.get("token_trace")
+    if isinstance(trace, list) and trace:
+        n_match = sum(1 for row in trace if row.get("match"))
+        mismatch_note = (
+            f"first mismatch at step {first_mismatch}"
+            if first_mismatch is not None
+            else "all traced steps matched"
+        )
+        eos_note = (
+            f"early EOS at step {eos_at}"
+            if eos_at is not None
+            else "no early EOS in trace"
+        )
+        _log(
+            f"  Token trace ({len(trace)} steps): "
+            f"{n_match}/{len(trace)} matched | {mismatch_note} | {eos_note}",
+            quiet=quiet,
+        )
+
+
+def _print_debug_summary(
+    report: dict[str, object],
+    *,
+    model_path: pathlib.Path,
+    tolerance_sec: float,
+    ar_decode: bool,
+    quiet: bool,
+) -> None:
+    _log("=== AR overfit debug ===", quiet=quiet)
+    _log(f"Model: {model_path}", quiet=quiet)
+    ordered = report["ordered_onset_match"]
+    assert isinstance(ordered, dict)
+    _log(
+        f"Primary metric: ordered onset match @ {tolerance_sec * 1000.0:.0f} ms "
+        f"({int(ordered['n_matched'])}/{int(ordered['n_gt'])})",
+        quiet=quiet,
+    )
+    _print_teacher_summary(report, tolerance_sec=tolerance_sec, quiet=quiet)
+    if ar_decode:
+        ar_block = report.get("ar_decode")
+        if isinstance(ar_block, dict):
+            _print_ar_decode_summary(
+                ar_block,
+                tolerance_sec=tolerance_sec,
+                quiet=quiet,
+            )
+    _log("", quiet=quiet)
+    _log("Full JSON report on stdout.", quiet=quiet)
 
 
 def _resolve_model_path(
@@ -159,9 +361,15 @@ def _diagnose_batch(
     patch_ok_residual_bad = int(
         np.sum(patch_ok & (abs_err_sec > tolerance_sec)),
     )
+    ordered = _ordered_onset_report(
+        pred_times,
+        target_times[step_indices],
+        tolerance_sec=tolerance_sec,
+    )
 
     return {
         "n_onsets": int(pred_times.size),
+        "ordered_onset_match": ordered,
         "event_f1": float(event_f1),
         "true_positives": int(tp),
         "false_positives": int(fp),
@@ -363,6 +571,11 @@ def _ar_decode_report(
 
     report: dict[str, object] = {
         "timing_mode": "two_pass",
+        "ordered_onset_match": _ordered_onset_report(
+            gate_stats.times,
+            gt_times,
+            tolerance_sec=run_config.tolerance_sec,
+        ),
         "ar_decode_length": gate_stats.n_forward_steps,
         "stopped_on_eos": gate_stats.stopped_on_eos,
         **_event_f1_report(
@@ -430,12 +643,14 @@ def _ar_decode_report(
 
 def main() -> int:
     args = PARSER.parse_args()
+    quiet = args.json_only
     experiment_config = config.ArExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment_config, args.model_path)
     if not model_path.is_file():
         print(f"model not found: {model_path}", file=sys.stderr)
         return 1
 
+    _log(f"Loading checkpoint: {model_path}", quiet=quiet)
     batch_np = datasets.sample_to_training_batch(
         datasets.load_overfit_sample(experiment_config),
         experiment_config,
@@ -443,11 +658,13 @@ def main() -> int:
     batch_tf = {key: tf.constant(value) for key, value in batch_np.items()}
 
     model = tf.keras.models.load_model(str(model_path), compile=False)
+    _log("Running teacher-fed eval...", quiet=quiet)
     outputs = model(_model_inputs(batch_tf), training=False)
     report = _diagnose_batch(outputs, batch_np, experiment_config=experiment_config)
     report["model_path"] = str(model_path)
     report["worst_onsets"] = _worst_onsets(report, args.worst_k)
     if args.ar_decode:
+        _log("Running free-run AR decode (two-pass)...", quiet=quiet)
         report["ar_decode"] = _ar_decode_report(
             model,
             batch_np,
@@ -459,6 +676,13 @@ def main() -> int:
     for key in list(report):
         if key.startswith("_"):
             del report[key]
+    _print_debug_summary(
+        report,
+        model_path=model_path,
+        tolerance_sec=experiment_config.run.tolerance_sec,
+        ar_decode=args.ar_decode,
+        quiet=quiet,
+    )
     print(json.dumps(report, indent=2))
     return 0
 

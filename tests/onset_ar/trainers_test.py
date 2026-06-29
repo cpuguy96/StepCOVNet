@@ -1,6 +1,8 @@
 import unittest
 from unittest import mock
 
+import numpy as np
+
 from stepcovnet.onset_ar import trainers
 
 
@@ -91,7 +93,7 @@ class TrainersTest(unittest.TestCase):
         self.assertEqual(
             trainers.overfit_gate_score(
                 token_accuracy=0.9,
-                event_f1=1.0,
+                ordered_onset_match=633 / 634,
             ),
             0.9,
         )
@@ -100,15 +102,32 @@ class TrainersTest(unittest.TestCase):
         self.assertEqual(
             trainers.overfit_gate_score(
                 token_accuracy=1.0,
-                event_f1=1.0,
-                ar_decode_f1=0.8,
+                ordered_onset_match=633 / 634,
+                ar_decode_ordered_onset_match=619 / 634,
             ),
-            0.8,
+            619 / 634,
+        )
+
+    def test_ordered_onset_match_counts_exact_and_short(self) -> None:
+        tol = 0.02
+        pred = np.array([0.0, 0.05, 0.10], dtype=np.float64)
+        target = np.array([0.0, 0.04, 0.10], dtype=np.float64)
+        self.assertEqual(
+            trainers.ordered_onset_match_counts_numpy(pred, target, tolerance_sec=tol),
+            (3, 3),
+        )
+        self.assertEqual(
+            trainers.ordered_onset_match_counts_numpy(
+                pred[:2],
+                target,
+                tolerance_sec=tol,
+            ),
+            (2, 3),
         )
 
     def test_overfit_gate_callback_publishes_metrics(self) -> None:
         callback = trainers.OverfitGateCallback(include_ar_decode=False)
-        logs = {"val_token_accuracy": 0.95, "val_event_onset_f1": 1.0}
+        logs = {"val_token_accuracy": 0.95, "val_ordered_onset_match": 633 / 634}
         callback.on_epoch_end(0, logs)
         self.assertEqual(logs["val_overfit_gate"], 0.95)
 
@@ -135,14 +154,21 @@ class TrainersTest(unittest.TestCase):
 
             def run_ar_decode_eval_eager(self, *_args, **_kwargs):
                 type(self).decode_calls += 1
-                return 1.0, 0.0, 0.0
+                return 1.0, 0.0, 0.0, 619, 634
 
             def set_ar_decode_f1_counts(self, tp, fp, fn):
                 self.last = (tp, fp, fn)
 
+            def set_ar_decode_ordered_counts(self, n_matched, n_gt):
+                self.last_ordered = (n_matched, n_gt)
+
             @property
             def ar_decode_f1_metric(self):
                 return _StubMetric(0.5)
+
+            @property
+            def ar_decode_ordered_match_metric(self):
+                return _StubMetric(619 / 634)
 
         class _StubMetric:
             def __init__(self, value: float) -> None:
@@ -184,7 +210,9 @@ class TrainersTest(unittest.TestCase):
         callback.on_epoch_end(10, logs)
         self.assertEqual(_StubTrainingModel.decode_calls, 1)
         self.assertEqual(stub.last, (1.0, 0.0, 0.0))
+        self.assertEqual(stub.last_ordered, (619, 634))
         self.assertEqual(logs["val_ar_decode_event_f1"], 0.5)
+        self.assertAlmostEqual(logs["val_ar_decode_ordered_onset_match"], 619 / 634)
 
 
 if __name__ == "__main__":

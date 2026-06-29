@@ -17,9 +17,24 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Decision:** On tide (one chart, 634 onsets), **free-run autoregressive decode event F1 must be 1.0** — same bar as teacher-fed overfit. Partial match is unacceptable when the training set is a single example the model must memorize.
 
-**Implication:** Run1 (**~0.954**) and run2 (**0.978**) remain **fail** on `gate-ar-decode` / perfect-overfit until offline `--ar_decode` hits **634/634** Hungarian matches. `gate-val-vs-dense` on multi-song val keeps a separate, lower scoreboard bar.
+**Implication:** Run1 (**~0.954**) and run2 (**0.978**) remain **fail** on `gate-ar-decode` / perfect-overfit until offline `--ar_decode` hits **634/634** ordered matches @ 20 ms (see [NOTE-20260628-03](#note-20260628-03-tide-overfit-primary-metric-ordered-onset-match)). `gate-val-vs-dense` on multi-song val keeps a separate, lower scoreboard bar.
 
 **Related:** [AR_ONSET_DESIGN.md §10.1](AR_ONSET_DESIGN.md#101-experiment-gates-in-order), [EXP-20260628-02](EXPERIMENT_LOG.md#exp-20260628-02-ar-tide-perfect-overfit-val_overfit_gate)
+
+---
+
+### NOTE-20260628-03: Tide overfit primary metric — ordered onset match
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-28 20:00:00                                                   |
+| **Topic**     | Align tide overfit gate with per-step timing truth                     |
+
+**Context:** Teacher Hungarian `event_f1` could read **1.0** while per-step timing was **633/634** @ 20 ms (residual error ~25 ms on one onset). That is not chart-perfect on a single-song overfit.
+
+**Decision:** On tide overfit, **primary** metrics are **`ordered_onset_match`** (teacher) and **`ar_decode_ordered_onset_match`** (free-run, two-pass): count of steps where `|pred[i] − gt[i]| ≤ 20 ms` out of **634**. Pass only at **634/634**. Hungarian `event_f1` remains logged as **aux**. `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`.
+
+**Related:** `src/stepcovnet/onset_ar/trainers.py` (`ArOrderedOnsetMatchMetric`), `scripts/debug_ar_onset_overfit.py`
 
 ---
 
@@ -42,7 +57,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Run 1 (pre-restart):** Best `val_ar_decode_event_f1` **~0.50**; full-chart decode from ep 7; teacher-fed F1 degraded under token-only SS. Log archived: `logs/ar_tide_overfit_gate_decode_v2_run1.log`.
 
-**Related:** [AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28), `configs/onset_ar_tide_decode_v2.json`
+**Related:** [AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28), `configs/ar/decode/v2.json`
 
 ---
 
@@ -64,7 +79,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 3. **Missing residual gradient** — with `lambda_time=0`, only pointer CE trained patch index; F1 uses `patch × duration + residual`. At F1 **~0.83**, debug showed **`n_patch_wrong: 0`**, **`n_patch_ok_timing_wrong: 103`**. Fixed with **`lambda_residual: 5.0`** (MSE on `target_residual_sec`).
 4. **λ_time phasing** — immediate `lambda_time=1.0` destabilized early training; **`lambda_time_ramp_epochs: 100`** (linear 0→1) allowed pointer to learn first.
 
-**Locked tide config:** see [AR_ONSET_DESIGN.md §10.4](AR_ONSET_DESIGN.md#104-config-sketch) and `configs/onset_ar_tide.json`.
+**Locked tide config:** see [AR_ONSET_DESIGN.md §10.4](AR_ONSET_DESIGN.md#104-config-sketch) and `configs/ar/tide.json`.
 
 **Diagnostics:** `scripts/debug_ar_onset_overfit.py` — per-onset patch vs residual error split.
 
@@ -1051,7 +1066,7 @@ The “best model in the middle” only makes sense once PRE and POST+metric con
 | ------------- | ---------------------------------------------------------- |
 | **Timestamp** | 2026-06-06 09:18:00                                        |
 | **Tags**      | architecture, config                                       |
-| **Related**   | EXP-20260606-04, `configs/onset_event_audio_baseline.json` |
+| **Related**   | EXP-20260606-04, `configs/event/audio_baseline.json` |
 
 **Context:** Whether K must equal tide’s 634 onsets for overfit to succeed.
 

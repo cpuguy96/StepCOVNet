@@ -28,12 +28,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
-| **AR onset (`onset_ar/`)** | **Perfect overfit** (EXP-20260628-02) — best free-run AR **0.978** (run2); v4 teacher timing best, free-run **0.975** — gate **not passed** (bar **1.0**) |
+| **AR onset (`onset_ar/`)** | **Perfect overfit** (EXP-20260628-02) — primary gate: **ordered 634/634 @ 20 ms** (free-run best **619/634** run2) — **not passed** |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** Finish **`gate-ar-decode`** v2 (150 ep, checkpoint `val_ar_decode_event_f1`) → `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28)).
+- **Track B (AR prototype):** Perfect-overfit free-run still **below 1.0** after run5 (λ_inc=0.1, warm-start run2). Next: tune incremental consistency / residual weight or try SS=0 polish from run2 checkpoint — offline `--ar_decode` gate only ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28)).
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -44,7 +44,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
-| EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (`val_overfit_gate`, token acc) | **Partial** | Best free-run AR **0.978** (run2); v4 teacher **633/634** @ 20 ms but AR **0.975** — below **1.0** bar |
+| EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (ordered `@ 20 ms`) | **Partial** | Best free-run ordered **619/634** (run2); teacher **633/634** — bar **634/634** |
 | EXP-20260628-01 | `train` + `model` | AR `gate-ar-decode` v2–v4 (SS ramp) | **Supported** | v4: teacher F1 **1.0**; offline AR F1 **~0.35**; see EXP-20260628-02 for token-perfect path |
 | EXP-20260627-04 | `train` + `model` | AR `gate-tide-overfit` pass (residual MSE + λ ramp) | **Supported** | `val_event_onset_f1` **1.0** @ ep 180+; debug 634/634 within 20 ms |
 | EXP-20260627-03 | `train` + `model` | AR tide overfit training fixes (class weights, argmax decode, λ ramp) | **Supported** | F1 **~0.83** (`gate_v4`); residual head untrained — see NOTE-20260627-02 |
@@ -100,7 +100,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | ----- | ----- |
 | **Timestamp** | 2026-06-28 06:45:00 |
 | **Track** | `train` + `metric` (AR) |
-| **Gate** | Single-song overfit — **`val_overfit_gate` = min(`val_token_accuracy`, `val_event_onset_f1`)**; offline `--ar_decode` must match |
+| **Gate** | Single-song overfit — **`val_overfit_gate` = min(`val_token_accuracy`, `val_ordered_onset_match`)**; offline `--ar_decode` **`ordered_onset_match` 634/634** |
 | **Code** | `OverfitGateCallback`, `perfect_overfit_early_stop`; `test_step` metric reset (fix val contamination) |
 | **Config (run1)** | `configs/onset_ar_tide_overfit_perfect.json` — SS **0**, `token_class_weight: none`, warm-start `gate_v5`, checkpoint **`val_overfit_gate`** |
 | **Config (run2)** | `configs/onset_ar_tide_overfit_perfect_run2.json` — warm-start run1; `lambda_residual: 10`, **`ar_decode_val_every_n_epochs: 0`** (offline AR only), checkpoint **`val_overfit_gate`** |
@@ -120,7 +120,13 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Model (run4 / v4)** | `models_wsl/ar_tide_overfit_perfect_v4/ar_onset_model.keras` |
 | **Run4 offline (teacher)** | `logs/ar_perfect_v4_decode.log` — event F1 **~1.0** (634/634 TP); **633/634** within 20 ms; mean abs err **3.6 ms**, max **22.75 ms** |
 | **Run4 offline (`--ar_decode`)** | Two-pass AR F1 **0.975** (618 TP / 16 FP / 16 FN); decode length **636**; incremental pointer+residual F1 **0.942**; GT-parallel on free-run tokens **1.0** |
-| **Conclusion** | Teacher path **1.0** on run2/v3/v4. **Best free-run gate metric: run2 (0.978)** — v4 improves teacher sub-20 ms timing but **regresses** free-run AR vs run2. None pass tide free-run bar (**1.0**, NOTE-20260628-02). Gap remains pointer+residual under model prefix, not token LM alone. Next: train toward **incremental** free-run timing (v4 consistency loss direction) with checkpoint on offline `--ar_decode`. |
+| **Config (run5)** | `configs/ar/overfit_perfect/run5.json` — warm-start run2; `lambda_incremental_consistency: 0.1`, `incremental_consistency_max_steps: 16`, `lambda_residual: 10`, LR **5e-5**, **200 ep** |
+| **Log (run5)** | `logs/ar_tide_overfit_perfect_run5.log` — **200 ep** |
+| **Model (run5)** | `models_wsl/ar_tide_overfit_perfect_v5/ar_onset_model.keras` |
+| **Run5 training** | Ep 3+: `val_token_accuracy` **1.0**; final `val_event_onset_f1` **0.9968**, `val_overfit_gate` **0.9968** |
+| **Run5 offline (teacher)** | event F1 **~1.0** (634/634 TP); **633/634** within 20 ms; mean abs err **3.86 ms**, max **24.84 ms** |
+| **Run5 offline (`--ar_decode`)** | Two-pass AR F1 **0.976** (619 TP / 15 FP / 15 FN); decode length **636**, EOS OK; incremental pointer+residual F1 **0.940** |
+| **Conclusion** | Teacher path **1.0** on run2/v3/v4/v5. **Best free-run gate metric: run2 (0.978)** — run5 incremental consistency did not beat run2. None pass tide free-run bar (**1.0**, NOTE-20260628-02). Gap remains pointer+residual under model prefix, not token LM alone. Next: stronger incremental loss or alternate warm-start from run2 without v4/v5 regressions. |
 
 ### EXP-20260628-01: AR `gate-ar-decode` v2 (WSL 150ep, warm-start gate_v5)
 
