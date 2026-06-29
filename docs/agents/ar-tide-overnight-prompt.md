@@ -103,25 +103,29 @@ Use **session_brief** config diffs (`config_changes_vs_previous`, `last_run_vs_s
 
 ### How to run
 
-**Unattended overnight (scratch auto-plan, recommended):**
+**Agent autoresearch (meaningful changes — recommended):**
 
-```text
-venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --hours 7
-```
-
-Loops until deadline or **634/634** free-run: `overnight_planner.py` ranks **all** session runs, picks a parent from the best outcomes (not just the last row), and searches neighbor recipes from values seen in champion + historical configs — no fixed hyperparameter ladder. One GPU job at a time.
-
-**Manual single experiment** (you write the plan):
+Load [.cursor/skills/ar-tide-autoresearch/SKILL.md](../../.cursor/skills/ar-tide-autoresearch/SKILL.md), then each cycle:
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
 ```
 
-Write `logs/ar_tide_iter/next_experiment.json`, then:
+Write `logs/ar_tide_iter/next_experiment.json` from evidence (not knob spam), then:
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once
 ```
+
+Repeat until time budget or **634/634** free-run. **Do not** use `--hours` for autoresearch — that runs `overnight_planner` (history lattice / single-key tweaks only).
+
+**Unattended JSON search only** (low exploration — use when no agent is available):
+
+```text
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --hours 7
+```
+
+`overnight_planner.py` ranks session runs and mutates config neighbors. One GPU job at a time.
 
 **Single experiment** (when you already registered the recipe in `experiments.json`):
 

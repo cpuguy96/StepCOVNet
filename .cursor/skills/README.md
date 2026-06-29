@@ -18,6 +18,7 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | User / task trigger                                                      | Skill                     | Path                                                                     |
 | ------------------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------ |
 | tide overfit, overfit suite, frontend ablation, smoke test on tide       | tide-overfit-protocol     | [tide-overfit-protocol/SKILL.md](tide-overfit-protocol/SKILL.md)         |
+| AR tide overnight autoresearch, meaningful iter hypotheses, 634/634 gate | ar-tide-autoresearch      | [ar-tide-autoresearch/SKILL.md](ar-tide-autoresearch/SKILL.md)           |
 | F1 zero or low, conv1d collapse, train vs eval matching, threshold debug | onset-event-eval-matching | [onset-event-eval-matching/SKILL.md](onset-event-eval-matching/SKILL.md) |
 | loss weights, arch ablation, threshold sweep, plateau investigation      | tide-ablations            | [tide-ablations/SKILL.md](tide-ablations/SKILL.md)                       |
 | start research session, log EXP/NOTE                                     | research-session-workflow | [research-session-workflow/SKILL.md](research-session-workflow/SKILL.md) |
