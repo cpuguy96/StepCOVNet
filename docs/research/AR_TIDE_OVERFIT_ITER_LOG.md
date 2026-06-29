@@ -2,7 +2,17 @@
 
 Goal: free-run ordered **634/634 @ 20 ms**. Machine logs: `logs/ar_tide_iter/` (gitignored).
 
-Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session resumed — iter32+)
+Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session — iter34+)
+
+## Overnight session (2026-06-29, second pass)
+
+| | |
+|--|--|
+| **Start** | iter34 — warm-start `iter17` (614/634 session best) |
+| **Last completed** | iter33 — teacher **634/634**, free-run **614/634** (tied best) |
+| **Goal** | Free-run **634/634 @ 20 ms** |
+| **Budget** | ~7 h unattended |
+| **Queue** | iter34 → iter38 (`experiments.json`) |
 
 ## Overnight session (2026-06-29, resumed)
 
@@ -575,3 +585,135 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session 
 | Free-run ordered | **614/634 (0.9685)** |
 | Decode steps | 636 |
 | Eval wall (s) | 90.63 |
+
+### iter34 (2026-06-29T03:29:57)
+
+**Hypothesis:** Resume iter17; λ_residual=25; offline ckpt
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter34`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter34.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter34\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter34.log` |
+| Error | teacher metrics not perfect (ordered=634/634 (1.0000), event_f1=0.9984); skipped free-run eval |
+
+### iter35 (2026-06-29T03:32:16)
+
+**Hypothesis:** Resume iter17; λ_inc=0.35 max_steps=64; offline ckpt
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter35`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter35.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter35\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter35.log` |
+| Error | teacher metrics not perfect (ordered=633/634 (0.9984), event_f1=0.9937); skipped free-run eval |
+
+### iter36 (2026-06-29T03:35:59)
+
+**Hypothesis:** Resume iter21 (614); offline ckpt polish
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter36`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter36.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter36\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter36.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **614/634 (0.9685)** |
+| Decode steps | 636 |
+| Eval wall (s) | 93.08 |
+
+### iter37 (2026-06-29T03:38:17)
+
+**Hypothesis:** Resume iter18 (614); λ_inc=0.2; offline ckpt
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter37`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter37.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter37\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter37.log` |
+| Error | teacher metrics not perfect (ordered=634/634 (1.0000), event_f1=0.9984); skipped free-run eval |
+
+### iter38 (2026-06-29T03:41:04)
+
+**Hypothesis:** Resume iter17; lr=1e-5 micro-polish; offline ckpt
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter38`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter38.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter38\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter38.log` |
+| Error | teacher metrics not perfect (ordered=633/634 (0.9984), event_f1=0.9953); skipped free-run eval |
+
+### iter39 (2026-06-29T03:51:28)
+
+**Hypothesis:** Adaptive: incremental_consistency_max_steps 32 -> 16; warm-start iter36; lambda_inc=0.15 steps=16.0 lambda_res=10.0 SS=0.2 lr=2e-05
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter39`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter39.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter39\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter39.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **612/634 (0.9653)** |
+| Decode steps | 636 |
+| Eval wall (s) | 99.29 |
+
+### iter40 (2026-06-29T03:56:13)
+
+**Hypothesis:** Adaptive: incremental_consistency_max_steps 32 -> 48; warm-start iter36; lambda_inc=0.15 steps=48.0 lambda_res=10.0 SS=0.2 lr=2e-05
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter40`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter40.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter40\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter40.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **612/634 (0.9653)** |
+| Decode steps | 636 |
+| Eval wall (s) | 85.46 |
+
+### iter41 (2026-06-29T03:59:53)
+
+**Hypothesis:** Adaptive: lambda_incremental_consistency 0.15 -> 0.1; warm-start iter36; lambda_inc=0.1 steps=32 lambda_res=10.0 SS=0.2 lr=2e-05
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter41`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter41.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter41\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter41.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **614/634 (0.9685)** |
+| Decode steps | 636 |
+| Eval wall (s) | 93.08 |
