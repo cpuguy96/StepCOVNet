@@ -28,11 +28,13 @@
     "scheduled_sampling_max_p": 1.0,
     "scheduled_sampling_warmup_epochs": 15,
     "scheduled_sampling_ramp_epochs": 100,
-    "init_model_path": "models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras",
+    "init_model_path": "models_wsl/ar/gate_tide_overfit/ar_onset_model.keras",
     "learning_rate": 0.001,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
     "epochs": 150,
-    "checkpoint_metric": "val_event_onset_f1"
+    "checkpoint_metric": "val_event_onset_f1",
+    "model_output_dir": "models_wsl/ar/gate_ar_decode/v2",
+    "callback_root_dir": "callbacks/ar/gate_ar_decode/v2"
   }
 }

@@ -26,7 +26,7 @@
     "scheduled_sampling_max_p": 0.0,
     "ar_decode_val_every_n_epochs": 0,
     "use_soft_pointer_time": false,
-    "init_model_path": "models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras",
+    "init_model_path": "models_wsl/ar/gate_tide_overfit/ar_onset_model.keras",
     "learning_rate": 0.0005,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
@@ -34,6 +34,8 @@
     "checkpoint_metric": "val_overfit_gate",
     "perfect_overfit_early_stop": true,
     "perfect_overfit_min_score": 0.9999,
-    "perfect_overfit_patience": 3
+    "perfect_overfit_patience": 3,
+    "model_output_dir": "models_wsl/ar/perfect_overfit/run1",
+    "callback_root_dir": "callbacks/ar/perfect_overfit/run1"
   }
 }

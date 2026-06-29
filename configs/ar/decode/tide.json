@@ -25,7 +25,7 @@
     "use_soft_pointer_time": false,
     "scheduled_sampling_max_p": 0.5,
     "scheduled_sampling_ramp_epochs": 150,
-    "init_model_path": "models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras",
+    "init_model_path": "models_wsl/ar/gate_tide_overfit/ar_onset_model.keras",
     "learning_rate": 0.0002,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,

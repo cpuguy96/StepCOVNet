@@ -21,7 +21,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model_path",
-        default="models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras",
+        default="models_wsl/ar/gate_tide_overfit/ar_onset_model.keras",
         help="Checkpoint to decode with.",
     )
     parser.add_argument(

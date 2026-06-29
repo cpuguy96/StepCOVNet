@@ -26,6 +26,8 @@
     "scheduled_sampling_max_p": 0.0,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
-    "checkpoint_metric": "val_ordered_onset_match"
+    "checkpoint_metric": "val_ordered_onset_match",
+    "model_output_dir": "models_wsl/ar/gate_tide_overfit",
+    "callback_root_dir": "callbacks/ar/gate_tide_overfit"
   }
 }

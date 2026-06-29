@@ -47,7 +47,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 | **Timestamp** | 2026-06-28 05:15:00                                                   |
 | **Topic**     | Free-running validation speed + scheduled-sampling decode training    |
 
-**Context:** After `gate-tide-overfit` pass, `gate_v5` free-runs fail early-EOS (~12/634 onsets). v2 recipe warm-starts `gate_v5`, ramps scheduled sampling, checkpoints on `val_ar_decode_event_f1` ([EXP-20260628-01](EXPERIMENT_LOG.md#exp-20260628-01-ar-gate-ar-decode-v2-wsl-150ep-warm-start-gate_v5)).
+**Context:** After `gate-tide-overfit` pass, the PASS checkpoint (informal alias **`gate_v5`** → `models_wsl/ar/gate_tide_overfit/`) free-runs fail early-EOS (~12/634 onsets). v2 recipe warm-starts that checkpoint, ramps scheduled sampling, checkpoints on `val_ar_decode_event_f1` ([EXP-20260628-01](EXPERIMENT_LOG.md#exp-20260628-01-ar-gate-ar-decode-v2-wsl-150ep-warm-start-gate_v5)).
 
 **Infra fixes (2026-06-28):**
 

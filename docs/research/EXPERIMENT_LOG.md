@@ -33,7 +33,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** Perfect-overfit free-run still **below 1.0** after run5 (λ_inc=0.1, warm-start run2). Next: tune incremental consistency / residual weight or try SS=0 polish from run2 checkpoint — offline `--ar_decode` gate only ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28)).
+- **Track B (AR prototype):** Perfect-overfit free-run still **below 1.0** after run5 (λ_inc=0.1, warm-start run2). Checkpoint dirs: `models_wsl/ar/perfect_overfit/runN/` ([`configs/ar/README.md`](../../configs/ar/README.md) for old `ar_tide_overfit_*` aliases). Next: tune incremental consistency / residual weight or try SS=0 polish from run2 checkpoint — offline `--ar_decode` gate only ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28)).
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---

@@ -28,7 +28,7 @@
     "scheduled_sampling_ramp_epochs": 120,
     "ar_decode_val_every_n_epochs": 0,
     "use_soft_pointer_time": false,
-    "init_model_path": "models_wsl/ar_tide_overfit_perfect/ar_onset_model.keras",
+    "init_model_path": "models_wsl/ar/perfect_overfit/run1/ar_onset_model.keras",
     "learning_rate": 0.0003,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,

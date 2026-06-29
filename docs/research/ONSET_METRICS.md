@@ -80,7 +80,7 @@ Order is **enforced at eval** by sorting both sides. AR decode is chronological 
 | Track           | Canonical name | Training / val log name             | Offline script                                       |
 | --------------- | -------------- | ----------------------------------- | ---------------------------------------------------- |
 | **AR**          | `timing_match` | `val_ordered_onset_match` (teacher) | `scripts/debug_ar_onset_overfit.py`                  |
-| **AR free-run** | `timing_match` | `val_ar_decode_ordered_onset_match` | same + `--ar_decode`                                 |
+| **AR free-run** | `timing_match` | `val_ar_decode_ordered_onset_match` | same + `--ar_decode` (gate default; `--full-diagnostics` for slow extras) |
 | **Dense**       | `timing_match` | `val_timing_match` (callback)       | `scripts/eval_dense_onset.py` → `micro_timing_match` |
 | **Event**       | `timing_match` | _(diagnostics only today)_          | `scripts/debug_onset_overfit.py`                     |
 

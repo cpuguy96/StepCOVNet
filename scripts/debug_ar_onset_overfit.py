@@ -4,15 +4,23 @@ Usage:
     python scripts/debug_ar_onset_overfit.py --config configs/ar/tide.json
     python scripts/debug_ar_onset_overfit.py \\
         --config configs/ar/tide.json \\
-        --model_path models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras
+        --model_path models_wsl/ar/gate_tide_overfit/ar_onset_model.keras
     python scripts/debug_ar_onset_overfit.py \\
         --config configs/ar/overfit_perfect/run3.json \\
-        --model_path models_wsl/ar_tide_overfit_perfect_v3/ar_onset_model.keras \\
+        --model_path models_wsl/ar/perfect_overfit/run3/ar_onset_model.keras \\
         --ar_decode
+    python scripts/debug_ar_onset_overfit.py \\
+        --config configs/ar/tide.json \\
+        --model_path models_wsl/ar/gate_tide_overfit/ar_onset_model.keras \\
+        --ar_decode
+    python scripts/debug_ar_onset_overfit.py \\
+        --config configs/ar/tide.json \\
+        --model_path models_wsl/ar/gate_tide_overfit/ar_onset_model.keras \\
+        --ar_decode --full-diagnostics
 
 With ``--ar_decode``, top-level ``ar_decode`` metrics use **two-pass** timing
-(incremental free-run tokens + parallel pointer+residual re-forward). Incremental
-pointer+residual and GT timing parity live under ``ar_decode.diagnostics``.
+(``decode_autoregressive_gate_with_stats_numpy``). Pass ``--full-diagnostics``
+for token trace, gt_timing parity, and other slow ``ar_decode.diagnostics``.
 
 Human-readable progress and a completion summary go to **stderr**; full JSON stays
 on **stdout** (pipe-friendly).
@@ -24,6 +32,7 @@ import argparse
 import json
 import pathlib
 import sys
+import time
 
 from stepcovnet import wsl_gpu
 
@@ -67,9 +76,14 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--ar_decode",
     action="store_true",
+    help=("Offline free-run decode gate (two-pass timing_match + Hungarian F1)."),
+)
+PARSER.add_argument(
+    "--full-diagnostics",
+    action="store_true",
     help=(
-        "Offline free-run decode gate (two-pass timing). "
-        "Incremental pointer+residual under ar_decode.diagnostics."
+        "With --ar_decode, also run slow diagnostics (token trace, gt_timing, "
+        "incremental vs parallel pointer, token detokenize)."
     ),
 )
 PARSER.add_argument(
@@ -88,7 +102,7 @@ PARSER.add_argument(
     "--token_trace_steps",
     type=int,
     default=20,
-    help="With --ar_decode, log first N decode steps (pred vs target token).",
+    help="With --ar_decode --full-diagnostics, log first N decode steps.",
 )
 
 
@@ -645,6 +659,47 @@ def _ar_decode_report(
     return report
 
 
+def _ar_decode_gate_only_report(
+    model: tf.keras.Model,
+    batch_np: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+) -> dict[str, object]:
+    """Two-pass gate metrics only (no diagnostics overhead)."""
+    run_config = experiment_config.run
+    model_config = experiment_config.model
+    mert = batch_np["mert_patches"]
+    patch_mask = batch_np["patch_mask"]
+    gt_times = batch_np["gt_times"][0][batch_np["gt_mask"][0] > 0.5]
+
+    gate_stats = inference.decode_autoregressive_gate_with_stats_numpy(
+        model,
+        mert,
+        patch_mask,
+        max_decoder_len=experiment_config.max_decoder_len(),
+        patch_frames=model_config.patch_frames,
+        hop_sec=experiment_config.dataset.hop_sec,
+        experiment_config=experiment_config,
+    )
+    ordered = _ordered_onset_report(
+        gate_stats.times,
+        gt_times,
+        tolerance_sec=run_config.tolerance_sec,
+    )
+    return {
+        "timing_mode": "two_pass",
+        "timing_match": ordered,
+        "ordered_onset_match": ordered,
+        "ar_decode_length": gate_stats.n_forward_steps,
+        "stopped_on_eos": gate_stats.stopped_on_eos,
+        **_event_f1_report(
+            gate_stats.times,
+            gt_times,
+            tolerance_sec=run_config.tolerance_sec,
+        ),
+    }
+
+
 def main() -> int:
     args = PARSER.parse_args()
     quiet = args.json_only
@@ -662,21 +717,35 @@ def main() -> int:
     batch_tf = {key: tf.constant(value) for key, value in batch_np.items()}
 
     model = tf.keras.models.load_model(str(model_path), compile=False)
+    t0 = time.perf_counter()
     _log("Running teacher-fed eval...", quiet=quiet)
     outputs = model(_model_inputs(batch_tf), training=False)
     report = _diagnose_batch(outputs, batch_np, experiment_config=experiment_config)
     report["model_path"] = str(model_path)
     report["worst_onsets"] = _worst_onsets(report, args.worst_k)
     if args.ar_decode:
-        _log("Running free-run AR decode (two-pass)...", quiet=quiet)
-        report["ar_decode"] = _ar_decode_report(
-            model,
-            batch_np,
-            experiment_config=experiment_config,
-            token_trace_steps=args.token_trace_steps,
-            time_source=args.ar_decode_time_source,
-            compare_time_sources=True,
-        )
+        if args.full_diagnostics:
+            _log(
+                "Running free-run AR decode (two-pass, full diagnostics)...",
+                quiet=quiet,
+            )
+            report["ar_decode"] = _ar_decode_report(
+                model,
+                batch_np,
+                experiment_config=experiment_config,
+                token_trace_steps=args.token_trace_steps,
+                time_source=args.ar_decode_time_source,
+                compare_time_sources=True,
+            )
+        else:
+            _log("Running free-run AR gate (two-pass)...", quiet=quiet)
+            report["ar_decode"] = _ar_decode_gate_only_report(
+                model,
+                batch_np,
+                experiment_config=experiment_config,
+            )
+    elapsed_sec = time.perf_counter() - t0
+    report["eval_elapsed_sec"] = round(elapsed_sec, 3)
     for key in list(report):
         if key.startswith("_"):
             del report[key]
@@ -687,6 +756,8 @@ def main() -> int:
         ar_decode=args.ar_decode,
         quiet=quiet,
     )
+    if not quiet:
+        _log(f"Eval wall time: {elapsed_sec:.2f} s", quiet=False)
     print(json.dumps(report, indent=2))
     return 0
 
