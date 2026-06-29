@@ -395,6 +395,26 @@ class ArOnsetTrainingModel(keras.Model):
             n_samples=n_samples,
         )
 
+    def _update_incremental_consistency_metric(
+        self,
+        batch: dict[str, tf.Tensor],
+        *,
+        training: bool,
+    ) -> None:
+        """Log incremental-consistency loss without affecting teacher-fed val metrics."""
+        if self.lambda_incremental_consistency <= 0.0:
+            return
+        memory, parallel_outputs = self._forward_parallel_infer(
+            batch,
+            training=training,
+        )
+        inc_loss = self._incremental_consistency_term(
+            parallel_outputs,
+            batch,
+            encoder_memory=memory,
+        )
+        self.incremental_consistency_loss_tracker.update_state(inc_loss)
+
     def _forward_and_loss(
         self,
         batch: dict[str, tf.Tensor],
@@ -552,6 +572,8 @@ class ArOnsetTrainingModel(keras.Model):
             self.incremental_consistency_loss_tracker.update_state(
                 parts["incremental_consistency_loss"],
             )
+        else:
+            self._update_incremental_consistency_metric(batch, training=False)
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],

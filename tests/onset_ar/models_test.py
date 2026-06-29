@@ -152,6 +152,46 @@ class TrainersTest(unittest.TestCase):
         metrics = training_model.train_step((tf_batch,))
         self.assertIn("incremental_consistency_loss", metrics)
 
+    def test_test_step_reports_incremental_consistency_loss(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        experiment_config.run.lambda_incremental_consistency = 1.0
+        experiment_config.run.incremental_consistency_max_steps = 4
+        times = np.asarray([0.05, 0.12], dtype=np.float64)
+        token_seq = targets.encode_onset_times(
+            times,
+            duration_sec=1.0,
+            hop_sec=experiment_config.dataset.hop_sec,
+            patch_frames=experiment_config.model.patch_frames,
+            vocab=experiment_config.build_vocab(),
+            max_steps=16,
+        )
+        sample = datasets.ArSample(
+            mert_patches=np.random.randn(3, experiment_config.patch_input_dim()).astype(
+                np.float32,
+            ),
+            n_patches=3,
+            n_frames=10,
+            duration_sec=1.0,
+            token_seq=token_seq,
+            gt_times_sec=times.astype(np.float32),
+            audio_path="a.ogg",
+            chart_path="a.txt",
+        )
+        batch = datasets.sample_to_training_batch(sample, experiment_config)
+        tf_batch = {key: tf.constant(value) for key, value in batch.items()}
+
+        base_model = models.build_ar_onset_model(experiment_config)
+        training_model = trainers.ArOnsetTrainingModel(
+            base_model,
+            experiment_config=experiment_config,
+        )
+        training_model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+        )
+        metrics = training_model.test_step((tf_batch,))
+        self.assertIn("incremental_consistency_loss", metrics)
+        self.assertGreater(float(metrics["incremental_consistency_loss"].numpy()), 0.0)
+
     def test_test_step_metrics_match_base_model_with_incremental_loss(self) -> None:
         """Val metrics must use full-model forward (same path as offline debug)."""
         experiment_config = _tiny_experiment_config()
