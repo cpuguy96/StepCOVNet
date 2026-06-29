@@ -22,7 +22,7 @@ def _pid_alive(pid: int) -> bool:
         return False
     try:
         os.kill(pid, 0)
-    except OSError:
+    except (OSError, SystemError):
         return False
     return True
 

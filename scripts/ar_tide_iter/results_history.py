@@ -124,5 +124,22 @@ def max_iter_number(records: list[ResultRecord]) -> int:
     return best
 
 
-def next_iter_id(records: list[ResultRecord]) -> str:
-    return f"iter{max_iter_number(records) + 1}"
+def _max_registered_iter(repo: pathlib.Path) -> int:
+    exp_path = repo / "scripts" / "ar_tide_iter" / "experiments.json"
+    if not exp_path.is_file():
+        return 0
+    best = 0
+    for spec in json.loads(exp_path.read_text(encoding="utf-8")):
+        match = _ITER_ID_RE.match(str(spec.get("id", "")))
+        if match:
+            best = max(best, int(match.group(1)))
+    return best
+
+
+def next_iter_id(
+    records: list[ResultRecord],
+    *,
+    repo: pathlib.Path = REPO,
+) -> str:
+    best = max(max_iter_number(records), _max_registered_iter(repo))
+    return f"iter{best + 1}"

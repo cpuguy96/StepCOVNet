@@ -160,7 +160,7 @@ def build_brief(
 
     return {
         "goal": f"free_run_ordered_match {GOAL_MATCHED}/{GOAL_MATCHED} @ 20ms",
-        "suggested_next_id": next_iter_id(history),
+        "suggested_next_id": next_iter_id(history, repo=repo),
         "next_experiment_path": "logs/ar_tide_iter/next_experiment.json",
         "champion_template": (
             str(CHAMPION_PATH.relative_to(repo)).replace("\\", "/")
@@ -189,7 +189,7 @@ def build_brief(
             "Write next_experiment.json with id, notes, reasoning, and only the config overrides you want to change (run/model/dataset).",
             "Omit unchanged keys; new champion-template keys are valid knobs when code adds them.",
             "Do not change eval metrics or gates — compare runs on the fixed_eval_metrics only.",
-            "Train from scratch every run — do not set init_model_path (stripped by harness).",
+            "Train from scratch every run — init_model_path is cheating and is stripped by the harness.",
             "Then: venv\\Scripts\\python.exe scripts/ar_tide_iter/run_overnight.py --once",
             "Do not use a fixed iter queue or let code auto-mutate hyperparameters.",
             "Run one training driver at a time; a second run_exp will refuse if gpu_training.lock is held.",

@@ -6,7 +6,8 @@ Train/eval loop for free-run **634/634 @ 20 ms** experiments on tide.
 | ---- | ---- |
 | `scripts/ar_tide_iter/session_brief.py` | **Agent decision brief** — session best, config diffs vs prior runs, tried recipes |
 | `logs/ar_tide_iter/next_experiment.json` | **Agent-written** next plan (gitignored); see `next_experiment.example.json` |
-| `scripts/ar_tide_iter/run_overnight.py` | Runs the agent's `next_experiment.json` once (`--once`); does not pick knobs |
+| `scripts/ar_tide_iter/run_overnight.py` | `--hours 7` unattended scratch loop, or `--once` for a hand-written plan |
+| `scripts/ar_tide_iter/overnight_planner.py` | History search: ranks all runs, explores config neighbors (no fixed knob ladder) |
 | `scripts/ar_tide_iter/run_exp.py` | One experiment: build config, train (WSL GPU), offline `--ar_decode` eval, append logs |
 | `scripts/ar_tide_iter/results_history.py` | Parse `results.jsonl` and config snapshots for briefs |
 | `scripts/ar_tide_iter/experiments.json` | Registry — one recipe per id (tracked) |
