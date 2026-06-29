@@ -1,8 +1,13 @@
 """Run one AR tide-overfit iteration experiment.
 
 Usage (repo root, Windows venv):
-    venv\\Scripts\\python.exe scripts/ar_tide_iter/run_exp.py --id iter01 \\
-        --config logs/ar_tide_iter/configs/iter01.json
+    venv\\Scripts\\python.exe scripts/ar_tide_iter/run_exp.py --id iter31 \\
+        --notes "overnight hypothesis"
+
+Configs are built on demand from ``experiments.json`` + champion template.
+Each attempt freezes a snapshot under ``logs/ar_tide_iter/configs/``.
+Use ``--reuse-last-config`` to rerun the same snapshot after infra failures.
+Use ``--config`` to override with a hand-edited JSON path.
 """
 
 from __future__ import annotations
@@ -19,6 +24,17 @@ from datetime import datetime
 from stepcovnet import wsl_gpu
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
+_ITER_PKG = pathlib.Path(__file__).resolve().parent
+if str(_ITER_PKG) not in sys.path:
+    sys.path.insert(0, str(_ITER_PKG))
+import config_builder  # noqa: E402
+from training_log import (  # noqa: E402
+    count_logged_attempts,
+    format_log_heading,
+    run_kind,
+    train_log_path,
+)
+
 ITER_DIR = REPO / "logs" / "ar_tide_iter"
 LOG_MD = ITER_DIR / "ITER_LOG.md"
 RESULTS_JSONL = ITER_DIR / "results.jsonl"
@@ -30,16 +46,94 @@ DOC_LOG = REPO / "docs" / "research" / "AR_TIDE_OVERFIT_ITER_LOG.md"
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--id", required=True, help="Experiment id, e.g. iter01")
-    p.add_argument("--config", required=True, help="Path to experiment JSON config")
+    p.add_argument(
+        "--id", help="Experiment id, e.g. iter31 (required unless --build-all)"
+    )
+    p.add_argument(
+        "--config",
+        help="Path to experiment JSON; default: build from experiments.json via --id",
+    )
+    p.add_argument(
+        "--build-all",
+        action="store_true",
+        help="Write all registry configs to logs/ar_tide_iter/configs/ and exit",
+    )
     p.add_argument("--skip-train", action="store_true", help="Eval only")
     p.add_argument("--notes", default="", help="Hypothesis / change summary")
+    p.add_argument(
+        "--retry-reason",
+        default="",
+        help="Why this run repeats the same --id (infra kill, recipe fix, etc.)",
+    )
+    p.add_argument(
+        "--reuse-last-config",
+        action="store_true",
+        help="Retry with the previous attempt's config snapshot (experiments.json ignored)",
+    )
     p.add_argument(
         "--force",
         action="store_true",
         help="Start training even if WSL GPU has active compute (sets STEPCOVNET_FORCE_GPU=1)",
     )
-    return p.parse_args()
+    args = p.parse_args()
+    if args.build_all:
+        return args
+    if not args.id:
+        p.error("--id is required unless --build-all is set")
+    return args
+
+
+def _finalize_kind(
+    *,
+    attempt: int,
+    retry_reason: str,
+    recipe_changed: bool,
+    reuse_last_config: bool,
+) -> str:
+    if reuse_last_config:
+        reason = retry_reason or "reuse prior config snapshot"
+        return run_kind(attempt=attempt, retry_reason=reason)
+    kind = run_kind(attempt=attempt, retry_reason=retry_reason)
+    if recipe_changed and attempt > 1:
+        marker = "recipe changed in experiments.json"
+        if kind == "retry":
+            return f"retry — {marker}" if not retry_reason else f"{kind}; {marker}"
+        return f"{kind}; {marker}"
+    return kind
+
+
+def _resolve_config(
+    args: argparse.Namespace,
+    attempt: int,
+) -> tuple[pathlib.Path, bool]:
+    """Return config snapshot path and whether the registry recipe changed."""
+    if args.config:
+        return pathlib.Path(args.config).resolve(), False
+
+    if args.reuse_last_config:
+        prior = config_builder.latest_config_snapshot(
+            args.id,
+            before_attempt=attempt,
+        )
+        if prior is None:
+            print(
+                "no prior config snapshot; building from experiments.json",
+                file=sys.stderr,
+            )
+        else:
+            return prior.resolve(), False
+
+    snapshot = config_builder.write_config(args.id, attempt=attempt)
+    if attempt <= 1:
+        return snapshot, False
+
+    prior = config_builder.latest_config_snapshot(args.id, before_attempt=attempt)
+    if prior is None:
+        return snapshot, False
+
+    old_cfg = json.loads(prior.read_text(encoding="utf-8"))
+    new_cfg = json.loads(snapshot.read_text(encoding="utf-8"))
+    return snapshot, not config_builder.run_blocks_equal(old_cfg, new_cfg)
 
 
 def _parse_eval_json(blob: str) -> dict:
@@ -187,11 +281,16 @@ def _append_logs(entry: dict) -> None:
 
     ts = entry["timestamp"]
     exp_id = entry["id"]
+    attempt = int(entry.get("attempt", 1))
+    kind = entry.get("kind", run_kind(attempt=attempt, retry_reason=""))
     block = (
-        f"\n### {exp_id} ({ts})\n\n"
+        f"\n{format_log_heading(exp_id, attempt, ts)}\n\n"
         f"**Hypothesis:** {entry.get('notes', '')}\n\n"
         f"| | |\n|--|--|\n"
-        f"| Config | `{entry['config']}` |\n"
+        f"| Kind | {kind} |\n"
+        f"| Attempt | {attempt} |\n"
+        f"| Registry | `scripts/ar_tide_iter/experiments.json` (`{exp_id}`) |\n"
+        f"| Config snapshot | `{entry['config']}` |\n"
         f"| Model | `{entry['model_path']}` |\n"
         f"| Train exit | {entry.get('train_exit', 'skipped')} |\n"
         f"| Train log | `{entry.get('train_log', '')}` |\n"
@@ -225,7 +324,28 @@ def _append_logs(entry: dict) -> None:
 
 def main() -> int:
     args = _parse_args()
-    config = pathlib.Path(args.config).resolve()
+    if args.build_all:
+        for path in config_builder.write_all_configs():
+            print(path.relative_to(REPO))
+        return 0
+
+    attempt = count_logged_attempts(args.id) + 1
+    config, recipe_changed = _resolve_config(args, attempt)
+
+    notes = args.notes
+    if not notes:
+        try:
+            notes = config_builder.get_experiment(args.id).get("notes", "")
+        except KeyError:
+            notes = ""
+
+    kind = _finalize_kind(
+        attempt=attempt,
+        retry_reason=args.retry_reason,
+        recipe_changed=recipe_changed,
+        reuse_last_config=args.reuse_last_config,
+    )
+
     if not config.is_file():
         print(f"config not found: {config}", file=sys.stderr)
         return 1
@@ -234,8 +354,25 @@ def main() -> int:
     model_path = pathlib.Path(cfg["run"]["model_output_dir"]) / "ar_onset_model.keras"
     if not model_path.is_absolute():
         model_path = (REPO / model_path).resolve()
-    train_log = ITER_DIR / "train_logs" / f"{args.id}.log"
+    train_log = train_log_path(args.id, attempt)
     train_exit: int | str = "skipped"
+
+    def _log_entry(**extra: object) -> dict:
+        base = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "id": args.id,
+            "attempt": attempt,
+            "kind": kind,
+            "recipe_changed": recipe_changed,
+            "reuse_last_config": args.reuse_last_config,
+            "config": str(config.relative_to(REPO)),
+            "model_path": str(model_path.relative_to(REPO)),
+            "notes": notes,
+            "train_exit": train_exit,
+            "train_log": str(train_log.relative_to(REPO)),
+        }
+        base.update(extra)
+        return base
 
     if not args.skip_train:
         print(f"[{args.id}] training -> {model_path.parent}")
@@ -248,17 +385,7 @@ def main() -> int:
         if train_exit != 0:
             print(f"train failed exit={train_exit}", file=sys.stderr)
         if not model_path.is_file():
-            entry = {
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "id": args.id,
-                "config": str(config.relative_to(REPO)),
-                "model_path": str(model_path.relative_to(REPO)),
-                "notes": args.notes,
-                "train_exit": train_exit,
-                "train_log": str(train_log.relative_to(REPO)),
-                "error": "checkpoint missing after train",
-            }
-            _append_logs(entry)
+            _append_logs(_log_entry(error="checkpoint missing after train"))
             return 1
 
     print(f"[{args.id}] eval free-run")
@@ -273,21 +400,15 @@ def main() -> int:
         and float(free.get("rate", 0)) >= 1.0
     )
 
-    entry = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "id": args.id,
-        "config": str(config.relative_to(REPO)),
-        "model_path": str(model_path.relative_to(REPO)),
-        "notes": args.notes,
-        "train_exit": train_exit,
-        "train_log": str(train_log.relative_to(REPO)),
-        "teacher": t_str,
-        "free_run": f_str,
-        "decode_steps": report["ar_decode"].get("ar_decode_length"),
-        "eval_wall_sec": report.get("_eval_wall_sec"),
-        "passed": passed,
-    }
-    _append_logs(entry)
+    _append_logs(
+        _log_entry(
+            teacher=t_str,
+            free_run=f_str,
+            decode_steps=report["ar_decode"].get("ar_decode_length"),
+            eval_wall_sec=report.get("_eval_wall_sec"),
+            passed=passed,
+        ),
+    )
     print(f"teacher {t_str} | free-run {f_str} | passed={passed}")
     return 0 if passed else (2 if train_exit != 0 else 0)
 

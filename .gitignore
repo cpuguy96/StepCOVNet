@@ -213,3 +213,6 @@ scripts/*
 tests/wsl_*
 !tests/wsl_gpu_test.py
 tests/run_arch_*
+
+# Python bytecode caches (any directory; must follow ! allowlists above)
+**/__pycache__/

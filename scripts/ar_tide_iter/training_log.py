@@ -11,11 +11,65 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 ITER_DIR = REPO / "logs" / "ar_tide_iter"
 STATUS_DIR = ITER_DIR / "status"
+RESULTS_JSONL = ITER_DIR / "results.jsonl"
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _PROGRESS_RE = re.compile(r"[\u2580-\u259f\u2500-\u257f]")
 _EPOCH_RE = re.compile(r"^Epoch (\d+)/(\d+)$")
+_ATTEMPT_LOG_RE = re.compile(r"\.attempt(\d+)\.log$")
 _VAL_KEYS = ("val_overfit_gate", "val_ordered_onset_match", "val_loss")
+
+
+def count_logged_attempts(exp_id: str) -> int:
+    """Return how many prior results are recorded for ``exp_id``."""
+    if not RESULTS_JSONL.is_file():
+        return 0
+    count = 0
+    for line in RESULTS_JSONL.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        with contextlib.suppress(json.JSONDecodeError):
+            if json.loads(line).get("id") == exp_id:
+                count += 1
+    return count
+
+
+def train_log_path(exp_id: str, attempt: int) -> Path:
+    """Path for a train log; attempt 1 keeps the legacy ``{id}.log`` name."""
+    if attempt <= 1:
+        return ITER_DIR / "train_logs" / f"{exp_id}.log"
+    return ITER_DIR / "train_logs" / f"{exp_id}.attempt{attempt}.log"
+
+
+def latest_train_log_path(exp_id: str) -> Path:
+    """Return the newest train log for an experiment id."""
+    logs_dir = ITER_DIR / "train_logs"
+    candidates = list(logs_dir.glob(f"{exp_id}.attempt*.log"))
+
+    def _attempt_num(path: Path) -> int:
+        match = _ATTEMPT_LOG_RE.search(path.name)
+        return int(match.group(1)) if match else 0
+
+    if candidates:
+        return max(candidates, key=_attempt_num)
+    return logs_dir / f"{exp_id}.log"
+
+
+def run_kind(*, attempt: int, retry_reason: str) -> str:
+    """Classify a run as fresh or retry for the human log."""
+    if attempt > 1 or retry_reason:
+        label = "retry"
+        if retry_reason:
+            return f"{label} — {retry_reason}"
+        return label
+    return "fresh"
+
+
+def format_log_heading(exp_id: str, attempt: int, timestamp: str) -> str:
+    """Markdown heading for one logged run."""
+    if attempt <= 1:
+        return f"### {exp_id} ({timestamp})"
+    return f"### {exp_id} · attempt {attempt} ({timestamp})"
 
 
 def sanitize_line(line: str) -> str:
@@ -126,7 +180,7 @@ def format_status(status: dict) -> str:
 
 
 def refresh_status_from_log(exp_id: str) -> dict:
-    log_path = ITER_DIR / "train_logs" / f"{exp_id}.log"
+    log_path = latest_train_log_path(exp_id)
     status = parse_train_log(log_path)
     status["id"] = exp_id
     write_status(exp_id, status)

@@ -49,7 +49,7 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session 
 
 - WSL `pkg_resources` missing mid-session — fixed with `pip install setuptools` in `~/stepcovnet-venv-wsl`.
 - **Fixed (2026-06-29):** in-loop `val_ar_decode_ordered_onset_match` logged **0.0** because `test_step` reset/published AR-decode metrics before `ArDecodeValidationCallback` ran — broke checkpoint-on-free-run. See `src/stepcovnet/onset_ar/trainers.py` (`_batch_metrics` excludes callback-only metrics).
-- Harness: `scripts/ar_tide_iter/run_exp.py`, `scripts/ar_tide_iter/build_configs.py` (outputs under `logs/ar_tide_iter/`).
+- Harness: `scripts/ar_tide_iter/run_exp.py`, `scripts/ar_tide_iter/experiments.json` (outputs under `logs/ar_tide_iter/`).
 
 ---
 
@@ -455,24 +455,28 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session 
 | Decode steps     | 636                                                           |
 | Eval wall (s)    | 103.72                                                        |
 
-### iter29 (2026-06-29T02:19:16)
+### iter29 · attempt 1 (2026-06-29T02:19:16)
 
 **Hypothesis:** iter17 recipe retry post trainer fix (AR decode ckpt)
 
 | | |
 |--|--|
+| Kind | fresh |
+| Attempt | 1 |
 | Config | `logs\ar_tide_iter\configs\iter29.json` |
 | Model | `models_wsl\ar\tide_overfit_iter\iter29\ar_onset_model.keras` |
 | Train exit | 15 |
 | Train log | `logs\ar_tide_iter\train_logs\iter29.log` |
 | Error | checkpoint missing after train |
 
-### iter29 (2026-06-29T02:28:26)
+### iter29 · attempt 2 (2026-06-29T02:28:26)
 
 **Hypothesis:** iter17 recipe retry post trainer fix (AR decode ckpt)
 
 | | |
 |--|--|
+| Kind | retry |
+| Attempt | 2 |
 | Config | `logs\ar_tide_iter\configs\iter29.json` |
 | Model | `models_wsl\ar\tide_overfit_iter\iter29\ar_onset_model.keras` |
 | Train exit | 15 |
@@ -493,3 +497,36 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session 
 | Free-run ordered | **612/634 (0.9653)** |
 | Decode steps | 636 |
 | Eval wall (s) | 104.86 |
+
+### iter31 · attempt 1 (2026-06-29T02:53:07)
+
+**Hypothesis:** Resume iter17 (614); polish + in-loop AR decode ckpt (overnight)
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Config snapshot | `logs\ar_tide_iter\configs\iter31.json` (in-loop recipe; lost when registry updated) |
+| Registry | `experiments.json` · `iter31` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter31\ar_onset_model.keras` |
+| Train exit | 15 |
+| Train log | `logs\ar_tide_iter\train_logs\iter31.log` |
+| Error | checkpoint missing after train |
+
+### iter31 · attempt 2 (2026-06-29T02:57:18)
+
+**Hypothesis:** Resume iter17 (614); polish offline ckpt (overnight)
+
+| | |
+|--|--|
+| Kind | retry — recipe changed in experiments.json (removed in-loop AR decode) |
+| Attempt | 2 |
+| Config snapshot | `logs\ar_tide_iter\configs\iter31.json` (offline recipe; overwrote attempt 1) |
+| Registry | `experiments.json` · `iter31` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter31\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter31.log` (overwrote attempt 1) |
+| Teacher ordered | 633/634 (0.9984) |
+| Free-run ordered | **610/634 (0.9621)** |
+| Decode steps | 636 |
+| Eval wall (s) | 106.26 |

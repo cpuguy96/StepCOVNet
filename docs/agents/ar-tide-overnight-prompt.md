@@ -105,13 +105,11 @@ Default init for new runs: **iter17** unless hypothesis needs otherwise.
 ### How to run
 
 ```text
-venv\Scripts\python.exe scripts/ar_tide_iter/build_configs.py
 venv\Scripts\python.exe scripts/ar_tide_iter/run_exp.py --id iter31 ^
-    --config logs/ar_tide_iter/configs/iter31.json ^
     --notes "your hypothesis"
 ```
 
-Add `iter31+` entries in `scripts/ar_tide_iter/build_configs.py` before `build_configs.py`. Use offline-only eval (`checkpoint_metric: val_overfit_gate`).
+Add `iter31+` entries in `scripts/ar_tide_iter/experiments.json` (new id per hypothesis). Retries reuse the same id — see `experiments.README.md`. Use `--reuse-last-config` for infra-only retries; edit the registry only when the recipe changes.
 
 **Watch progress (logs/ is gitignored):**
 
