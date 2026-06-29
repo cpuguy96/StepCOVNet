@@ -21,13 +21,16 @@ import sys
 import time
 from datetime import datetime
 
-from stepcovnet import wsl_gpu
-
 REPO = pathlib.Path(__file__).resolve().parents[2]
 _ITER_PKG = pathlib.Path(__file__).resolve().parent
 if str(_ITER_PKG) not in sys.path:
     sys.path.insert(0, str(_ITER_PKG))
 import config_builder  # noqa: E402
+from training_lock import (  # noqa: E402
+    acquire_training_lock,
+    assert_gpu_training_available,
+    release_training_lock,
+)
 from training_log import (  # noqa: E402
     count_logged_attempts,
     format_log_heading,
@@ -225,45 +228,49 @@ def _train(
     )
     sys.stdout.flush()
 
-    with log_path.open("w", encoding="utf-8") as logf:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=REPO,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-            bufsize=1,
-        )
-        assert proc.stdout is not None
-        for raw_line in proc.stdout:
-            logf.write(raw_line)
-            logf.flush()
-            clean = sanitize_line(raw_line)
-            if clean.startswith("Epoch "):
-                parts = clean.split()
-                if len(parts) >= 2 and "/" in parts[1]:
-                    cur, total = parts[1].split("/", 1)
-                    epoch = int(cur)
-                    epochs_total = int(total)
-            if "val_overfit_gate:" in clean:
-                last_val.update(extract_val_metrics(clean))
-            write_status(
-                exp_id,
-                {
-                    "updated_at": datetime.now().isoformat(timespec="seconds"),
-                    "log_path": str(log_path.relative_to(REPO)).replace("\\", "/"),
-                    "epoch": epoch,
-                    "epochs_total": epochs_total,
-                    "running": True,
-                    **({"last_val": last_val} if last_val else {}),
-                },
+    acquire_training_lock(exp_id)
+    try:
+        with log_path.open("w", encoding="utf-8") as logf:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=REPO,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                bufsize=1,
             )
-            if is_worth_printing(raw_line):
-                print(clean, flush=True)
-        proc.wait()
+            assert proc.stdout is not None
+            for raw_line in proc.stdout:
+                logf.write(raw_line)
+                logf.flush()
+                clean = sanitize_line(raw_line)
+                if clean.startswith("Epoch "):
+                    parts = clean.split()
+                    if len(parts) >= 2 and "/" in parts[1]:
+                        cur, total = parts[1].split("/", 1)
+                        epoch = int(cur)
+                        epochs_total = int(total)
+                if "val_overfit_gate:" in clean:
+                    last_val.update(extract_val_metrics(clean))
+                write_status(
+                    exp_id,
+                    {
+                        "updated_at": datetime.now().isoformat(timespec="seconds"),
+                        "log_path": str(log_path.relative_to(REPO)).replace("\\", "/"),
+                        "epoch": epoch,
+                        "epochs_total": epochs_total,
+                        "running": True,
+                        **({"last_val": last_val} if last_val else {}),
+                    },
+                )
+                if is_worth_printing(raw_line):
+                    print(clean, flush=True)
+            proc.wait()
+    finally:
+        release_training_lock(exp_id)
 
     write_status(
         exp_id,
@@ -384,7 +391,7 @@ def main() -> int:
     if not args.skip_train:
         print(f"[{args.id}] training -> {model_path.parent}")
         try:
-            wsl_gpu.assert_wsl_gpu_free_for_training(force=args.force)
+            assert_gpu_training_available(exp_id=args.id, force=args.force)
         except RuntimeError as exc:
             print(f"GPU busy: {exc}", file=sys.stderr)
             return 1
@@ -413,6 +420,7 @@ def main() -> int:
                 error=msg,
                 teacher=t_str,
                 teacher_event_f1=round(event_f1, 6),
+                teacher_gate_failed=True,
             ),
         )
         return 1
@@ -431,6 +439,8 @@ def main() -> int:
         _log_entry(
             teacher=t_str,
             free_run=f_str,
+            free_run_matched=int(free.get("n_matched", 0)),
+            free_run_denom=int(free.get("n_denom", 0)),
             decode_steps=report["ar_decode"].get("ar_decode_length"),
             eval_wall_sec=report.get("_eval_wall_sec"),
             passed=passed,
