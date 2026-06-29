@@ -82,8 +82,26 @@ class WslGpuTest(unittest.TestCase):
         ):
             self.assertEqual(wsl_gpu.active_wsl_gpu_compute_apps(), [])
 
+    def test_assert_wsl_gpu_free_raises_when_training_script_running(self):
+        with (
+            mock.patch.object(
+                wsl_gpu,
+                "list_wsl_training_pids",
+                return_value=[6973],
+                autospec=True,
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            wsl_gpu.assert_wsl_gpu_free_for_training()
+
     def test_assert_wsl_gpu_free_raises_when_busy(self):
         with (
+            mock.patch.object(
+                wsl_gpu,
+                "list_wsl_training_pids",
+                return_value=[],
+                autospec=True,
+            ),
             mock.patch.object(
                 wsl_gpu,
                 "active_wsl_gpu_compute_apps",

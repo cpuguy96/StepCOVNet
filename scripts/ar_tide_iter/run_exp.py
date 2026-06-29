@@ -228,49 +228,45 @@ def _train(
     )
     sys.stdout.flush()
 
-    acquire_training_lock(exp_id)
-    try:
-        with log_path.open("w", encoding="utf-8") as logf:
-            proc = subprocess.Popen(
-                cmd,
-                cwd=REPO,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=env,
-                bufsize=1,
+    with log_path.open("w", encoding="utf-8") as logf:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=REPO,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        for raw_line in proc.stdout:
+            logf.write(raw_line)
+            logf.flush()
+            clean = sanitize_line(raw_line)
+            if clean.startswith("Epoch "):
+                parts = clean.split()
+                if len(parts) >= 2 and "/" in parts[1]:
+                    cur, total = parts[1].split("/", 1)
+                    epoch = int(cur)
+                    epochs_total = int(total)
+            if "val_overfit_gate:" in clean:
+                last_val.update(extract_val_metrics(clean))
+            write_status(
+                exp_id,
+                {
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    "log_path": str(log_path.relative_to(REPO)).replace("\\", "/"),
+                    "epoch": epoch,
+                    "epochs_total": epochs_total,
+                    "running": True,
+                    **({"last_val": last_val} if last_val else {}),
+                },
             )
-            assert proc.stdout is not None
-            for raw_line in proc.stdout:
-                logf.write(raw_line)
-                logf.flush()
-                clean = sanitize_line(raw_line)
-                if clean.startswith("Epoch "):
-                    parts = clean.split()
-                    if len(parts) >= 2 and "/" in parts[1]:
-                        cur, total = parts[1].split("/", 1)
-                        epoch = int(cur)
-                        epochs_total = int(total)
-                if "val_overfit_gate:" in clean:
-                    last_val.update(extract_val_metrics(clean))
-                write_status(
-                    exp_id,
-                    {
-                        "updated_at": datetime.now().isoformat(timespec="seconds"),
-                        "log_path": str(log_path.relative_to(REPO)).replace("\\", "/"),
-                        "epoch": epoch,
-                        "epochs_total": epochs_total,
-                        "running": True,
-                        **({"last_val": last_val} if last_val else {}),
-                    },
-                )
-                if is_worth_printing(raw_line):
-                    print(clean, flush=True)
-            proc.wait()
-    finally:
-        release_training_lock(exp_id)
+            if is_worth_printing(raw_line):
+                print(clean, flush=True)
+        proc.wait()
 
     write_status(
         exp_id,
@@ -388,66 +384,75 @@ def main() -> int:
         base.update(extra)
         return base
 
-    if not args.skip_train:
-        print(f"[{args.id}] training -> {model_path.parent}")
-        try:
-            assert_gpu_training_available(exp_id=args.id, force=args.force)
-        except RuntimeError as exc:
-            print(f"GPU busy: {exc}", file=sys.stderr)
-            return 1
-        train_exit = _train(config, train_log, exp_id=args.id, force=args.force)
-        if train_exit != 0:
-            print(f"train failed exit={train_exit}", file=sys.stderr)
-        if not model_path.is_file():
-            _append_logs(_log_entry(error="checkpoint missing after train"))
+    lock_held = False
+    try:
+        if not args.skip_train:
+            print(f"[{args.id}] training -> {model_path.parent}")
+            try:
+                assert_gpu_training_available(exp_id=args.id, force=args.force)
+            except RuntimeError as exc:
+                print(f"GPU busy: {exc}", file=sys.stderr)
+                return 1
+            acquire_training_lock(args.id)
+            lock_held = True
+            train_exit = _train(config, train_log, exp_id=args.id, force=args.force)
+            if train_exit != 0:
+                print(f"train failed exit={train_exit}", file=sys.stderr)
+            if not model_path.is_file():
+                _append_logs(_log_entry(error="checkpoint missing after train"))
+                return 1
+
+        print(f"[{args.id}] eval teacher-fed")
+        teacher_report = _eval(config, model_path, ar_decode=False)
+        teacher = teacher_report.get("ordered_onset_match", {})
+        t_str = f"{teacher.get('n_matched')}/{teacher.get('n_denom')} ({teacher.get('rate'):.4f})"
+        event_f1 = float(teacher_report.get("event_f1", 0.0))
+
+        if not teacher_report_perfect(teacher_report):
+            msg = (
+                "teacher metrics not perfect "
+                f"(ordered={t_str}, event_f1={event_f1:.4f}); "
+                "skipped free-run eval"
+            )
+            print(msg, file=sys.stderr)
+            _append_logs(
+                _log_entry(
+                    error=msg,
+                    teacher=t_str,
+                    teacher_event_f1=round(event_f1, 6),
+                    teacher_gate_failed=True,
+                ),
+            )
             return 1
 
-    print(f"[{args.id}] eval teacher-fed")
-    teacher_report = _eval(config, model_path, ar_decode=False)
-    teacher = teacher_report.get("ordered_onset_match", {})
-    t_str = f"{teacher.get('n_matched')}/{teacher.get('n_denom')} ({teacher.get('rate'):.4f})"
-    event_f1 = float(teacher_report.get("event_f1", 0.0))
-
-    if not teacher_report_perfect(teacher_report):
-        msg = (
-            "teacher metrics not perfect "
-            f"(ordered={t_str}, event_f1={event_f1:.4f}); "
-            "skipped free-run eval"
+        print(f"[{args.id}] eval free-run")
+        report = _eval(config, model_path, ar_decode=True)
+        free = report["ar_decode"]["ordered_onset_match"]
+        f_str = (
+            f"{free.get('n_matched')}/{free.get('n_denom')} ({free.get('rate'):.4f})"
         )
-        print(msg, file=sys.stderr)
+        passed = (
+            int(free.get("n_matched", 0)) == 634
+            and int(free.get("n_denom", 0)) == 634
+            and float(free.get("rate", 0)) >= 1.0
+        )
+
         _append_logs(
             _log_entry(
-                error=msg,
                 teacher=t_str,
-                teacher_event_f1=round(event_f1, 6),
-                teacher_gate_failed=True,
+                free_run=f_str,
+                free_run_matched=int(free.get("n_matched", 0)),
+                free_run_denom=int(free.get("n_denom", 0)),
+                decode_steps=report["ar_decode"].get("ar_decode_length"),
+                eval_wall_sec=report.get("_eval_wall_sec"),
+                passed=passed,
             ),
         )
-        return 1
-
-    print(f"[{args.id}] eval free-run")
-    report = _eval(config, model_path, ar_decode=True)
-    free = report["ar_decode"]["ordered_onset_match"]
-    f_str = f"{free.get('n_matched')}/{free.get('n_denom')} ({free.get('rate'):.4f})"
-    passed = (
-        int(free.get("n_matched", 0)) == 634
-        and int(free.get("n_denom", 0)) == 634
-        and float(free.get("rate", 0)) >= 1.0
-    )
-
-    _append_logs(
-        _log_entry(
-            teacher=t_str,
-            free_run=f_str,
-            free_run_matched=int(free.get("n_matched", 0)),
-            free_run_denom=int(free.get("n_denom", 0)),
-            decode_steps=report["ar_decode"].get("ar_decode_length"),
-            eval_wall_sec=report.get("_eval_wall_sec"),
-            passed=passed,
-        ),
-    )
-    print(f"teacher {t_str} | free-run {f_str} | passed={passed}")
-    return 0 if passed else (2 if train_exit != 0 else 0)
+        print(f"teacher {t_str} | free-run {f_str} | passed={passed}")
+        return 0 if passed else (2 if train_exit != 0 else 0)
+    finally:
+        if lock_held:
+            release_training_lock(args.id)
 
 
 if __name__ == "__main__":

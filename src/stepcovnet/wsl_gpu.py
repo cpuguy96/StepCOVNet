@@ -432,11 +432,34 @@ def _format_compute_apps(apps: list[tuple[int, str, str]]) -> str:
     return ", ".join(f"{name}:{pid} ({used})" for pid, name, used in apps)
 
 
+def list_wsl_training_pids() -> list[int]:
+    """Return WSL PIDs for active ``train_onset_ar.py`` processes."""
+    if not is_windows():
+        return []
+    result = _query_wsl_bash("pgrep -f 'train_onset_ar\\.py' 2>/dev/null || true")
+    pids: list[int] = []
+    for token in result.stdout.split():
+        try:
+            pids.append(int(token))
+        except ValueError:
+            continue
+    return pids
+
+
 def assert_wsl_gpu_free_for_training(*, force: bool | None = None) -> None:
     """Raise ``RuntimeError`` when the WSL GPU already has a compute workload."""
     if force is None:
         force = gpu_force_enabled()
-    if force or not wsl_gpu_compute_busy():
+    if force:
+        return
+    training_pids = list_wsl_training_pids()
+    if training_pids:
+        raise RuntimeError(
+            "WSL AR training already running "
+            f"(train_onset_ar.py pids: {training_pids}). "
+            "Stop the other run_exp/run_overnight shell before starting a new job.",
+        )
+    if not wsl_gpu_compute_busy():
         return
     apps = active_wsl_gpu_compute_apps()
     raise RuntimeError(
