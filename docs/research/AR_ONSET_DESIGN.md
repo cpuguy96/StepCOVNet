@@ -423,14 +423,14 @@ Do not co-vary encoder patch and token scheme in one EXP unless hypothesis requi
 
 ### 10.3 Suggested commands (when implemented)
 
-**`gate-tide-overfit`** — single song (`data/v2/test/tide`; same paths as `configs/event/overfit_one.json`):
+**Tide overfit (champion)** — single song (`data/v2/test/tide`):
 
 ```bash
 python scripts/train_onset_ar.py \
-  --config configs/ar/tide.json
+  --config configs/ar/tide_overfit.json
 ```
 
-(`run.model_output_dir` in the config defaults to `models_wsl/ar/gate_tide_overfit/`.)
+Frozen experiment history: `configs/ar/versions/tide_overfit/v1.json` … `v7.json` — see [`configs/ar/versions/tide_overfit/README.md`](../../configs/ar/versions/tide_overfit/README.md).
 
 **`gate-10song-smoke`** — local 10-song manifest subset (same path as dense/event smoke in EXP-20260624-01; not git-tracked):
 
@@ -444,20 +444,20 @@ python scripts/train_onset_ar.py \
 WSL GPU: run from repo root per [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md). Verify tide load without training:
 
 ```bash
-python scripts/train_onset_ar.py --config configs/ar/tide.json --verify-only
+python scripts/train_onset_ar.py --config configs/ar/tide_overfit.json --verify-only
 ```
 
 Diagnose a saved checkpoint (dispatches to WSL when needed):
 
 ```bash
 python scripts/debug_ar_onset_overfit.py \
-  --config configs/ar/tide.json \
-  --model_path models_wsl/ar/gate_tide_overfit/ar_onset_model.keras
+  --config configs/ar/tide_overfit.json \
+  --model_path models_wsl/ar/tide_overfit/ar_onset_model.keras
 ```
 
 ### 10.4 Config sketch
 
-**`configs/ar/tide.json`** (`gate-tide-overfit`):
+**`configs/ar/tide_overfit.json`** (champion; graduated from `versions/tide_overfit/v1.json`):
 
 ```json
 {
@@ -486,9 +486,13 @@ python scripts/debug_ar_onset_overfit.py \
     "token_class_weight": "inverse_freq",
     "use_soft_pointer_time": false,
     "scheduled_sampling_max_p": 0.0,
+    "ar_decode_val_every_n_epochs": 0,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
-    "checkpoint_metric": "val_event_onset_f1"
+    "epochs": 300,
+    "checkpoint_metric": "val_overfit_gate",
+    "model_output_dir": "models_wsl/ar/tide_overfit",
+    "callback_root_dir": "callbacks/ar/tide_overfit"
   }
 }
 ```
@@ -663,7 +667,7 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 | GT clip / pad               | `onset_events/targets.py`, `onset_events/datasets.py`                    |
 | Chart times (manifest)      | `dataset_prep/training_loader.load_chart_times_sec`                      |
 | Chart times (legacy / tide) | `onset_events/charts.py` (`_parse_step_times`)                           |
-| Tide overfit paths          | `configs/event/overfit_one.json`, `configs/overfit_tide/mert.json`, `configs/ar/tide.json` |
+| Tide overfit paths          | `configs/ar/tide_overfit.json`, `configs/ar/versions/tide_overfit/`, `configs/event/overfit_one.json`, `configs/overfit_tide/mert.json` |
 | AR trainer / gate debug     | `scripts/train_onset_ar.py`, `configs/ar/README.md`, EXP-20260627-02 |
 | Dense frame targets         | `datasets._create_target`, `_create_target_gaussian` in `datasets.py`    |
 | Event plateau               | EXP-20260606-08 … 11 in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)           |

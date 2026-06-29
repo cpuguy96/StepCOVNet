@@ -79,7 +79,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 3. **Missing residual gradient** — with `lambda_time=0`, only pointer CE trained patch index; F1 uses `patch × duration + residual`. At F1 **~0.83**, debug showed **`n_patch_wrong: 0`**, **`n_patch_ok_timing_wrong: 103`**. Fixed with **`lambda_residual: 5.0`** (MSE on `target_residual_sec`).
 4. **λ_time phasing** — immediate `lambda_time=1.0` destabilized early training; **`lambda_time_ramp_epochs: 100`** (linear 0→1) allowed pointer to learn first.
 
-**Locked tide config:** see [AR_ONSET_DESIGN.md §10.4](AR_ONSET_DESIGN.md#104-config-sketch) and `configs/ar/tide.json`.
+**Locked tide config:** champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json); history [`configs/ar/versions/tide_overfit/`](../../configs/ar/versions/tide_overfit/).
 
 **Diagnostics:** `scripts/debug_ar_onset_overfit.py` — per-onset patch vs residual error split.
 

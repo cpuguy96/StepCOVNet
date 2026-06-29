@@ -6,9 +6,7 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 
 | Directory                                    | Track                                | Contents                                            |
 | -------------------------------------------- | ------------------------------------ | --------------------------------------------------- |
-| [`ar/`](ar/)                                 | Autoregressive onset (`onset_ar/`)   | Tide gate, decode gates, perfect-overfit runs — see [`ar/README.md`](ar/README.md) |
-| [`ar/decode/`](ar/decode/)                   | AR scheduled-sampling / decode gates | `v2.json`, `perfect.json`, `tide.json`              |
-| [`ar/overfit_perfect/`](ar/overfit_perfect/) | AR tide perfect-overfit series       | `base.json`, `run2.json` … `run5.json`              |
+| [`ar/`](ar/)                                 | Autoregressive onset (`onset_ar/`)   | Champion [`tide_overfit.json`](ar/tide_overfit.json); versioned experiments in [`ar/versions/`](ar/versions/) |
 | [`dense/`](dense/)                           | Dense frame onset                    | Baseline, `final_data` scoreboard, mel/MERT compare |
 | [`event/`](event/)                           | K-query event onset                  | Multi-song baseline, single-song overfit            |
 | [`arrow/`](arrow/)                           | Arrow model                          | Baseline, sweep, local dev configs                  |
@@ -20,9 +18,8 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 
 | Goal                          | Config                                      |
 | ----------------------------- | ------------------------------------------- |
-| AR `gate-tide-overfit`        | `configs/ar/tide.json` → `models_wsl/ar/gate_tide_overfit/` |
-| AR `gate-ar-decode` v2        | `configs/ar/decode/v2.json` → `models_wsl/ar/gate_ar_decode/v2/` |
-| AR perfect overfit (latest)   | `configs/ar/overfit_perfect/run5.json` → `models_wsl/ar/perfect_overfit/run5/` |
+| AR tide overfit (champion)    | `configs/ar/tide_overfit.json` → `models_wsl/ar/tide_overfit/` |
+| AR tide overfit experiments | `configs/ar/versions/tide_overfit/vN.json` (frozen history) |
 | Dense `final_data` scoreboard | `configs/dense/final_data_mert_bilstm.json` |
 | Event multi-song baseline     | `configs/event/audio_baseline.json`         |
 | Tide overfit suite            | `configs/overfit_tide/mert.json` (etc.)     |

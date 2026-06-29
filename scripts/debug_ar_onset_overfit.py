@@ -1,22 +1,15 @@
 """Diagnose AR onset overfit checkpoints (per-onset timing errors).
 
 Usage:
-    python scripts/debug_ar_onset_overfit.py --config configs/ar/tide.json
+    python scripts/debug_ar_onset_overfit.py --config configs/ar/tide_overfit.json
     python scripts/debug_ar_onset_overfit.py \\
-        --config configs/ar/tide.json \\
-        --model_path models_wsl/ar/gate_tide_overfit/ar_onset_model.keras
+        --config configs/ar/tide_overfit.json --ar_decode
     python scripts/debug_ar_onset_overfit.py \\
-        --config configs/ar/overfit_perfect/run3.json \\
-        --model_path models_wsl/ar/perfect_overfit/run3/ar_onset_model.keras \\
+        --config configs/ar/versions/tide_overfit/v3.json \\
+        --model_path models_wsl/ar/perfect_overfit/run2/ar_onset_model.keras \\
         --ar_decode
     python scripts/debug_ar_onset_overfit.py \\
-        --config configs/ar/tide.json \\
-        --model_path models_wsl/ar/gate_tide_overfit/ar_onset_model.keras \\
-        --ar_decode
-    python scripts/debug_ar_onset_overfit.py \\
-        --config configs/ar/tide.json \\
-        --model_path models_wsl/ar/gate_tide_overfit/ar_onset_model.keras \\
-        --ar_decode --full-diagnostics
+        --config configs/ar/tide_overfit.json --ar_decode --full-diagnostics
 
 With ``--ar_decode``, top-level ``ar_decode`` metrics use **two-pass** timing
 (``decode_autoregressive_gate_with_stats_numpy``). Pass ``--full-diagnostics``
@@ -58,7 +51,7 @@ PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.
 PARSER.add_argument(
     "--config",
     type=str,
-    default="configs/ar/tide.json",
+    default="configs/ar/tide_overfit.json",
     help="AR experiment config JSON.",
 )
 PARSER.add_argument(

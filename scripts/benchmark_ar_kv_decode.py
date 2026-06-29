@@ -16,12 +16,12 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
-        default="configs/ar/decode/v2.json",
+        default="configs/ar/tide_overfit.json",
         help="AR experiment config JSON.",
     )
     parser.add_argument(
         "--model_path",
-        default="models_wsl/ar/gate_tide_overfit/ar_onset_model.keras",
+        default="models_wsl/ar/tide_overfit/ar_onset_model.keras",
         help="Checkpoint to decode with.",
     )
     parser.add_argument(

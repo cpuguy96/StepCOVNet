@@ -1,58 +1,27 @@
 # AR onset configs
 
-Configs for autoregressive onset gates on tide (`data/v2/test/tide`). Gate **slugs** (kebab-case) name milestones in [AR_ONSET_DESIGN.md](../../docs/research/AR_ONSET_DESIGN.md); artifact directories use the same slug with underscores.
+## Champion — tide overfit
 
-## Naming pattern
+| | |
+| --- | --- |
+| **Config** | [`tide_overfit.json`](tide_overfit.json) |
+| **Train** | `python scripts/train_onset_ar.py --config configs/ar/tide_overfit.json` |
+| **Verify** | `python scripts/debug_ar_onset_overfit.py --config configs/ar/tide_overfit.json --ar_decode` |
+| **Artifacts** | `models_wsl/ar/tide_overfit/`, `callbacks/ar/tide_overfit/` |
 
-| Kind                | Pattern                                   | Example                               |
-| ------------------- | ----------------------------------------- | ------------------------------------- |
-| Config              | `configs/ar/<recipe>.json` or nested dir  | `configs/ar/tide.json`                |
-| Checkpoint dir      | `models_wsl/ar/<gate_slug>/`              | `models_wsl/ar/gate_tide_overfit/`    |
-| Decode variant      | `models_wsl/ar/gate_ar_decode/<variant>/` | `models_wsl/ar/gate_ar_decode/v2/`    |
-| Perfect-overfit run | `models_wsl/ar/perfect_overfit/runN/`     | `models_wsl/ar/perfect_overfit/run5/` |
-| Callbacks           | `callbacks/ar/<same path as model dir>`   | `callbacks/ar/gate_tide_overfit/`     |
+Pass bar: **free-run ordered 634/634 @ 20 ms** ([ONSET_METRICS.md](../../docs/research/ONSET_METRICS.md)). Training checkpoints on `val_overfit_gate`; free-run is **offline only** (`ar_decode_val_every_n_epochs: 0`).
 
-Checkpoint file is always `ar_onset_model.keras` inside the model dir.
+Graduated from **v1** (teacher-pass from scratch). Best experimental free-run remains **v3** (612/634) — see [versions/tide_overfit/README.md](versions/tide_overfit/README.md).
 
-## Gate slug → config → artifacts
+## Versioned experiments (do not delete)
 
-| Gate slug                 | Config                                                               | Model dir (canonical)                       |
-| ------------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
-| **`gate-tide-overfit`**   | [`tide.json`](tide.json)                                             | `models_wsl/ar/gate_tide_overfit/`          |
-| **`gate-ar-decode`** v2   | [`decode/v2.json`](decode/v2.json)                                   | `models_wsl/ar/gate_ar_decode/v2/`          |
-| **perfect-overfit** run 1 | [`overfit_perfect/base.json`](overfit_perfect/base.json)             | `models_wsl/ar/perfect_overfit/run1/`       |
-| perfect-overfit run 2–5   | [`overfit_perfect/runN.json`](overfit_perfect/)                      | `models_wsl/ar/perfect_overfit/runN/`       |
-| perfect-overfit smoke     | [`overfit_perfect/run4_smoke.json`](overfit_perfect/run4_smoke.json) | `models_wsl/ar/perfect_overfit/run4_smoke/` |
+| Directory | Contents |
+| --------- | -------- |
+| [`versions/tide_overfit/`](versions/tide_overfit/) | v1–v7 frozen tide overfit recipes + promotion table |
+| [`versions/tide_overfit_decode/`](versions/tide_overfit_decode/) | Scheduled-sampling / decode warm-start experiments |
 
-Decode sketches (warm-start only, no default output dir): [`decode/tide.json`](decode/tide.json), [`decode/perfect.json`](decode/perfect.json).
+To try an old recipe: `--config configs/ar/versions/tide_overfit/v3.json` (uses historical `model_output_dir` in that file).
 
-## Informal aliases (logs, chat, EXP text)
+## Graduating a new champion
 
-| Informal              | Means                                                    | Canonical checkpoint                                           |
-| --------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| **`gate_v5`**         | 5th training attempt that **passed** `gate-tide-overfit` | `models_wsl/ar/gate_tide_overfit/ar_onset_model.keras`         |
-| `gate_v2` … `gate_v4` | Earlier **failed** tide-overfit attempts (historical)    | see [EXPERIMENT_LOG.md](../../docs/research/EXPERIMENT_LOG.md) |
-| `perfect_v5`          | Shorthand for perfect-overfit **run 5**                  | `models_wsl/ar/perfect_overfit/run5/`                          |
-
-## Migration from old `models_wsl/` paths (2026-06)
-
-Historical runs wrote flat names like `ar_tide_overfit_gate_v5`. New training uses the table above. **Do not rename checkpoints in git** (artifacts are local / gitignored). Copy or symlink if you still have old dirs:
-
-```powershell
-# from repo root — example: gate-tide-overfit PASS checkpoint
-New-Item -ItemType Directory -Force models_wsl\ar\gate_tide_overfit
-Copy-Item models_wsl\ar_tide_overfit_gate_v5\ar_onset_model.keras models_wsl\ar\gate_tide_overfit\
-```
-
-| Old path                                       | New path                                    |
-| ---------------------------------------------- | ------------------------------------------- |
-| `models_wsl/ar_tide_overfit_gate_v5/`          | `models_wsl/ar/gate_tide_overfit/`          |
-| `models_wsl/ar_tide_overfit_gate_decode_v2/`   | `models_wsl/ar/gate_ar_decode/v2/`          |
-| `models_wsl/ar_tide_overfit_perfect/`          | `models_wsl/ar/perfect_overfit/run1/`       |
-| `models_wsl/ar_tide_overfit_perfect_v2/`       | `models_wsl/ar/perfect_overfit/run2/`       |
-| `models_wsl/ar_tide_overfit_perfect_v3/`       | `models_wsl/ar/perfect_overfit/run3/`       |
-| `models_wsl/ar_tide_overfit_perfect_v4/`       | `models_wsl/ar/perfect_overfit/run4/`       |
-| `models_wsl/ar_tide_overfit_perfect_v5/`       | `models_wsl/ar/perfect_overfit/run5/`       |
-| `models_wsl/ar_tide_overfit_perfect_v4_smoke/` | `models_wsl/ar/perfect_overfit/run4_smoke/` |
-
-[EXPERIMENT_LOG.md](../../docs/research/EXPERIMENT_LOG.md) entries keep old paths as written at run time; use this table when resuming work.
+See [versions/tide_overfit/README.md](versions/tide_overfit/README.md#promotion-rule). Summary: beat current best on **offline free-run** ordered match → copy into `tide_overfit.json` → log EXP.

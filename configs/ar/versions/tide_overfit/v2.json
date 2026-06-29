@@ -1,4 +1,4 @@
-{
+﻿{
   "dataset": {
     "overfit_audio_path": "data/v2/test/tide.ogg",
     "overfit_chart_path": "data/v2/test/tide.txt",
@@ -19,23 +19,23 @@
   "run": {
     "overfit_one_song": true,
     "lambda_time": 1.0,
-    "lambda_time_ramp_epochs": 0,
-    "lambda_residual": 10.0,
-    "lambda_incremental_consistency": 1.0,
-    "incremental_consistency_max_steps": 16,
+    "lambda_time_ramp_epochs": 100,
+    "lambda_residual": 5.0,
     "token_class_weight": "none",
     "eos_token_weight_scale": 1.0,
     "scheduled_sampling_max_p": 0.0,
     "ar_decode_val_every_n_epochs": 0,
     "use_soft_pointer_time": false,
-    "init_model_path": "models_wsl/ar/perfect_overfit/run3/ar_onset_model.keras",
-    "learning_rate": 0.00005,
+    "init_model_path": "models_wsl/ar/gate_tide_overfit/ar_onset_model.keras",
+    "learning_rate": 0.0005,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
-    "epochs": 20,
+    "epochs": 300,
     "checkpoint_metric": "val_overfit_gate",
-    "perfect_overfit_early_stop": false,
-    "model_output_dir": "models_wsl/ar/perfect_overfit/run4_smoke",
-    "callback_root_dir": "callbacks/ar/perfect_overfit/run4_smoke"
+    "perfect_overfit_early_stop": true,
+    "perfect_overfit_min_score": 0.9999,
+    "perfect_overfit_patience": 3,
+    "model_output_dir": "models_wsl/ar/perfect_overfit/run1",
+    "callback_root_dir": "callbacks/ar/perfect_overfit/run1"
   }
 }
