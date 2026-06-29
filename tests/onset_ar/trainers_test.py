@@ -195,6 +195,48 @@ class TrainersTest(unittest.TestCase):
         self.assertEqual(logs["val_ar_decode_event_f1"], 0.5)
         self.assertAlmostEqual(logs["val_ar_decode_ordered_onset_match"], 619 / 634)
 
+    def test_batch_metrics_exclude_ar_decode(self) -> None:
+        metric = trainers.ArOrderedOnsetMatchMetric(
+            name="ar_decode_ordered_onset_match"
+        )
+        metric.n_matched.assign(619.0)
+        metric.n_gt.assign(634.0)
+        metric.n_pred.assign(619.0)
+
+        class _StubTrainingModel:
+            track_ar_decode = True
+            ar_decode_f1_metric = object()
+            ar_decode_ordered_match_metric = metric
+            loss_tracker = trainers.keras.metrics.Mean(name="loss")
+            token_loss_tracker = trainers.keras.metrics.Mean(name="token_loss")
+            pointer_loss_tracker = trainers.keras.metrics.Mean(name="pointer_loss")
+            time_loss_tracker = trainers.keras.metrics.Mean(name="time_loss")
+            residual_loss_tracker = trainers.keras.metrics.Mean(name="residual_loss")
+            incremental_consistency_loss_tracker = trainers.keras.metrics.Mean(
+                name="incremental_consistency_loss",
+            )
+            token_accuracy = trainers.keras.metrics.Mean(name="token_accuracy")
+            event_f1_metric = trainers.ArEventOnsetF1Metric(name="event_onset_f1")
+            ordered_match_metric = trainers.ArOrderedOnsetMatchMetric(
+                name="ordered_onset_match",
+            )
+            use_ordered_onset_gate = True
+
+            def _batch_metrics(self):
+                return trainers.ArOnsetTrainingModel._batch_metrics(self)  # type: ignore[misc]
+
+            def _reset_metrics(self):
+                trainers.ArOnsetTrainingModel._reset_metrics(self)  # type: ignore[misc]
+
+        stub = _StubTrainingModel()
+        batch_names = {m.name for m in stub._batch_metrics()}
+        self.assertNotIn("ar_decode_ordered_onset_match", batch_names)
+        self.assertNotIn("ar_decode_event_f1", batch_names)
+
+        stub._reset_metrics()
+        self.assertAlmostEqual(float(metric.n_matched.numpy()), 619.0)
+        self.assertAlmostEqual(float(metric.n_gt.numpy()), 634.0)
+
 
 if __name__ == "__main__":
     unittest.main()

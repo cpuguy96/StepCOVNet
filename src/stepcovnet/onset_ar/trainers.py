@@ -274,7 +274,12 @@ class ArOnsetTrainingModel(keras.Model):
 
     @property
     def metrics(self):
-        tracked = [
+        """Batch-updated metrics only (excludes free-run AR decode aux metrics)."""
+        return self._batch_metrics()
+
+    def _batch_metrics(self) -> list[keras.metrics.Metric]:
+        """Metrics updated each train/val step; excludes callback-only AR decode."""
+        tracked: list[keras.metrics.Metric] = [
             self.loss_tracker,
             self.token_loss_tracker,
             self.pointer_loss_tracker,
@@ -286,11 +291,12 @@ class ArOnsetTrainingModel(keras.Model):
         ]
         if self.ordered_match_metric is not None:
             tracked.append(self.ordered_match_metric)
-        if self.ar_decode_f1_metric is not None:
-            tracked.append(self.ar_decode_f1_metric)
-        if self.ar_decode_ordered_match_metric is not None:
-            tracked.append(self.ar_decode_ordered_match_metric)
         return tracked
+
+    def _metric_results(
+        self, metrics: list[keras.metrics.Metric]
+    ) -> dict[str, tf.Tensor]:
+        return {metric.name: metric.result() for metric in metrics}
 
     @staticmethod
     def _build_token_class_weights(
@@ -605,7 +611,7 @@ class ArOnsetTrainingModel(keras.Model):
         )
 
     def _reset_metrics(self) -> None:
-        for metric in self.metrics:
+        for metric in self._batch_metrics():
             metric.reset_state()
 
     def train_step(self, data):
@@ -651,7 +657,7 @@ class ArOnsetTrainingModel(keras.Model):
             ),
         )
         self._update_teacher_fed_f1(outputs, batch)
-        return {metric.name: metric.result() for metric in self.metrics}
+        return self._metric_results(self._batch_metrics())
 
     def test_step(self, data):
         self._reset_metrics()
@@ -674,7 +680,7 @@ class ArOnsetTrainingModel(keras.Model):
             ),
         )
         self._update_teacher_fed_f1(outputs, batch)
-        return {metric.name: metric.result() for metric in self.metrics}
+        return self._metric_results(self._batch_metrics())
 
 
 def _save_config(
@@ -845,8 +851,9 @@ class ArDecodeValidationCallback(keras.callbacks.Callback):
                 self.training_model.ar_decode_f1_metric.result(),
             )
         if self.training_model.ar_decode_ordered_match_metric is not None:
-            logs["val_ar_decode_ordered_onset_match"] = float(
-                self.training_model.ar_decode_ordered_match_metric.result(),
+            denom = max(int(n_pred), int(n_gt))
+            logs["val_ar_decode_ordered_onset_match"] = (
+                float(n_matched) / float(denom) if denom > 0 else 0.0
             )
 
 
