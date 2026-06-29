@@ -253,32 +253,14 @@ class ArOnsetTrainingModel(keras.Model):
             )
         else:
             self.ordered_match_metric = None
-        self.track_ar_decode = run_config.ar_decode_val_every_n_epochs > 0
-        self.ar_decode_f1_metric: ArEventOnsetF1Metric | None
-        self.ar_decode_ordered_match_metric: ArOrderedOnsetMatchMetric | None
-        if self.track_ar_decode:
-            self.ar_decode_f1_metric = ArEventOnsetF1Metric(
-                tolerance_sec=run_config.tolerance_sec,
-                name="ar_decode_event_f1",
-            )
-            if self.use_ordered_onset_gate:
-                self.ar_decode_ordered_match_metric = ArOrderedOnsetMatchMetric(
-                    tolerance_sec=run_config.tolerance_sec,
-                    name="ar_decode_ordered_onset_match",
-                )
-            else:
-                self.ar_decode_ordered_match_metric = None
-        else:
-            self.ar_decode_f1_metric = None
-            self.ar_decode_ordered_match_metric = None
 
     @property
     def metrics(self):
-        """Batch-updated metrics only (excludes free-run AR decode aux metrics)."""
+        """Metrics updated each train/val step."""
         return self._batch_metrics()
 
     def _batch_metrics(self) -> list[keras.metrics.Metric]:
-        """Metrics updated each train/val step; excludes callback-only AR decode."""
+        """Metrics updated each train/val step."""
         tracked: list[keras.metrics.Metric] = [
             self.loss_tracker,
             self.token_loss_tracker,
@@ -506,110 +488,6 @@ class ArOnsetTrainingModel(keras.Model):
             tf.cast(tf.reshape(n_pred, []), self.ordered_match_metric.dtype),
         )
 
-    def run_ar_decode_eval_eager(
-        self,
-        mert_patches: np.ndarray,
-        patch_mask: np.ndarray,
-        gt_times: np.ndarray,
-        gt_mask: np.ndarray,
-    ) -> tuple[float, float, float, int, int, int]:
-        """Free-running AR decode in eager mode; return TP/FP/FN and ordered match."""
-        tp, fp, fn, _length, _n_onsets, n_matched, n_gt, n_pred = (
-            self._ar_decode_eval_wrapper(
-                mert_patches,
-                patch_mask,
-                gt_times,
-                gt_mask,
-            )
-        )
-        return float(tp), float(fp), float(fn), int(n_matched), int(n_gt), int(n_pred)
-
-    def set_ar_decode_f1_counts(self, tp: float, fp: float, fn: float) -> None:
-        """Publish free-run Hungarian counts to the auxiliary F1 metric."""
-        if self.ar_decode_f1_metric is None:
-            return
-        self.ar_decode_f1_metric.true_positives.assign(
-            tf.cast(tp, self.ar_decode_f1_metric.dtype),
-        )
-        self.ar_decode_f1_metric.false_positives.assign(
-            tf.cast(fp, self.ar_decode_f1_metric.dtype),
-        )
-        self.ar_decode_f1_metric.false_negatives.assign(
-            tf.cast(fn, self.ar_decode_f1_metric.dtype),
-        )
-
-    def set_ar_decode_ordered_counts(
-        self,
-        n_matched: int,
-        n_gt: int,
-        n_pred: int,
-    ) -> None:
-        """Publish free-run ordered onset match to the primary overfit metric."""
-        if self.ar_decode_ordered_match_metric is None:
-            return
-        self.ar_decode_ordered_match_metric.n_matched.assign(
-            tf.cast(n_matched, self.ar_decode_ordered_match_metric.dtype),
-        )
-        self.ar_decode_ordered_match_metric.n_gt.assign(
-            tf.cast(n_gt, self.ar_decode_ordered_match_metric.dtype),
-        )
-        self.ar_decode_ordered_match_metric.n_pred.assign(
-            tf.cast(n_pred, self.ar_decode_ordered_match_metric.dtype),
-        )
-
-    def _ar_decode_eval_wrapper(
-        self,
-        mert_patches: np.ndarray,
-        patch_mask: np.ndarray,
-        gt_times: np.ndarray,
-        gt_mask: np.ndarray,
-    ) -> tuple[
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,
-    ]:
-        decode_stats = inference.decode_autoregressive_gate_with_stats_numpy(
-            self.base_model,
-            mert_patches,
-            patch_mask,
-            max_decoder_len=self.max_decoder_len,
-            patch_frames=self.patch_frames,
-            hop_sec=self.hop_sec,
-            experiment_config=self.experiment_config,
-        )
-        gt_kept = np.asarray(gt_times).reshape(-1)[
-            np.asarray(gt_mask).reshape(-1) > 0.5
-        ]
-        pred_mask = np.ones((decode_stats.times.size,), dtype=np.float32)
-        tp, fp, fn = _ar_event_onset_counts_numpy(
-            decode_stats.times,
-            pred_mask,
-            np.asarray(gt_times).reshape(-1),
-            np.asarray(gt_mask).reshape(-1),
-            tolerance_sec=self.tolerance_sec,
-        )
-        n_matched, n_gt = timing_match.timing_match_counts_numpy(
-            decode_stats.times,
-            gt_kept,
-            tolerance_sec=self.tolerance_sec,
-        )
-        n_pred = int(decode_stats.times.size)
-        return (
-            np.array(tp, dtype=np.float64),
-            np.array(fp, dtype=np.float64),
-            np.array(fn, dtype=np.float64),
-            np.array(decode_stats.n_forward_steps, dtype=np.float64),
-            np.array(decode_stats.n_onset_tokens, dtype=np.float64),
-            np.array(n_matched, dtype=np.float64),
-            np.array(n_gt, dtype=np.float64),
-            np.array(n_pred, dtype=np.float64),
-        )
-
     def _reset_metrics(self) -> None:
         for metric in self._batch_metrics():
             metric.reset_state()
@@ -717,45 +595,26 @@ def lambda_time_for_epoch(
     return float(lambda_time_final) * progress
 
 
-def should_run_ar_decode_validation(
-    epoch_index: int,
-    *,
-    every_n_epochs: int,
-) -> bool:
-    """Return whether free-running AR decode should run this validation epoch."""
-    if every_n_epochs <= 0:
-        return False
-    if every_n_epochs == 1:
-        return True
-    return epoch_index % every_n_epochs == 0
-
-
 def overfit_gate_score(
     *,
     token_accuracy: float,
     ordered_onset_match: float,
-    ar_decode_ordered_onset_match: float | None = None,
 ) -> float:
-    """Min teacher-fed metrics; include free-run ordered match when provided."""
-    scores = [token_accuracy, ordered_onset_match]
-    if ar_decode_ordered_onset_match is not None:
-        scores.append(ar_decode_ordered_onset_match)
-    return float(min(scores))
+    """Min teacher-fed metrics for checkpointing and early stop."""
+    return float(min(token_accuracy, ordered_onset_match))
 
 
 class OverfitGateCallback(keras.callbacks.Callback):
-    """Publish ``val_overfit_gate`` / ``val_ar_overfit_gate`` for checkpointing."""
+    """Publish ``val_overfit_gate`` for teacher-fed checkpointing and early stop."""
 
     def __init__(
         self,
         *,
-        include_ar_decode: bool,
         early_stop: bool = False,
         min_score: float = 0.9999,
         patience: int = 3,
     ) -> None:
         super().__init__()
-        self.include_ar_decode = include_ar_decode
         self.early_stop = early_stop
         self.min_score = float(min_score)
         self.patience = int(patience)
@@ -775,28 +634,9 @@ class OverfitGateCallback(keras.callbacks.Callback):
             token_accuracy=token_acc,
             ordered_onset_match=ordered_match,
         )
-        ar_ordered: float | None = None
-        if self.include_ar_decode and "val_ar_decode_ordered_onset_match" in logs:
-            ar_ordered = float(logs["val_ar_decode_ordered_onset_match"])
-            logs["val_ar_overfit_gate"] = overfit_gate_score(
-                token_accuracy=token_acc,
-                ordered_onset_match=ordered_match,
-                ar_decode_ordered_onset_match=ar_ordered,
-            )
-        elif self.include_ar_decode and "val_ar_decode_event_f1" in logs:
-            ar_ordered = float(logs["val_ar_decode_event_f1"])
-            logs["val_ar_overfit_gate"] = overfit_gate_score(
-                token_accuracy=token_acc,
-                ordered_onset_match=ordered_match,
-                ar_decode_ordered_onset_match=ar_ordered,
-            )
         if not self.early_stop:
             return
-        monitor = (
-            logs["val_ar_overfit_gate"]
-            if self.include_ar_decode and "val_ar_overfit_gate" in logs
-            else logs["val_overfit_gate"]
-        )
+        monitor = float(logs["val_overfit_gate"])
         if monitor >= self.min_score:
             self._perfect_epochs += 1
         else:
@@ -809,52 +649,6 @@ class OverfitGateCallback(keras.callbacks.Callback):
                 self.patience,
             )
             self.model.stop_training = True
-
-
-class ArDecodeValidationCallback(keras.callbacks.Callback):
-    """Run free-running AR decode eagerly after fast teacher-fed validation."""
-
-    def __init__(
-        self,
-        training_model: ArOnsetTrainingModel,
-        *,
-        experiment_config: config.ArExperimentConfig,
-        every_n_epochs: int,
-    ) -> None:
-        super().__init__()
-        self.training_model = training_model
-        self.every_n_epochs = int(every_n_epochs)
-        self._val_batch = datasets.sample_to_training_batch(
-            datasets.load_overfit_sample(experiment_config),
-            experiment_config,
-        )
-
-    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
-        if logs is None:
-            logs = {}
-        if not should_run_ar_decode_validation(
-            epoch, every_n_epochs=self.every_n_epochs
-        ):
-            return
-        tp, fp, fn, n_matched, n_gt, n_pred = (
-            self.training_model.run_ar_decode_eval_eager(
-                self._val_batch["mert_patches"],
-                self._val_batch["patch_mask"],
-                self._val_batch["gt_times"],
-                self._val_batch["gt_mask"],
-            )
-        )
-        self.training_model.set_ar_decode_f1_counts(tp, fp, fn)
-        self.training_model.set_ar_decode_ordered_counts(n_matched, n_gt, n_pred)
-        if self.training_model.ar_decode_f1_metric is not None:
-            logs["val_ar_decode_event_f1"] = float(
-                self.training_model.ar_decode_f1_metric.result(),
-            )
-        if self.training_model.ar_decode_ordered_match_metric is not None:
-            denom = max(int(n_pred), int(n_gt))
-            logs["val_ar_decode_ordered_onset_match"] = (
-                float(n_matched) / float(denom) if denom > 0 else 0.0
-            )
 
 
 def scheduled_sampling_for_epoch(
@@ -1000,21 +794,9 @@ def train_ar_onset(
             ),
         )
 
-    if run_config.ar_decode_val_every_n_epochs > 0:
-        callbacks.insert(
-            0,
-            ArDecodeValidationCallback(
-                training_model,
-                experiment_config=experiment_config,
-                every_n_epochs=run_config.ar_decode_val_every_n_epochs,
-            ),
-        )
-
-    overfit_insert = 1 if run_config.ar_decode_val_every_n_epochs > 0 else 0
     callbacks.insert(
-        overfit_insert,
+        0,
         OverfitGateCallback(
-            include_ar_decode=run_config.ar_decode_val_every_n_epochs > 0,
             early_stop=run_config.perfect_overfit_early_stop,
             min_score=run_config.perfect_overfit_min_score,
             patience=run_config.perfect_overfit_patience,

@@ -2,9 +2,17 @@
 
 Goal: free-run ordered **634/634 @ 20 ms**. Machine logs: `logs/ar_tide_iter/` (gitignored).
 
-Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (session closed — handoff to overnight agent)
+Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session — iter31+)
 
-## Session summary (closed 2026-06-29)
+## Overnight session (2026-06-29)
+
+| | |
+|--|--|
+| **Start** | iter31 — warm-start `iter17` (614/634); offline-only training eval |
+| **Goal** | Free-run **634/634 @ 20 ms** |
+| **Budget** | ~7 h unattended |
+
+## Session summary (closed 2026-06-29 — prior handoff)
 
 | | |
 |--|--|

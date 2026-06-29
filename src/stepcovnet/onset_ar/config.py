@@ -26,7 +26,8 @@ class _DictSerializableMixin:
 
     @classmethod
     def from_dict(cls, data: dict):
-        return cls(**data)
+        fields = {field.name for field in dataclasses.fields(cls)}
+        return cls(**{key: value for key, value in data.items() if key in fields})
 
 
 @dataclasses.dataclass
@@ -83,7 +84,6 @@ class ArRunConfig(_DictSerializableMixin):
     scheduled_sampling_warmup_epochs: int = 0
     pointer_loss_weight: float = 1.0
     eos_token_weight_scale: float = 1.0
-    ar_decode_val_every_n_epochs: int = 0
     init_model_path: str = ""
     length_normalize_ce: bool = True
     tolerance_sec: float = 0.02

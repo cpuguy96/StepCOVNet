@@ -60,14 +60,12 @@ Config-only experiments (hyperparameters, init checkpoint, loss weights in JSON)
 
 ### Research eval policy (overnight iteration)
 
-For **this research loop** (differs from champion `configs/ar/tide_overfit.json`):
+Same as champion — **offline AR decode only** (~0.5s val/epoch during training):
 
-- **Use in-loop AR decode** for fast feedback: `ar_decode_val_every_n_epochs: 5` or `10`
-- **Checkpoint on free-run:** `checkpoint_metric: val_ar_decode_ordered_onset_match`
-- **Early stop on free-run:** `perfect_overfit_early_stop: true`, `perfect_overfit_min_score: 0.999`, `patience: 5`
-- **Offline eval** (`debug_ar_onset_overfit.py --ar_decode`) when in-loop hits a new session best, or before graduate/declare pass
-
-Champion config stays offline-only; iteration configs may use in-loop decode.
+- **No in-loop free-run decode** during training (removed `ArDecodeValidationCallback`)
+- **Checkpoint on teacher:** `checkpoint_metric: val_overfit_gate`
+- **Early stop on teacher:** `perfect_overfit_early_stop: true`, `perfect_overfit_min_score: 0.999`, `patience: 5`
+- **Offline eval** (`debug_ar_onset_overfit.py --ar_decode`) after every run; on session bests before graduate/declare pass
 
 ### Experiment budget
 
@@ -80,8 +78,8 @@ Champion config stays offline-only; iteration configs may use in-loop decode.
 
 **Kill / pivot heuristics:**
 
-- If `val_ar_decode_ordered_onset_match` flat **15–20 epochs** and below **0.97**, stop and change hypothesis
-- If teacher ≥ 0.998 but free-run stuck &lt; 0.97 after ~40 epochs → exposure-bias / decode-path issue, not more epochs
+- If `val_overfit_gate` flat **15–20 epochs** and teacher ordered match below **0.998**, stop and change hypothesis
+- If teacher ≥ 0.998 but offline free-run stuck &lt; 0.97 after polish → exposure-bias / decode-path issue, not more epochs
 
 ### Warm starts
 
@@ -113,7 +111,7 @@ venv\Scripts\python.exe scripts/ar_tide_iter/run_exp.py --id iter31 ^
     --notes "your hypothesis"
 ```
 
-Add `iter31+` entries in `scripts/ar_tide_iter/build_configs.py` before `build_configs.py`. For overnight iteration, set in-loop decode + free-run checkpoint in each new config.
+Add `iter31+` entries in `scripts/ar_tide_iter/build_configs.py` before `build_configs.py`. Use offline-only eval (`checkpoint_metric: val_overfit_gate`).
 
 **Watch progress (logs/ is gitignored):**
 
@@ -153,11 +151,11 @@ venv\Scripts\python.exe scripts/graduate_ar_tide_overfit.py ^
 
 ### Loop (repeat until time or 634/634)
 
-1. GPU free → one hypothesis → `iterXX.json` (in-loop decode, free-run ckpt)
+1. GPU free → one hypothesis → `iterXX.json` (offline ckpt on `val_overfit_gate`)
 2. **If code changed:** write tests → `pytest` → `pre_submit.py --fast` → then train
 3. Train ≤150 ep, early stop if flat
-4. Record in-loop peak `val_ar_decode_ordered_onset_match`
-5. New session best → offline `--ar_decode`
+4. Record teacher peak `val_overfit_gate` from train log
+5. Offline `--ar_decode` after every run; confirm session bests
 6. Offline 634/634 → `graduate_ar_tide_overfit.py` → stop
 
 ### Stop conditions
