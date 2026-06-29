@@ -2,13 +2,13 @@ r"""Script for training the onset detection model.
 
 Usage:
     # Using config file:
-    python scripts/train_onset.py --config=configs/onset_baseline.json
+    python scripts/train_onset.py --config=configs/dense/baseline.json
 
     # Using command-line arguments (backward compatible):
     python scripts/train_onset.py --train_data_dir=/path/to/train/data --val_data_dir=/path/to/val/data --epochs=20 --callback_root_dir=/path/to/callbacks --model_output_dir=/path/to/save/model
 
     # Override config file values:
-    python scripts/train_onset.py --config=configs/onset_baseline.json --epochs=30 --batch_size=4
+    python scripts/train_onset.py --config=configs/dense/baseline.json --epochs=30 --batch_size=4
 """
 
 import argparse

@@ -2,9 +2,9 @@ r"""Script for training the arrow detection model.
 
 Usage:
     # Required: config file. Optional: overrides via --set key=value (repeatable).
-    python scripts/train_arrow.py --config=configs/arrow_baseline.json
-    python scripts/train_arrow.py --config=configs/arrow_baseline.json --set run.epoch=30 --set dataset.batch_size=4
-    python scripts/train_arrow.py --config=configs/arrow_baseline.json --set model.lstm.units=256 --set model.model_type=lstm
+    python scripts/train_arrow.py --config=configs/arrow/baseline.json
+    python scripts/train_arrow.py --config=configs/arrow/baseline.json --set run.epoch=30 --set dataset.batch_size=4
+    python scripts/train_arrow.py --config=configs/arrow/baseline.json --set model.lstm.units=256 --set model.model_type=lstm
 
     Dotted paths: dataset.*, model.*, run.* (e.g. run.epoch, dataset.data_dir, model.transformer.num_layers).
 """

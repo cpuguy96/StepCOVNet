@@ -2,7 +2,7 @@
 
 > **Historical:** Phases 1–6 were implemented in `src/stepcovnet/onset_events/`. For current architecture, training procedures, and next steps, use [PIPELINE_ARCHITECTURE.md](../PIPELINE_ARCHITECTURE.md) and [EXPERIMENT_LOG.md](../EXPERIMENT_LOG.md) § Current phase. This file is kept for WP/phase detail only.
 >
-> **Supersedes (2026-06-24):** Step/query caps are **2048** in `configs/onset_event_audio_baseline.json` (not 1024). Multi-song training on prep output uses `--training_index_path=data/final_data/training_index.json` — see [DATASET_PREP_PIPELINE.md](../DATASET_PREP_PIPELINE.md) §2. **AR onset** (third formulation) is design-only — see [AR_ONSET_DESIGN.md](../AR_ONSET_DESIGN.md); do not route new work here for AR.
+> **Supersedes (2026-06-24):** Step/query caps are **2048** in `configs/event/audio_baseline.json` (not 1024). Multi-song training on prep output uses `--training_index_path=data/final_data/training_index.json` — see [DATASET_PREP_PIPELINE.md](../DATASET_PREP_PIPELINE.md) §2. **AR onset** (third formulation) is design-only — see [AR_ONSET_DESIGN.md](../AR_ONSET_DESIGN.md); do not route new work here for AR.
 
 **Status:** Superseded for routing — see note above.
 
@@ -78,7 +78,7 @@ Sub-agents do **not** auto-coordinate. The monitor must enforce **file ownership
 
 ### Invariants (every agent)
 
-- **Scope:** New code under `src/stepcovnet/onset_events/` and `tests/onset_events/` only, plus `scripts/train_onset_event.py`, `configs/onset_event_audio_baseline.json`, and edits to this doc’s phase tracker. **Do not** change dense onset (`train_onset.py`, frame `datasets.create_dataset`, `models.build_unet_wavenet_model` sigmoid head) except **reuse** via import/copy patterns noted in the plan.
+- **Scope:** New code under `src/stepcovnet/onset_events/` and `tests/onset_events/` only, plus `scripts/train_onset_event.py`, `configs/event/audio_baseline.json`, and edits to this doc’s phase tracker. **Do not** change dense onset (`train_onset.py`, frame `datasets.create_dataset`, `models.build_unet_wavenet_model` sigmoid head) except **reuse** via import/copy patterns noted in the plan.
 - **I/O:** Raw audio in; continuous **seconds** + confidence out; **no** `HOP_COEFF` in labels/outputs; **no** mel/MERT feature files for this track.
 - **Constants:** `target_sample_rate=44100`, `max_audio_seconds=300`, `num_queries=1024`, `n_max_onsets=1024`, skip charts with **>1024** steps, `batch_size=1`, Hungarian matching, `λ_cls=1`, `λ_time=5`, `tolerance_sec=0.02`.
 - **Python:** `python` from repository root with project venv activated (CPU). WSL GPU: `python` after `source scripts/wsl_gpu_env.sh` (override with `STEPCOVNET_WSL_PYTHON`). See [wsl-gpu-stepcovnet](../../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
@@ -140,7 +140,7 @@ flowchart TD
 | **WP-4a** | Waveform frontend | `onset_events/frontend.py`, tests | — | `pytest tests/onset_events/frontend_test.py -m "not slow"` |
 | **WP-4b** | Temporal encoder | `onset_events/encoder.py`, tests | — | `pytest tests/onset_events/encoder_test.py -m "not slow"` |
 | **WP-4c** | Full model + queries | `onset_events/models.py`, `onset_events/config.py` (dataclasses/JSON load), `tests/onset_events/models_test.py` | WP-4a, WP-4b | `pytest tests/onset_events/models_test.py -m "not slow"` |
-| **WP-5** | Train loop | `onset_events/trainers.py`, `scripts/train_onset_event.py`, `configs/onset_event_audio_baseline.json`, `onset_events/__init__.py`, `tests/onset_events/trainers_test.py` (if needed) | WP-2,3b,3c,4c | Full pytest; WSL overfit one song (see [WP-5 smoke](#wp-5-training-smoke)) |
+| **WP-5** | Train loop | `onset_events/trainers.py`, `scripts/train_onset_event.py`, `configs/event/audio_baseline.json`, `onset_events/__init__.py`, `tests/onset_events/trainers_test.py` (if needed) | WP-2,3b,3c,4c | Full pytest; WSL overfit one song (see [WP-5 smoke](#wp-5-training-smoke)) |
 | **WP-6** | Inference API | `onset_events/inference.py`, `tests/onset_events/inference_test.py` | WP-4c, WP-5 | `pytest tests/onset_events/inference_test.py -m "not slow"` |
 
 **Parallelism summary**
@@ -184,7 +184,7 @@ Run from **repository root** inside WSL (path to the clone does not matter):
 bash scripts/wsl_ensure_env.sh
 source scripts/wsl_gpu_env.sh
 export STEPCOVNET_IN_WSL=1
-python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json
+python scripts/train_onset_event.py --config=configs/event/audio_baseline.json
 ```
 
 Use a short run (e.g. `take_count: 1`, few epochs) in config for smoke; full `epochs: 20` for real training.
@@ -409,7 +409,7 @@ The learning target is aligned with chart generation: **when** each step occurs,
 | `constants.HOP_COEFF` | **Not used** in event encoder, labels, or predicted times (dense path only) |
 | `scripts/train_arrow.py`, arrow datasets/models | **No change** (still takes onset times) |
 | `generator.py` | **Later:** optional branch to call event inference |
-| `configs/local_e2e_mert*.json` | Precomputed MERT features; **not** the target design for this plan |
+| `configs/local/e2e_mert*.json` | Precomputed MERT features; **not** the target design for this plan |
 
 ---
 
@@ -567,7 +567,7 @@ No `scipy.signal.find_peaks` on a dense curve for this backend.
 
 ## Config file sketch
 
-`configs/onset_event_audio_baseline.json`:
+`configs/event/audio_baseline.json`:
 
 ```json
 {
@@ -613,7 +613,7 @@ No `scipy.signal.find_peaks` on a dense curve for this backend.
 Training command (target):
 
 ```bash
-python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json
+python scripts/train_onset_event.py --config=configs/event/audio_baseline.json
 ```
 
 GPU on Windows: use WSL from repo root per [wsl-gpu-stepcovnet](../../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) (`STEPCOVNET_WSL_PYTHON` overrides the default WSL venv python).

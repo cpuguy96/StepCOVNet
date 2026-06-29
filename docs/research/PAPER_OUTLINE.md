@@ -86,4 +86,4 @@ _TBD._
 - Design reasoning: [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md)
 - AR formulation: [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)
 - Decisions: [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md)
-- Config reference: `configs/overfit_tide/`, `configs/onset_event_audio_baseline.json`
+- Config reference: `configs/overfit_tide/`, `configs/event/audio_baseline.json`

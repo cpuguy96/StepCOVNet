@@ -35,6 +35,6 @@ print("features", path, "shape", arr.shape, "dtype", arr.dtype)
 PY
 
 echo "Training onset model on MERT features..."
-"$PY" scripts/train_onset.py --config=configs/local_e2e_mert_wsl.json
+"$PY" scripts/train_onset.py --config=configs/local/e2e_mert_wsl.json
 
 echo "Done."

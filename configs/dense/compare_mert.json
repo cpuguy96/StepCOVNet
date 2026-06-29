@@ -1,0 +1,32 @@
+{
+  "dataset": {
+    "data_dir": "data/train",
+    "val_data_dir": "data/val",
+    "batch_size": 1,
+    "apply_temporal_augment": false,
+    "should_apply_spec_augment": false,
+    "use_gaussian_target": false,
+    "gaussian_sigma": 1.0,
+    "feature_source": "mert",
+    "mert_features_dir": "data/mert"
+  },
+  "model": {
+    "initial_filters": 16,
+    "depth": 2,
+    "dilation_rates": [1, 2, 4, 8],
+    "kernel_size": 3,
+    "dropout_rate": 0.0,
+    "input_features": 1024
+  },
+  "run": {
+    "epoch": 50,
+    "take_count": -1,
+    "val_take_count": -1,
+    "model_output_dir": "experiments/mel_mert_compare/models/mert",
+    "callback_root_dir": "experiments/mel_mert_compare/callbacks",
+    "model_name": "compare_mert_onset",
+    "seed": 42,
+    "show_model_summary": false,
+    "fit_verbose": 1
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "dataset": {
+    "data_dir": "data/v2/train",
+    "val_data_dir": "data/v2/val",
+    "batch_size": 1,
+    "snippet_half_frames": 0,
+    "use_interval": true,
+    "interval_encoding": "multi",
+    "use_step_index": true,
+    "use_aux_interval_target": false,
+    "timing_jitter_sigma": 0
+  },
+  "model": {
+    "model_type": "transformer",
+    "transformer": {
+      "num_layers": 1,
+      "d_model": 128,
+      "num_heads": 4,
+      "ff_dim": 512,
+      "dropout_rate": 0.1,
+      "use_timing_position": false
+    },
+    "cnn1d": {
+      "filters": 256,
+      "kernel_sizes": [3, 3, 3],
+      "dropout_rate": 0.1
+    },
+    "gru": {
+      "units": 128,
+      "num_layers": 1,
+      "dropout_rate": 0.0,
+      "bidirectional": true,
+      "add_attention_layer": false,
+      "attention_heads": 4,
+      "attention_dim": 64
+    },
+    "lstm": {
+      "units": 128,
+      "num_layers": 1,
+      "dropout_rate": 0.0
+    },
+    "tcn": {
+      "filters": 256,
+      "kernel_size": 3,
+      "num_layers": 1,
+      "dilation_base": 2,
+      "dropout_rate": 0.1
+    }
+  },
+  "run": {
+    "epoch": 1200,
+    "take_count": -1,
+    "model_output_dir": "models",
+    "callback_root_dir": "callbacks",
+    "model_name": "arrow_model_local_baseline",
+    "seed": 42,
+    "warmup_epochs": 100,
+    "lr_peak": 1e-3,
+    "lr_min": 1e-5,
+    "aux_interval_weight": 0.0,
+    "chart_validity_aux_weight": 0.0,
+    "diversity_aux_weight": 0.0,
+    "loss_type": "focal",
+    "chart_validity_rejection_threshold": 0.99,
+    "chart_validity_rejection_scale": 15.0,
+    "chart_validity_rejection_temperature": 25.0
+  }
+}

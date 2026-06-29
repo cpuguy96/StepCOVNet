@@ -16,7 +16,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
-        default="configs/onset_ar_tide_decode_v2.json",
+        default="configs/ar/decode/v2.json",
         help="AR experiment config JSON.",
     )
     parser.add_argument(

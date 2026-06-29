@@ -94,9 +94,7 @@ class DatasetsTest(unittest.TestCase):
 )
 class TideIntegrationTest(unittest.TestCase):
     def test_verify_config_loads_one_batch(self) -> None:
-        experiment_config = config.ArExperimentConfig.from_json(
-            "configs/onset_ar_tide.json"
-        )
+        experiment_config = config.ArExperimentConfig.from_json("configs/ar/tide.json")
         summary, sample = datasets.verify_config_loads_one_batch(experiment_config)
         self.assertGreater(summary["n_onsets"], 0)
         self.assertGreater(summary["n_patches"], 0)

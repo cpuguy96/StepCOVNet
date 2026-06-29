@@ -67,7 +67,7 @@ Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
 
 **`final_data`:** pass `--training_index_path=data/final_data/training_index.json` (or a smoke subset manifest). Do not rely on `data_dir=val_data_dir` alone when train/val must follow the P8 song split.
 
-**Configs:** `configs/overfit_tide/{conv1d,mel,mert}.json` (default **50 epochs**); `configs/onset_event_audio_baseline.json` for multi-song event runs (`num_queries` / `n_max_onsets` = **2048**).
+**Configs:** `configs/overfit_tide/{conv1d,mel,mert}.json` (default **50 epochs**); `configs/event/audio_baseline.json` for multi-song event runs (`num_queries` / `n_max_onsets` = **2048**).
 
 **Artifacts:** `models_wsl/overfit_tide/`, `models_wsl/overfit_tide_ablations/`, MERT cache `data/v2/test/tide.mert.npy`.
 

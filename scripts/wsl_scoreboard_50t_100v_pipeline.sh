@@ -21,6 +21,6 @@ mkdir -p "$(dirname "$LOG")"
     --beside_audio --device=cuda --skip_existing
   echo "=== train $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
   "$PY" scripts/train_onset.py \
-    --config=configs/onset_final_data_mert_bilstm_scoreboard_50t_100v.json
+    --config=configs/dense/final_data_mert_bilstm_scoreboard_50t_100v.json
   echo "=== complete $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 } 2>&1 | tee "$LOG"

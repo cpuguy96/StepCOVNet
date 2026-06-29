@@ -1,9 +1,9 @@
 r"""Train autoregressive onset detection (``gate-tide-overfit`` and follow-on gates).
 
 Usage:
-    python scripts/train_onset_ar.py --config configs/onset_ar_tide.json --verify-only
+    python scripts/train_onset_ar.py --config configs/ar/tide.json --verify-only
 
-    python scripts/train_onset_ar.py --config configs/onset_ar_tide.json \
+    python scripts/train_onset_ar.py --config configs/ar/tide.json \
         --model_output_dir models/ar_tide_overfit \
         --callback_root_dir callbacks/ar_tide_overfit
 """

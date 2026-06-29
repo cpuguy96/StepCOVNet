@@ -196,7 +196,7 @@ audio → cached MERT on 10 ms hop grid
 | METRICS           | `onset_events/matching.py`, `metrics.py`     | Same event F1 contract; sorted linear merge optional |
 | Training feedback | Token CE + aux time; decoded F1 checkpoint   | Scheduled sampling after tide gate                   |
 
-**Scripts:** `scripts/train_onset_ar.py`, `configs/onset_ar_tide.json` (in repo). `configs/onset_ar_smoke.json` planned for 10-song gate.
+**Scripts:** `scripts/train_onset_ar.py`, `configs/ar/tide.json` (in repo). `configs/ar/smoke.json` planned for 10-song gate.
 
 ---
 

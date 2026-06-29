@@ -1,10 +1,10 @@
 r"""Script for training the event-based onset detection model.
 
 Usage:
-    python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json
+    python scripts/train_onset_event.py --config=configs/event/audio_baseline.json
 
     # Smoke run (script-only take_count / epoch overrides):
-    python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json \
+    python scripts/train_onset_event.py --config=configs/event/audio_baseline.json \
         --take_count=1 --epochs=2 --model_output_dir=models/onset_event_smoke
 
     # Overfit tide smoke (no training shortcuts; compares pre-processing frontends):
@@ -12,7 +12,7 @@ Usage:
         --model_root=models_wsl/overfit_tide
 
     # Override data and output directories:
-    python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json \
+    python scripts/train_onset_event.py --config=configs/event/audio_baseline.json \
         --train_data_dir=data/v2/train --val_data_dir=data/v2/val \
         --model_output_dir=models/onset_event --callback_root_dir=callbacks/onset_event
 """

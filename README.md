@@ -156,7 +156,7 @@ one row per `(audio, chart.json, chart_index)`. For `final_data`, pass
 
 ```bash
 python scripts/train_onset.py \
-  --config configs/onset_baseline.json \
+  --config configs/dense/baseline.json \
   --training_index_path data/final_data/training_index.json \
   --model_output_dir models/dense_final_data
 ```
@@ -175,7 +175,7 @@ normalization is always applied so that training matches the inference pipeline.
 
 ```bash
 python scripts/train_onset.py \
-  --config configs/onset_baseline.json \
+  --config configs/dense/baseline.json \
   --training_index_path data/final_data/training_index.json \
   --model_output_dir models/onset
 ```
@@ -237,7 +237,7 @@ stepcovnet/
 ├── AGENTS.md
 ├── LICENSE
 ├── README.md
-├── configs/                # JSON experiment configs (onset, arrow, overfit_tide/, …)
+├── configs/                # JSON experiment configs — see configs/README.md
 ├── docs/                   # Research notes + docs/agents/ layout
 ├── notebooks/
 ├── pre_submit.py           # Local CI mirror (ruff, tests, notebooks)

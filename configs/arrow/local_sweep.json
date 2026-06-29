@@ -1,0 +1,69 @@
+{
+  "dataset": {
+    "data_dir": "data/v2/train",
+    "val_data_dir": "data/v2/val",
+    "batch_size": 1,
+    "snippet_half_frames": 0,
+    "use_interval": true,
+    "interval_encoding": "multi",
+    "use_beat_phase": false,
+    "use_step_index": true,
+    "use_aux_interval_target": false
+  },
+  "model": {},
+  "run": {
+    "epoch": 600,
+    "take_count": 70,
+    "model_output_dir": "models",
+    "callback_root_dir": "callbacks",
+    "model_name": "arrow_model_local_sweep",
+    "seed": 42,
+    "loss_type": "focal"
+  },
+  "search_space": {
+    "model.model_type": ["tcn", "cnn1d", "transformer", "gru"],
+
+    "model.tcn.filters": [256],
+    "model.tcn.kernel_size": [3],
+    "model.tcn.num_layers": [1],
+    "model.tcn.dilation_base": [2],
+    "model.tcn.dropout_rate": [0.1],
+
+    "model.cnn1d.filters": [256],
+    "model.cnn1d.kernel_sizes": [[3, 3, 3]],
+    "model.cnn1d.dropout_rate": [0.1],
+
+    "model.transformer.dropout_rate": [0.1],
+    "model.transformer.num_layers": [1],
+    "model.transformer.d_model": [128],
+    "model.transformer.num_heads": [4],
+    "model.transformer.ff_dim": [512],
+
+    "model.gru.units": [128],
+    "model.gru.num_layers": [1],
+    "model.gru.dropout_rate": [0.1],
+    "model.gru.bidirectional": [true],
+    "model.gru.add_attention_layer": [false, true],
+    "model.gru.attention_heads": [4],
+    "model.gru.attention_dim": [64],
+
+    "run.chart_validity_rejection_threshold": [0.99],
+    "run.chart_validity_rejection_scale": [10.0, 20.0],
+    "run.chart_validity_rejection_temperature": [25.0, 50.0],
+    "run.aux_interval_weight": [0.0],
+    "run.chart_validity_aux_weight": [0.0],
+    "run.diversity_aux_weight": [0.0],
+    "run.warmup_epochs": [0],
+    "run.lr_peak": [1e-3],
+    "run.lr_min": [1e-5]
+  },
+  "optimize": {
+    "metric": "val_main_loss",
+    "mode": "min"
+  },
+  "max_runs": 300,
+  "sweep_output_dir": "output/hparam_search",
+  "seed": 42,
+  "search": "random",
+  "workers": 3
+}

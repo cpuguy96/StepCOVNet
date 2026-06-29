@@ -73,11 +73,11 @@ pairing.list_training_samples("data/final_data/training_index.json", split="trai
 Train (manifest is the only data pointer needed):
 
 ```bash
-python scripts/train_onset.py --config=configs/onset_baseline.json \
+python scripts/train_onset.py --config=configs/dense/baseline.json \
   --training_index_path=data/final_data/training_index.json \
   --model_output_dir=models/dense_final_data
 
-python scripts/train_onset_event.py --config=configs/onset_event_audio_baseline.json \
+python scripts/train_onset_event.py --config=configs/event/audio_baseline.json \
   --training_index_path=data/final_data/training_index.json \
   --model_output_dir=models/onset_event_final_data
 ```

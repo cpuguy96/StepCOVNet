@@ -1832,7 +1832,7 @@ class MemoryBoundedSweepTest(unittest.TestCase):
             / "arrow_baseline.json"
         )
         if not pathlib.Path(base_config_path).is_file():
-            self.skipTest("configs/arrow_baseline.json not found")
+            self.skipTest("configs/arrow/baseline.json not found")
         base_config = config.ArrowExperimentConfig.from_json(base_config_path)
         base_config.dataset.data_dir = TEST_DATA_DIR
         base_config.dataset.val_data_dir = TEST_DATA_DIR

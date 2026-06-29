@@ -12,11 +12,11 @@ When using multiple workers with a single GPU, consider --workers=1 or
 setting CUDA_VISIBLE_DEVICES to avoid OOM or contention.
 
 Usage:
-    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json
-    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --max_runs=5
-    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --search=random --max_runs=10
-    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --search=random --max_runs=10 --seed=42
-    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow_sweep_example.json --workers=2
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow/sweep_example.json
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow/sweep_example.json --max_runs=5
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow/sweep_example.json --search=random --max_runs=10
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow/sweep_example.json --search=random --max_runs=10 --seed=42
+    python scripts/hyperparameter_search_arrow.py --sweep_config=configs/arrow/sweep_example.json --workers=2
 
 Resume after a crash (run from project root, same sweep_output_dir as before):
     python scripts/hyperparameter_search_arrow.py --resume_from=output/hparam_search/arrow_sweep_20250225-123456

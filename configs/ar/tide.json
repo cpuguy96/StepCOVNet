@@ -26,6 +26,6 @@
     "scheduled_sampling_max_p": 0.0,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
-    "checkpoint_metric": "val_event_onset_f1"
+    "checkpoint_metric": "val_ordered_onset_match"
   }
 }

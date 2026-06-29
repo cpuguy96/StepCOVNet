@@ -166,31 +166,17 @@ venv-wsl/
 stepcovnet-venv-wsl/
 *-venv-wsl/
 
-# configs/: ignore by default; only shared configs tracked (add ! when checking in a new config).
+# configs/: ignore by default; only shared configs tracked (see configs/README.md).
 configs/**
 !configs/**/
-!configs/arrow_baseline.json
-!configs/arrow_sweep_example.json
-!configs/onset_baseline.json
-!configs/onset_final_data_mert_bilstm.json
-!configs/onset_final_data_mert_bilstm_scoreboard_50t_100v.json
-!configs/onset_ar_tide.json
-!configs/onset_ar_tide_decode_v2.json
-!configs/onset_ar_tide_overfit_perfect.json
-!configs/onset_ar_tide_decode_perfect.json
-!configs/onset_ar_tide_overfit_perfect_run2.json
-!configs/onset_ar_tide_overfit_perfect_run3.json
-!configs/onset_event_audio_baseline.json
-!configs/onset_event_overfit_one.json
-!configs/overfit_dense/dense_mert_3song.json
-!configs/overfit_tide/conv1d.json
-!configs/overfit_tide/dense_mel.json
-!configs/overfit_tide/dense_mert.json
-!configs/overfit_tide/dense_waveform.json
-!configs/overfit_tide/mel.json
-!configs/overfit_tide/mert.json
-!configs/overfit_tide/mert_gt_refs_learn_delta.json
-!configs/overfit_tide/mert_uniform_frozen_delta.json
+!configs/README.md
+!configs/ar/**
+!configs/dense/**
+!configs/event/**
+!configs/arrow/**
+!configs/local/**
+!configs/overfit_dense/**
+!configs/overfit_tide/**
 
 # scripts/: ignore by default; only portable entrypoints are tracked (add ! when checking in a new script).
 scripts/*

@@ -1,0 +1,30 @@
+{
+  "dataset": {
+    "data_dir": "tests/testdata",
+    "val_data_dir": "tests/testdata",
+    "batch_size": 1,
+    "apply_temporal_augment": false,
+    "should_apply_spec_augment": false,
+    "use_gaussian_target": false,
+    "gaussian_sigma": 1.0,
+    "feature_source": "mert",
+    "mert_features_dir": "e2e_mert/mert_wsl"
+  },
+  "model": {
+    "initial_filters": 8,
+    "depth": 1,
+    "dilation_rates": [1, 2],
+    "kernel_size": 3,
+    "dropout_rate": 0.0,
+    "input_features": 1024
+  },
+  "run": {
+    "epoch": 1,
+    "take_count": 1,
+    "val_take_count": 1,
+    "model_output_dir": "e2e_mert/models_wsl",
+    "callback_root_dir": "e2e_mert/callbacks_wsl",
+    "model_name": "onset_mert_e2e_wsl_gpu",
+    "seed": 42
+  }
+}

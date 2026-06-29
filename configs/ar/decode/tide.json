@@ -1,0 +1,35 @@
+{
+  "dataset": {
+    "overfit_audio_path": "data/v2/test/tide.ogg",
+    "overfit_chart_path": "data/v2/test/tide.txt",
+    "mert_features_dir": "data/v2/test",
+    "max_audio_seconds": 300,
+    "max_steps_per_chart": 2048
+  },
+  "model": {
+    "patch_frames": 8,
+    "d_model": 256,
+    "n_enc_layers": 4,
+    "n_dec_layers": 4,
+    "token_scheme": "delta_bucketed",
+    "alignment": "pointer_residual",
+    "max_decode_steps": 2048,
+    "dropout_rate": 0.0
+  },
+  "run": {
+    "overfit_one_song": true,
+    "lambda_time": 1.0,
+    "lambda_time_ramp_epochs": 0,
+    "lambda_residual": 5.0,
+    "token_class_weight": "inverse_freq",
+    "use_soft_pointer_time": false,
+    "scheduled_sampling_max_p": 0.5,
+    "scheduled_sampling_ramp_epochs": 150,
+    "init_model_path": "models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras",
+    "learning_rate": 0.0002,
+    "length_normalize_ce": true,
+    "tolerance_sec": 0.02,
+    "epochs": 200,
+    "checkpoint_metric": "val_ar_decode_event_f1"
+  }
+}

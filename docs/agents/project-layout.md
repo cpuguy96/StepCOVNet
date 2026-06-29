@@ -54,10 +54,11 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `scripts/` | CLI entry points (train, extract, suite runners) |
 | `scripts/preprocess_dataset.py` | Raw simfile packs → nested `data/final_data` |
 | `scripts/build_training_index.py` | Train/val split manifest (`training_index.json`) |
-| `configs/` | JSON experiment configs |
+| `configs/` | JSON experiment configs — see [configs/README.md](../../configs/README.md) |
+| `configs/ar/` | AR onset (`tide.json`, `decode/`, `overfit_perfect/`) |
+| `configs/dense/` | Dense frame onset baselines and scoreboard |
+| `configs/event/` | K-query event onset |
 | `configs/overfit_tide/` | Tide single-song overfit smoke configs |
-| `configs/onset_ar_tide.json` | AR tide overfit (`gate-tide-overfit`) |
-| `configs/onset_ar_*.json` | AR smoke configs (10-song etc.; see AR design doc) |
 | `scripts/train_onset_ar.py` | AR onset train / `--verify-only` — WSL GPU for full gate ([AR_ONSET_DESIGN.md §10](../research/AR_ONSET_DESIGN.md#10-experiment-protocol)) |
 
 **Common entry points → skill:**
