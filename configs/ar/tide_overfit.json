@@ -30,7 +30,7 @@
     "learning_rate": 0.00005,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
-    "epochs": 200,
+    "epochs": 400,
     "checkpoint_metric": "val_overfit_gate",
     "perfect_overfit_early_stop": false,
     "model_output_dir": "models_wsl/ar/tide_overfit",

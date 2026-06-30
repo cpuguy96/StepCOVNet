@@ -70,7 +70,7 @@ class ArTideIterConfigBuilderTest(unittest.TestCase):
         )
         cfg = config_builder.build_config(spec)
         self.assertEqual(cfg["run"]["learning_rate"], 1e-5)
-        self.assertEqual(cfg["run"]["epochs"], 200)
+        self.assertEqual(cfg["run"]["epochs"], 400)
         self.assertNotIn("init_model_path", cfg["run"])
 
     def test_prepare_experiment_spec_strips_init_model_path(self) -> None:

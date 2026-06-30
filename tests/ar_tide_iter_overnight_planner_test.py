@@ -149,7 +149,7 @@ class OvernightPlannerTest(unittest.TestCase):
             )
             plan = overnight_planner.plan_next_experiment(repo=repo)
             assert plan is not None
-            self.assertEqual(plan.get("run", {}).get("epochs"), 200)
+            self.assertEqual(plan.get("run", {}).get("epochs"), 400)
 
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
