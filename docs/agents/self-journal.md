@@ -42,6 +42,28 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260630-02: Autoresearch must consume full time budget
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-30                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User: when a wall-clock budget is given (e.g. 7 h), run until goal or deadline — not stop when a finite pre-written queue empties (~1 h). |
+| **Artifact**     | `.cursor/skills/autoresearch/SKILL.md` (§ Budget discipline), `profiles/ar-tide-overfit.md`, `docs/agents/ar-tide-overnight-prompt.md`, `scripts/ar_tide_iter/README.md` |
+| **Action taken** | Mandate `deadline = now + budget`; replan after each run; forbid finite-queue early exit; ~40–50 tide runs per 7 h throughput estimate. |
+| **Related**      | steering-correction-promotion, autoresearch, ar-tide-overfit                                                                          |
+
+### JRN-20260630-01: Clean up commit scope before committing
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-30                                                                                                                            |
+| **Category**     | convention                                                                                                                            |
+| **Summary**      | User: before creating commits, clean up the change set — not “run pytest first”. Exclude local iter logs/registry unless asked.         |
+| **Artifact**     | `AGENTS.md` (Before commit / push)                                                                                                    |
+| **Action taken** | Agent reviews status/diff, reverts unrelated files, fixes lint, syncs docs — then commits only the intended harness/doc diff.         |
+| **Related**      | steering-correction-promotion                                                                                                         |
+
 ### JRN-20260628-07: Audit script read-only; no alwaysApply budget
 
 | Field            | Value                                                                                                                                 |

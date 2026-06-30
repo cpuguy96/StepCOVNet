@@ -36,6 +36,8 @@ North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 
 `pre_submit.py --fast` is the same as `--skip-install --skip-tests --skip-nbmake`. Full `pre_submit.py` mirrors [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml).
 
+**Agent commits:** Clean up the change set before `git commit` — review `git status` / `git diff`, drop unrelated or local-only files (e.g. iter `experiments.json`, `AR_TIDE_OVERFIT_ITER_LOG.md`, `logs/` unless explicitly requested), fix lint in staged code, keep docs in sync with the harness diff. Do not commit a messy working tree.
+
 **When adding or changing CI/pre-submit tooling**, fix existing violations that tooling enforces *in the same change set* — do not land hooks or workflows on a still-red tree.
 
 Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit` — ruff on commit only. Pre-push full-suite hook stays disabled (too slow); run full `pre_submit.py` manually before push when it matters.

@@ -58,13 +58,50 @@ Key brief fields: `session_best`, scratch teacher best (iter43+ / notes “Scrat
 
 Partial overrides only (`run` / `model` / `dataset`). Example: [next_experiment.example.json](../../../../scripts/ar_tide_iter/next_experiment.example.json).
 
-**Pinned keys:** `epochs=200`, `checkpoint_metric=val_overfit_gate`, `tolerance_sec=0.02` unless champion template changes.
+**Pinned keys:** `epochs=400`, `checkpoint_metric=val_overfit_gate`, `tolerance_sec=0.02` unless champion template changes.
 
 ## Run
 
+### Single iteration
+
 ```text
-venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once
+# Agent writes next_experiment.json first:
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --once
+
+# Machine-readable footer (also printed with --autoresearch):
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --once --json
 ```
+
+### Long budget sessions (required when user gives hours)
+
+**Use the full wall-clock budget** until free-run **634/634** or `now >= deadline`. ~8–10 min per run → **7 h ≈ 40–50 iterations**, not a short pre-written list.
+
+**Agent-in-loop (default):** repeat until deadline or goal:
+
+```text
+deadline = now + budget_hours
+while now < deadline and not goal_passed:
+    venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
+    # write logs/ar_tide_iter/next_experiment.json from evidence
+    venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --once --brief none
+    # log AR_TIDE_OVERFIT_ITER_LOG.md; replan — never stop because a seed queue emptied
+```
+
+**Harness-assisted (optional):** start the waiter, but **keep feeding plans**:
+
+```text
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --hours 7 --plan-wait 900
+```
+
+Write the next `next_experiment.json` after each run **before** `plan-wait` expires. If you background this process, monitor it and supply plans until deadline.
+
+**Forbidden for budgeted autoresearch:**
+
+- Custom scripts that iterate a fixed `experiment_queue.json` and exit when empty
+- Treating “queue finished” as session complete while time remains
+- Bare `--hours` without `--autoresearch` (enables `overnight_planner` lattice)
+
+`--autoresearch` remaps exit code **0** when train+eval finished but teacher/free-run gate not met; **1** only for infra/plan failures. Look for `=== AUTORESEARCH_SUMMARY ===` in output.
 
 Watch: `venv\Scripts\python.exe scripts/ar_tide_iter/show_status.py --id iterNNN --watch`
 
@@ -124,12 +161,13 @@ Free-run **634/634** → `graduate_ar_tide_overfit.py` → stop.
 | **Zombie `run_overnight` shells**   | Second driver plans duplicate `iterNN` while first train runs                                          | Kill all `run_overnight`/`run_exp` in preflight; one driver                                                       |
 | **Decode knobs before memorize**    | SS / `lambda_inc` / in-loop AR decode while teacher &lt; 0.95                                          | Memorization recipe first (`lr`, no SS, full 200 ep)                                                              |
 | **Teacher perfect but wrong f1**    | `ordered=634/634` but `event_f1&lt;1` → free-run skipped                                               | Fix training objective or accept gate fail; do not claim pass                                                     |
-| **Pinned keys drift**               | `epochs≠200`, wrong `checkpoint_metric`, `tolerance_sec` changed by planner                            | Keep champion pins unless template/design doc changes                                                             |
+| **Pinned keys drift**               | `epochs≠400`, wrong `checkpoint_metric`, `tolerance_sec` changed by planner                            | Keep champion pins unless template/design doc changes                                                             |
 | **Registry vs results**             | `experiments.json` has id N while `results.jsonl` last is N−1; in-flight train                         | `next_iter_id` uses registry; wait for train before re-planning same id                                           |
 | **Infra vs recipe failure**         | `train_exit≠0` or missing checkpoint                                                                   | Retry same id `--reuse-last-config`; new recipe → new id                                                          |
 | **Val gate flat @ ~30 ep**          | Recipe not learning tide                                                                               | Pivot; do not burn 200 ep (see overnight handoff heuristics)                                                      |
 | **Session best ≠ scratch best**     | Brief shows 614/634 free-run from iter17 warm-start                                                    | Rank scratch-era teacher (iter43+, notes “Scratch”) for memorize phase                                            |
 | **Windows process pairs**           | Two `python.exe` PIDs per job (venv + launcher)                                                        | Normal if one WSL `train_onset_ar`; verify with `pgrep`, not PID count alone                                      |
+| **Finite experiment queue**         | 8 pre-written plans finish in ~1 h; 7 h budget unused                                                  | [Budget discipline](../../SKILL.md#budget-discipline): replan after each run until deadline or 634/634 free-run |
 
 ## Harness
 
