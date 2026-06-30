@@ -103,6 +103,25 @@ class TideIntegrationTest(unittest.TestCase):
         self.assertEqual(sample.mert_patches.shape[0], summary["n_patches"])
         self.assertEqual(sample.token_seq.n_steps, int(summary["n_onsets"]))
 
+    def test_target_times_within_hop_of_chart_gt(self) -> None:
+        """Encode path: chart seconds vs pointer+residual decode stay on hop grid."""
+        experiment_config = config.ArExperimentConfig.from_json(
+            "configs/ar/tide_overfit.json"
+        )
+        sample = datasets.load_overfit_sample(experiment_config)
+        batch = datasets.sample_to_training_batch(sample, experiment_config)
+        hop_sec = experiment_config.dataset.hop_sec
+        onset_mask = batch["onset_step_mask"][0] > 0.5
+        target = batch["target_times"][0][onset_mask]
+        raw_gt = batch["gt_times"][0][batch["gt_mask"][0] > 0.5]
+        self.assertEqual(int(target.size), int(raw_gt.size))
+        gap_ms = np.abs(target.astype(np.float64) - raw_gt.astype(np.float64)) * 1000.0
+        self.assertLessEqual(
+            float(gap_ms.max()),
+            hop_sec * 1000.0 + 1e-3,
+            "target_times must be hop-quantized chart times",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

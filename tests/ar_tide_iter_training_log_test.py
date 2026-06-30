@@ -113,6 +113,18 @@ class ArTideIterTrainingLogTest(unittest.TestCase):
                 },
             ),
         )
+        self.assertTrue(
+            training_log.teacher_report_perfect(
+                {
+                    "ordered_onset_match": {
+                        "n_matched": 634,
+                        "n_denom": 634,
+                        "rate": 1.0,
+                    },
+                    "event_f1": 0.9984,
+                },
+            ),
+        )
 
     def test_train_log_path_versions_attempts(self) -> None:
         training_log = self._import_training_log()

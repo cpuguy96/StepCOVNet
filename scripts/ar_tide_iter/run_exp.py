@@ -409,11 +409,7 @@ def main() -> int:
         event_f1 = float(teacher_report.get("event_f1", 0.0))
 
         if not teacher_report_perfect(teacher_report):
-            msg = (
-                "teacher metrics not perfect "
-                f"(ordered={t_str}, event_f1={event_f1:.4f}); "
-                "skipped free-run eval"
-            )
+            msg = f"teacher ordered gate not perfect ({t_str}); skipped free-run eval"
             print(msg, file=sys.stderr)
             _append_logs(
                 _log_entry(
@@ -425,6 +421,9 @@ def main() -> int:
             )
             return 1
 
+        print(
+            f"[{args.id}] teacher gate pass ({t_str}; aux event_f1={event_f1:.4f})",
+        )
         print(f"[{args.id}] eval free-run")
         report = _eval(config, model_path, ar_decode=True)
         free = report["ar_decode"]["ordered_onset_match"]
