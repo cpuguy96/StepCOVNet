@@ -2,7 +2,18 @@
 
 Goal: free-run ordered **634/634 @ 20 ms**. Machine logs: `logs/ar_tide_iter/` (gitignored).
 
-Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session — iter34+)
+Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-30 (autoresearch 7h — iter174+)
+
+## Autoresearch session (2026-06-30, 7h)
+
+| | |
+|--|--|
+| **Start** | iter174 — scratch replay iter169 (d_model=384, 633/634 teacher best) |
+| **Completed** | iter174–182 (queue resumed after BOM fix) |
+| **Scratch best (ordered)** | **iter175, iter178 — teacher 634/634** (first scratch perfect ordered) |
+| **Scratch best (event_f1)** | **0.9984** — gate still blocks free-run (needs event_f1=1.0) |
+| **Winning tweaks** | `lambda_residual=30` (iter175); `lambda_time=1.5` + `lambda_res=28` (iter178) |
+| **Rejected** | d_model=320 (632), d_model=448 (630), 5-layer depth (OOM), mild SS (624), early stop (633) |
 
 ## Overnight session (2026-06-29, second pass)
 
@@ -852,3 +863,153 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-29 (overnight session 
 | Train exit | 0 |
 | Train log | `logs\ar_tide_iter\train_logs\iter51.log` |
 | Error | teacher metrics not perfect (ordered=357/634 (0.5631), event_f1=0.5599); skipped free-run eval |
+
+### iter173 · attempt 2 (2026-06-29T21:48:09)
+
+**Hypothesis:** iter169 + lambda_time=3 lambda_residual=35 (fix step-318 residual)
+
+| | |
+|--|--|
+| Kind | retry |
+| Attempt | 2 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter173`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter173.attempt2.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter173\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter173.attempt2.log` |
+| Error | teacher metrics not perfect (ordered=632/634 (0.9968), event_f1=0.9953); skipped free-run eval |
+
+### iter174 (2026-06-30T02:12:08)
+
+**Hypothesis:** iter169 best replay: d_model=384 lr=1e-4 iter82 losses 400ep (633/634 baseline)
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter174`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter174.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter174\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter174.log` |
+| Error | teacher metrics not perfect (ordered=633/634 (0.9984), event_f1=0.9921); skipped free-run eval |
+
+### iter175 (2026-06-30T02:22:07)
+
+**Hypothesis:** iter169 + lambda_residual=30 (fix step-318 without iter173 time blowup)
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter175`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter175.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter175\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter175.log` |
+| Error | teacher metrics not perfect (ordered=634/634 (1.0000), event_f1=0.9984); skipped free-run eval |
+
+### iter176 (2026-06-30T02:30:04)
+
+**Hypothesis:** Faster memorize: d_model=384 lr=1.5e-4 iter82 losses 350ep
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter176`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter176.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter176\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter176.log` |
+| Error | teacher metrics not perfect (ordered=633/634 (0.9984), event_f1=0.9984); skipped free-run eval |
+
+### iter177 (2026-06-30T02:38:23)
+
+**Hypothesis:** Speed/capacity: d_model=320 lr=1e-4 400ep
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter177`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter177.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter177\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter177.log` |
+| Error | teacher metrics not perfect (ordered=632/634 (0.9968), event_f1=0.9953); skipped free-run eval |
+
+### iter178 (2026-06-30T02:46:42)
+
+**Hypothesis:** iter169 + lambda_time=1.5 lambda_residual=28
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter178`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter178.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter178\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter178.log` |
+| Error | teacher metrics not perfect (ordered=634/634 (1.0000), event_f1=0.9984); skipped free-run eval |
+
+### iter179 (2026-06-30T02:48:04)
+
+**Hypothesis:** Tier B depth: d_model=384 5-layer enc/dec lr=1e-4
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter179`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter179.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter179\ar_onset_model.keras` |
+| Train exit | 1 |
+| Train log | `logs\ar_tide_iter\train_logs\iter179.log` |
+| Error | checkpoint missing after train |
+
+### iter180 (2026-06-30T02:57:11)
+
+**Hypothesis:** Tier B: d_model=448 lr=8e-5
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter180`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter180.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter180\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter180.log` |
+| Error | teacher metrics not perfect (ordered=630/634 (0.9937), event_f1=0.9921); skipped free-run eval |
+
+### iter181 (2026-06-30T03:04:55)
+
+**Hypothesis:** Decode prep: d_model=384 mild SS p=0.1 + lambda_inc=0.15
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter181`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter181.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter181\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter181.log` |
+| Error | teacher metrics not perfect (ordered=624/634 (0.9842), event_f1=0.9748); skipped free-run eval |
+
+### iter182 (2026-06-30T03:13:04)
+
+**Hypothesis:** Speed: d_model=384 early stop min_score=0.999 patience=15
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter182`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter182.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter182\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter182.log` |
+| Error | teacher metrics not perfect (ordered=633/634 (0.9984), event_f1=0.9921); skipped free-run eval |

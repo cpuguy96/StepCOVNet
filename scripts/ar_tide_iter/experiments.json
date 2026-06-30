@@ -850,5 +850,191 @@
       "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter53",
       "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter53"
     }
+  },
+  {
+    "id": "iter174",
+    "notes": "iter169 best replay: d_model=384 lr=1e-4 iter82 losses 400ep (633/634 baseline)",
+    "model": {
+      "d_model": 384
+    },
+    "run": {
+      "learning_rate": 0.0001,
+      "lambda_residual": 25.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter174",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter174"
+    }
+  },
+  {
+    "id": "iter175",
+    "notes": "iter169 + lambda_residual=30 (fix step-318 without iter173 time blowup)",
+    "model": {
+      "d_model": 384
+    },
+    "run": {
+      "learning_rate": 0.0001,
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter175",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter175"
+    }
+  },
+  {
+    "id": "iter176",
+    "notes": "Faster memorize: d_model=384 lr=1.5e-4 iter82 losses 350ep",
+    "model": {
+      "d_model": 384
+    },
+    "run": {
+      "learning_rate": 0.00015,
+      "lambda_residual": 25.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.0,
+      "epochs": 350,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter176",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter176"
+    }
+  },
+  {
+    "id": "iter177",
+    "notes": "Speed/capacity: d_model=320 lr=1e-4 400ep",
+    "model": {
+      "d_model": 320
+    },
+    "run": {
+      "learning_rate": 0.0001,
+      "lambda_residual": 25.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter177",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter177"
+    }
+  },
+  {
+    "id": "iter178",
+    "notes": "iter169 + lambda_time=1.5 lambda_residual=28",
+    "model": {
+      "d_model": 384
+    },
+    "run": {
+      "learning_rate": 0.0001,
+      "lambda_residual": 28.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.5,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter178",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter178"
+    }
+  },
+  {
+    "id": "iter179",
+    "notes": "Tier B depth: d_model=384 5-layer enc/dec lr=1e-4",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 5,
+      "n_dec_layers": 5
+    },
+    "run": {
+      "learning_rate": 0.0001,
+      "lambda_residual": 25.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter179",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter179"
+    }
+  },
+  {
+    "id": "iter180",
+    "notes": "Tier B: d_model=448 lr=8e-5",
+    "model": {
+      "d_model": 448
+    },
+    "run": {
+      "learning_rate": 8e-05,
+      "lambda_residual": 25.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter180",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter180"
+    }
+  },
+  {
+    "id": "iter181",
+    "notes": "Decode prep: d_model=384 mild SS p=0.1 + lambda_inc=0.15",
+    "model": {
+      "d_model": 384
+    },
+    "run": {
+      "learning_rate": 0.0001,
+      "lambda_residual": 25.0,
+      "lambda_incremental_consistency": 0.15,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.1,
+      "scheduled_sampling_ramp_epochs": 80,
+      "scheduled_sampling_warmup_epochs": 50,
+      "lambda_time": 1.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter181",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter181"
+    }
+  },
+  {
+    "id": "iter182",
+    "notes": "Speed: d_model=384 early stop min_score=0.999 patience=15",
+    "model": {
+      "d_model": 384
+    },
+    "run": {
+      "learning_rate": 0.0001,
+      "lambda_residual": 25.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "scheduled_sampling_max_p": 0.0,
+      "lambda_time": 1.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": true,
+      "perfect_overfit_min_score": 0.999,
+      "perfect_overfit_patience": 15,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter182",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter182"
+    }
   }
 ]
