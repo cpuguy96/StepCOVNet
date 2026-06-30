@@ -357,7 +357,7 @@ def _apply_champion_pins(
     overrides: dict[str, dict[str, object]],
     champion: dict[str, Any],
 ) -> dict[str, dict[str, object]]:
-    """Force budget/eval keys to champion values (e.g. epochs=200)."""
+    """Force budget/eval keys to champion values (e.g. epochs=400)."""
     champion_run = champion.get("run", {})
     if not isinstance(champion_run, dict):
         return overrides

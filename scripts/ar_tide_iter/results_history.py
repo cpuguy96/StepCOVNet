@@ -10,7 +10,7 @@ from dataclasses import dataclass
 REPO = pathlib.Path(__file__).resolve().parents[2]
 RESULTS_JSONL = REPO / "logs" / "ar_tide_iter" / "results.jsonl"
 
-_FREE_RUN_RE = re.compile(
+_MATCHED_DENOM_RE = re.compile(
     r"^(?P<matched>\d+)/(?P<denom>\d+)\s+\((?P<rate>[0-9.]+)\)$",
 )
 _ITER_ID_RE = re.compile(r"^iter(\d+)$")
@@ -44,13 +44,21 @@ class ResultRecord:
         return float(self.matched)
 
 
-def parse_free_run(text: str | None) -> tuple[int, int] | None:
+def parse_matched_denom(text: str | None) -> tuple[int, int] | None:
     if not text:
         return None
-    match = _FREE_RUN_RE.match(str(text).strip())
+    match = _MATCHED_DENOM_RE.match(str(text).strip())
     if not match:
         return None
     return int(match.group("matched")), int(match.group("denom"))
+
+
+def parse_free_run(text: str | None) -> tuple[int, int] | None:
+    return parse_matched_denom(text)
+
+
+def parse_teacher(text: str | None) -> tuple[int, int] | None:
+    return parse_matched_denom(text)
 
 
 def _load_config_block(config_rel: str, repo: pathlib.Path) -> dict[str, object]:
@@ -78,7 +86,7 @@ def load_results(
     repo: pathlib.Path = REPO,
 ) -> list[ResultRecord]:
     """Return all results in file order."""
-    results_path = path or RESULTS_JSONL
+    results_path = path or (repo / "logs" / "ar_tide_iter" / "results.jsonl")
     if not results_path.is_file():
         return []
 

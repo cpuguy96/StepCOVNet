@@ -6,7 +6,8 @@ Train/eval loop for free-run **634/634 @ 20 ms** experiments on tide.
 | ---- | ---- |
 | `scripts/ar_tide_iter/session_brief.py` | **Agent decision brief** — session best, config diffs vs prior runs, tried recipes |
 | `logs/ar_tide_iter/next_experiment.json` | **Agent-written** next plan (gitignored); see `next_experiment.example.json` |
-| `scripts/ar_tide_iter/run_overnight.py` | Agent: `--once` + `next_experiment.json`; unattended: `--hours` (planner only) |
+| `scripts/ar_tide_iter/run_overnight.py` | Agent autoresearch: `--autoresearch --once` or `--autoresearch --hours N`; lattice planner: `--hours --allow-planner` |
+| `scripts/ar_tide_iter/run_summary.py` | JSON summary + exit-code remap for `--autoresearch` |
 | `scripts/ar_tide_iter/overnight_planner.py` | Unattended JSON lattice search (not for meaningful autoresearch) |
 | `.cursor/skills/autoresearch/SKILL.md` | Generic one-prompt autoresearch loop |
 | `.cursor/skills/autoresearch/profiles/ar-tide-overfit.md` | Tide iter: brief, `next_experiment.json`, `--once` |
@@ -25,8 +26,12 @@ Train/eval loop for free-run **634/634 @ 20 ms** experiments on tide.
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
 REM write logs/ar_tide_iter/next_experiment.json — only overrides to change (see next_experiment.example.json)
-venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --once --brief none
 ```
+
+Look for `=== AUTORESEARCH_SUMMARY ===` in output (teacher/free-run counts, remapped exit code).
+
+**Budgeted autoresearch:** when the user gives hours (e.g. 7 h), the agent must **replan and run until deadline or 634/634** — not stop when a fixed plan list ends. See [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md) § Budget discipline.
 
 **Single manual experiment** (recipe already in `experiments.json`):
 
@@ -70,4 +75,4 @@ venv\Scripts\python.exe scripts/ar_tide_iter/show_status.py --id iter30 --watch
 
 `show_status` reads the gitignored train log and writes a snapshot to `logs/ar_tide_iter/status/<id>.json` (also gitignored — use the command above, not the file tree). Foreground `run_exp.py` also prints epoch lines and val metrics to the terminal.
 
-**One GPU workload at a time.** Before training, `run_exp.py` takes an exclusive lock at `logs/ar_tide_iter/gpu_training.lock` and checks WSL `nvidia-smi` (`training_lock.assert_gpu_training_available`). This prevents two shells (e.g. a manual `run_exp` loop and `run_overnight.py`) from starting training in the same race window. Override with `STEPCOVNET_FORCE_GPU=1` or `run_exp.py --force` only when you are sure no other iteration is running. Run **one** driver shell at a time — do not leave an old `run_overnight.py --hours` process running after switching to `--once`.
+**One GPU workload at a time.** Before training, `run_exp.py` takes an exclusive lock at `logs/ar_tide_iter/gpu_training.lock` and checks WSL `nvidia-smi` (`training_lock.assert_gpu_training_available`). This prevents two shells (e.g. a manual `run_exp` loop and `run_overnight.py`) from starting training in the same race window. Override with `STEPCOVNET_FORCE_GPU=1` or `run_exp.py --force` only when you are sure no other iteration is running. Run **one** driver shell at a time — do not leave an old `run_overnight.py --hours --allow-planner` process running alongside `--autoresearch`.

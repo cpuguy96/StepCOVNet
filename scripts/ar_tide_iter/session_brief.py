@@ -190,7 +190,7 @@ def build_brief(
             "Omit unchanged keys; new champion-template keys are valid knobs when code adds them.",
             "Do not change eval metrics or gates — compare runs on the fixed_eval_metrics only.",
             "Train from scratch every run — init_model_path is cheating and is stripped by the harness.",
-            "Then: venv\\Scripts\\python.exe scripts/ar_tide_iter/run_overnight.py --once",
+            "Then: venv\\Scripts\\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --once",
             "Do not use a fixed iter queue or let code auto-mutate hyperparameters.",
             "Run one training driver at a time; a second run_exp will refuse if gpu_training.lock is held.",
         ],

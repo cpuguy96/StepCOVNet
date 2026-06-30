@@ -71,7 +71,7 @@ Same as champion — **offline AR decode only** (~0.5s val/epoch during training
 
 | Constraint | Value |
 |------------|-------|
-| Max epochs per run | **200** |
+| Max epochs per run | **400** |
 | Early stop | Use when teacher is **climbing** and plateaus; **do not** early-stop a run still below teacher **0.99** on a single-song overfit |
 | GPU | **One job at a time** — file lock + `pgrep train_onset_ar` in WSL (see `training_lock.py`) |
 | Runs | Prefer **many experiments** over one long run; **never** leave old `run_overnight` shells running |
@@ -113,7 +113,9 @@ Budget: 7 hours.
 Go — do not ask me between runs.
 ```
 
-Agent follows [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md) + [ar-tide-overfit profile](../../.cursor/skills/autoresearch/profiles/ar-tide-overfit.md). **Not** `run_overnight --hours`.
+Agent follows [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md) + [ar-tide-overfit profile](../../.cursor/skills/autoresearch/profiles/ar-tide-overfit.md). **Not** bare `run_overnight --hours` (use `--autoresearch --hours` or `--allow-planner`).
+
+**Budget:** use the **full** wall-clock budget until goal or deadline — see skill § Budget discipline (~40–50 tide runs per 7 h). Do not stop when a pre-written queue empties.
 
 **Agent autoresearch (manual steps):**
 
@@ -126,15 +128,15 @@ venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
 Write `logs/ar_tide_iter/next_experiment.json` from evidence (not knob spam), then:
 
 ```text
-venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --once
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --once --brief none
 ```
 
-Repeat until time budget or **634/634** free-run. **Do not** use `--hours` for autoresearch — that runs `overnight_planner` (history lattice / single-key tweaks only).
+Repeat until time budget or **634/634** free-run. **Do not** use bare `--hours` — that is blocked unless you pass `--allow-planner` (history lattice / single-key tweaks only).
 
 **Unattended JSON search only** (low exploration — use when no agent is available):
 
 ```text
-venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --hours 7
+venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --hours 7 --allow-planner
 ```
 
 `overnight_planner.py` ranks session runs and mutates config neighbors. One GPU job at a time.
@@ -192,7 +194,7 @@ venv\Scripts\python.exe scripts/graduate_ar_tide_overfit.py ^
 2. Read `AR_TIDE_OVERFIT_ITER_LOG.md` for qualitative learnings
 3. **Decide** from diffs what to change next; write `next_experiment.json` with only those overrides plus `reasoning`
 4. **If code changed:** tests → `pre_submit.py --fast` → then train
-5. `run_overnight.py --once` — trains/evals the plan you wrote
+5. `run_overnight.py --autoresearch --once` — trains/evals the plan you wrote
 6. Offline free-run only when teacher is perfect (automatic in `run_exp.py`)
 7. **634/634** free-run → `graduate_ar_tide_overfit.py` → stop
 

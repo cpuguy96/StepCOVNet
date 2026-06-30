@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -122,3 +123,32 @@ def assert_gpu_training_available(*, exp_id: str, force: bool = False) -> None:
     if LOCK_PATH.is_file() and not clear_stale_lock():
         _raise_lock_busy(read_lock())
     wsl_gpu.assert_wsl_gpu_free_for_training(force=False)
+
+
+def wait_gpu_training_available(
+    *,
+    exp_id: str,
+    timeout_sec: float,
+    force: bool = False,
+    poll_sec: float = 15.0,
+) -> None:
+    """Poll until the GPU and training lock are free or ``timeout_sec`` elapses."""
+    if timeout_sec <= 0:
+        assert_gpu_training_available(exp_id=exp_id, force=force)
+        return
+    deadline = time.monotonic() + timeout_sec
+    while True:
+        try:
+            assert_gpu_training_available(exp_id=exp_id, force=force)
+            return
+        except RuntimeError as exc:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    f"GPU still busy after {timeout_sec:.0f}s wait: {exc}",
+                ) from exc
+            remaining = deadline - time.monotonic()
+            sleep_for = min(poll_sec, max(remaining, 0.0))
+            print(
+                f"GPU busy — retry in {sleep_for:.0f}s ({remaining:.0f}s left): {exc}",
+            )
+            time.sleep(sleep_for)
