@@ -27,6 +27,7 @@ Ultimate **done** bar remains free-run **634/634 @ 20 ms**; the champion always 
 | v4     | [v4.json](v4.json) | `overfit_perfect/run3` | —               | —                  | 200 ep polish from v3                          |
 | v5     | [v5.json](v5.json) | `overfit_perfect/run4` | —               | —                  | + `lambda_incremental_consistency`             |
 | v6     | [v6.json](v6.json) | `run4_smoke`           | —               | —                  | 20 ep λ_inc smoke                              |
-| **v7** | [v7.json](v7.json) | `overfit_perfect/run5` | 633/634         | **619/634**        | **Current champion source** (graduated 2026-06-28) |
+| **v7** | [v7.json](v7.json) | `overfit_perfect/run5` | 633/634         | 619/634            | Graduated 2026-06-28                             |
+| **v8** | [v8.json](v8.json) | `tide_overfit_iter/iter175` | **634/634** | **634/634**        | **Current champion source** (scratch iter175; `d_model=384`, `λ_res=30`) |
 
 Artifact paths inside each `vN.json` are **historical**. The champion always writes to `models_wsl/ar/tide_overfit/`.

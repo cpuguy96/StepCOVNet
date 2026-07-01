@@ -33,7 +33,7 @@
     "epochs": 400,
     "checkpoint_metric": "val_overfit_gate",
     "perfect_overfit_early_stop": false,
-    "model_output_dir": "models_wsl/ar/tide_overfit",
-    "callback_root_dir": "callbacks/ar/tide_overfit"
+    "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter175",
+    "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter175"
   }
 }

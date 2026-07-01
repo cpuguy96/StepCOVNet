@@ -11,7 +11,7 @@
 | **Promote** | `python scripts/graduate_ar_tide_overfit.py --config … --model-path … --version-ref …` |
 | **Artifacts** | `models_wsl/ar/tide_overfit/`, `callbacks/ar/tide_overfit/` |
 
-**Current leader:** graduated from **v7** — free-run **619/634** ordered @ 20 ms (not yet 634/634 pass).
+**Current leader:** graduated from **v8** (iter175 scratch) — teacher and free-run **634/634** ordered @ 20 ms vs `target_times`.
 
 Whenever a versioned experiment **beats** the manifest free-run rate, run `graduate_ar_tide_overfit.py` (see [versions/tide_overfit/README.md](versions/tide_overfit/README.md)).
 
