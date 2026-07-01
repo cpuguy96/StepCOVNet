@@ -1,6 +1,6 @@
 # Autoregressive onset detection — design draft
 
-**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` passed** (EXP-20260627-04) — see §10.5. **`gate-ar-decode` in progress** (EXP-20260628-01) — see §10.6.
+**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` passed** (EXP-20260627-04) — see §10.5. **`gate-ar-decode` passed** on tide (EXP-20260630-01, scratch iter175 / champion v8) — see §10.6. **Next:** **`gate-10song-smoke`**.
 
 **Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) · [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md) § C · [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2 · §11 decision registry below · historical [onset_events plan](archive/onset_events_plan.md)
 
@@ -16,7 +16,7 @@ Chart player-step times are an **ordered sparse list** in seconds. Three MODEL f
 | ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------- | -------------- |
 | **Dense frames**         | Per-hop onset probability on MERT grid                  | Micro event F1 **0.686** @ thr=0.30 (`data/v2`, EXP-20260610-03) | ~98% event F1  |
 | **K-query event**        | K parallel `(time, confidence)` slots + Hungarian train | ~**0.30** F1 plateau; oracle ~**0.31** (EXP-20260606-11)         | ~28–30%        |
-| **AR tokens** (this doc) | Causal decoder emits ordered time tokens until EOS      | _Not run on val_                                                 | **`gate-tide-overfit` pass** — teacher-fed F1 **1.0** on tide (EXP-20260627-04) |
+| **AR tokens** (this doc) | Causal decoder emits ordered time tokens until EOS      | _Not run on val_                                                 | Tide **634/634** teacher + free-run vs `target_times` ([EXP-20260630-01](EXPERIMENT_LOG.md#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
 
 **Why consider AR**
 
@@ -521,11 +521,13 @@ First 300-ep run (`gate_v2`, pre-fix) failed: `val_token_accuracy` stuck **0.480
 
 Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0 patch errors**, **103 residual errors** (`n_patch_ok_timing_wrong`). Residual MSE closed the gap to **1.0**.
 
-**Next gate:** [`gate-ar-decode`](#101-experiment-gates-in-order) — scheduled sampling ramp; free-running decode F1 **1.0** on tide.
+**Next gate:** **`gate-10song-smoke`** — `training_index_10songs.json`; batches build, loss decreases, no all-EOS collapse. Tide perfect overfit **closed** ([EXP-20260630-01](EXPERIMENT_LOG.md#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)).
 
-### 10.6 `gate-ar-decode` notes (2026-06-28)
+### 10.6 `gate-ar-decode` notes (2026-06-28 → 2026-06-30)
 
-**Status:** **In progress** ([EXP-20260628-01](EXPERIMENT_LOG.md#exp-20260628-01-ar-gate-ar-decode-v2-wsl-150ep-warm-start-gate_v5)). Warm-start from **`gate-tide-overfit`** PASS checkpoint; free-running `val_ar_decode_event_f1` peaked **~0.50** in run 1 (ep 51–57) — gate not passed.
+**Status:** **PASS** on tide ([EXP-20260630-01](EXPERIMENT_LOG.md#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)). Scratch **iter175** (`d_model=384`, `lambda_residual=30`, `lr=1e-4`, 400 ep, no SS) → champion **v8** [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json). Offline: teacher + free-run **634/634** @ 20 ms vs **`target_times`**.
+
+**Historical (warm-start SS path):** [EXP-20260628-01](EXPERIMENT_LOG.md#exp-20260628-01-ar-gate-ar-decode-v2-wsl-150ep-warm-start-gate_v5) — warm-start from **`gate-tide-overfit`**; free-running `val_ar_decode_event_f1` peaked **~0.50**; did not pass tide bar without scratch memorization.
 
 **Config:** `configs/ar/decode/v2.json` · checkpoint `models_wsl/ar/gate_ar_decode/v2/` · log `logs/ar_tide_overfit_gate_decode_v2.log`.
 

@@ -1,8 +1,18 @@
 # AR tide overfit iteration log (agent session)
 
-Goal: free-run ordered **634/634 @ 20 ms**. Machine logs: `logs/ar_tide_iter/` (gitignored).
+Goal: free-run ordered **634/634 @ 20 ms** vs **`target_times`**. **Gate closed 2026-06-30** ([EXP-20260630-01](EXPERIMENT_LOG.md#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)). Machine logs: `logs/ar_tide_iter/` (gitignored).
 
-Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-30 (autoresearch 7h — iter174+)
+Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-30 (gate **PASS** — iter175 → champion v8)
+
+## Gate closed (2026-06-30)
+
+| | |
+|--|--|
+| **Winner** | **iter175** (scratch) — `lambda_residual=30` on iter169/`d_model=384` base |
+| **Champion** | [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) **v8** · `models_wsl/ar/tide_overfit/ar_onset_model.keras` |
+| **Primary eval** | Teacher **634/634** · free-run **634/634** vs `target_times` (iter175 attempt 3) |
+| **Chart aux** | **633/634** — hop-quant vs raw `gt_times` ([NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times)) |
+| **Next** | **`gate-10song-smoke`** — do not resume tide iter autoresearch |
 
 ## Autoresearch session (2026-06-30, 7h)
 
@@ -11,7 +21,7 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-30 (autoresearch 7h �
 | **Start** | iter174 — scratch replay iter169 (d_model=384, 633/634 teacher best) |
 | **Completed** | iter174–182 (queue resumed after BOM fix) |
 | **Scratch best (ordered)** | **iter175, iter178 — teacher 634/634** (first scratch perfect ordered) |
-| **Scratch best (event_f1)** | **0.9984** — gate still blocks free-run (needs event_f1=1.0) |
+| **Free-run pass** | **iter175** attempt 3 — **634/634** primary (after eval reference fix) |
 | **Winning tweaks** | `lambda_residual=30` (iter175); `lambda_time=1.5` + `lambda_res=28` (iter178) |
 | **Rejected** | d_model=320 (632), d_model=448 (630), 5-layer depth (OOM), mild SS (624), early stop (633) |
 
@@ -42,16 +52,13 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-30 (autoresearch 7h �
 | **Goal** | Free-run **634/634 @ 20 ms** |
 | **Budget** | ~7 h unattended |
 
-## Session summary (closed 2026-06-29 — prior handoff)
+## Session summary (closed 2026-06-29 — superseded)
 
 | | |
 |--|--|
-| **Best free-run (offline)** | **614/634 (96.85%)** — `iter17`, `iter18`, `iter21` (tied) |
-| **Best checkpoint** | `models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras` |
-| **Champion baseline** | 611/634 offline re-eval (manifest lists 619/634) |
-| **Experiments run** | iter01–iter30 (iter29 aborted; iter30 offline-only → 612/634) |
-| **Goal** | **Not reached** — ~20 onsets miss @ 20 ms in free-run |
-| **Overnight handoff** | [docs/agents/ar-tide-overnight-prompt.md](../agents/ar-tide-overnight-prompt.md) — start at **iter31** |
+| **Best free-run (warm-start era)** | **614/634** — `iter17`/`iter18`/`iter21` (invalid under scratch policy) |
+| **Goal at close** | **Not reached** on warm-start path |
+| **Superseded by** | Scratch **iter175** **634/634** — see [Gate closed](#gate-closed-2026-06-30) |
 
 ## Prior session notes (iter01–iter27)
 

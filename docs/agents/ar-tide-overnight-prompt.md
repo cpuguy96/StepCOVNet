@@ -1,15 +1,15 @@
 # AR tide overfit — overnight research handoff
 
-**Paste to a new agent:** everything in [§ Agent prompt](#agent-prompt) below.
+**Status (2026-06-30):** Tide gate **PASS** — scratch **iter175** / champion **v8**. **Do not** start new tide iter runs unless reproducing. Next AR work: **`gate-10song-smoke`** ([EXPERIMENT_LOG.md](../research/EXPERIMENT_LOG.md) § Current phase).
+
+**Paste to a new agent:** only for tide **repro** or autoresearch archaeology — see [§ Agent prompt](#agent-prompt) below.
 
 | Item | Value |
 | ---- | ----- |
-| **Goal** | Free-run **634/634** ordered onset match @ 20 ms on tide (scratch train, no cheating) |
-| **Time budget** | ~7 hours unattended |
-| **Scratch policy** | **Random init every run** — `init_model_path` is stripped; loading prior checkpoints is **cheating** |
-| **Last run** | `iter43` — scratch, teacher **56/634** @ 200 ep (SS=0.2, lr=2e-5) |
-| **Next experiment id** | `iter44` (agent picks via `session_brief.py`) |
-| **Harness** | `scripts/ar_tide_iter/` · log to `docs/research/AR_TIDE_OVERFIT_ITER_LOG.md` |
+| **Goal** | ~~Free-run **634/634**~~ **Achieved** (iter175, primary vs `target_times`) |
+| **Champion** | [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) **v8** · `models_wsl/ar/tide_overfit/` |
+| **Winning recipe** | iter175 — `d_model=384`, `lr=1e-4`, `lambda_residual=30`, 400 ep, no SS |
+| **Harness** | `scripts/ar_tide_iter/` · log: [AR_TIDE_OVERFIT_ITER_LOG.md](../research/AR_TIDE_OVERFIT_ITER_LOG.md) |
 | **Do not commit** | Anything under `logs/` |
 
 **Read first:** `AGENTS.md` → [docs/research/README.md](../research/README.md), then [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md), [AR_TIDE_OVERFIT_ITER_LOG.md](../research/AR_TIDE_OVERFIT_ITER_LOG.md).
@@ -28,7 +28,7 @@ You are an autonomous research agent on **StepCOVNet** (`master`). Your job for 
 | **Aux** | `chart_ordered_onset_match` vs raw chart `gt_times`; Hungarian `event_f1` |
 | Teacher | **634/634** vs `target_times` — prerequisite before free-run eval |
 
-**Failure mode (known):** not early EOS (decode length ~636). Free-run misses are **residual timing drift** during autoregressive decode — patches often right, cumulative `residual_err_ms` blows past 20 ms on ~20 steps. See diagnostics in [AR_TIDE_OVERFIT_ITER_LOG.md](../research/AR_TIDE_OVERFIT_ITER_LOG.md).
+**Failure mode (historical):** Under raw-chart scoring, free-run could read **633/634** while teacher was **634/634** — eval reference mismatch, not decode ([NOTE-20260630-01](../research/DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times)). Primary is now **`target_times`**.
 
 ### No cheating (hard rules)
 

@@ -1,6 +1,8 @@
 # Profile: ar-tide-overfit
 
-Single-chart **tide** AR overfit — scratch train, teacher gate, then free-run **634/634 @ 20 ms**.
+**Status:** Tide gate **closed** (2026-06-30). Scratch **iter175** / champion **v8** — **634/634** primary. Use this profile only for **repro** or archaeology, not new tide sweeps.
+
+Single-chart **tide** AR overfit — scratch train, teacher gate, then free-run **634/634 @ 20 ms** vs **`target_times`**.
 
 Handoff: [ar-tide-overnight-prompt.md](../../../../docs/agents/ar-tide-overnight-prompt.md).  
 Metrics: [ONSET_METRICS.md](../../../../docs/research/ONSET_METRICS.md).  

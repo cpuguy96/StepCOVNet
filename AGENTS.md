@@ -10,7 +10,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | **AR onset design** (locked stack, gates, debug notes) | [docs/research/AR_ONSET_DESIGN.md](docs/research/AR_ONSET_DESIGN.md) |
 | **What's next** (current phase) | [docs/research/EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
 | **Research autoresearch** (one-prompt goal + budget loop) | [.cursor/skills/autoresearch/SKILL.md](.cursor/skills/autoresearch/SKILL.md) |
-| **AR tide overfit overnight** (634/634 free-run) | [docs/agents/ar-tide-overnight-prompt.md](docs/agents/ar-tide-overnight-prompt.md) · profile: [autoresearch/profiles/ar-tide-overfit.md](.cursor/skills/autoresearch/profiles/ar-tide-overfit.md) |
+| **AR tide overfit** (gate **PASS** — champion v8) | [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase · champion: [configs/ar/tide_overfit.json](configs/ar/tide_overfit.json) |
 | GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |
 | Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |

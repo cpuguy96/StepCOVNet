@@ -10,7 +10,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-06-29
+**Updated:** 2026-06-30
 
 ### Dataset prep (PRE ingestion)
 
@@ -28,12 +28,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
-| **AR onset (`onset_ar/`)** | **Perfect overfit** (EXP-20260628-02) — primary gate: **ordered 634/634 @ 20 ms** (free-run best **619/634** run2) — **not passed** |
+| **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
+| **AR next gate** | **`gate-10song-smoke`** — multi-chart batches on `training_index_10songs.json` ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §10.1) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR prototype):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json). Iteration session best **614/634** offline (`iter17`/`iter18`/`iter21`); `iter30` **612/634**. Harness: `scripts/ar_tide_iter/`. **Overnight agent:** [ar-tide-overnight-prompt.md](../agents/ar-tide-overnight-prompt.md) (start `iter31`, in-loop AR decode for research). Graduate via `scripts/graduate_ar_tide_overfit.py`. Bar: offline **634/634** @ 20 ms.
+- **Track B (AR scale-up):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) (graduated **v8**, iter175 recipe). Checkpoint: `models_wsl/ar/tide_overfit/`. Verify: `debug_ar_onset_overfit.py --config configs/ar/tide_overfit.json --ar_decode`. **Do not** resume tide iter autoresearch — gate closed. Next: **10-song smoke** then full `final_data` AR.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -44,8 +45,9 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
-| EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (ordered `@ 20 ms`) | **Partial** | Best free-run ordered **619/634** (run2); teacher **633/634** — bar **634/634** |
-| EXP-20260628-01 | `train` + `model` | AR `gate-ar-decode` v2–v4 (SS ramp) | **Supported** | v4: teacher F1 **1.0**; offline AR F1 **~0.35**; see EXP-20260628-02 for token-perfect path |
+| EXP-20260630-01 | `train` + `metric` | AR tide **scratch** perfect overfit (iter175 → v8 champion) | **Supported** | Free-run **634/634** vs `target_times`; graduated [`tide_overfit.json`](../../configs/ar/tide_overfit.json) |
+| EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (warm-start runs) | **Partial** | Best warm-start free-run **619/634** (run2); superseded by scratch iter175 — see EXP-20260630-01 |
+| EXP-20260628-01 | `train` + `model` | AR `gate-ar-decode` v2–v4 (SS ramp, warm-start) | **Supported** | v4: teacher F1 **1.0**; offline AR F1 **~0.35**; tide pass via scratch path (EXP-20260630-01) |
 | EXP-20260627-04 | `train` + `model` | AR `gate-tide-overfit` pass (residual MSE + λ ramp) | **Supported** | `val_event_onset_f1` **1.0** @ ep 180+; debug 634/634 within 20 ms |
 | EXP-20260627-03 | `train` + `model` | AR tide overfit training fixes (class weights, argmax decode, λ ramp) | **Supported** | F1 **~0.83** (`gate_v4`); residual head untrained — see NOTE-20260627-02 |
 | EXP-20260627-02 | `train` + `model` | AR `gate-tide-overfit` WSL 300ep (tide) | **Fail** | Best `val_event_onset_f1` **~0.14**; `val_token_accuracy` **~0.48** plateau; gate not passed |
@@ -94,6 +96,21 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
 
+### EXP-20260630-01: AR tide scratch perfect overfit (iter175 → v8 champion)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-30 20:23:12 |
+| **Track** | `train` + `metric` (AR) |
+| **Gate** | Tide single-chart **`gate-ar-decode`** / perfect overfit — offline free-run **`ordered_onset_match` 634/634** @ 20 ms vs **`target_times`** ([NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times)) |
+| **Config** | Scratch **iter175** → [`configs/ar/versions/tide_overfit/v8.json`](../../configs/ar/versions/tide_overfit/v8.json); champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) |
+| **Recipe** | `d_model=384`, `lr=1e-4`, `lambda_residual=30`, `lambda_incremental_consistency=0.01`, `incremental_consistency_max_steps=32`, `eos_token_weight_scale=0.2`, `scheduled_sampling_max_p=0`, **400 ep**, random init (no warm-start) |
+| **Harness** | `scripts/ar_tide_iter/` — iter174–217 autoresearch; **iter175** first scratch teacher **634/634**; decode sweeps plateaued at **633/634** vs raw chart until eval reference fixed |
+| **Model (source)** | `models_wsl/ar/tide_overfit_iter/iter175/` (iter tree removed after graduation) |
+| **Model (champion)** | `models_wsl/ar/tide_overfit/ar_onset_model.keras` — promoted via `graduate_ar_tide_overfit.py` |
+| **Offline eval** | iter175 attempt 3: teacher **634/634**, free-run **634/634** (primary); chart aux **633/634** (hop-quant gap at onset 318 — not a decode bug) |
+| **Conclusion** | **`gate-ar-decode` PASS** on tide. Champion manifest **1.0** free-run. Next: **`gate-10song-smoke`** ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §10.1). Session log: [AR_TIDE_OVERFIT_ITER_LOG.md](AR_TIDE_OVERFIT_ITER_LOG.md). |
+
 ### EXP-20260628-02: AR tide perfect overfit (`val_overfit_gate`)
 
 | Field | Value |
@@ -126,7 +143,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Run5 training** | Ep 3+: `val_token_accuracy` **1.0**; final `val_event_onset_f1` **0.9968**, `val_overfit_gate` **0.9968** |
 | **Run5 offline (teacher)** | event F1 **~1.0** (634/634 TP); **633/634** within 20 ms; mean abs err **3.86 ms**, max **24.84 ms** |
 | **Run5 offline (`--ar_decode`)** | Two-pass AR F1 **0.976** (619 TP / 15 FP / 15 FN); decode length **636**, EOS OK; incremental pointer+residual F1 **0.940** |
-| **Conclusion** | Teacher path **1.0** on run2/v3/v4/v5. **Best free-run gate metric: run2 (0.978)** — run5 incremental consistency did not beat run2. None pass tide free-run bar (**1.0**, NOTE-20260628-02). Gap remains pointer+residual under model prefix, not token LM alone. Next: stronger incremental loss or alternate warm-start from run2 without v4/v5 regressions. |
+| **Conclusion** | Teacher path **1.0** on run2/v3/v4/v5. **Best warm-start free-run: run2 (0.978)**. Warm-start path did not reach **634/634** free-run bar. **Scratch iter175** closed the gate ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)). |
 
 ### EXP-20260628-01: AR `gate-ar-decode` v2 (WSL 150ep, warm-start gate_v5)
 
@@ -134,7 +151,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | ----- | ----- |
 | **Timestamp** | 2026-06-28 05:15:00 |
 | **Track** | `train` + `model` (AR) |
-| **Gate** | `gate-ar-decode` — **in progress** (pass: teacher-fed **1.0** + free-run **1.0** on tide) |
+| **Gate** | `gate-ar-decode` — **PASS** via scratch iter175 ([EXP-20260630-01](EXPERIMENT_LOG.md#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)); warm-start v2 runs below document the earlier SS path |
 | **Config** | `configs/onset_ar_tide_decode_v2.json` — `init_model_path` → `gate_v5`; full tide loss (`lambda_time` ramp, `lambda_residual: 5`); `eos_token_weight_scale: 0.2`; SS warmup **15** + ramp **100** → `p=1`; `ar_decode_val_every_n_epochs: 0`; checkpoint **`val_event_onset_f1`** |
 | **Code** | Scheduled sampling (`trainers.py`); eager `ArDecodeValidationCallback` (AR decode off compiled `test_step`); KV-cache free-run (`kv_decode.py`, default in `inference.py`) |
 | **Log (run 1)** | `logs/ar_tide_overfit_gate_decode_v2_run1.log` — interrupted ep **68**/150 |
