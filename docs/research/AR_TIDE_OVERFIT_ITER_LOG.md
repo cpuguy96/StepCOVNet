@@ -1637,3 +1637,24 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-30 (autoresearch 7h �
 | Free-run ordered | **632/634 (0.9968)** |
 | Decode steps | 636 |
 | Eval wall (s) | 85.97 |
+
+### iter175 · attempt 3 (2026-06-30T20:23:12)
+
+**Hypothesis:** iter169 + lambda_residual=30 (fix step-318 without iter173 time blowup)
+
+| | |
+|--|--|
+| Kind | retry |
+| Attempt | 3 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter175`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter175.attempt3.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter175\ar_onset_model.keras` |
+| Train exit | skipped |
+| Train log | `logs\ar_tide_iter\train_logs\iter175.attempt3.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **634/634 (1.0000)** |
+| Chart aux (raw gt) | 633/634 (0.9984) |
+| Decode steps | 636 |
+| Eval wall (s) | 87.57 |
+
+**PASS — 634/634 free-run.**
