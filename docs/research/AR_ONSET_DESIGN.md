@@ -557,14 +557,15 @@ Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
 
 **Run 1 observations:** Ep 1–6 early-EOS (`decode_length` **13** via offline `--ar_decode`); ep 7+ full chart (**633–635**). Token-only loss (v2 run 1) let teacher-fed `val_event_onset_f1` fall **1.0 → ~0.51** — recipe now restores full pointer/time/residual loss from `gate-tide-overfit`.
 
-**Pass criteria:** teacher-fed and free-run **timing_match rate 1.0** @ 20 ms on tide (offline `--ar_decode`, two-pass; **634/634** when `n_pred == n_ref == 634`). Hungarian F1 is auxiliary only. Spec: [ONSET_METRICS.md](ONSET_METRICS.md). A relaxed **0.95** bar was rejected — single-chart overfit must reproduce the chart exactly ([NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
+**Pass criteria:** teacher-fed and free-run **timing_match rate 1.0** @ 20 ms on tide vs **`target_times`** (offline `--ar_decode`, two-pass; **634/634** when `n_pred == n_ref == 634`). Raw chart `gt_times` and Hungarian F1 are **aux** ([NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times)). Spec: [ONSET_METRICS.md](ONSET_METRICS.md). A relaxed **0.95** bar was rejected — single-chart overfit must reproduce training labels exactly ([NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
 
 #### Perfect overfit metrics (`EXP-20260628-02`)
 
 | Metric | In-training | Offline gate | Role |
 | ------ | ----------- | ------------ | ---- |
-| `val_ordered_onset_match` | yes | `debug_ar_onset_overfit.py` teacher block | **Primary** — per-step `@ 20 ms` |
-| `val_ar_decode_ordered_onset_match` | optional (slow) | `--ar_decode` top-level `ordered_onset_match` | **Primary** free-run |
+| `val_ordered_onset_match` | yes | `debug_ar_onset_overfit.py` teacher block | **Primary** — per-step `@ 20 ms` vs **`target_times`** |
+| `val_ar_decode_ordered_onset_match` | optional (slow) | `--ar_decode` top-level `ordered_onset_match` | **Primary** free-run vs **`target_times`** |
+| `chart_ordered_onset_match` | — | `--ar_decode` aux block | **Aux** — vs raw chart `gt_times` |
 | `val_overfit_gate` | `min(token_acc, ordered_match)` | — | Checkpoint on perfect-overfit configs |
 | `val_token_accuracy` | yes | token trace in `--ar_decode` | Prerequisite (aux until free-run passes) |
 | `val_event_onset_f1` | yes | Hungarian block in debug JSON | **Aux** — multi-song legacy; can hide per-step errors |

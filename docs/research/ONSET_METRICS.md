@@ -39,7 +39,16 @@ Every track exports a **sorted** list of predicted onset times in seconds (`pred
 | First 634 perfect, **one extra** peak | 634         | 635      | 634     | 634/635 | no          |
 | 619 correct prefixes, stopped early   | 619         | 619      | 634     | 619/634 | no          |
 
-**Tide overfit pass bar:** rate **1.0** on teacher-fed and (for perfect-overfit / `gate-ar-decode`) free-run AR decode — equivalently **634/634** when `n_pred == n_ref == 634`.
+**Tide overfit pass bar:** rate **1.0** on teacher-fed and free-run AR decode vs **`target_times`** — equivalently **634/634** when `n_pred == n_ref == 634`. Log **`chart_ordered_onset_match`** (raw chart seconds) and Hungarian F1 as aux.
+
+### Training reference vs raw chart (AR)
+
+| Reference | Source | Role |
+| --------- | ------ | ---- |
+| **`target_times`** | `decode_pointer_residual_to_times` on teacher patch+residual | **Primary** — matches training loss and hop-grid output space |
+| **`gt_times` / chart** | Clipped `tide.txt` seconds | **Aux** — annotation fidelity; can differ by up to ~one hop from `target_times` |
+
+Evaluating free-run only against raw chart while training supervises `target_times` creates false failures when residual error is near tolerance ([NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times)).
 
 ### Micro aggregation (multi-song val)
 
@@ -66,8 +75,8 @@ flowchart LR
 
 | Track             | POST export                                                                | Reference times                                |
 | ----------------- | -------------------------------------------------------------------------- | ---------------------------------------------- |
-| **AR (teacher)**  | Pointer+residual decode at masked onset steps                              | Teacher `target_times` at same steps           |
-| **AR (free-run)** | Two-pass autoregressive decode → times                                     | Sorted GT from `gt_mask`                       |
+| **AR (teacher)**  | Pointer+residual decode at masked onset steps                              | Training `target_times` at same steps          |
+| **AR (free-run)** | Two-pass autoregressive decode → times                                     | Training `target_times` (primary); raw `gt_times` aux |
 | **Dense**         | Peak-pick on frame probs (`confidence_threshold`, `min_onset_distance_ms`) | Frame indices → seconds via hop                |
 | **Event**         | Filter slots by confidence + min-gap → sort                                | `reference_times_from_mask(gt_times, gt_mask)` |
 
@@ -126,8 +135,8 @@ Free-run perfect-overfit also requires **`val_ar_decode_ordered_onset_match == 1
 
 | Goal                                    | Primary                                    | Also log                                         |
 | --------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
-| Tide / single-chart overfit             | `timing_match` rate **1.0**                | Hungarian F1, per-step ms errors, token acc (AR) |
-| AR `gate-ar-decode`                     | Free-run `timing_match`                    | Teacher `timing_match`, decode length, EOS       |
+| Tide / single-chart overfit             | `timing_match` vs **`target_times`** **1.0** | `chart_ordered_onset_match`, Hungarian F1, token acc |
+| AR `gate-ar-decode`                     | Free-run `timing_match` vs **`target_times`** | Teacher `timing_match`, chart aux, decode length, EOS |
 | Multi-song dense val                    | `micro_timing_match` @ **fixed** threshold | `micro_event_f1`, TP/FP/FN                       |
 | Event K-slot research (plateau ~30% F1) | `event_onset_f1` (still training default)  | `timing_match` in diagnostics when debugging     |
 
@@ -160,5 +169,6 @@ ref = timing_match.reference_times_from_mask(gt_times[0], gt_mask[0])
 
 | Date       | Change                                                                                                                                                                      |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-06-30 | Free-run primary ordered match vs **`target_times`**; raw chart as **`chart_ordered_onset_match`** aux ([NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times)) |
 | 2026-06-28 | Primary tide metric switched from Hungarian F1 to ordered match ([NOTE-20260628-03](DISCUSSION_NOTES.md#note-20260628-03-tide-overfit-primary-metric--ordered-onset-match)) |
 | 2026-06-28 | Unified `timing_match.py` across AR / dense / event; rate denominator `max(n_pred, n_ref)` penalizes extra predictions                                                      |

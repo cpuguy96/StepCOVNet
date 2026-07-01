@@ -10,8 +10,10 @@ Design: [AR_ONSET_DESIGN.md](../../../../docs/research/AR_ONSET_DESIGN.md).
 
 | Phase              | Primary metric                         | Bar         |
 | ------------------ | -------------------------------------- | ----------- |
-| Memorize (scratch) | Teacher `ordered_onset_match` @ 20 ms  | **634/634** |
-| Decode             | Free-run `ordered_onset_match` @ 20 ms | **634/634** |
+| Memorize (scratch) | Teacher `ordered_onset_match` @ 20 ms vs **`target_times`** | **634/634** |
+| Decode             | Free-run `ordered_onset_match` @ 20 ms vs **`target_times`** | **634/634** |
+
+**Aux (logged, not pass bar):** `chart_ordered_onset_match` vs raw `gt_times`; Hungarian F1.
 
 **Scratch-only:** `init_model_path` stripped every run. Warm-start 614/634 is **not** a valid pass bar.
 

@@ -311,6 +311,10 @@ def _append_logs(entry: dict) -> None:
         block += (
             f"| Teacher ordered | {entry['teacher']} |\n"
             f"| Free-run ordered | **{entry['free_run']}** |\n"
+        )
+        if entry.get("chart_free_run"):
+            block += f"| Chart aux (raw gt) | {entry['chart_free_run']} |\n"
+        block += (
             f"| Decode steps | {entry.get('decode_steps', '?')} |\n"
             f"| Eval wall (s) | {entry.get('eval_wall_sec', '?')} |\n"
         )
@@ -427,27 +431,37 @@ def main() -> int:
         print(f"[{args.id}] eval free-run")
         report = _eval(config, model_path, ar_decode=True)
         free = report["ar_decode"]["ordered_onset_match"]
+        chart = report["ar_decode"].get("chart_ordered_onset_match", {})
         f_str = (
             f"{free.get('n_matched')}/{free.get('n_denom')} ({free.get('rate'):.4f})"
         )
+        chart_str = None
+        if isinstance(chart, dict) and chart.get("n_denom"):
+            chart_str = (
+                f"{chart.get('n_matched')}/{chart.get('n_denom')} "
+                f"({chart.get('rate'):.4f})"
+            )
         passed = (
             int(free.get("n_matched", 0)) == 634
             and int(free.get("n_denom", 0)) == 634
             and float(free.get("rate", 0)) >= 1.0
         )
 
-        _append_logs(
-            _log_entry(
-                teacher=t_str,
-                free_run=f_str,
-                free_run_matched=int(free.get("n_matched", 0)),
-                free_run_denom=int(free.get("n_denom", 0)),
-                decode_steps=report["ar_decode"].get("ar_decode_length"),
-                eval_wall_sec=report.get("_eval_wall_sec"),
-                passed=passed,
-            ),
-        )
-        print(f"teacher {t_str} | free-run {f_str} | passed={passed}")
+        log_extra: dict[str, object] = {
+            "teacher": t_str,
+            "free_run": f_str,
+            "free_run_matched": int(free.get("n_matched", 0)),
+            "free_run_denom": int(free.get("n_denom", 0)),
+            "decode_steps": report["ar_decode"].get("ar_decode_length"),
+            "eval_wall_sec": report.get("_eval_wall_sec"),
+            "passed": passed,
+        }
+        if chart_str:
+            log_extra["chart_free_run"] = chart_str
+            log_extra["chart_free_run_matched"] = int(chart.get("n_matched", 0))
+        _append_logs(_log_entry(**log_extra))
+        chart_msg = f" | chart aux {chart_str}" if chart_str else ""
+        print(f"teacher {t_str} | free-run {f_str}{chart_msg} | passed={passed}")
         return 0 if passed else (2 if train_exit != 0 else 0)
     finally:
         if lock_held:

@@ -24,8 +24,9 @@ You are an autonomous research agent on **StepCOVNet** (`master`). Your job for 
 
 | Metric | Bar |
 |--------|-----|
-| **Primary** | `ar_decode.ordered_onset_match` = **634/634 @ 20 ms** on tide (free-run, two-pass decode) |
-| Teacher | Already **634/634** — not the bottleneck |
+| **Primary** | `ar_decode.ordered_onset_match` = **634/634 @ 20 ms** vs **`target_times`** (free-run, two-pass decode) |
+| **Aux** | `chart_ordered_onset_match` vs raw chart `gt_times`; Hungarian `event_f1` |
+| Teacher | **634/634** vs `target_times` — prerequisite before free-run eval |
 
 **Failure mode (known):** not early EOS (decode length ~636). Free-run misses are **residual timing drift** during autoregressive decode — patches often right, cumulative `residual_err_ms` blows past 20 ms on ~20 steps. See diagnostics in [AR_TIDE_OVERFIT_ITER_LOG.md](../research/AR_TIDE_OVERFIT_ITER_LOG.md).
 

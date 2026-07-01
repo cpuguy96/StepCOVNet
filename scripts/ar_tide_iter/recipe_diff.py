@@ -18,8 +18,13 @@ _RUN_ARTIFACT_KEYS = frozenset({"model_output_dir", "callback_root_dir"})
 
 # Eval / logging metrics held fixed so runs stay comparable.
 FIXED_EVAL_METRICS = {
-    "primary_gate": "free_run ordered_onset_match @ tolerance_sec (634/634 @ 20 ms)",
-    "teacher_prerequisite": "teacher-fed ordered_onset_match, event_f1, token_accuracy all 1.0 before --ar_decode",
+    "primary_gate": (
+        "free_run ordered_onset_match vs target_times @ tolerance_sec (634/634 @ 20 ms)"
+    ),
+    "aux_gate": "chart_ordered_onset_match vs raw gt_times; Hungarian event_f1",
+    "teacher_prerequisite": (
+        "teacher-fed ordered_onset_match @ 1.0 before --ar_decode"
+    ),
     "training_checkpoint_metric": "val_overfit_gate",
     "offline_eval_script": "scripts/debug_ar_onset_overfit.py --ar_decode --json-only",
     "reported_training_val_keys": [

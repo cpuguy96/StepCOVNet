@@ -4,6 +4,23 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-06-30 — AR free-run eval reference
+
+### NOTE-20260630-01: AR free-run primary vs `target_times`
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-06-30 19:30:00                                                   |
+| **Topic**     | Align free-run ordered gate with training labels                      |
+
+**Context:** iter175 scratch teacher **634/634** and free-run **634/634 tokens**, but free-run ordered scored vs raw `gt_times` read **633/634** while teacher ordered (vs `target_times`) read **634/634**. At onset index 318 the model predicts the same time in teacher and free-run; residual is ~19 ms vs `target_times` and ~26 ms vs raw chart (~7 ms hop-quantization gap). Overnight decode sweeps could not beat 633/634 vs raw chart.
+
+**Decision:** On tide overfit, **primary** ordered match for **both** teacher-fed and free-run uses **`target_times`** (training patch+residual decode). **Aux:** `chart_ordered_onset_match` vs raw `gt_times`, Hungarian `event_f1` vs chart. Implementation: `scripts/debug_ar_onset_overfit.py`, `run_exp.py` pass gate.
+
+**Related:** [ONSET_METRICS.md](ONSET_METRICS.md), [NOTE-20260628-03](#note-20260628-03-tide-overfit-primary-metric--ordered-onset-match)
+
+---
+
 ## Session 2026-06-28 — Tide overfit free-run bar
 
 ### NOTE-20260628-02: Tide overfit free-run bar **1.0**
@@ -32,7 +49,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Context:** Teacher Hungarian `event_f1` could read **1.0** while per-step timing was **633/634** @ 20 ms (residual error ~25 ms on one onset). That is not chart-perfect on a single-song overfit.
 
-**Decision:** On tide overfit, **primary** metrics are **`ordered_onset_match`** / **`timing_match`** (teacher) and **`ar_decode_ordered_onset_match`** (free-run, two-pass): ordered pairs with `|pred[i] − gt[i]| ≤ 20 ms`; rate = **`n_matched / max(n_pred, n_ref)`**. Pass only at **rate 1.0** (634/634 when counts match). Hungarian `event_f1` remains logged as **aux**. `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`. Full spec: [ONSET_METRICS.md](ONSET_METRICS.md).
+**Decision:** On tide overfit, **primary** metrics are **`ordered_onset_match`** / **`timing_match`** (teacher) and **`ar_decode_ordered_onset_match`** (free-run, two-pass): ordered pairs with `|pred[i] − ref[i]| ≤ 20 ms` where **`ref` = `target_times`** (training labels); rate = **`n_matched / max(n_pred, n_ref)`**. Pass only at **rate 1.0** (634/634 when counts match). Hungarian `event_f1` vs raw chart remains **aux**. `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`. Free-run reference clarified in [NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times). Full spec: [ONSET_METRICS.md](ONSET_METRICS.md).
 
 **Related:** `src/stepcovnet/timing_match.py`, `src/stepcovnet/onset_ar/trainers.py` (`ArOrderedOnsetMatchMetric`), `scripts/debug_ar_onset_overfit.py`
 

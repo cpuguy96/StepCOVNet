@@ -11,8 +11,9 @@ Usage:
     python scripts/debug_ar_onset_overfit.py \\
         --config configs/ar/tide_overfit.json --ar_decode --full-diagnostics
 
-With ``--ar_decode``, top-level ``ar_decode`` metrics use **two-pass** timing
-(``decode_autoregressive_gate_with_stats_numpy``). Pass ``--full-diagnostics``
+With ``--ar_decode``, top-level ``ar_decode.ordered_onset_match`` uses **two-pass**
+timing vs training ``target_times`` (primary). Raw chart ``gt_times`` is logged as
+``chart_ordered_onset_match`` and Hungarian F1 (aux). Pass ``--full-diagnostics``
 for token trace, gt_timing parity, and other slow ``ar_decode.diagnostics``.
 
 Human-readable progress and a completion summary go to **stderr**; full JSON stays
@@ -147,6 +148,53 @@ def _ordered_onset_report(
     }
 
 
+def _onset_reference_times(
+    batch_np: dict[str, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Training labels and raw chart times in decoder onset order."""
+    onset_mask = batch_np["onset_step_mask"][0] > 0.5
+    step_indices = np.flatnonzero(onset_mask)
+    target = batch_np["target_times"][0][step_indices]
+    chart = batch_np["gt_times"][0][batch_np["gt_mask"][0] > 0.5]
+    return target, chart
+
+
+def _ar_decode_gate_metrics(
+    pred_times: np.ndarray,
+    target_times: np.ndarray,
+    chart_times: np.ndarray,
+    *,
+    tolerance_sec: float,
+    ar_decode_length: int,
+    stopped_on_eos: bool,
+    timing_mode: str = "two_pass",
+) -> dict[str, object]:
+    """Primary ordered match vs target_times; aux vs raw chart."""
+    ordered = _ordered_onset_report(
+        pred_times,
+        target_times,
+        tolerance_sec=tolerance_sec,
+    )
+    chart_ordered = _ordered_onset_report(
+        pred_times,
+        chart_times,
+        tolerance_sec=tolerance_sec,
+    )
+    return {
+        "timing_mode": timing_mode,
+        "timing_match": ordered,
+        "ordered_onset_match": ordered,
+        "chart_ordered_onset_match": chart_ordered,
+        "ar_decode_length": ar_decode_length,
+        "stopped_on_eos": stopped_on_eos,
+        **_event_f1_report(
+            pred_times,
+            chart_times,
+            tolerance_sec=tolerance_sec,
+        ),
+    }
+
+
 def _ordered_gate_line(block: dict[str, object], *, tol_ms: float) -> str:
     n_matched = int(block["n_matched"])
     n_denom = int(block.get("n_denom", block["n_gt"]))
@@ -166,7 +214,16 @@ def _print_teacher_summary(
     assert isinstance(ordered, dict)
     _log("", quiet=quiet)
     _log("=== Teacher-fed gate ===", quiet=quiet)
-    _log(f"  {_ordered_gate_line(ordered, tol_ms=tol_ms)}", quiet=quiet)
+    _log(
+        f"  {_ordered_gate_line(ordered, tol_ms=tol_ms)} (vs target_times)",
+        quiet=quiet,
+    )
+    chart = report.get("chart_ordered_onset_match")
+    if isinstance(chart, dict):
+        _log(
+            f"  {_ordered_gate_line(chart, tol_ms=tol_ms)} (aux: raw chart)",
+            quiet=quiet,
+        )
     _log("", quiet=quiet)
     _log("--- Aux (Hungarian / timing detail) ---", quiet=quiet)
     _log(f"  {_event_f1_line(report)}", quiet=quiet)
@@ -207,7 +264,16 @@ def _print_ar_decode_summary(
         f"EOS: {'yes' if ar_decode['stopped_on_eos'] else 'no'}",
         quiet=quiet,
     )
-    _log(f"  {_ordered_gate_line(ordered, tol_ms=tol_ms)}", quiet=quiet)
+    _log(
+        f"  {_ordered_gate_line(ordered, tol_ms=tol_ms)} (vs target_times)",
+        quiet=quiet,
+    )
+    chart = ar_decode.get("chart_ordered_onset_match")
+    if isinstance(chart, dict):
+        _log(
+            f"  {_ordered_gate_line(chart, tol_ms=tol_ms)} (aux: raw chart)",
+            quiet=quiet,
+        )
     _log("", quiet=quiet)
     _log("--- Aux ---", quiet=quiet)
     _log(f"  Hungarian F1: {_event_f1_line(ar_decode)}", quiet=quiet)
@@ -369,9 +435,15 @@ def _diagnose_batch(
     patch_ok_residual_bad = int(
         np.sum(patch_ok & (abs_err_sec > tolerance_sec)),
     )
+    target_kept = target_times[step_indices]
     ordered = _ordered_onset_report(
         pred_times,
-        target_times[step_indices],
+        target_kept,
+        tolerance_sec=tolerance_sec,
+    )
+    chart_ordered = _ordered_onset_report(
+        pred_times,
+        gt_times,
         tolerance_sec=tolerance_sec,
     )
 
@@ -379,6 +451,7 @@ def _diagnose_batch(
         "n_onsets": int(pred_times.size),
         "timing_match": ordered,
         "ordered_onset_match": ordered,
+        "chart_ordered_onset_match": chart_ordered,
         "event_f1": float(event_f1),
         "true_positives": int(tp),
         "false_positives": int(fp),
@@ -520,7 +593,7 @@ def _ar_decode_report(
     max_decoder_len = experiment_config.max_decoder_len()
     mert = batch_np["mert_patches"]
     patch_mask = batch_np["patch_mask"]
-    gt_times = batch_np["gt_times"][0][batch_np["gt_mask"][0] > 0.5]
+    target_times, chart_times = _onset_reference_times(batch_np)
     gt_target = batch_np["decoder_target_ids"][0]
     gt_mask = batch_np["decoder_mask"][0]
 
@@ -553,7 +626,7 @@ def _ar_decode_report(
             "stopped_on_eos": incremental_stats.stopped_on_eos,
             **_event_f1_report(
                 incremental_stats.times,
-                gt_times,
+                chart_times,
                 tolerance_sec=run_config.tolerance_sec,
             ),
         },
@@ -561,7 +634,7 @@ def _ar_decode_report(
             model,
             batch_np,
             experiment_config=experiment_config,
-            gt_times=gt_times,
+            gt_times=chart_times,
             tolerance_sec=run_config.tolerance_sec,
         ),
     }
@@ -574,25 +647,18 @@ def _ar_decode_report(
         )
         diagnostics["token_detokenize"] = _event_f1_report(
             token_times,
-            gt_times,
+            chart_times,
             tolerance_sec=run_config.tolerance_sec,
         )
 
-    ordered = _ordered_onset_report(
-        gate_stats.times,
-        gt_times,
-        tolerance_sec=run_config.tolerance_sec,
-    )
     report: dict[str, object] = {
-        "timing_mode": "two_pass",
-        "timing_match": ordered,
-        "ordered_onset_match": ordered,
-        "ar_decode_length": gate_stats.n_forward_steps,
-        "stopped_on_eos": gate_stats.stopped_on_eos,
-        **_event_f1_report(
+        **_ar_decode_gate_metrics(
             gate_stats.times,
-            gt_times,
+            target_times,
+            chart_times,
             tolerance_sec=run_config.tolerance_sec,
+            ar_decode_length=gate_stats.n_forward_steps,
+            stopped_on_eos=gate_stats.stopped_on_eos,
         ),
         "diagnostics": diagnostics,
     }
@@ -663,7 +729,7 @@ def _ar_decode_gate_only_report(
     model_config = experiment_config.model
     mert = batch_np["mert_patches"]
     patch_mask = batch_np["patch_mask"]
-    gt_times = batch_np["gt_times"][0][batch_np["gt_mask"][0] > 0.5]
+    target_times, chart_times = _onset_reference_times(batch_np)
 
     gate_stats = inference.decode_autoregressive_gate_with_stats_numpy(
         model,
@@ -674,23 +740,14 @@ def _ar_decode_gate_only_report(
         hop_sec=experiment_config.dataset.hop_sec,
         experiment_config=experiment_config,
     )
-    ordered = _ordered_onset_report(
+    return _ar_decode_gate_metrics(
         gate_stats.times,
-        gt_times,
+        target_times,
+        chart_times,
         tolerance_sec=run_config.tolerance_sec,
+        ar_decode_length=gate_stats.n_forward_steps,
+        stopped_on_eos=gate_stats.stopped_on_eos,
     )
-    return {
-        "timing_mode": "two_pass",
-        "timing_match": ordered,
-        "ordered_onset_match": ordered,
-        "ar_decode_length": gate_stats.n_forward_steps,
-        "stopped_on_eos": gate_stats.stopped_on_eos,
-        **_event_f1_report(
-            gate_stats.times,
-            gt_times,
-            tolerance_sec=run_config.tolerance_sec,
-        ),
-    }
 
 
 def main() -> int:
