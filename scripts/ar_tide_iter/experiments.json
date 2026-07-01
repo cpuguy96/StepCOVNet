@@ -1036,5 +1036,875 @@
       "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter182",
       "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter182"
     }
+  },
+  {
+    "id": "iter183",
+    "notes": "Decode push: iter175 recipe + tighter residual + stronger incremental consistency",
+    "model": {
+      "d_model": 384
+    },
+    "run": {
+      "lambda_residual": 35.0,
+      "lambda_incremental_consistency": 0.05,
+      "incremental_consistency_max_steps": 32,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter183",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter183"
+    }
+  },
+  {
+    "id": "iter184",
+    "notes": "Decode: iter175 base + lambda_residual=32, eos pin 0.2",
+    "run": {
+      "lambda_residual": 32.0,
+      "lambda_incremental_consistency": 0.01,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter184",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter184"
+    }
+  },
+  {
+    "id": "iter185",
+    "notes": "Decode: exact iter175 champion re-seed with model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter185",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter185"
+    }
+  },
+  {
+    "id": "iter186",
+    "notes": "Decode: iter178 time recipe lambda_time=1.3 residual=28 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.3,
+      "lambda_residual": 28.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter186",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter186"
+    }
+  },
+  {
+    "id": "iter187",
+    "notes": "Decode: iter175 base + lambda_inc=0.03 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.03,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter187",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter187"
+    }
+  },
+  {
+    "id": "iter188",
+    "notes": "Decode: iter175 base + mild SS max_p=0.05 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.05,
+      "scheduled_sampling_warmup_epochs": 80,
+      "scheduled_sampling_ramp_epochs": 120,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter188",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter188"
+    }
+  },
+  {
+    "id": "iter189",
+    "notes": "Decode: iter175 base + eos=0.15 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.15,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter189",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter189"
+    }
+  },
+  {
+    "id": "iter190",
+    "notes": "Decode: iter175 base + lambda_residual=33 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 33.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter190",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter190"
+    }
+  },
+  {
+    "id": "iter191",
+    "notes": "Decode: lambda_time=1.2 residual=29 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.2,
+      "lambda_residual": 29.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter191",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter191"
+    }
+  },
+  {
+    "id": "iter192",
+    "notes": "Decode: iter175 base + eos=0.25 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.25,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter192",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter192"
+    }
+  },
+  {
+    "id": "iter193",
+    "notes": "Decode: iter175 champion re-seed #2 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter193",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter193"
+    }
+  },
+  {
+    "id": "iter194",
+    "notes": "Decode: iter175 base + lambda_inc=0.08 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.08,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter194",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter194"
+    }
+  },
+  {
+    "id": "iter195",
+    "notes": "Decode: mild SS p=0.05 + lambda_residual=32 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 32.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.05,
+      "scheduled_sampling_warmup_epochs": 80,
+      "scheduled_sampling_ramp_epochs": 120,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter195",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter195"
+    }
+  },
+  {
+    "id": "iter196",
+    "notes": "Decode: iter175 base + eos=0.1 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.1,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter196",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter196"
+    }
+  },
+  {
+    "id": "iter197",
+    "notes": "Decode: lambda_residual=36 + eos=0.2 pin + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 36.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter197",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter197"
+    }
+  },
+  {
+    "id": "iter198",
+    "notes": "Decode: iter175 base + ultra-mild SS max_p=0.03 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.03,
+      "scheduled_sampling_warmup_epochs": 80,
+      "scheduled_sampling_ramp_epochs": 120,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter198",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter198"
+    }
+  },
+  {
+    "id": "iter199",
+    "notes": "Decode: lambda_time=1.4 residual=28 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.4,
+      "lambda_residual": 28.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter199",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter199"
+    }
+  },
+  {
+    "id": "iter200",
+    "notes": "Decode: lambda_inc=0.05 + eos=0.2 pin + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.05,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter200",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter200"
+    }
+  },
+  {
+    "id": "iter201",
+    "notes": "Decode: iter175 champion re-seed #3 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter201",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter201"
+    }
+  },
+  {
+    "id": "iter202",
+    "notes": "Decode: iter178 exact lambda_time=1.5 residual=28 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.5,
+      "lambda_residual": 28.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter202",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter202"
+    }
+  },
+  {
+    "id": "iter203",
+    "notes": "Decode: lambda_time=1.4 + ultra-mild SS p=0.03 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.4,
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.03,
+      "scheduled_sampling_warmup_epochs": 80,
+      "scheduled_sampling_ramp_epochs": 120,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter203",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter203"
+    }
+  },
+  {
+    "id": "iter204",
+    "notes": "Decode: iter175 base + lambda_inc=0.02 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.02,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter204",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter204"
+    }
+  },
+  {
+    "id": "iter205",
+    "notes": "Decode: lambda_time=1.4 + residual=28 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.4,
+      "lambda_residual": 28.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter205",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter205"
+    }
+  },
+  {
+    "id": "iter206",
+    "notes": "Decode: iter175 base + eos=0.3 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.3,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter206",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter206"
+    }
+  },
+  {
+    "id": "iter207",
+    "notes": "Decode: iter175 champion re-seed #4 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter207",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter207"
+    }
+  },
+  {
+    "id": "iter208",
+    "notes": "Decode: lambda_residual=38 + eos=0.2 pin + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 38.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter208",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter208"
+    }
+  },
+  {
+    "id": "iter209",
+    "notes": "Decode: iter175 base + lr=8e-5 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 8e-05,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter209",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter209"
+    }
+  },
+  {
+    "id": "iter210",
+    "notes": "Decode: mild SS p=0.05 + lambda_inc=0.02 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.02,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.05,
+      "scheduled_sampling_warmup_epochs": 80,
+      "scheduled_sampling_ramp_epochs": 120,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter210",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter210"
+    }
+  },
+  {
+    "id": "iter211",
+    "notes": "Decode: iter175 champion re-seed #5 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter211",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter211"
+    }
+  },
+  {
+    "id": "iter212",
+    "notes": "Decode: lambda_time=1.45 + residual=28 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.45,
+      "lambda_residual": 28.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter212",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter212"
+    }
+  },
+  {
+    "id": "iter213",
+    "notes": "Decode: iter175 base + lambda_inc=0.04 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.04,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter213",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter213"
+    }
+  },
+  {
+    "id": "iter214",
+    "notes": "Decode: lambda_residual=34 + eos=0.2 pin + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 34.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter214",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter214"
+    }
+  },
+  {
+    "id": "iter215",
+    "notes": "Decode: iter175 champion re-seed final + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter215",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter215"
+    }
+  },
+  {
+    "id": "iter216",
+    "notes": "Decode: lambda_time=1.4 + lambda_inc=0.05 + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_time": 1.4,
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.05,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter216",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter216"
+    }
+  },
+  {
+    "id": "iter217",
+    "notes": "Decode: iter175 re-seed session closer + model pins",
+    "model": {
+      "d_model": 384,
+      "n_enc_layers": 4,
+      "n_dec_layers": 4,
+      "patch_frames": 8
+    },
+    "run": {
+      "lambda_residual": 30.0,
+      "lambda_incremental_consistency": 0.01,
+      "incremental_consistency_max_steps": 32,
+      "eos_token_weight_scale": 0.2,
+      "lambda_time": 1.0,
+      "learning_rate": 0.0001,
+      "scheduled_sampling_max_p": 0.0,
+      "epochs": 400,
+      "checkpoint_metric": "val_overfit_gate",
+      "tolerance_sec": 0.02,
+      "perfect_overfit_early_stop": false,
+      "model_output_dir": "models_wsl/ar/tide_overfit_iter/iter217",
+      "callback_root_dir": "callbacks/ar/tide_overfit_iter/iter217"
+    }
   }
 ]

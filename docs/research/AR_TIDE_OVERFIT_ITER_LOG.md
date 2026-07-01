@@ -1013,3 +1013,627 @@ Started: 2026-06-28T19:37:03 · **Last updated:** 2026-06-30 (autoresearch 7h �
 | Train exit | 0 |
 | Train log | `logs\ar_tide_iter\train_logs\iter182.log` |
 | Error | teacher metrics not perfect (ordered=633/634 (0.9984), event_f1=0.9921); skipped free-run eval |
+
+### iter175 · attempt 2 (2026-06-30T11:29:30)
+
+**Hypothesis:** Re-eval: teacher gate fix; baseline free-run on scratch champion
+
+| | |
+|--|--|
+| Kind | retry — reuse prior config snapshot |
+| Attempt | 2 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter175`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter175.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter175\ar_onset_model.keras` |
+| Train exit | skipped |
+| Train log | `logs\ar_tide_iter\train_logs\iter175.attempt2.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 97.6 |
+
+### iter183 (2026-06-30T11:42:09)
+
+**Hypothesis:** Decode push: iter175 recipe + tighter residual + stronger incremental consistency
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter183`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter183.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter183\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter183.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **631/634 (0.9953)** |
+| Decode steps | 636 |
+| Eval wall (s) | 95.34 |
+
+### iter183 · attempt 2 (2026-06-30T11:52:15)
+
+**Hypothesis:** Decode push: iter175 recipe + tighter residual + stronger incremental consistency
+
+| | |
+|--|--|
+| Kind | retry |
+| Attempt | 2 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter183`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter183.attempt2.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter183\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter183.attempt2.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **631/634 (0.9953)** |
+| Decode steps | 636 |
+| Eval wall (s) | 89.74 |
+
+### iter184 (2026-06-30T11:59:36)
+
+**Hypothesis:** Decode: iter175 base + lambda_residual=32, eos pin 0.2
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter184`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter184.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter184\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter184.log` |
+| Error | teacher ordered gate not perfect (627/634 (0.9890)); skipped free-run eval |
+
+### iter185 (2026-06-30T12:10:21)
+
+**Hypothesis:** Decode: exact iter175 champion re-seed with model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter185`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter185.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter185\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter185.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 92.21 |
+
+### iter186 (2026-06-30T12:21:58)
+
+**Hypothesis:** Decode: iter178 time recipe lambda_time=1.3 residual=28 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter186`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter186.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter186\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter186.log` |
+| Error | teacher ordered gate not perfect (632/634 (0.9968)); skipped free-run eval |
+
+### iter187 (2026-06-30T12:37:17)
+
+**Hypothesis:** Decode: iter175 base + lambda_inc=0.03 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter187`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter187.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter187\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter187.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **632/634 (0.9968)** |
+| Decode steps | 636 |
+| Eval wall (s) | 92.44 |
+
+### iter188 (2026-06-30T12:51:14)
+
+**Hypothesis:** Decode: iter175 base + mild SS max_p=0.05 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter188`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter188.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter188\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter188.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 91.78 |
+
+### iter189 (2026-06-30T13:04:37)
+
+**Hypothesis:** Decode: iter175 base + eos=0.15 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter189`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter189.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter189\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter189.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 93.44 |
+
+### iter190 (2026-06-30T13:17:54)
+
+**Hypothesis:** Decode: iter175 base + lambda_residual=33 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter190`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter190.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter190\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter190.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 94.02 |
+
+### iter191 (2026-06-30T13:29:18)
+
+**Hypothesis:** Decode: lambda_time=1.2 residual=29 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter191`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter191.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter191\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter191.log` |
+| Error | teacher ordered gate not perfect (632/634 (0.9968)); skipped free-run eval |
+
+### iter192 (2026-06-30T13:44:03)
+
+**Hypothesis:** Decode: iter175 base + eos=0.25 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter192`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter192.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter192\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter192.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 94.15 |
+
+### iter193 (2026-06-30T13:57:29)
+
+**Hypothesis:** Decode: iter175 champion re-seed #2 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter193`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter193.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter193\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter193.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 100.61 |
+
+### iter194 (2026-06-30T14:09:01)
+
+**Hypothesis:** Decode: iter175 base + lambda_inc=0.08 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter194`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter194.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter194\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter194.log` |
+| Error | teacher ordered gate not perfect (632/634 (0.9968)); skipped free-run eval |
+
+### iter195 (2026-06-30T14:23:29)
+
+**Hypothesis:** Decode: mild SS p=0.05 + lambda_residual=32 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter195`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter195.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter195\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter195.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 90.7 |
+
+### iter196 (2026-06-30T14:37:06)
+
+**Hypothesis:** Decode: iter175 base + eos=0.1 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter196`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter196.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter196\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter196.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 92.26 |
+
+### iter197 (2026-06-30T14:50:21)
+
+**Hypothesis:** Decode: lambda_residual=36 + eos=0.2 pin + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter197`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter197.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter197\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter197.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **632/634 (0.9968)** |
+| Decode steps | 636 |
+| Eval wall (s) | 97.45 |
+
+### iter198 (2026-06-30T15:03:26)
+
+**Hypothesis:** Decode: iter175 base + ultra-mild SS max_p=0.03 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter198`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter198.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter198\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter198.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 88.91 |
+
+### iter199 (2026-06-30T15:16:21)
+
+**Hypothesis:** Decode: lambda_time=1.4 residual=28 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter199`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter199.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter199\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter199.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 91.13 |
+
+### iter200 (2026-06-30T15:29:39)
+
+**Hypothesis:** Decode: lambda_inc=0.05 + eos=0.2 pin + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter200`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter200.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter200\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter200.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 95.79 |
+
+### iter201 (2026-06-30T15:43:15)
+
+**Hypothesis:** Decode: iter175 champion re-seed #3 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter201`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter201.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter201\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter201.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 87.58 |
+
+### iter202 (2026-06-30T15:56:48)
+
+**Hypothesis:** Decode: iter178 exact lambda_time=1.5 residual=28 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter202`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter202.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter202\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter202.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 91.83 |
+
+### iter203 (2026-06-30T16:08:42)
+
+**Hypothesis:** Decode: lambda_time=1.4 + ultra-mild SS p=0.03 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter203`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter203.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter203\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter203.log` |
+| Error | teacher ordered gate not perfect (633/634 (0.9984)); skipped free-run eval |
+
+### iter204 (2026-06-30T16:23:40)
+
+**Hypothesis:** Decode: iter175 base + lambda_inc=0.02 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter204`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter204.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter204\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter204.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 95.17 |
+
+### iter205 (2026-06-30T16:37:32)
+
+**Hypothesis:** Decode: lambda_time=1.4 + residual=28 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter205`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter205.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter205\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter205.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 92.05 |
+
+### iter206 (2026-06-30T16:50:42)
+
+**Hypothesis:** Decode: iter175 base + eos=0.3 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter206`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter206.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter206\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter206.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 93.19 |
+
+### iter207 (2026-06-30T17:03:57)
+
+**Hypothesis:** Decode: iter175 champion re-seed #4 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter207`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter207.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter207\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter207.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 88.86 |
+
+### iter208 (2026-06-30T17:16:59)
+
+**Hypothesis:** Decode: lambda_residual=38 + eos=0.2 pin + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter208`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter208.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter208\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter208.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 91.2 |
+
+### iter209 (2026-06-30T17:29:25)
+
+**Hypothesis:** Decode: iter175 base + lr=8e-5 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter209`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter209.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter209\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter209.log` |
+| Error | teacher ordered gate not perfect (633/634 (0.9984)); skipped free-run eval |
+
+### iter210 (2026-06-30T17:43:57)
+
+**Hypothesis:** Decode: mild SS p=0.05 + lambda_inc=0.02 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter210`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter210.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter210\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter210.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 94.4 |
+
+### iter211 (2026-06-30T17:57:44)
+
+**Hypothesis:** Decode: iter175 champion re-seed #5 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter211`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter211.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter211\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter211.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 94.61 |
+
+### iter212 (2026-06-30T18:09:38)
+
+**Hypothesis:** Decode: lambda_time=1.45 + residual=28 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter212`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter212.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter212\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter212.log` |
+| Error | teacher ordered gate not perfect (633/634 (0.9984)); skipped free-run eval |
+
+### iter213 (2026-06-30T18:23:17)
+
+**Hypothesis:** Decode: iter175 base + lambda_inc=0.04 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter213`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter213.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter213\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter213.log` |
+| Error | teacher ordered gate not perfect (632/634 (0.9968)); skipped free-run eval |
+
+### iter214 (2026-06-30T18:37:44)
+
+**Hypothesis:** Decode: lambda_residual=34 + eos=0.2 pin + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter214`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter214.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter214\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter214.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 92.98 |
+
+### iter215 (2026-06-30T18:51:13)
+
+**Hypothesis:** Decode: iter175 champion re-seed final + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter215`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter215.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter215\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter215.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **633/634 (0.9984)** |
+| Decode steps | 636 |
+| Eval wall (s) | 89.81 |
+
+### iter216 (2026-06-30T19:04:30)
+
+**Hypothesis:** Decode: lambda_time=1.4 + lambda_inc=0.05 + model pins
+
+| | |
+|--|--|
+| Kind | fresh |
+| Attempt | 1 |
+| Registry | `scripts/ar_tide_iter/experiments.json` (`iter216`) |
+| Config snapshot | `logs\ar_tide_iter\configs\iter216.json` |
+| Model | `models_wsl\ar\tide_overfit_iter\iter216\ar_onset_model.keras` |
+| Train exit | 0 |
+| Train log | `logs\ar_tide_iter\train_logs\iter216.log` |
+| Teacher ordered | 634/634 (1.0000) |
+| Free-run ordered | **632/634 (0.9968)** |
+| Decode steps | 636 |
+| Eval wall (s) | 85.97 |
