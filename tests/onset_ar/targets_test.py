@@ -103,6 +103,17 @@ class TideIntegrationTest(unittest.TestCase):
         self.assertEqual(sample.mert_patches.shape[0], summary["n_patches"])
         self.assertEqual(sample.token_seq.n_steps, int(summary["n_onsets"]))
 
+    def test_normalize_mert_changes_encoder_input(self) -> None:
+        base = config.ArExperimentConfig.from_json("configs/ar/tide_overfit.json")
+        raw_config = config.ArExperimentConfig.from_dict(base.as_dict())
+        norm_config = config.ArExperimentConfig.from_dict(base.as_dict())
+        norm_config.dataset.normalize_mert_features = True
+        raw_sample = datasets.load_overfit_sample(raw_config)
+        norm_sample = datasets.load_overfit_sample(norm_config)
+        self.assertFalse(
+            np.allclose(raw_sample.mert_patches, norm_sample.mert_patches),
+        )
+
     def test_target_times_within_hop_of_chart_gt(self) -> None:
         """Encode path: chart seconds vs pointer+residual decode stay on hop grid."""
         experiment_config = config.ArExperimentConfig.from_json(

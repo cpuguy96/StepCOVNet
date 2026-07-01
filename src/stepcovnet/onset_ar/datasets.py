@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import pathlib
 
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import constants, ssl_features
+from stepcovnet import constants, pairing, ssl_features
+from stepcovnet.dataset_prep import training_index
+from stepcovnet.datasets import normalize_onset_spectrogram
 from stepcovnet.onset_ar import config, targets
 from stepcovnet.onset_events import (
     audio,
@@ -110,6 +113,8 @@ def load_ar_sample(
         duration_sec,
         hop_sec=dataset_config.hop_sec,
     )
+    if dataset_config.normalize_mert_features:
+        features = normalize_onset_spectrogram(features)
     mert_patches, n_patches, n_frames = patch_mert_features(
         features,
         model_config.patch_frames,
@@ -193,30 +198,210 @@ def load_overfit_sample(experiment_config: config.ArExperimentConfig) -> ArSampl
     )
 
 
+def _is_single_song_mode(experiment_config: config.ArExperimentConfig) -> bool:
+    run_config = experiment_config.run
+    dataset_config = experiment_config.dataset
+    if run_config.overfit_one_song:
+        return True
+    return bool(
+        dataset_config.overfit_audio_path
+        and dataset_config.overfit_chart_path
+        and not str(dataset_config.training_index_path).strip(),
+    )
+
+
+def _resolve_ar_data_root(
+    dataset_config: config.ArDatasetConfig,
+) -> str:
+    data_root = str(dataset_config.data_root or dataset_config.data_dir).strip()
+    index_ref = str(dataset_config.training_index_path).strip()
+    if index_ref:
+        index_path = pathlib.Path(index_ref)
+        index = training_index.load_training_index(index_path)
+        return str(training_index.resolve_output_dir(index, index_path))
+    return data_root
+
+
+def _filter_valid_ar_samples(
+    samples: list[tuple[str, str, int]],
+    dataset_config: config.ArDatasetConfig,
+) -> list[tuple[str, str, int]]:
+    """Keep samples with files, chart step cap, and cached MERT features."""
+    data_root = _resolve_ar_data_root(dataset_config)
+    valid: list[tuple[str, str, int]] = []
+    for audio_path, chart_path, chart_index in samples:
+        if (
+            not pathlib.Path(audio_path).is_file()
+            or not pathlib.Path(chart_path).is_file()
+        ):
+            continue
+        if charts.chart_exceeds_step_cap(
+            chart_path,
+            max_steps=dataset_config.max_steps_per_chart,
+            chart_index=chart_index,
+        ):
+            continue
+        if (
+            charts.load_onset_times(
+                chart_path,
+                max_steps=dataset_config.max_steps_per_chart,
+                chart_index=chart_index,
+            )
+            is None
+        ):
+            continue
+        mert_path = ssl_features.mert_npy_path(
+            audio_path,
+            dataset_config.mert_features_dir,
+            data_root,
+        )
+        if not pathlib.Path(mert_path).is_file():
+            continue
+        valid.append((audio_path, chart_path, chart_index))
+    return valid
+
+
+def _normalize_training_samples(
+    samples: list[tuple[str, str] | tuple[str, str, int]],
+) -> list[tuple[str, str, int]]:
+    normalized: list[tuple[str, str, int]] = []
+    for sample in samples:
+        if len(sample) == 2:
+            normalized.append((sample[0], sample[1], 0))
+        else:
+            normalized.append((sample[0], sample[1], sample[2]))
+    return normalized
+
+
+def list_ar_training_samples(
+    experiment_config: config.ArExperimentConfig,
+    *,
+    split: str | None = None,
+) -> list[tuple[str, str, int]]:
+    """Resolve manifest or directory samples for AR training."""
+    dataset_config = experiment_config.dataset
+    index_ref = str(dataset_config.training_index_path).strip()
+    if index_ref:
+        return pairing.list_training_samples(index_ref, split=split)
+    data_ref = dataset_config.data_dir or dataset_config.val_data_dir
+    if not data_ref:
+        raise ValueError(
+            "dataset.training_index_path or dataset.data_dir is required "
+            "for multi-song AR training",
+        )
+    return pairing.list_training_samples(data_ref, split=split)
+
+
 def verify_config_loads_one_batch(
     experiment_config: config.ArExperimentConfig,
 ) -> tuple[dict[str, object], ArSample]:
-    """Verify tide assets and load one AR sample (Phase 0 smoke)."""
-    summary = verify_tide_assets(experiment_config)
-    sample = load_overfit_sample(experiment_config)
-    summary.update(
-        {
-            "duration_sec": sample.duration_sec,
-            "n_frames": sample.n_frames,
-            "n_patches": sample.n_patches,
-            "n_onsets": int(sample.gt_times_sec.size),
-            "n_decoder_steps": int(sample.token_seq.decoder_target_ids.size),
-            "mert_patch_shape": tuple(sample.mert_patches.shape),
-        },
-    )
+    """Verify assets and load one AR sample (tide overfit or manifest smoke)."""
+    if _is_single_song_mode(experiment_config):
+        summary = verify_tide_assets(experiment_config)
+        sample = load_overfit_sample(experiment_config)
+        summary.update(_sample_summary_fields(sample))
+    else:
+        summary = _verify_manifest_summary(experiment_config)
+        sample = _load_first_valid_ar_sample(experiment_config)
+        summary.update(_sample_summary_fields(sample))
     return summary, sample
 
 
-def sample_to_training_batch(
+def _sample_summary_fields(sample: ArSample) -> dict[str, object]:
+    return {
+        "duration_sec": sample.duration_sec,
+        "n_frames": sample.n_frames,
+        "n_patches": sample.n_patches,
+        "n_onsets": int(sample.gt_times_sec.size),
+        "n_decoder_steps": int(sample.token_seq.decoder_target_ids.size),
+        "mert_patch_shape": tuple(sample.mert_patches.shape),
+    }
+
+
+def _load_first_valid_ar_sample(
+    experiment_config: config.ArExperimentConfig,
+) -> ArSample:
+    samples = _filter_valid_ar_samples(
+        list_ar_training_samples(
+            experiment_config,
+            split=training_index.SPLIT_TRAIN,
+        ),
+        experiment_config.dataset,
+    )
+    if not samples:
+        raise ValueError("No valid AR training samples after filtering.")
+    audio_path, chart_path, chart_index = samples[0]
+    return load_ar_sample(
+        audio_path,
+        chart_path,
+        dataset_config=experiment_config.dataset,
+        model_config=experiment_config.model,
+        vocab=experiment_config.build_vocab(),
+        chart_index=chart_index,
+    )
+
+
+def _verify_manifest_summary(
+    experiment_config: config.ArExperimentConfig,
+) -> dict[str, object]:
+    dataset_config = experiment_config.dataset
+    index_ref = str(dataset_config.training_index_path).strip()
+    if not index_ref:
+        raise ValueError("dataset.training_index_path is required for manifest verify")
+    if not pathlib.Path(index_ref).is_file():
+        raise FileNotFoundError(f"training index not found: {index_ref!r}")
+
+    data_root = _resolve_ar_data_root(dataset_config)
+    train_samples = _filter_valid_ar_samples(
+        list_ar_training_samples(
+            experiment_config,
+            split=training_index.SPLIT_TRAIN,
+        ),
+        dataset_config,
+    )
+    val_samples = _filter_valid_ar_samples(
+        list_ar_training_samples(
+            experiment_config,
+            split=training_index.SPLIT_VAL,
+        ),
+        dataset_config,
+    )
+    if not train_samples:
+        raise ValueError("No valid train samples in manifest after filtering.")
+
+    train_ds, val_ds, _, _ = create_ar_training_datasets(experiment_config)
+    n_train_batches = count_dataset_batches(train_ds)
+    n_val_batches = count_dataset_batches(val_ds)
+    return {
+        "training_index_path": index_ref,
+        "data_root": data_root,
+        "n_train_samples": len(train_samples),
+        "n_val_samples": len(val_samples),
+        "n_train_batches": n_train_batches,
+        "n_val_batches": n_val_batches,
+        "patch_frames": experiment_config.model.patch_frames,
+        "vocab_size": experiment_config.build_vocab().vocab_size,
+    }
+
+
+def count_dataset_batches(
+    dataset: tf.data.Dataset,
+    limit: int = -1,
+) -> int:
+    """Count batches yielded by a ``tf.data`` pipeline."""
+    count = 0
+    for _ in dataset:
+        count += 1
+        if limit > 0 and count >= limit:
+            break
+    return count
+
+
+def sample_to_training_arrays(
     sample: ArSample,
     experiment_config: config.ArExperimentConfig,
 ) -> dict[str, np.ndarray]:
-    """Convert one :class:`ArSample` into padded numpy batch arrays."""
+    """Convert one :class:`ArSample` into padded per-sample numpy arrays."""
     model_config = experiment_config.model
     dataset_config = experiment_config.dataset
     max_patches = experiment_config.max_encoder_patches()
@@ -224,43 +409,43 @@ def sample_to_training_batch(
     max_dec = experiment_config.max_decoder_len()
     max_gt = int(model_config.max_decode_steps)
 
-    patches = np.zeros((1, max_patches, patch_dim), dtype=np.float32)
-    patch_mask = np.zeros((1, max_patches), dtype=np.float32)
+    patches = np.zeros((max_patches, patch_dim), dtype=np.float32)
+    patch_mask = np.zeros((max_patches,), dtype=np.float32)
     n_patches = int(sample.n_patches)
-    patches[0, :n_patches] = sample.mert_patches
-    patch_mask[0, :n_patches] = 1.0
+    patches[:n_patches] = sample.mert_patches
+    patch_mask[:n_patches] = 1.0
 
     dec_in = sample.token_seq.decoder_input_ids
     dec_tgt = sample.token_seq.decoder_target_ids
     dec_len = int(dec_tgt.size)
-    decoder_input_ids = np.zeros((1, max_dec), dtype=np.int32)
-    decoder_target_ids = np.zeros((1, max_dec), dtype=np.int32)
-    decoder_mask = np.zeros((1, max_dec), dtype=np.float32)
-    decoder_input_ids[0, :dec_len] = dec_in
-    decoder_target_ids[0, :dec_len] = dec_tgt
-    decoder_mask[0, :dec_len] = 1.0
+    decoder_input_ids = np.zeros((max_dec,), dtype=np.int32)
+    decoder_target_ids = np.zeros((max_dec,), dtype=np.int32)
+    decoder_mask = np.zeros((max_dec,), dtype=np.float32)
+    decoder_input_ids[:dec_len] = dec_in
+    decoder_target_ids[:dec_len] = dec_tgt
+    decoder_mask[:dec_len] = 1.0
 
     n_steps = sample.token_seq.n_steps
-    target_patch_indices = np.zeros((1, max_dec), dtype=np.int32)
-    target_residual_sec = np.zeros((1, max_dec), dtype=np.float32)
-    target_times = np.zeros((1, max_dec), dtype=np.float32)
-    onset_step_mask = np.zeros((1, max_dec), dtype=np.float32)
+    target_patch_indices = np.zeros((max_dec,), dtype=np.int32)
+    target_residual_sec = np.zeros((max_dec,), dtype=np.float32)
+    target_times = np.zeros((max_dec,), dtype=np.float32)
+    onset_step_mask = np.zeros((max_dec,), dtype=np.float32)
     if n_steps > 0:
-        target_patch_indices[0, :n_steps] = sample.token_seq.patch_indices
-        target_residual_sec[0, :n_steps] = sample.token_seq.residual_sec
-        target_times[0, :n_steps] = targets.decode_pointer_residual_to_times(
+        target_patch_indices[:n_steps] = sample.token_seq.patch_indices
+        target_residual_sec[:n_steps] = sample.token_seq.residual_sec
+        target_times[:n_steps] = targets.decode_pointer_residual_to_times(
             sample.token_seq.patch_indices,
             sample.token_seq.residual_sec,
             patch_frames=model_config.patch_frames,
             hop_sec=dataset_config.hop_sec,
         )
-        onset_step_mask[0, :n_steps] = 1.0
+        onset_step_mask[:n_steps] = 1.0
 
-    gt_times = np.zeros((1, max_gt), dtype=np.float32)
-    gt_mask = np.zeros((1, max_gt), dtype=np.float32)
+    gt_times = np.zeros((max_gt,), dtype=np.float32)
+    gt_mask = np.zeros((max_gt,), dtype=np.float32)
     n_gt = int(sample.gt_times_sec.size)
-    gt_times[0, :n_gt] = sample.gt_times_sec
-    gt_mask[0, :n_gt] = 1.0
+    gt_times[:n_gt] = sample.gt_times_sec
+    gt_mask[:n_gt] = 1.0
 
     return {
         "mert_patches": patches,
@@ -274,8 +459,238 @@ def sample_to_training_batch(
         "onset_step_mask": onset_step_mask,
         "gt_times": gt_times,
         "gt_mask": gt_mask,
-        "duration": np.asarray([sample.duration_sec], dtype=np.float32),
+        "duration": np.asarray(sample.duration_sec, dtype=np.float32),
     }
+
+
+def sample_to_training_batch(
+    sample: ArSample,
+    experiment_config: config.ArExperimentConfig,
+) -> dict[str, np.ndarray]:
+    """Convert one :class:`ArSample` into padded numpy batch arrays."""
+    arrays = sample_to_training_arrays(sample, experiment_config)
+    return {
+        key: (
+            np.asarray([value], dtype=value.dtype)
+            if key == "duration"
+            else value[np.newaxis, ...]
+        )
+        for key, value in arrays.items()
+    }
+
+
+def _load_ar_sample_py_callback(
+    audio_path_t: tf.Tensor,
+    chart_path_t: tf.Tensor,
+    chart_index_t: tf.Tensor,
+    experiment_config: config.ArExperimentConfig,
+) -> tuple[np.ndarray, ...]:
+    audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
+    chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
+    chart_index = int(chart_index_t.numpy())  # type: ignore[union-attr]
+    sample = load_ar_sample(
+        audio_path,
+        chart_path,
+        dataset_config=experiment_config.dataset,
+        model_config=experiment_config.model,
+        vocab=experiment_config.build_vocab(),
+        chart_index=chart_index,
+    )
+    arrays = sample_to_training_arrays(sample, experiment_config)
+    return (
+        arrays["mert_patches"],
+        arrays["patch_mask"],
+        arrays["decoder_input_ids"],
+        arrays["decoder_target_ids"],
+        arrays["decoder_mask"],
+        arrays["target_patch_indices"],
+        arrays["target_residual_sec"],
+        arrays["target_times"],
+        arrays["onset_step_mask"],
+        arrays["gt_times"],
+        arrays["gt_mask"],
+        arrays["duration"],
+    )
+
+
+def _map_ar_sample_to_batch(
+    audio_path_t: tf.Tensor,
+    chart_path_t: tf.Tensor,
+    chart_index_t: tf.Tensor,
+    experiment_config: config.ArExperimentConfig,
+) -> dict[str, tf.Tensor]:
+    max_patches = experiment_config.max_encoder_patches()
+    patch_dim = experiment_config.patch_input_dim()
+    max_dec = experiment_config.max_decoder_len()
+    max_gt = int(experiment_config.model.max_decode_steps)
+    (
+        mert_patches,
+        patch_mask,
+        decoder_input_ids,
+        decoder_target_ids,
+        decoder_mask,
+        target_patch_indices,
+        target_residual_sec,
+        target_times,
+        onset_step_mask,
+        gt_times,
+        gt_mask,
+        duration,
+    ) = tf.py_function(  # type: ignore[misc]
+        lambda ap, cp, ci: _load_ar_sample_py_callback(ap, cp, ci, experiment_config),
+        [audio_path_t, chart_path_t, chart_index_t],
+        (
+            tf.float32,
+            tf.float32,
+            tf.int32,
+            tf.int32,
+            tf.float32,
+            tf.int32,
+            tf.float32,
+            tf.float32,
+            tf.float32,
+            tf.float32,
+            tf.float32,
+            tf.float32,
+        ),
+    )
+    mert_patches.set_shape([max_patches, patch_dim])
+    patch_mask.set_shape([max_patches])
+    decoder_input_ids.set_shape([max_dec])
+    decoder_target_ids.set_shape([max_dec])
+    decoder_mask.set_shape([max_dec])
+    target_patch_indices.set_shape([max_dec])
+    target_residual_sec.set_shape([max_dec])
+    target_times.set_shape([max_dec])
+    onset_step_mask.set_shape([max_dec])
+    gt_times.set_shape([max_gt])
+    gt_mask.set_shape([max_gt])
+    duration.set_shape([])
+    return {
+        "mert_patches": mert_patches,
+        "patch_mask": patch_mask,
+        "decoder_input_ids": decoder_input_ids,
+        "decoder_target_ids": decoder_target_ids,
+        "decoder_mask": decoder_mask,
+        "target_patch_indices": target_patch_indices,
+        "target_residual_sec": target_residual_sec,
+        "target_times": target_times,
+        "onset_step_mask": onset_step_mask,
+        "gt_times": gt_times,
+        "gt_mask": gt_mask,
+        "duration": duration,
+    }
+
+
+def create_ar_tf_dataset_from_pairs(
+    experiment_config: config.ArExperimentConfig,
+    pairs: list[tuple[str, str] | tuple[str, str, int]],
+    *,
+    shuffle: bool = False,
+    seed: int | None = None,
+) -> tf.data.Dataset:
+    """Build a ``tf.data`` pipeline from explicit audio/chart path pairs."""
+    dataset_config = experiment_config.dataset
+    samples = _filter_valid_ar_samples(
+        _normalize_training_samples(pairs),
+        dataset_config,
+    )
+    if not samples:
+        raise ValueError("No valid AR audio-chart pairs found.")
+
+    audio_paths, chart_paths, chart_indices = zip(*samples, strict=True)
+    ds = tf.data.Dataset.from_tensor_slices(
+        (
+            list(audio_paths),
+            list(chart_paths),
+            list(chart_indices),
+        ),
+    )
+    if shuffle and len(samples) > 1:
+        ds = ds.shuffle(buffer_size=len(samples), seed=seed)
+
+    ds = ds.map(
+        lambda audio_path, chart_path, chart_index: _map_ar_sample_to_batch(
+            audio_path,
+            chart_path,
+            chart_index,
+            experiment_config,
+        ),
+        num_parallel_calls=tf.data.AUTOTUNE,
+    )
+    ds = ds.batch(dataset_config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
+    return ds
+
+
+def create_ar_training_datasets(
+    experiment_config: config.ArExperimentConfig,
+) -> tuple[tf.data.Dataset, tf.data.Dataset, int, int]:
+    """Build train/val datasets and return unbatched sample counts."""
+    dataset_config = experiment_config.dataset
+    run_config = experiment_config.run
+
+    if _is_single_song_mode(experiment_config):
+        audio_path, chart_path = _resolve_overfit_pair(dataset_config, run_config)
+        logging.info("Single-song AR overfit mode: %s + %s", audio_path, chart_path)
+        overfit_dataset = create_ar_tf_dataset_from_pairs(
+            experiment_config,
+            [(audio_path, chart_path)],
+            shuffle=False,
+        )
+        return overfit_dataset, overfit_dataset, 1, 1
+
+    index_ref = str(dataset_config.training_index_path).strip()
+    train_split = None
+    val_split = None
+
+    if index_ref:
+        data_root = _resolve_ar_data_root(dataset_config)
+        dataset_config.data_root = data_root
+        train_split = training_index.SPLIT_TRAIN
+        val_split = training_index.SPLIT_VAL
+        logging.info(
+            "Using AR training index %s (data root %s)",
+            index_ref,
+            data_root,
+        )
+    elif training_index.manifest_split_enabled(
+        dataset_config.data_dir,
+        dataset_config.val_data_dir,
+    ):
+        train_split = training_index.SPLIT_TRAIN
+        val_split = training_index.SPLIT_VAL
+        logging.info(
+            "Using training_index.json for AR train/val under %s",
+            dataset_config.data_dir,
+        )
+
+    train_samples = _filter_valid_ar_samples(
+        list_ar_training_samples(experiment_config, split=train_split),
+        dataset_config,
+    )
+    val_samples = _filter_valid_ar_samples(
+        list_ar_training_samples(experiment_config, split=val_split),
+        dataset_config,
+    )
+    if not train_samples:
+        raise ValueError("No valid AR train samples found.")
+
+    train_dataset = create_ar_tf_dataset_from_pairs(
+        experiment_config,
+        train_samples,
+        shuffle=True,
+        seed=run_config.seed,
+    )
+    if val_samples:
+        val_dataset = create_ar_tf_dataset_from_pairs(
+            experiment_config,
+            val_samples,
+            shuffle=False,
+        )
+    else:
+        val_dataset = train_dataset
+    return train_dataset, val_dataset, len(train_samples), len(val_samples)
 
 
 def create_overfit_tf_dataset(

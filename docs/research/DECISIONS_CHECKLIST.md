@@ -82,7 +82,7 @@ Locked **2026-06** in [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-r
 | ----------------------- | ------------------------------------------------------------------------------ |
 | `gate-tide-overfit`     | Teacher forcing; scheduled sampling off; pointer+residual F1 ≈ 1.0 on tide — **PASS** (EXP-20260627-04) |
 | `gate-ar-decode`        | Free-run ordered **634/634** @ 20 ms vs `target_times` on tide — **PASS** (EXP-20260630-01, scratch iter175) |
-| `gate-10song-smoke`     | Batches build on `training_index_10songs.json`; loss ↓; no all-EOS collapse — **next** |
+| `gate-10song-smoke`     | Batches build on `training_index_10songs.json`; loss ↓; no all-EOS collapse — **PASS** (EXP-20260630-02) |
 | `gate-val-vs-dense`     | Micro event F1 @ swept threshold vs dense baseline on `final_data` val         |
 
 Full protocol: [AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protocol).
@@ -152,7 +152,7 @@ Full protocol: [AR_ONSET_DESIGN.md §10](AR_ONSET_DESIGN.md#10-experiment-protoc
 6. ~~**Tide bisection (diagnose + half-cheat)**~~ — formulation ceiling, not bug → EXP-11
 7. **Full `final_data` dense val** — primary baseline on new dataset (unblocks F1/F3/`gate-val-vs-dense`)
 8. **Dense MERT tide overfit** — formulation control experiment (`data/v2`)
-9. ~~**AR onset — `gate-ar-decode`**~~ — **PASS** on tide (EXP-20260630-01, iter175 / v8). **Next:** `gate-10song-smoke` → `final-data-mert` → `gate-val-vs-dense` ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28--2026-06-30))
+9. ~~**AR onset — `gate-10song-smoke`**~~ — **PASS** (EXP-20260630-02). **Next:** `final-data-mert` → **`gate-val-vs-dense`** ([AR_ONSET_DESIGN.md §10.6](AR_ONSET_DESIGN.md#106-gate-ar-decode-notes-2026-06-28--2026-06-30))
 10. Multi-song event val on `final_data` — after dense baseline or explicit waive
 
 Update this file when a row moves to **decided**; link the deciding `EXP-…` or `NOTE-…`.

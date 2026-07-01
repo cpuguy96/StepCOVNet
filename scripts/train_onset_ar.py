@@ -39,7 +39,7 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--verify-only",
     action="store_true",
-    help="Check tide assets and load one AR sample; exit without training.",
+    help="Check assets and build train/val batches; exit without training.",
 )
 PARSER.add_argument(
     "--training_index_path",
@@ -76,6 +76,18 @@ PARSER.add_argument(
     type=str,
     default=None,
     help="Override run.callback_root_dir.",
+)
+PARSER.add_argument(
+    "--take_count",
+    type=int,
+    default=None,
+    help="Training batches per epoch (-1 for all). Script-only; not stored in config.",
+)
+PARSER.add_argument(
+    "--val_take_count",
+    type=int,
+    default=None,
+    help="Validation batches per epoch (-1 for all). Script-only; not stored in config.",
 )
 
 
@@ -114,7 +126,13 @@ def main() -> None:
 
     wsl_gpu.assert_wsl_gpu_free_for_training()
 
-    trainers.train_ar_onset(experiment_config)
+    take_count = -1 if args.take_count is None else args.take_count
+    val_take_count = -1 if args.val_take_count is None else args.val_take_count
+    trainers.train_ar_onset(
+        experiment_config,
+        take_count=take_count,
+        val_take_count=val_take_count,
+    )
 
 
 if __name__ == "__main__":

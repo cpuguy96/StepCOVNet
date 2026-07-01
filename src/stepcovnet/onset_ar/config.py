@@ -46,6 +46,7 @@ class ArDatasetConfig(_DictSerializableMixin):
     max_steps_per_chart: int = constants.MAX_STEPS
     hop_sec: float = constants.HOP_COEFF
     truncate_long_audio: bool = True
+    normalize_mert_features: bool = False
 
 
 @dataclasses.dataclass

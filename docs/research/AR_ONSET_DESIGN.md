@@ -1,6 +1,6 @@
 # Autoregressive onset detection — design draft
 
-**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` passed** (EXP-20260627-04) — see §10.5. **`gate-ar-decode` passed** on tide (EXP-20260630-01, scratch iter175 / champion v8) — see §10.6. **Next:** **`gate-10song-smoke`**.
+**Status:** Design locked **2026-06** (§11). **Phase 0+1 implemented** in `src/stepcovnet/onset_ar/` (2026-06-27); **`gate-tide-overfit` passed** (EXP-20260627-04) — see §10.5. **`gate-ar-decode` passed** on tide (EXP-20260630-01, scratch iter175 / champion v8) — see §10.6. **`gate-10song-smoke` passed** (EXP-20260630-02) — see §10.1. **Next:** **`final-data-mert`** → **`gate-val-vs-dense`**.
 
 **Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) · [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md) § C · [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) §2 · §11 decision registry below · historical [onset_events plan](archive/onset_events_plan.md)
 
@@ -497,7 +497,7 @@ python scripts/debug_ar_onset_overfit.py \
 }
 ```
 
-**`configs/ar/smoke.json`** — same model block; set `training_index_path` instead of overfit paths; `scheduled_sampling_max_p`: 0 until `gate-ar-decode`. (Smoke config **not in repo yet**.)
+**`configs/ar/smoke.json`** — champion model block; `training_index_path` for 10-song manifest; `scheduled_sampling_max_p`: 0. **In repo** (EXP-20260630-02).
 
 ### 10.5 `gate-tide-overfit` notes (2026-06-27)
 

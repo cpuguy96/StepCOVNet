@@ -187,7 +187,7 @@ Use dense MERT as the strongest in-repo baseline when judging whether event or A
 
 ## AR path — [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)
 
-**Status:** Design locked 2026-06; **Phase 0+1 implemented** (2026-06-27). **`gate-tide-overfit` passed** (EXP-20260627-04). Gates in order: ~~`gate-tide-overfit`~~ → **`gate-ar-decode`** → `gate-10song-smoke` → `gate-val-vs-dense`.
+**Status:** Design locked 2026-06; **Phase 0+1 implemented** (2026-06-27). **`gate-tide-overfit` passed** (EXP-20260627-04). Gates in order: ~~`gate-tide-overfit`~~ → ~~`gate-ar-decode`~~ → ~~`gate-10song-smoke`~~ → **`gate-val-vs-dense`**.
 
 ```
 audio → cached MERT on 10 ms hop grid
@@ -205,7 +205,7 @@ audio → cached MERT on 10 ms hop grid
 | METRICS           | `onset_events/matching.py`, `metrics.py`     | Same event F1 contract; sorted linear merge optional |
 | Training feedback | Token CE + aux time; decoded F1 checkpoint   | Scheduled sampling after tide gate                   |
 
-**Scripts:** `scripts/train_onset_ar.py`, `configs/ar/tide_overfit.json` (in repo). `configs/ar/smoke.json` planned for 10-song gate.
+**Scripts:** `scripts/train_onset_ar.py`, `configs/ar/tide_overfit.json`, `configs/ar/smoke.json` (10-song gate, EXP-20260630-02).
 
 ---
 

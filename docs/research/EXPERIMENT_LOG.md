@@ -29,12 +29,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
-| **AR next gate** | **`gate-10song-smoke`** — multi-chart batches on `training_index_10songs.json` ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §10.1) |
+| **AR 10-song smoke** | **PASS** — **10/10** train batches, **2/2** val; `val_loss` **53.4 → 38.7** over 5 ep; teacher `event_onset_f1` > 0 ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)) |
+| **AR next gate** | **`final-data-mert`** (full manifest MERT cache) → **`gate-val-vs-dense`** ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §10.1) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) (graduated **v8**, iter175 recipe). Checkpoint: `models_wsl/ar/tide_overfit/`. Verify: `debug_ar_onset_overfit.py --config configs/ar/tide_overfit.json --ar_decode`. **Do not** resume tide iter autoresearch — gate closed. Next: **10-song smoke** then full `final_data` AR.
+- **Track B (AR scale-up):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) (graduated **v8**, iter175 recipe). Checkpoint: `models_wsl/ar/tide_overfit/`. **10-song smoke passed** ([`configs/ar/smoke.json`](../../configs/ar/smoke.json), EXP-20260630-02). Next: extract MERT for full `final_data` if needed, then AR multi-song train / **`gate-val-vs-dense`**.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -45,6 +46,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260630-02 | `pre` + `train` | AR **`gate-10song-smoke`** (`training_index_path`) | **Supported** | **10/10** train + **2/2** val batches; `val_loss` **53.4 → 38.7** @ 5 ep GPU; teacher F1 > 0 |
 | EXP-20260630-01 | `train` + `metric` | AR tide **scratch** perfect overfit (iter175 → v8 champion) | **Supported** | Free-run **634/634** vs `target_times`; graduated [`tide_overfit.json`](../../configs/ar/tide_overfit.json) |
 | EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (warm-start runs) | **Partial** | Best warm-start free-run **619/634** (run2); superseded by scratch iter175 — see EXP-20260630-01 |
 | EXP-20260628-01 | `train` + `model` | AR `gate-ar-decode` v2–v4 (SS ramp, warm-start) | **Supported** | v4: teacher F1 **1.0**; offline AR F1 **~0.35**; tide pass via scratch path (EXP-20260630-01) |
@@ -95,6 +97,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260630-02: AR `gate-10song-smoke`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-06-30 23:59:00 |
+| **Track** | `pre` + `train` (AR) |
+| **Gate** | **`gate-10song-smoke`** — batches build on `training_index_10songs.json`; loss decreases; teacher decode F1 > 0; no all-EOS collapse |
+| **Config** | [`configs/ar/smoke.json`](../../configs/ar/smoke.json) — champion stack (`d_model=384`), `overfit_one_song: false`, `lambda_residual=5`, 5 ep |
+| **MERT** | `extract_mert_features.py --training_index_path=.../training_index_10songs.json --beside_audio --device=cuda` (11 extracted, 1 cached) |
+| **Verify** | `--verify-only`: **10/10** train batches, **2/2** val batches |
+| **Train** | WSL GPU 5 ep: ep1 `val_loss` **53.41** → ep5 **38.69**; `val_event_onset_f1` **0.0125 → 0.0062** (teacher-fed, > 0); `val_token_accuracy` ep5 **0.025** (not all-EOS) |
+| **Artifacts** | `models_wsl/ar/smoke_10song/`, `callbacks/ar/smoke_10song/` |
+| **Conclusion** | **`gate-10song-smoke` PASS**. Multi-song `training_index_path` wired in `onset_ar/datasets.py` + `train_ar_onset`. Next: full `final_data` MERT + scale-up / **`gate-val-vs-dense`**. |
 
 ### EXP-20260630-01: AR tide scratch perfect overfit (iter175 → v8 champion)
 

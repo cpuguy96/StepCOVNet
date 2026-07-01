@@ -750,9 +750,10 @@ class LambdaTimeRampCallback(keras.callbacks.Callback):
 def train_ar_onset(
     experiment_config: config.ArExperimentConfig,
     *,
-    steps_per_epoch: int = 1,
+    take_count: int = -1,
+    val_take_count: int = -1,
 ) -> tuple[ArOnsetTrainingModel, keras.callbacks.History]:
-    """Train AR onset on the configured overfit sample."""
+    """Train AR onset from overfit or manifest-backed datasets."""
     run_config = experiment_config.run
     if not run_config.model_output_dir:
         raise ValueError("run.model_output_dir is required")
@@ -777,14 +778,24 @@ def train_ar_onset(
         ),
     )
 
-    train_ds = datasets.create_overfit_tf_dataset(experiment_config)
-    val_ds = datasets.create_overfit_tf_dataset(experiment_config)
-    train_ds = train_ds.take(steps_per_epoch)
-    val_ds = val_ds.take(1)
+    train_ds, val_ds, n_train_samples, n_val_samples = (
+        datasets.create_ar_training_datasets(experiment_config)
+    )
+    logging.info(
+        "AR dataset: %d train samples, %d val samples",
+        n_train_samples,
+        n_val_samples,
+    )
+    if take_count != -1:
+        train_ds = train_ds.take(take_count)
+    if val_take_count != -1:
+        val_ds = val_ds.take(val_take_count)
+    elif run_config.overfit_one_song:
+        val_ds = val_ds.take(1)
 
     callbacks: list[keras.callbacks.Callback] = []
     monitor_metric = run_config.checkpoint_metric
-    monitor_mode = "max"
+    monitor_mode = "min" if "loss" in monitor_metric else "max"
     if run_config.callback_root_dir:
         experiment_name = _get_experiment_name(experiment_config)
         tb_callbacks, callback_name = event_trainers._get_callbacks(  # noqa: SLF001
