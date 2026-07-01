@@ -46,6 +46,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260630-03 | `pre` + `train` | AR tide MERT normalization A/B (`normalize_mert_features`) | **Supported** | Raw wins perfect gate **1.0** @ ep 399; norm plateaus **0.9984** — keep raw |
 | EXP-20260630-02 | `pre` + `train` | AR **`gate-10song-smoke`** (`training_index_path`) | **Supported** | **10/10** train + **2/2** val batches; `val_loss` **53.4 → 38.7** @ 5 ep GPU; teacher F1 > 0 |
 | EXP-20260630-01 | `train` + `metric` | AR tide **scratch** perfect overfit (iter175 → v8 champion) | **Supported** | Free-run **634/634** vs `target_times`; graduated [`tide_overfit.json`](../../configs/ar/tide_overfit.json) |
 | EXP-20260628-02 | `train` + `metric` | AR tide **perfect overfit** (warm-start runs) | **Partial** | Best warm-start free-run **619/634** (run2); superseded by scratch iter175 — see EXP-20260630-01 |
@@ -97,6 +98,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260630-03: AR tide MERT normalization A/B
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-01 01:00:00 |
+| **Track** | `pre` + `train` (AR ablation) |
+| **Question** | Does dense-style per-song MERT z-score (`normalize_onset_spectrogram`) speed tide perfect overfit vs raw hidden states? |
+| **Config** | Champion tide recipe (`d_model=384`, `lr=1e-4`, `lambda_residual=30`, 400 ep, `val_overfit_gate` checkpoint); `lambda_incremental_consistency=0` (OOM at 0.01 on 3070 Ti — see NOTE) |
+| **Arms** | **Raw:** `normalize_mert_features: false` · **Norm:** `normalize_mert_features: true` (applied after `resample_features_to_hop_grid`, before patch) |
+| **Logs** | `_tmp/tide_norm_ab/raw.log`, `norm.log` (local; UTF-16 from PowerShell `Tee-Object`) |
+| **Raw outcome** | First `val_overfit_gate` ≥ 0.9999 @ **ep 399** (gate **1.0**); ≥ 0.99 @ ep 289 |
+| **Norm outcome** | Best gate **0.9984** @ ep 313; never ≥ 0.999; slightly faster to 0.99 (ep 282 vs 289) |
+| **Conclusion** | **Reject** per-song MERT norm for AR. Default stays **raw** ([NOTE-20260701-01](DISCUSSION_NOTES.md#note-20260701-01-ar-tide-overfit-reject-per-song-mert-z-score)). Dense norm remains dense-only. |
 
 ### EXP-20260630-02: AR `gate-10song-smoke`
 

@@ -60,7 +60,8 @@ Locked **2026-06** in [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-r
 | `patch-size`      | MERT frames per encoder token | **decided** | P=8 (80 ms)                                  |
 | `encoder-hop`     | PRE feature grid              | **decided** | 10 ms (`HOP_COEFF`)                          |
 | `mert-finetune`   | MERT weights                  | **decided** | frozen for `gate-tide-overfit`               |
-| `delta-buckets`   | Long-gap vocab edges          | **open**    | histogram on tide + 10-song before scale-up  |
+| `mert-input-norm` | Per-song MERT z-score (AR)    | **decided** | **raw** — reject norm (EXP-20260630-03)      |
+| `delta-buckets`   | Long-gap vocab edges          | **open**    | histogram before full `final_data` scale-up    |
 | `final-data-mert` | Nested MERT cache             | **decided** | after tide gates (**both passed** EXP-20260627-04, EXP-20260630-01) |
 
 **Training & eval**

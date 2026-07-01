@@ -4,6 +4,37 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-07-01 — AR MERT input normalization A/B
+
+### NOTE-20260701-01: AR tide overfit — reject per-song MERT z-score
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-07-01 01:00:00                                                   |
+| **Topic**     | Raw vs dense-style `normalize_onset_spectrogram` on MERT before patching |
+
+**Context:** Dense onset applies per-dimension z-score across time within each song (`datasets.normalize_onset_spectrogram`). AR tide gates used **raw** hidden states from `.mert.npy`. Question: would the same normalization speed tide perfect overfit (`val_overfit_gate` → 1.0)?
+
+**Experiment:** [EXP-20260630-03](EXPERIMENT_LOG.md#exp-20260630-03-ar-tide-mert-normalization-ab). Matched scratch tide recipe (`d_model=384`, `lr=1e-4`, `lambda_residual=30`, 400 ep, seed 42); only `dataset.normalize_mert_features` toggled. **`lambda_incremental_consistency=0`** in both arms (RTX 3070 Ti OOM at 0.01 on epoch 2 — champion iter175 used 0.01; A/B isolates input norm only).
+
+**Results** (`val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`):
+
+| Milestone | Raw MERT | Normalized MERT |
+| --------- | -------- | ---------------- |
+| ≥ 0.90 | ep 154 | ep 152 |
+| ≥ 0.95 | ep 210 | ep 209 |
+| ≥ 0.99 | ep 289 | ep 282 |
+| ≥ 0.999 | ep **399** | **never** |
+| ≥ 0.9999 (perfect) | ep **399** (gate **1.0**) | **never** (best **0.9984** @ ep 313) |
+
+Normalized was marginally faster early but **plateaued below perfect**; raw reached gate **1.0** at epoch 399 (same ballpark as iter175 @ ~390 without norm).
+
+**Decision:** AR **default = raw MERT** after hop-grid resample (`normalize_mert_features: false`). Do **not** adopt dense per-song z-score for AR training or decode unless a new ablation reopens it. Optional flag remains in `ArDatasetConfig` for experiments. Dense track keeps its own norm path — train/eval must stay consistent there ([NOTE-20260606-17](DISCUSSION_NOTES.md#note-20260606-17-multi-song-eval-missing-normalization)).
+
+**Related:** `mert-input-norm` in [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-registry-locked-2026-06)
+
+---
+
 ## Session 2026-06-30 — AR free-run eval reference
 
 ### NOTE-20260630-01: AR free-run primary vs `target_times`

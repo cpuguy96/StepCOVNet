@@ -590,7 +590,8 @@ Configs: `ar/overfit_perfect/base.json` (run 1, phase A: SS=0) · `ar/overfit_pe
 | `patch-size`      | MERT frames per encoder token | P=4 / 8 / 16                                                               | **decided** | P=8 (80 ms)                                  |
 | `encoder-hop`     | PRE feature grid              | 10 ms vs finer raster                                                      | **decided** | 10 ms (`HOP_COEFF`)                          |
 | `mert-finetune`   | MERT weights                  | frozen vs unfreeze last layer                                              | **decided** | frozen for `gate-tide-overfit`               |
-| `delta-buckets`   | Long-gap vocab edges          | Histogram on tide + 10-song before multi-song                              | **open**    | fit before `gate-10song-smoke` scale-up      |
+| `mert-input-norm` | Per-song MERT z-score before patch | off (raw) vs `normalize_onset_spectrogram` (dense-style)            | **decided** | **raw** — norm plateaus below perfect gate (EXP-20260630-03) |
+| `delta-buckets`   | Long-gap vocab edges          | Histogram on tide + 10-song before multi-song                              | **open**    | fit before full `final_data` scale-up        |
 | `final-data-mert` | Nested MERT cache             | When to wire `extract_mert_features` for `final_data`                      | **decided** | after `gate-tide-overfit` + `gate-ar-decode` |
 
 ### Training & eval
@@ -650,6 +651,7 @@ Do not block onset AR on joint modeling — time-only F1 is the gate.
 ## 13. Implementation notes
 
 - Reuse PRE: `ssl_features.load_mert_features`, `resample_features_to_hop_grid`, `pairing` / `training_index` rows.
+- **MERT input:** **raw** hidden states by default (`dataset.normalize_mert_features: false`). Per-song z-score rejected for AR ([EXP-20260630-03](EXPERIMENT_LOG.md#exp-20260630-03-ar-tide-mert-normalization-ab)); dense uses `normalize_onset_spectrogram` on its own path.
 - Reuse GT loaders: `dataset_prep/training_loader.load_chart_times_sec` (`.chart.json`); `onset_events/charts.py` for legacy `.txt`/`.sm` and tide overfit paths.
 - **Tide MERT cache:** `data/v2/test/tide.mert.npy` (or beside-audio `.mert.npy`) for `gate-tide-overfit`.
 - **`final_data` MERT:** wire nested extract before `gate-val-vs-dense` on full corpus (`final-data-mert`); not required for tide gates.
