@@ -21,7 +21,7 @@ Applies when running or editing files under `scripts/`.
 | Disposable scratch | `_tmp/<topic>/...` (gitignored; delete when done)   |
 | Research record    | `EXPERIMENT_LOG.md` (`EXP-…`) — not raw logs in git |
 
-**Do not** create `tmp_*` at the repository root. Do not commit captures or scratch files.
+**Do not** create `tmp_*` or `_tmp_*` at the repository root (use `_tmp/<topic>/`). Do not commit captures or scratch files.
 
 ## GPU scheduling
 

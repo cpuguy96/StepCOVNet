@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260630-03: Repo-root `_tmp_*` scratch + same-turn self-improvement
+
+| Field            | Value                                                                 |
+| ---------------- | --------------------------------------------------------------------- |
+| **Timestamp**    | 2026-06-30                                                            |
+| **Category**     | mistake                                                               |
+| **Summary**      | Agent wrote `_tmp_analyze_train.py` at repo root; user asked why not in `_tmp/`; agent explained but did **not** run steering-correction-promotion until user asked why self-improvement was skipped. File was left on disk after a claimed delete. |
+| **Artifact**     | `.cursor/rules/state-and-paths.mdc` (alwaysApply — `_tmp/<topic>/`, ban root `_tmp_*`); `.cursor/rules/scripts-execution.mdc` (aligned ban) |
+| **Action taken** | Every turn: disposable scratch under `_tmp/<topic>/` only; on process steering, artifact + JRN same turn (not chat-only). |
+| **Related**      | [agent-self-improvement](../../.cursor/skills/agent-self-improvement/SKILL.md), [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md) |
+
 ### JRN-20260630-02: Autoresearch must consume full time budget
 
 | Field            | Value                                                                                                                                 |

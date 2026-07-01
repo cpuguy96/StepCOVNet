@@ -37,6 +37,17 @@ Expect **no matches** in tracked files.
 
 Never hardcode `C:\Users\...` or `/mnt/c/Users/<name>/...` clone paths. WSL `$HOME/stepcovnet-venv-wsl` is a **project default venv name**, not a machine-specific Windows path.
 
+## Disposable scratch (agents)
+
+| Purpose | Path |
+| ------- | ---- |
+| One-off scripts, parse helpers, throwaway analysis | `_tmp/<topic>/...` (gitignored) |
+| Command capture | `logs/<topic>_<run>.log` (gitignored) |
+
+**Do not** create `tmp_*` or `_tmp_*` files at the **repository root**. Delete `_tmp/` contents when done; never commit them.
+
+On user steering about agent process (paths, hygiene, “remember this”), run [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md) **same turn** — journal alone is incomplete.
+
 ## Pre-push validation
 
 Mirror CI before push: `venv\Scripts\python.exe pre_submit.py` (see [pre-submit.yml](../../.github/workflows/pre-submit.yml)).
