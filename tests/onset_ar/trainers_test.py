@@ -97,9 +97,14 @@ class TrainersTest(unittest.TestCase):
 
     def test_overfit_gate_callback_publishes_metrics(self) -> None:
         callback = trainers.OverfitGateCallback()
-        logs = {"val_token_accuracy": 0.95, "val_ordered_onset_match": 633 / 634}
+        logs = {
+            "val_token_accuracy": 0.95,
+            "val_timing_match_teacher": 633 / 634,
+        }
         callback.on_epoch_end(0, logs)
+        self.assertEqual(logs["val_gate_teacher"], 0.95)
         self.assertEqual(logs["val_overfit_gate"], 0.95)
+        self.assertEqual(logs["val_ordered_onset_match"], 633 / 634)
 
 
 if __name__ == "__main__":
