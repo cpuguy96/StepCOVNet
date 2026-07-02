@@ -9,6 +9,7 @@ import keras
 import numpy as np
 import tensorflow as tf
 
+from stepcovnet import onset_metric_names as mn
 from stepcovnet import reproducibility, timing_match
 from stepcovnet.onset_ar import config, datasets, inference, losses, models
 from stepcovnet.onset_events import matching
@@ -243,13 +244,13 @@ class ArOnsetTrainingModel(keras.Model):
         self.use_ordered_onset_gate = run_config.overfit_one_song
         self.event_f1_metric = ArEventOnsetF1Metric(
             tolerance_sec=run_config.tolerance_sec,
-            name="event_onset_f1",
+            name=mn.AUX_F1_HUNGARIAN,
         )
         self.ordered_match_metric: ArOrderedOnsetMatchMetric | None
         if self.use_ordered_onset_gate:
             self.ordered_match_metric = ArOrderedOnsetMatchMetric(
                 tolerance_sec=run_config.tolerance_sec,
-                name="ordered_onset_match",
+                name=mn.TIMING_MATCH_TEACHER,
             )
         else:
             self.ordered_match_metric = None
@@ -629,7 +630,7 @@ def overfit_gate_score(
 
 
 class OverfitGateCallback(keras.callbacks.Callback):
-    """Publish ``val_overfit_gate`` for teacher-fed checkpointing and early stop."""
+    """Publish teacher-fed gate metrics for checkpointing and early stop."""
 
     def __init__(
         self,
@@ -644,23 +645,36 @@ class OverfitGateCallback(keras.callbacks.Callback):
         self.patience = int(patience)
         self._perfect_epochs = 0
 
+    @staticmethod
+    def _val_timing_match_teacher(logs: dict) -> float:
+        canonical = mn.val_name(mn.TIMING_MATCH_TEACHER)
+        legacy = mn.val_name(mn.CANONICAL_TO_LEGACY_METRIC[mn.TIMING_MATCH_TEACHER])
+        if canonical in logs:
+            return float(logs[canonical])
+        if legacy in logs:
+            return float(logs[legacy])
+        return float(
+            logs.get(
+                mn.val_name(mn.AUX_F1_HUNGARIAN),
+                logs.get(mn.val_name("event_onset_f1"), 0.0),
+            ),
+        )
+
     def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
         if logs is None:
             logs = {}
-        token_acc = float(logs.get("val_token_accuracy", 0.0))
-        ordered_match = float(
-            logs.get(
-                "val_ordered_onset_match",
-                logs.get("val_event_onset_f1", 0.0),
-            ),
-        )
-        logs["val_overfit_gate"] = overfit_gate_score(
+        token_acc = float(logs.get(mn.val_name(mn.TOKEN_ACCURACY), 0.0))
+        ordered_match = self._val_timing_match_teacher(logs)
+        gate = overfit_gate_score(
             token_accuracy=token_acc,
             ordered_onset_match=ordered_match,
         )
+        logs[mn.val_name(mn.GATE_TEACHER)] = gate
+        logs[mn.val_name(mn.CANONICAL_TO_LEGACY_METRIC[mn.GATE_TEACHER])] = gate
+        mn.publish_legacy_val_aliases(logs)
         if not self.early_stop:
             return
-        monitor = float(logs["val_overfit_gate"])
+        monitor = float(logs[mn.val_name(mn.GATE_TEACHER)])
         if monitor >= self.min_score:
             self._perfect_epochs += 1
         else:
@@ -794,7 +808,7 @@ def train_ar_onset(
         val_ds = val_ds.take(1)
 
     callbacks: list[keras.callbacks.Callback] = []
-    monitor_metric = run_config.checkpoint_metric
+    monitor_metric = mn.resolve_checkpoint_metric(run_config.checkpoint_metric)
     monitor_mode = "min" if "loss" in monitor_metric else "max"
     if run_config.callback_root_dir:
         experiment_name = _get_experiment_name(experiment_config)

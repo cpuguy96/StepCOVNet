@@ -2,6 +2,14 @@
 
 **Purpose:** Single reference for how StepCOVNet scores onset **timing** across AR, dense, and event tracks. Implementation: [`src/stepcovnet/timing_match.py`](../../src/stepcovnet/timing_match.py).
 
+**Where metrics appear:**
+
+| Doc | Scope |
+| --- | ----- |
+| [ONSET_METRICS_NAMING.md](ONSET_METRICS_NAMING.md) | **Naming** — `gate_*`, `timing_match_*`, `aux_*` tiers |
+| [ONSET_METRICS_TRAINING.md](ONSET_METRICS_TRAINING.md) | Keras logs each epoch (`val_*`, losses, gates) |
+| [ONSET_METRICS_EVALUATION.md](ONSET_METRICS_EVALUATION.md) | Offline scripts on saved checkpoints |
+
 **Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) · [configs/README.md](../../configs/README.md) · [DISCUSSION_NOTES.md § NOTE-20260628-03](DISCUSSION_NOTES.md#note-20260628-03-tide-overfit-primary-metric--ordered-onset-match)
 
 ---
