@@ -46,6 +46,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import timing_match
+from stepcovnet import onset_metric_names as mn
 from stepcovnet.onset_ar import config, datasets, inference, targets, trainers
 
 PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.")
@@ -180,19 +181,78 @@ def _ar_decode_gate_metrics(
         chart_times,
         tolerance_sec=tolerance_sec,
     )
+    event_block = _event_f1_report(
+        pred_times,
+        chart_times,
+        tolerance_sec=tolerance_sec,
+    )
     return {
         "timing_mode": timing_mode,
+        mn.TIMING_MATCH_AR_DECODE: ordered,
         "timing_match": ordered,
         "ordered_onset_match": ordered,
+        mn.AUX_TIMING_MATCH_CHART: chart_ordered,
         "chart_ordered_onset_match": chart_ordered,
         "ar_decode_length": ar_decode_length,
         "stopped_on_eos": stopped_on_eos,
-        **_event_f1_report(
-            pred_times,
-            chart_times,
-            tolerance_sec=tolerance_sec,
-        ),
+        **event_block,
+        mn.AUX_F1_HUNGARIAN: event_block["event_f1"],
     }
+
+
+def _primary_timing_block(report: dict[str, object]) -> dict[str, object]:
+    block = report.get(mn.TIMING_MATCH_TEACHER, report.get("ordered_onset_match"))
+    assert isinstance(block, dict)
+    return block
+
+
+def _attach_metrics_by_tier(report: dict[str, object]) -> None:
+    """Add ``metrics_by_tier`` for JSON consumers (legacy flat keys unchanged)."""
+    primary: dict[str, object] = {}
+    aux: dict[str, object] = {}
+    diag: dict[str, object] = {}
+
+    teacher = report.get(mn.TIMING_MATCH_TEACHER, report.get("ordered_onset_match"))
+    if isinstance(teacher, dict):
+        primary[mn.TIMING_MATCH_TEACHER] = teacher
+
+    chart = report.get(mn.AUX_TIMING_MATCH_CHART, report.get("chart_ordered_onset_match"))
+    if isinstance(chart, dict):
+        aux[mn.AUX_TIMING_MATCH_CHART] = chart
+
+    if "event_f1" in report:
+        aux[mn.AUX_F1_HUNGARIAN] = report["event_f1"]
+
+    ar_decode = report.get("ar_decode")
+    if isinstance(ar_decode, dict):
+        decode_primary = ar_decode.get(
+            mn.TIMING_MATCH_AR_DECODE,
+            ar_decode.get("ordered_onset_match"),
+        )
+        if isinstance(decode_primary, dict):
+            primary[mn.TIMING_MATCH_AR_DECODE] = decode_primary
+        decode_chart = ar_decode.get(
+            mn.AUX_TIMING_MATCH_CHART,
+            ar_decode.get("chart_ordered_onset_match"),
+        )
+        if isinstance(decode_chart, dict):
+            aux[f"{mn.AUX_TIMING_MATCH_CHART}_ar_decode"] = decode_chart
+        if "event_f1" in ar_decode:
+            aux[mn.AUX_F1_HUNGARIAN_AR_DECODE] = ar_decode["event_f1"]
+
+    for key in (
+        "abs_error_ms",
+        "residual_error_ms",
+        "n_within_tolerance",
+        "n_patch_wrong",
+        "n_patch_ok_timing_wrong",
+        "worst_onsets",
+        "eval_elapsed_sec",
+    ):
+        if key in report:
+            diag[key] = report[key]
+
+    report["metrics_by_tier"] = {"primary": primary, "aux": aux, "diag": diag}
 
 
 def _ordered_gate_line(block: dict[str, object], *, tol_ms: float) -> str:
@@ -210,7 +270,7 @@ def _print_teacher_summary(
     quiet: bool,
 ) -> None:
     tol_ms = tolerance_sec * 1000.0
-    ordered = report["ordered_onset_match"]
+    ordered = _primary_timing_block(report)
     assert isinstance(ordered, dict)
     _log("", quiet=quiet)
     _log("=== Teacher-fed gate ===", quiet=quiet)
@@ -251,7 +311,7 @@ def _print_ar_decode_summary(
     quiet: bool,
 ) -> None:
     tol_ms = tolerance_sec * 1000.0
-    ordered = ar_decode["ordered_onset_match"]
+    ordered = ar_decode.get(mn.TIMING_MATCH_AR_DECODE, ar_decode["ordered_onset_match"])
     assert isinstance(ordered, dict)
     diagnostics = ar_decode.get("diagnostics", {})
     if not isinstance(diagnostics, dict):
@@ -449,10 +509,13 @@ def _diagnose_batch(
 
     return {
         "n_onsets": int(pred_times.size),
+        mn.TIMING_MATCH_TEACHER: ordered,
         "timing_match": ordered,
         "ordered_onset_match": ordered,
+        mn.AUX_TIMING_MATCH_CHART: chart_ordered,
         "chart_ordered_onset_match": chart_ordered,
         "event_f1": float(event_f1),
+        mn.AUX_F1_HUNGARIAN: float(event_f1),
         "true_positives": int(tp),
         "false_positives": int(fp),
         "false_negatives": int(fn),
@@ -799,6 +862,7 @@ def main() -> int:
     for key in list(report):
         if key.startswith("_"):
             del report[key]
+    _attach_metrics_by_tier(report)
     _print_debug_summary(
         report,
         model_path=model_path,

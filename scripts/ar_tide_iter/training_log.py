@@ -18,8 +18,11 @@ _PROGRESS_RE = re.compile(r"[\u2580-\u259f\u2500-\u257f]")
 _EPOCH_RE = re.compile(r"^Epoch (\d+)/(\d+)$")
 _ATTEMPT_LOG_RE = re.compile(r"\.attempt(\d+)\.log$")
 _VAL_KEYS = (
+    "val_gate_teacher",
     "val_overfit_gate",
+    "val_timing_match_teacher",
     "val_ordered_onset_match",
+    "val_aux_f1_hungarian",
     "val_event_onset_f1",
     "val_token_accuracy",
     "val_loss",
@@ -28,17 +31,24 @@ _VAL_KEYS = (
 TEACHER_PERFECT_EPS = 1e-6
 
 
+def _val_metric(metrics: dict[str, float], canonical: str, legacy: str) -> float | None:
+    canonical_key = f"val_{canonical}" if not canonical.startswith("val_") else canonical
+    legacy_key = f"val_{legacy}" if not legacy.startswith("val_") else legacy
+    if canonical_key in metrics:
+        return float(metrics[canonical_key])
+    if legacy_key in metrics:
+        return float(metrics[legacy_key])
+    return None
+
+
 def teacher_metrics_perfect(metrics: dict[str, float]) -> bool:
-    """True when in-loop teacher-fed metrics are all 1.0 (tide overfit bar)."""
-    required = (
-        "val_token_accuracy",
-        "val_ordered_onset_match",
-        "val_event_onset_f1",
-        "val_overfit_gate",
-    )
-    if not all(key in metrics for key in required):
+    """True when in-loop teacher-fed primary metrics are all 1.0 (tide overfit bar)."""
+    token = _val_metric(metrics, "token_accuracy", "token_accuracy")
+    timing = _val_metric(metrics, "timing_match_teacher", "ordered_onset_match")
+    gate = _val_metric(metrics, "gate_teacher", "overfit_gate")
+    if token is None or timing is None or gate is None:
         return False
-    return all(float(metrics[key]) >= 1.0 - TEACHER_PERFECT_EPS for key in required)
+    return all(value >= 1.0 - TEACHER_PERFECT_EPS for value in (token, timing, gate))
 
 
 def teacher_report_perfect(report: dict) -> bool:
@@ -137,7 +147,7 @@ def is_worth_printing(line: str) -> bool:
         return False
     if _EPOCH_RE.match(clean):
         return True
-    if "val_overfit_gate:" in clean:
+    if "val_gate_teacher:" in clean or "val_overfit_gate:" in clean:
         return True
     return clean.startswith("Traceback") or "Error" in clean[:80]
 
@@ -208,20 +218,20 @@ def format_status(status: dict) -> str:
     ]
     last_val = status.get("last_val")
     if last_val:
+        gate = _val_metric(last_val, "gate_teacher", "overfit_gate") or 0.0
+        timing = _val_metric(last_val, "timing_match_teacher", "ordered_onset_match") or 0.0
+        aux_f1 = _val_metric(last_val, "aux_f1_hungarian", "event_onset_f1") or 0.0
         lines.append(
-            "val_overfit_gate={val_overfit_gate:.4f} "
-            "val_ordered_onset_match={val_ordered_onset_match:.4f} "
-            "val_event_onset_f1={val_event_onset_f1:.4f} "
-            "val_token_accuracy={val_token_accuracy:.4f} "
-            "val_loss={val_loss:.4f}".format(
-                val_overfit_gate=last_val.get("val_overfit_gate", 0.0),
-                val_ordered_onset_match=last_val.get(
-                    "val_ordered_onset_match",
-                    0.0,
-                ),
-                val_event_onset_f1=last_val.get("val_event_onset_f1", 0.0),
-                val_token_accuracy=last_val.get("val_token_accuracy", 0.0),
-                val_loss=last_val.get("val_loss", 0.0),
+            "val_gate_teacher={gate:.4f} "
+            "val_timing_match_teacher={timing:.4f} "
+            "val_aux_f1_hungarian={aux_f1:.4f} "
+            "val_token_accuracy={token:.4f} "
+            "val_loss={loss:.4f}".format(
+                gate=gate,
+                timing=timing,
+                aux_f1=aux_f1,
+                token=last_val.get("val_token_accuracy", 0.0),
+                loss=last_val.get("val_loss", 0.0),
             )
         )
     if status.get("last_error"):
