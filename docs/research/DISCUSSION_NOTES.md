@@ -4,6 +4,42 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-07-03 — AR token class weights on champion recipe
+
+### NOTE-20260703-01: Class weights need co-tuned loss recipe (deferred)
+
+| Field         | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Timestamp** | 2026-07-03 01:48:00                                                   |
+| **Topic**     | `token_class_weight` on champion v8 vs historical gate-tide bundle      |
+
+**Context:** [EXP-20260703-01](EXPERIMENT_LOG.md#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe) swapped `inverse_freq` / `inverse_sqrt_freq` onto the **v8 champion** stack (`lambda_residual=30`, `d_model=384`, …) only. Teacher timing reached **634/634**; free-run decode failed (**≤360/634**). Easy read: “class weights don’t work.”
+
+**Nuance:** `inverse_freq` **did** fix majority-token collapse in the **older** gate-tide recipe ([NOTE-20260627-02](DISCUSSION_NOTES.md#note-20260627-02-gate-tide-overfit-resolution)) as part of a **bundle**, not in isolation:
+
+| Parameter | Historical gate-tide (`v1` + `inverse_freq`) | Champion v8 (PASS) |
+| --------- | ---------------------------------------------- | ------------------ |
+| `token_class_weight` | `inverse_freq` | `none` |
+| `lambda_residual` | **5.0** | **30.0** |
+| `lambda_time_ramp_epochs` | **100** | **0** |
+| `d_model` | 256 | 384 |
+| `eos_token_weight_scale` | 1.0 | **0.2** |
+
+High `lambda_residual` lets pointer+residual hit perfect **teacher** timing while token argmax stays weak — so class weights on the champion stack are **not a fair single-knob test**.
+
+**Open follow-ups (later, not blocking scale-up):**
+
+1. Re-run class weights with a **matched low-residual recipe** (e.g. `lambda_residual=5`, `lambda_time_ramp_epochs=100`, checkpoint on `val_gate_teacher`, judge `--ar_decode`).
+2. **`inverse_sqrt_freq`** or **capped** inverse weights (less aggressive than `inverse_freq`).
+3. **Manifest-derived** weights (multi-song freq) instead of single-batch tide histogram.
+4. **Focal token CE** — mentioned in [NOTE-20260627-01](DISCUSSION_NOTES.md#note-20260627-01-gate-tide-overfit-plateau-and-open-hypotheses); not implemented.
+
+**Decision (for now):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) stays **`token_class_weight: none`**. Proceed to **`final-data-mert`** / **`gate-val-vs-dense`**. Revisit class weights only with a deliberate co-tuned recipe ablation.
+
+**Related:** [`v9_inverse_freq.json`](../../configs/ar/versions/tide_overfit/v9_inverse_freq.json) · [`v9_inverse_sqrt_freq.json`](../../configs/ar/versions/tide_overfit/v9_inverse_sqrt_freq.json) · [AR_ONSET_DESIGN.md §11](AR_ONSET_DESIGN.md#11-decision-registry-locked-2026-06)
+
+---
+
 ## Session 2026-07-01 — AR MERT input normalization A/B
 
 ### NOTE-20260701-01: AR tide overfit — reject per-song MERT z-score
