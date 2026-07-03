@@ -14,6 +14,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |
 | Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |
+| **Recreate training data** (SMO downloads → prep) | [docs/research/TRAINING_DATA_SETUP.md](docs/research/TRAINING_DATA_SETUP.md) |
 | Pre-push validation (same as CI) | [pre_submit.py](pre_submit.py) · [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml) |
 | Steering correction — how the agent decides / promotes lessons | [.cursor/skills/steering-correction-promotion/SKILL.md](.cursor/skills/steering-correction-promotion/SKILL.md) |
 | **Refresh agent brain** / **refresh all rules** — audit rules, skills, catalogs | [.cursor/skills/agent-brain-refresh/SKILL.md](.cursor/skills/agent-brain-refresh/SKILL.md) |
