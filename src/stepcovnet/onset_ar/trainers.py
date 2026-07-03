@@ -636,14 +636,32 @@ class OverfitGateCallback(keras.callbacks.Callback):
         self,
         *,
         early_stop: bool = False,
+        early_stop_monitor: str | None = None,
         min_score: float = 0.9999,
         patience: int = 3,
     ) -> None:
         super().__init__()
         self.early_stop = early_stop
+        self.early_stop_monitor = early_stop_monitor
         self.min_score = float(min_score)
         self.patience = int(patience)
         self._perfect_epochs = 0
+
+    @staticmethod
+    def _metric_from_logs(logs: dict, monitor_key: str) -> float:
+        """Read a Keras ``val_*`` monitor from logs with canonical/legacy aliases."""
+        if monitor_key in logs:
+            return float(logs[monitor_key])
+        canonical = mn.canonical_metric_name(monitor_key.removeprefix("val_"))
+        canonical_key = mn.val_name(canonical)
+        if canonical_key in logs:
+            return float(logs[canonical_key])
+        legacy = mn.CANONICAL_TO_LEGACY_METRIC.get(canonical)
+        if legacy is not None:
+            legacy_key = mn.val_name(legacy)
+            if legacy_key in logs:
+                return float(logs[legacy_key])
+        return 0.0
 
     @staticmethod
     def _val_timing_match_teacher(logs: dict) -> float:
@@ -674,14 +692,18 @@ class OverfitGateCallback(keras.callbacks.Callback):
         mn.publish_legacy_val_aliases(logs)
         if not self.early_stop:
             return
-        monitor = float(logs[mn.val_name(mn.GATE_TEACHER)])
+        monitor_key = self.early_stop_monitor or mn.val_name(
+            mn.CANONICAL_TO_LEGACY_METRIC[mn.GATE_TEACHER],
+        )
+        monitor = self._metric_from_logs(logs, monitor_key)
         if monitor >= self.min_score:
             self._perfect_epochs += 1
         else:
             self._perfect_epochs = 0
         if self._perfect_epochs >= self.patience:
             logging.info(
-                "Perfect overfit gate reached (%.4f >= %.4f for %d epochs); stopping.",
+                "Perfect overfit on %s reached (%.4f >= %.4f for %d epochs); stopping.",
+                monitor_key,
                 monitor,
                 self.min_score,
                 self.patience,
@@ -847,6 +869,9 @@ def train_ar_onset(
         0,
         OverfitGateCallback(
             early_stop=run_config.perfect_overfit_early_stop,
+            early_stop_monitor=(
+                monitor_metric if run_config.perfect_overfit_early_stop else None
+            ),
             min_score=run_config.perfect_overfit_min_score,
             patience=run_config.perfect_overfit_patience,
         ),
