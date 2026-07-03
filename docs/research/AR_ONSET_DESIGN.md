@@ -602,7 +602,7 @@ Configs: `ar/overfit_perfect/base.json` (run 1, phase A: SS=0) · `ar/overfit_pe
 | `train-scheduled-sampling` | Exposure bias        | ramp p vs fixed p vs off until gate fails | **decided** | ramp p → ~0.5               |
 | `train-aux-time-loss`      | λ_time on \|t̂−t\|    | ramp vs fixed vs off                      | **decided** | **1.0**, linear ramp **100 ep** from 0 (`lambda_time_ramp_epochs`) |
 | `train-aux-residual-loss`  | λ_residual MSE on residual head | off vs 1–5                         | **decided** | **5.0** on tide overfit (EXP-20260627-04) |
-| `token-class-weight`       | Token CE class weights | none vs inverse_freq                 | **decided** | **inverse_freq** on tide |
+| `token-class-weight`       | Token CE class weights | none vs inverse_freq vs inverse_sqrt_freq | **open** (champion) | **`none`** on champion v8; `inverse_freq` helped **gate-tide** only with co-tuned λ ([NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred)) |
 | `decode-pointer`           | F1 / time loss decode  | soft expected patch vs argmax          | **decided** | **argmax** (`use_soft_pointer_time: false`) |
 | `eval-min-gap`             | 50 ms POST before F1 | off primary vs report both vs on primary  | **decided** | off for primary metric      |
 | `overfit-free-run-f1`      | Tide single-chart free-run gate | 0.95 vs **1.0**                  | **decided** | **1.0** — must match all onsets (NOTE-20260628-02) |

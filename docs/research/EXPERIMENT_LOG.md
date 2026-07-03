@@ -31,7 +31,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
 | **AR 10-song smoke** | **PASS** — **10/10** train batches, **2/2** val; `val_loss` **53.4 → 38.7** over 5 ep; teacher `event_onset_f1` > 0 ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)) |
 | **AR next gate** | **`final-data-mert`** (full manifest MERT cache) → **`gate-val-vs-dense`** ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §10.1) |
-| **AR tide class weights (champion recipe)** | **Rejected** — `inverse_freq` / `inverse_sqrt_freq` on v8 stack: teacher **634/634**, free-run **≤360/634**; keep `token_class_weight: none` ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)) |
+| **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
 
 **Recommended when resuming onset work:**
 
@@ -47,7 +47,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
-| EXP-20260703-01 | `train` + `metric` | AR tide token class weight ablation on champion v8 recipe | **Fail** | `inverse_freq` / `inverse_sqrt_freq`: teacher **634/634**, free-run **360/634** & **343/634** — keep `none` |
+| EXP-20260703-01 | `train` + `metric` | AR tide token class weight ablation on champion v8 recipe | **Partial** | Drop-in on v8: teacher **634/634**, free-run **≤360/634**; co-tuned recipe revisit later |
 | EXP-20260630-03 | `pre` + `train` | AR tide MERT normalization A/B (`normalize_mert_features`) | **Supported** | Raw wins perfect gate **1.0** @ ep 399; norm plateaus **0.9984** — keep raw |
 | EXP-20260630-02 | `pre` + `train` | AR **`gate-10song-smoke`** (`training_index_path`) | **Supported** | **10/10** train + **2/2** val batches; `val_loss` **53.4 → 38.7** @ 5 ep GPU; teacher F1 > 0 |
 | EXP-20260630-01 | `train` + `metric` | AR tide **scratch** perfect overfit (iter175 → v8 champion) | **Supported** | Free-run **634/634** vs `target_times`; graduated [`tide_overfit.json`](../../configs/ar/tide_overfit.json) |
@@ -116,7 +116,8 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Arm B offline** | Teacher **634/634** PASS; free-run **343/634** (54.1%) FAIL |
 | **Logs** | `logs/ar_tide_inverse_freq.log` · `logs/ar_tide_inverse_sqrt_freq.log` |
 | **Artifacts** | `models_wsl/ar/tide_overfit_inverse_freq/` · `models_wsl/ar/tide_overfit_inverse_sqrt_freq/` |
-| **Conclusion** | **Fail** for free-run gate. Inverse weighting fixes historical majority-token collapse ([NOTE-20260627-02](DISCUSSION_NOTES.md#note-20260627-02-gate-tide-overfit-resolution)) but **over-corrects** on the high-`lambda_residual` champion recipe: pointer+residual reach perfect teacher timing while token argmax stays weak; free-run decode needs tokens. **Do not** use class weights on champion v8; judge scale-up with `--ar_decode`, not teacher timing alone. |
+| **Conclusion** | **Partial** — drop-in class weights on champion v8 **do not** improve free-run (arms A/B fail `--ar_decode`). Not a clean test of class weighting: high `lambda_residual` masks weak tokens while teacher timing hits **634/634**. Historical gate-tide pass used `inverse_freq` **with** lower `lambda_residual`, `lambda_time_ramp_epochs`, and smaller `d_model` ([NOTE-20260627-02](DISCUSSION_NOTES.md#note-20260627-02-gate-tide-overfit-resolution), [`v1.json`](../../configs/ar/versions/tide_overfit/v1.json)). |
+| **Open follow-up** | Revisit with **co-tuned** recipe: lower `lambda_residual`, time ramp, checkpoint on `val_gate_teacher`, judge `--ar_decode`; try `inverse_sqrt_freq`/capped weights or focal CE ([NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred)). **For now:** champion stays `token_class_weight: none`; scale-up not blocked. |
 
 ### EXP-20260630-03: AR tide MERT normalization A/B
 
