@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 
 from stepcovnet.onset_ar import trainers
 
@@ -105,6 +106,24 @@ class TrainersTest(unittest.TestCase):
         self.assertEqual(logs["val_gate_teacher"], 0.95)
         self.assertEqual(logs["val_overfit_gate"], 0.95)
         self.assertEqual(logs["val_ordered_onset_match"], 633 / 634)
+
+    def test_overfit_gate_callback_early_stops_on_primary_monitor(self) -> None:
+        callback = trainers.OverfitGateCallback(
+            early_stop=True,
+            early_stop_monitor="val_ordered_onset_match",
+            min_score=1.0,
+            patience=2,
+        )
+        callback.model = unittest.mock.MagicMock()
+        perfect_logs = {
+            "val_token_accuracy": 0.95,
+            "val_timing_match_teacher": 1.0,
+            "val_ordered_onset_match": 1.0,
+        }
+        callback.on_epoch_end(0, perfect_logs)
+        self.assertFalse(callback.model.stop_training)
+        callback.on_epoch_end(1, perfect_logs)
+        self.assertTrue(callback.model.stop_training)
 
 
 if __name__ == "__main__":
