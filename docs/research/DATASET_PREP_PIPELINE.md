@@ -1,7 +1,7 @@
 # Dataset preprocessing pipeline — plan
 
 **Status:** Design doc — decisions locked **2026-06-10** (§14); layout nested bundles **2026-06-10** (§1, §7, 1.4); field rationale **2026-06-14** (§6.3); audit **2026-06-10** (§15). **Implementation:** **P0–P9 done** (2026-06-24); local `data/final_data` has **1942** chart rows + `training_index.json` (**1010** / **110** songs, **1745** / **197** rows train/val).  
-**Related:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) (PRE stage) · [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) · [project-layout.md](../agents/project-layout.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase
+**Related:** [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md) (SMO download → prep checklist) · [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) (PRE stage) · [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) · [project-layout.md](../agents/project-layout.md) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase
 
 **Default paths (configurable):**
 
