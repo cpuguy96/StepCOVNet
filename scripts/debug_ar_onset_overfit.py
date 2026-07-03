@@ -45,8 +45,8 @@ _bootstrap_wsl_gpu()
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import timing_match
 from stepcovnet import onset_metric_names as mn
+from stepcovnet import timing_match
 from stepcovnet.onset_ar import config, datasets, inference, targets, trainers
 
 PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.")
