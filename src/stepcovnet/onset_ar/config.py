@@ -99,6 +99,8 @@ class ArRunConfig(_DictSerializableMixin):
     callback_root_dir: str = ""
     seed: int = 42
     learning_rate: float = 2e-3
+    mixed_precision: bool = False
+    enable_xla: bool = False
 
 
 @dataclasses.dataclass

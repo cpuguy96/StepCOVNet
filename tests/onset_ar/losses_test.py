@@ -158,7 +158,33 @@ class LossesTest(unittest.TestCase):
         loss = losses.incremental_consistency_loss(parallel, incremental, mask)
         self.assertAlmostEqual(float(loss.numpy()), 0.0, places=6)
 
-    def test_incremental_predicted_times_shape(self) -> None:
+    def test_compute_ar_onset_loss_accepts_float16_logits(self) -> None:
+        outputs = {
+            "token_logits": tf.zeros((1, 2, 8), dtype=tf.float16),
+            "pointer_logits": tf.zeros((1, 2, 8), dtype=tf.float16),
+            "residual_sec": tf.zeros((1, 2), dtype=tf.float16),
+        }
+        batch = {
+            "decoder_target_ids": tf.constant([[1, 2]], dtype=tf.int32),
+            "decoder_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "onset_step_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "target_patch_indices": tf.constant([[0, 1]], dtype=tf.int32),
+            "target_times": tf.constant([[0.0, 0.1]], dtype=tf.float32),
+            "target_residual_sec": tf.constant([[0.0, 0.02]], dtype=tf.float32),
+        }
+        total_loss, parts = losses.compute_ar_onset_loss(
+            outputs,
+            batch,
+            patch_frames=8,
+            hop_sec=0.01,
+            lambda_time=1.0,
+            lambda_residual=1.0,
+            pointer_loss_weight=1.0,
+            length_normalize_ce=True,
+        )
+        self.assertEqual(total_loss.dtype, tf.float32)
+        self.assertEqual(parts["token_loss"].dtype, tf.float32)
+
         experiment_config = ar_config.ArExperimentConfig(
             dataset=ar_config.ArDatasetConfig(max_audio_seconds=1.0, hop_sec=0.01),
             model=ar_config.ArModelConfig(

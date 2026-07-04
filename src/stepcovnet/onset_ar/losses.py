@@ -44,6 +44,8 @@ def predicted_times_from_outputs(
     use_soft_expected: bool = False,
 ) -> tf.Tensor:
     """Convert pointer logits and residual head outputs to onset times in seconds."""
+    pointer_logits = tf.cast(pointer_logits, tf.float32)
+    residual_sec = tf.cast(residual_sec, tf.float32)
     patch_frames_f = tf.cast(patch_frames, tf.float32)
     hop_sec_f = tf.cast(hop_sec, tf.float32)
     patch_duration = patch_frames_f * hop_sec_f
@@ -233,9 +235,9 @@ def compute_ar_onset_loss(
     use_soft_pointer_time: bool = False,
 ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
     """Combined teacher-forcing loss for ``gate-tide-overfit``."""
-    token_logits = outputs["token_logits"]
-    pointer_logits = outputs["pointer_logits"]
-    residual_sec = outputs["residual_sec"]
+    token_logits = tf.cast(outputs["token_logits"], tf.float32)
+    pointer_logits = tf.cast(outputs["pointer_logits"], tf.float32)
+    residual_sec = tf.cast(outputs["residual_sec"], tf.float32)
 
     decoder_target_ids = tf.cast(batch["decoder_target_ids"], tf.int32)
     decoder_mask = tf.cast(batch["decoder_mask"], tf.float32)

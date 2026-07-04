@@ -34,7 +34,8 @@ class SinusoidalPositionEncoding(keras.layers.Layer):
 
     def call(self, x: tf.Tensor) -> tf.Tensor:
         seq_len = tf.shape(x)[1]
-        return x + self._position_encoding[:, :seq_len, :]
+        pe = tf.cast(self._position_encoding[:, :seq_len, :], x.dtype)
+        return x + pe
 
     def get_config(self) -> dict:
         config_dict = super().get_config()
@@ -293,8 +294,16 @@ def _decode_from_memory(
             name=f"dec_{layer_idx}",
         )
 
-    token_logits = keras.layers.Dense(vocab_size, name="token_logits")(decoder)
-    pointer_logits = keras.layers.Dense(max_patches, name="pointer_logits")(decoder)
+    token_logits = keras.layers.Dense(
+        vocab_size,
+        name="token_logits",
+        dtype="float32",
+    )(decoder)
+    pointer_logits = keras.layers.Dense(
+        max_patches,
+        name="pointer_logits",
+        dtype="float32",
+    )(decoder)
     pointer_logits = MaskPointerLogits(name="mask_pointer_logits")(
         [pointer_logits, patch_mask],
     )
@@ -302,6 +311,7 @@ def _decode_from_memory(
         1,
         activation="sigmoid",
         name="residual_ratio",
+        dtype="float32",
     )(decoder)
     residual_ratio = keras.layers.Reshape(
         (max_decoder_len,), name="residual_ratio_flat"

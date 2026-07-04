@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import time
 
 import keras
 import numpy as np
@@ -17,6 +18,35 @@ from stepcovnet.onset_events import trainers as event_trainers
 
 ordered_onset_match_counts_numpy = timing_match.timing_match_counts_numpy
 ordered_onset_match_rate_numpy = timing_match.timing_match_rate_numpy
+
+
+def configure_ar_gpu_training(run_config: config.ArRunConfig) -> None:
+    """Enable optional mixed precision and XLA when a GPU is present."""
+    if not tf.config.list_physical_devices("GPU"):
+        if run_config.mixed_precision or run_config.enable_xla:
+            logging.warning(
+                "AR GPU options requested (mixed_precision=%s, enable_xla=%s) "
+                "but no GPU is visible; skipping.",
+                run_config.mixed_precision,
+                run_config.enable_xla,
+            )
+        return
+    if run_config.mixed_precision:
+        keras.mixed_precision.set_global_policy(
+            keras.mixed_precision.Policy("mixed_float16"),
+        )
+        logging.info("AR training: mixed_float16 policy enabled")
+    if run_config.enable_xla:
+        tf.config.optimizer.set_jit("autoclustering")
+        logging.info("AR training: XLA autoclustering enabled")
+
+
+def build_ar_optimizer(run_config: config.ArRunConfig) -> keras.optimizers.Optimizer:
+    """Build Adam for AR training."""
+    return keras.optimizers.Adam(  # type: ignore[return-value]
+        learning_rate=run_config.learning_rate,
+        clipnorm=5.0,
+    )
 
 
 def _ar_event_onset_counts_numpy(
@@ -539,7 +569,11 @@ class ArOnsetTrainingModel(keras.Model):
                     training=True,
                 )
         trainable_vars = self.base_model.trainable_variables
-        grads = tape.gradient(total_loss, trainable_vars)
+        if hasattr(self.optimizer, "scale_loss"):
+            scaled_loss = self.optimizer.scale_loss(total_loss)
+            grads = tape.gradient(scaled_loss, trainable_vars)
+        else:
+            grads = tape.gradient(total_loss, trainable_vars)
         self.optimizer.apply_gradients(zip(grads, trainable_vars, strict=False))
         self.loss_tracker.update_state(total_loss)
         self.token_loss_tracker.update_state(parts["token_loss"])
@@ -627,6 +661,34 @@ def overfit_gate_score(
 ) -> float:
     """Min teacher-fed metrics for checkpointing and early stop."""
     return float(min(token_accuracy, ordered_onset_match))
+
+
+class EpochTimingCallback(keras.callbacks.Callback):
+    """Log per-epoch wall time for throughput ablations."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._epoch_start: float | None = None
+        self._epoch_times: list[float] = []
+
+    def on_epoch_begin(self, epoch: int, logs: dict | None = None) -> None:
+        del epoch, logs
+        self._epoch_start = time.perf_counter()
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        del logs
+        if self._epoch_start is None:
+            return
+        elapsed = time.perf_counter() - self._epoch_start
+        self._epoch_times.append(elapsed)
+        avg = sum(self._epoch_times) / len(self._epoch_times)
+        logging.info(
+            "Epoch %d wall time: %.2fs (running avg %.2fs over %d epochs)",
+            epoch + 1,
+            elapsed,
+            avg,
+            len(self._epoch_times),
+        )
 
 
 class OverfitGateCallback(keras.callbacks.Callback):
@@ -794,6 +856,7 @@ def train_ar_onset(
     if not run_config.model_output_dir:
         raise ValueError("run.model_output_dir is required")
 
+    configure_ar_gpu_training(run_config)
     reproducibility.apply_training_seed(run_config.seed)
     base_model = models.build_ar_onset_model(experiment_config)
     if run_config.init_model_path:
@@ -808,10 +871,8 @@ def train_ar_onset(
         experiment_config=experiment_config,
     )
     training_model.compile(
-        optimizer=keras.optimizers.Adam(  # type: ignore[arg-type]
-            learning_rate=run_config.learning_rate,
-            clipnorm=5.0,
-        ),
+        optimizer=build_ar_optimizer(run_config),
+        auto_scale_loss=False,
     )
 
     train_ds, val_ds, n_train_samples, n_val_samples = (
@@ -865,8 +926,9 @@ def train_ar_onset(
             ),
         )
 
+    callbacks.insert(0, EpochTimingCallback())
     callbacks.insert(
-        0,
+        1,
         OverfitGateCallback(
             early_stop=run_config.perfect_overfit_early_stop,
             early_stop_monitor=(

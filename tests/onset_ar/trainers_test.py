@@ -1,6 +1,8 @@
 import unittest
 import unittest.mock
 
+import keras
+
 from stepcovnet.onset_ar import trainers
 
 
@@ -124,6 +126,15 @@ class TrainersTest(unittest.TestCase):
         self.assertFalse(callback.model.stop_training)
         callback.on_epoch_end(1, perfect_logs)
         self.assertTrue(callback.model.stop_training)
+
+
+class BuildArOptimizerTest(unittest.TestCase):
+    def test_build_ar_optimizer_returns_adam(self) -> None:
+        from stepcovnet.onset_ar import config
+
+        run_config = config.ArRunConfig(mixed_precision=True, learning_rate=1e-4)
+        optimizer = trainers.build_ar_optimizer(run_config)
+        self.assertIsInstance(optimizer, keras.optimizers.Adam)
 
 
 if __name__ == "__main__":
