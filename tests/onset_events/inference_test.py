@@ -1,13 +1,13 @@
 import pathlib
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 import scipy.io.wavfile
 
 from stepcovnet import constants
 from stepcovnet.onset_events import audio, config, inference, models, predict_onsets
-from tests import mock_helpers as mh
 
 
 def _write_wav(path: str, samples: np.ndarray, sample_rate: int) -> None:
@@ -16,7 +16,7 @@ def _write_wav(path: str, samples: np.ndarray, sample_rate: int) -> None:
 
 
 def _mock_keras_input(name: str):
-    return mh.keras_input_tensor(name)
+    return SimpleNamespace(name=f"{name}:0")
 
 
 class _FixedPredictModel:

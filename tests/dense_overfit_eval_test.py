@@ -1,12 +1,23 @@
 import pathlib
+from types import SimpleNamespace
 from unittest import mock
 
+import keras
 import numpy as np
 import pytest
 
 from stepcovnet import config, datasets, dense_overfit_eval, pairing
 from stepcovnet.dataset_prep import training_index
-from tests import mock_helpers as mh
+
+
+def _keras_model_stub(*, predict_return_value=None):
+    model = mock.create_autospec(keras.Model, instance=True)
+    if predict_return_value is not None:
+        model.predict.return_value = predict_return_value
+    model.fit.return_value = SimpleNamespace(
+        history={"val_loss": [1.0], "loss": [1.0]},
+    )
+    return model
 
 
 def test_eval_dense_event_f1_for_pair_normalizes_mel_features(tmp_path) -> None:
@@ -25,7 +36,7 @@ def test_eval_dense_event_f1_for_pair_normalizes_mel_features(tmp_path) -> None:
         feature_source=config.FeatureSource.MEL,
     )
     model_config = config.OnsetModelConfig(input_features=2)
-    stub_model = mh.keras_model_stub(
+    stub_model = _keras_model_stub(
         predict_return_value=np.zeros((1, 2, 1), dtype=np.float32),
     )
 
@@ -68,7 +79,7 @@ def test_eval_dense_event_f1_for_pair_skips_normalize_for_waveform(tmp_path) -> 
     audio = tmp_path / "song.ogg"
     audio.write_bytes(b"")
     waveform = np.linspace(-1.0, 1.0, num=4410, dtype=np.float32)
-    stub_model = mh.keras_model_stub(
+    stub_model = _keras_model_stub(
         predict_return_value=np.zeros((1, 10, 1), dtype=np.float32),
     )
     dataset_config = config.OnsetDatasetConfig(
@@ -276,7 +287,7 @@ def test_eval_dense_val_event_f1_aggregates_per_song() -> None:
         feature_source=config.FeatureSource.MEL,
     )
     model_config = config.OnsetModelConfig(input_features=2)
-    stub_model = mh.keras_model_stub()
+    stub_model = _keras_model_stub()
 
     def _fake_pair_metrics(
         _model,
@@ -376,7 +387,7 @@ def test_sweep_thresholds_dense_val_event_f1_selects_best_threshold() -> None:
         feature_source=config.FeatureSource.MEL,
     )
     model_config = config.OnsetModelConfig(input_features=2)
-    stub_model = mh.keras_model_stub()
+    stub_model = _keras_model_stub()
     pairs = [("data/val/song/song.ogg", "data/val/song/song.txt", 0)]
 
     with (
@@ -424,7 +435,7 @@ def test_sweep_thresholds_dense_val_event_f1_rejects_empty_thresholds() -> None:
     model_config = config.OnsetModelConfig(input_features=2)
     with pytest.raises(ValueError, match="thresholds must be non-empty"):
         dense_overfit_eval.sweep_thresholds_dense_val_event_f1(
-            mh.keras_model_stub(),
+            _keras_model_stub(),
             dataset_config,
             model_config,
             thresholds=(),

@@ -36,7 +36,7 @@ Use the relevant test file when scope is narrow. Import conventions beyond Ruff:
 - **`patch.object` / `@patch`:** pass `autospec=True` when replacing callables (functions, methods, bound hooks). Patch where imported, not dotted strings.
 - **Skip `autospec`** only when replacing a module attribute with a plain value (`sys.argv`, env constants, `Path` flags) or when `create=True` adds a non-existent attribute (e.g. `sys.frozen`).
 - **`patch.dict`:** no autospec (not applicable).
-- **Opaque third-party handles** (torch models, Tk events): `create_autospec` when a real type is available; otherwise `tests/mock_helpers.py` (`keras_model_stub`, `mert_model_and_processor`, etc.).
+- **Opaque third-party handles** (torch models, Tk events): `create_autospec` when a real type is available; otherwise `mock.Mock(spec=[...])` or `SimpleNamespace` for attribute bags.
 
 **Temp files:** `tempfile.TemporaryDirectory()` or `NamedTemporaryFile` inside `with` (`delete=True`); never `delete=False` + manual unlink.
 

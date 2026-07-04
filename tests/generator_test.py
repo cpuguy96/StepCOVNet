@@ -11,9 +11,16 @@ from stepcovnet import (
     generator,
     models,  # Required to ensure registration of custom Keras layers/functions for model loading.
 )
-from tests import mock_helpers as mh
 
 TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
+
+
+def _keras_predict_stub(*, predict_side_effect, inputs=None):
+    model = mock.create_autospec(keras.Model, instance=True)
+    model.predict.side_effect = predict_side_effect
+    if inputs is not None:
+        model.inputs = inputs
+    return model
 
 
 def _mock_arrow_input(name: str):
@@ -28,7 +35,7 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual(x.shape, (1, 11726, 128))
             return np.random.random((1, 11726, 1)).astype(np.float32)
 
-        mock_onset_model = mh.keras_model_stub(predict_side_effect=_onset_pred_mock)
+        mock_onset_model = _keras_predict_stub(predict_side_effect=_onset_pred_mock)
 
         def _arrow_pred_mock(x):
             if isinstance(x, list):
@@ -37,7 +44,7 @@ class GeneratorTest(unittest.TestCase):
             self.assertEqual(x.shape, (1, num_arrows, 1))
             return np.random.random((1, num_arrows, 256)).astype(np.float32)
 
-        mock_arrow_model = mh.keras_model_stub(
+        mock_arrow_model = _keras_predict_stub(
             predict_side_effect=_arrow_pred_mock,
             inputs=[_mock_arrow_input("timing_input")],
         )
@@ -98,7 +105,7 @@ class GeneratorTest(unittest.TestCase):
         def _onset_pred_mock(x):
             return np.random.random((1, x.shape[1], 1)).astype(np.float32)
 
-        mock_onset = mh.keras_model_stub(predict_side_effect=_onset_pred_mock)
+        mock_onset = _keras_predict_stub(predict_side_effect=_onset_pred_mock)
 
         call_args = []
 
@@ -107,7 +114,7 @@ class GeneratorTest(unittest.TestCase):
             num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
             return np.random.random((1, num_steps, 256)).astype(np.float32)
 
-        mock_arrow = mh.keras_model_stub(predict_side_effect=_arrow_pred_mock)
+        mock_arrow = _keras_predict_stub(predict_side_effect=_arrow_pred_mock)
         mock_arrow.inputs = [
             _mock_arrow_input("timing_input"),
             SimpleNamespace(name="snippet_input", shape=snippet_shape),
@@ -138,7 +145,7 @@ class GeneratorTest(unittest.TestCase):
         def _onset_pred_mock(x):
             return np.random.random((1, x.shape[1], 1)).astype(np.float32)
 
-        mock_onset = mh.keras_model_stub(predict_side_effect=_onset_pred_mock)
+        mock_onset = _keras_predict_stub(predict_side_effect=_onset_pred_mock)
 
         call_args = []
 
@@ -147,7 +154,7 @@ class GeneratorTest(unittest.TestCase):
             num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
             return np.random.random((1, num_steps, 256)).astype(np.float32)
 
-        mock_arrow = mh.keras_model_stub(predict_side_effect=_arrow_pred_mock)
+        mock_arrow = _keras_predict_stub(predict_side_effect=_arrow_pred_mock)
         mock_arrow.inputs = [
             _mock_arrow_input("timing_input:0"),
             _mock_arrow_input("interval_input:0"),
@@ -171,7 +178,7 @@ class GeneratorTest(unittest.TestCase):
         def _onset_pred_mock(x):
             return np.random.random((1, x.shape[1], 1)).astype(np.float32)
 
-        mock_onset = mh.keras_model_stub(predict_side_effect=_onset_pred_mock)
+        mock_onset = _keras_predict_stub(predict_side_effect=_onset_pred_mock)
 
         call_args = []
 
@@ -180,7 +187,7 @@ class GeneratorTest(unittest.TestCase):
             num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
             return np.random.random((1, num_steps, 256)).astype(np.float32)
 
-        mock_arrow = mh.keras_model_stub(predict_side_effect=_arrow_pred_mock)
+        mock_arrow = _keras_predict_stub(predict_side_effect=_arrow_pred_mock)
         mock_arrow.inputs = [
             _mock_arrow_input("timing_input"),
             _mock_arrow_input("interval_input"),
@@ -211,7 +218,7 @@ class GeneratorTest(unittest.TestCase):
         def _onset_pred_mock(x):
             return np.random.random((1, x.shape[1], 1)).astype(np.float32)
 
-        mock_onset = mh.keras_model_stub(predict_side_effect=_onset_pred_mock)
+        mock_onset = _keras_predict_stub(predict_side_effect=_onset_pred_mock)
 
         call_args = []
 
@@ -220,7 +227,7 @@ class GeneratorTest(unittest.TestCase):
             num_steps = x[0].shape[1] if isinstance(x, list) else x.shape[1]
             return np.random.random((1, num_steps, 256)).astype(np.float32)
 
-        mock_arrow = mh.keras_model_stub(predict_side_effect=_arrow_pred_mock)
+        mock_arrow = _keras_predict_stub(predict_side_effect=_arrow_pred_mock)
         mock_arrow.inputs = [
             _mock_arrow_input("timing_input"),
             _mock_arrow_input(extra_input_name),
@@ -326,13 +333,13 @@ class GeneratorTest(unittest.TestCase):
         def _onset_pred_mock(x):
             return np.random.random((1, x.shape[1], 1)).astype(np.float32)
 
-        mock_onset = mh.keras_model_stub(predict_side_effect=_onset_pred_mock)
+        mock_onset = _keras_predict_stub(predict_side_effect=_onset_pred_mock)
 
         def _arrow_pred_mock(x):
             x_in = x[0] if isinstance(x, list) else x
             return np.random.random((1, x_in.shape[1], 256)).astype(np.float32)
 
-        mock_arrow = mh.keras_model_stub(
+        mock_arrow = _keras_predict_stub(
             predict_side_effect=_arrow_pred_mock,
             inputs=[_mock_arrow_input("timing_input")],
         )

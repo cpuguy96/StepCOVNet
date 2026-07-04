@@ -12,8 +12,17 @@ if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
 import eval_dense_onset  # noqa: E402
+import keras
 
-from tests import mock_helpers as mh
+
+def _keras_model_stub(*, predict_return_value=None):
+    model = mock.create_autospec(keras.Model, instance=True)
+    if predict_return_value is not None:
+        model.predict.return_value = predict_return_value
+    model.fit.return_value = mock.Mock(
+        history={"val_loss": [1.0], "loss": [1.0]},
+    )
+    return model
 
 
 class EvalDenseOnsetScriptTest(unittest.TestCase):
@@ -65,7 +74,7 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
                 "eval_kwargs": {"confidence_threshold": 0.5},
                 "per_song": {},
             }
-            stub_model = mh.keras_model_stub()
+            stub_model = _keras_model_stub()
             argv = [
                 f"--config={config_path}",
                 f"--model_path={model_path}",

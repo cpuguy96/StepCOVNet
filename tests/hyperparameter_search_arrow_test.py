@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -20,8 +21,6 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import hyperparameter_search_arrow  # noqa: E402
-
-from tests import mock_helpers as mh
 
 _SCRIPT_PATH = _SCRIPT_DIR / "hyperparameter_search_arrow.py"
 _PROJECT_ROOT = _SCRIPT_DIR.parent
@@ -1212,8 +1211,8 @@ class ExtractMetricsTest(unittest.TestCase):
     """Extract best/final metrics from history."""
 
     def test_extract_metrics(self):
-        history = mh.keras_history_stub(
-            {
+        history = SimpleNamespace(
+            history={
                 "val_loss": [0.8, 0.5, 0.4],
                 "val_acc": [0.6, 0.7, 0.85],
             },
@@ -1228,8 +1227,8 @@ class ExtractMetricsTest(unittest.TestCase):
 
     def test_extract_metrics_treats_loss_suffix_as_minimize(self):
         """val_main_loss and other *_loss metrics use min for best, not max."""
-        history = mh.keras_history_stub(
-            {
+        history = SimpleNamespace(
+            history={
                 "val_main_loss": [0.9, 0.5, 0.7],
                 "val_chart_validity_aux_loss": [0.2, 0.1, 0.15],
                 "val_acc": [0.6, 0.8, 0.7],

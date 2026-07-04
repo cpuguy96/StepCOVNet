@@ -17,7 +17,7 @@ if _SCRIPT_DIR not in sys.path:
 
 import extract_mert_features  # noqa: E402
 
-from tests import mock_helpers as mh
+_MERT_LOAD_RETURN = (mock.Mock(spec=[]), mock.Mock(spec=[]))
 
 
 class ExtractMertFeaturesScriptTest(unittest.TestCase):
@@ -48,7 +48,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(
                     ssl_features,
                     "_load_mert_model",
-                    return_value=mh.mert_model_and_processor(),
+                    return_value=_MERT_LOAD_RETURN,
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -89,7 +89,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(
                     ssl_features,
                     "_load_mert_model",
-                    return_value=mh.mert_model_and_processor(),
+                    return_value=_MERT_LOAD_RETURN,
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -127,7 +127,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(
                     ssl_features,
                     "_load_mert_model",
-                    return_value=mh.mert_model_and_processor(),
+                    return_value=_MERT_LOAD_RETURN,
                     autospec=True,
                 ),
                 mock.patch.object(
