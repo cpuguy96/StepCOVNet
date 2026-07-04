@@ -35,14 +35,15 @@ import sys
 from concurrent import futures
 from typing import Any, cast
 
-import tensorflow as tf
-
-# Add project root for imports when run as script
 _PROJECT_ROOT = str(pathlib.Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from stepcovnet import config, trainers  # noqa: E402
+from stepcovnet import config, trainers, wsl_gpu  # noqa: E402
+
+wsl_gpu.bootstrap_gpu_script("scripts/hyperparameter_search_arrow.py")
+
+import tensorflow as tf  # noqa: E402
 
 PARSER = argparse.ArgumentParser(
     description="Run ARROW hyperparameter search (grid or random). epoch and take_count configurable via sweep config or search_space."
@@ -1097,6 +1098,7 @@ def _write_final_results_and_best(ctx: _SweepContext) -> None:
 
 def main() -> int:
     args = PARSER.parse_args()
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
     if not args.resume_from and not args.sweep_config:
         PARSER.error("--sweep_config is required unless --resume_from is set")
     if args.resume_from and args.sweep_config:

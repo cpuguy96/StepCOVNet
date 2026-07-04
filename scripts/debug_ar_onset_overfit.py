@@ -32,15 +32,7 @@ from stepcovnet import wsl_gpu
 
 SCRIPT_REL = "scripts/debug_ar_onset_overfit.py"
 
-
-def _bootstrap_wsl_gpu() -> None:
-    script_path = str(pathlib.Path(__file__).resolve())
-    argv = [script_path, *sys.argv[1:]]
-    wsl_gpu.maybe_dispatch_for_training(SCRIPT_REL, argv)
-    wsl_gpu.reexec_with_tensorflow_gpu_env_if_needed(argv)
-
-
-_bootstrap_wsl_gpu()
+wsl_gpu.bootstrap_gpu_script(SCRIPT_REL)
 
 import numpy as np
 import tensorflow as tf
@@ -816,6 +808,11 @@ def _ar_decode_gate_only_report(
 def main() -> int:
     args = PARSER.parse_args()
     quiet = args.json_only
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    return _run_main(args, quiet=quiet)
+
+
+def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
     experiment_config = config.ArExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment_config, args.model_path)
     if not model_path.is_file():

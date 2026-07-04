@@ -227,7 +227,7 @@ def _log_extract_result(
 
 
 def main(argv: list[str] | None = None) -> None:
-    wsl_gpu.maybe_dispatch_for_mert_extract(SCRIPT_REL, _full_argv(argv))
+    wsl_gpu.bootstrap_gpu_script(SCRIPT_REL, _full_argv(argv), dispatch="mert")
     _configure_quiet_hf_logs()
     args = PARSER.parse_args(argv)
     try:
@@ -265,6 +265,20 @@ def main(argv: list[str] | None = None) -> None:
         _log("Nothing to do — all MERT caches already present.")
         return
 
+    if wsl_gpu.device_requests_gpu(args.device):
+        wsl_gpu.assert_wsl_gpu_free_for_training()
+        wsl_gpu.guard_gpu_device_job(args.device, __file__)
+        _extract_pending_jobs(pending_jobs, args, skipped=skipped)
+        return
+    _extract_pending_jobs(pending_jobs, args, skipped=skipped)
+
+
+def _extract_pending_jobs(
+    pending_jobs: list[tuple[str, str, str]],
+    args: argparse.Namespace,
+    *,
+    skipped: int,
+) -> None:
     batch_started = time.perf_counter()
     _log(f"Loading MERT model on {args.device}...")
     model_load_started = time.perf_counter()

@@ -11,7 +11,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import onset_metric_names as mn
-from stepcovnet import reproducibility, timing_match
+from stepcovnet import reproducibility, timing_match, wsl_gpu
 from stepcovnet.onset_ar import config, datasets, inference, losses, models
 from stepcovnet.onset_events import matching
 from stepcovnet.onset_events import trainers as event_trainers
@@ -852,6 +852,7 @@ def train_ar_onset(
     val_take_count: int = -1,
 ) -> tuple[ArOnsetTrainingModel, keras.callbacks.History]:
     """Train AR onset from overfit or manifest-backed datasets."""
+    wsl_gpu.guard_tensorflow_gpu_job()
     run_config = experiment_config.run
     if not run_config.model_output_dir:
         raise ValueError("run.model_output_dir is required")

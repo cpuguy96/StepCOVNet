@@ -41,3 +41,5 @@ venv\Scripts\python.exe -m pip ...
 Full command templates: [wsl-gpu-stepcovnet skill](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
 
 Shared shell vars: `scripts/wsl_common.sh`. Bootstrap: `scripts/wsl_ensure_env.sh`. Always `source scripts/wsl_gpu_env.sh` before TensorFlow import. Set `STEPCOVNET_IN_WSL=1`. If already inside WSL, do not nest another `wsl` call.
+
+**Serial GPU:** Only one WSL GPU job at a time. Enforced in code via `logs/gpu_wsl.lock` (`stepcovnet.wsl_gpu_lock`) on dispatch and WSL-direct training/decode/MERT — not skill-only.

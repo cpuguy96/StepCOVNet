@@ -11,6 +11,10 @@ Usage:
 import argparse
 import pathlib
 
+from stepcovnet import wsl_gpu
+
+wsl_gpu.bootstrap_gpu_script("scripts/generate.py")
+
 import keras
 
 from stepcovnet import (
@@ -68,6 +72,7 @@ ARGS = PARSER.parse_args()
 
 
 def main() -> None:
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
     onset_path = pretrained.resolve_onset_model_path(ARGS.onset_model_path)
     arrow_path = pretrained.resolve_arrow_model_path(ARGS.arrow_model_path)
     onset_model = keras.models.load_model(filepath=onset_path, compile=False)

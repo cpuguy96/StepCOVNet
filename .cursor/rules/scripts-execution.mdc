@@ -25,7 +25,7 @@ Applies when running or editing files under `scripts/`.
 
 ## GPU scheduling
 
-WSL GPU jobs are **serial**: one training run at a time; no parallel GPU training + GPU inference (see [wsl-gpu-stepcovnet skill](../../skills/wsl-gpu-stepcovnet/SKILL.md) § GPU scheduling).
+WSL GPU jobs are **serial**: one training run at a time; no parallel GPU training + GPU inference. Enforced by `logs/gpu_wsl.lock` in `stepcovnet.wsl_gpu_lock` (see [wsl-gpu-stepcovnet skill](../../skills/wsl-gpu-stepcovnet/SKILL.md) § GPU scheduling).
 
 ## PowerShell note
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -14,28 +15,34 @@ if str(_ITER_PKG) not in sys.path:
 
 import training_lock  # noqa: E402
 
+from stepcovnet import wsl_gpu_lock  # noqa: E402
+
 
 class TrainingLockTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmpdir = training_lock.REPO / "logs" / "ar_tide_iter" / "_lock_test"
-        self._tmpdir.mkdir(parents=True, exist_ok=True)
-        self._orig_lock = training_lock.LOCK_PATH
-        training_lock.LOCK_PATH = self._tmpdir / "gpu_training.lock"
-        training_lock.LOCK_PATH.unlink(missing_ok=True)
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._lock_path = Path(self._tmpdir.name) / "gpu_wsl.lock"
+        self._lock_patcher = mock.patch.object(
+            wsl_gpu_lock,
+            "lock_path",
+            autospec=True,
+            return_value=self._lock_path,
+        )
+        self._lock_patcher.start()
 
     def tearDown(self) -> None:
-        training_lock.LOCK_PATH.unlink(missing_ok=True)
-        training_lock.LOCK_PATH = self._orig_lock
+        self._lock_patcher.stop()
+        self._tmpdir.cleanup()
 
     def test_acquire_and_release(self) -> None:
         training_lock.acquire_training_lock("iter99")
-        self.assertTrue(training_lock.LOCK_PATH.is_file())
+        self.assertTrue(self._lock_path.is_file())
         payload = training_lock.read_lock()
         assert payload is not None
-        self.assertEqual(payload["exp_id"], "iter99")
+        self.assertEqual(payload["job"], "iter99")
         self.assertEqual(payload["pid"], os.getpid())
         training_lock.release_training_lock("iter99")
-        self.assertFalse(training_lock.LOCK_PATH.is_file())
+        self.assertFalse(self._lock_path.is_file())
 
     def test_second_acquire_raises_while_held(self) -> None:
         training_lock.acquire_training_lock("iter99")
@@ -46,12 +53,12 @@ class TrainingLockTest(unittest.TestCase):
             training_lock.release_training_lock("iter99")
 
     def test_stale_lock_cleared(self) -> None:
-        training_lock.LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        training_lock.LOCK_PATH.write_text(
-            '{"exp_id": "old", "pid": 999999999, "started_at": "x"}\n',
+        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock_path.write_text(
+            '{"job": "old", "pid": 999999999, "platform": "linux", "started_at": "x"}\n',
             encoding="utf-8",
         )
-        with mock.patch.object(training_lock, "_pid_alive", return_value=False):
+        with mock.patch.object(wsl_gpu_lock, "_pid_alive", return_value=False):
             self.assertTrue(training_lock.clear_stale_lock())
         training_lock.acquire_training_lock("iter99")
         training_lock.release_training_lock("iter99")

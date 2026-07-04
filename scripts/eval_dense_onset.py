@@ -5,6 +5,10 @@ import json
 import pathlib
 import sys
 
+from stepcovnet import wsl_gpu
+
+wsl_gpu.bootstrap_gpu_script("scripts/eval_dense_onset.py")
+
 import tensorflow as tf
 
 from stepcovnet import config, dense_overfit_eval
@@ -58,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         help="JSON report path; default is <model_output_dir>/eval_val_event_f1.json.",
     )
     args = parser.parse_args(argv)
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment, args.model_path)

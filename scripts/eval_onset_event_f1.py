@@ -2,6 +2,10 @@
 
 import argparse
 
+from stepcovnet import wsl_gpu
+
+wsl_gpu.bootstrap_gpu_script("scripts/eval_onset_event_f1.py")
+
 import tensorflow as tf
 
 from stepcovnet.onset_events import config, datasets, matching, metrics, trainers
@@ -13,6 +17,7 @@ ARGS = PARSER.parse_args()
 
 
 def main() -> None:
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
     cfg = config.OnsetEventExperimentConfig.from_json(ARGS.config)
     cfg.run.overfit_one_song = True
     pair = trainers._resolve_single_song_pair(cfg.dataset, cfg.run)

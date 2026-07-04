@@ -18,6 +18,7 @@ from stepcovnet import (
     metrics,
     models,
     reproducibility,
+    wsl_gpu,
 )
 from stepcovnet.dataset_prep import training_index
 
@@ -545,6 +546,7 @@ def run_train_from_config(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
+    wsl_gpu.guard_tensorflow_gpu_job()
     if run_config.seed is not None:
         reproducibility.apply_training_seed(run_config.seed)
 
@@ -841,6 +843,7 @@ def run_arrow_train_from_config(
             - train_history: The training history object containing loss and
             metrics per epoch.
     """
+    wsl_gpu.guard_tensorflow_gpu_job()
     dataset_config = experiment_config.dataset
     model_config = experiment_config.model
     run_config = experiment_config.run

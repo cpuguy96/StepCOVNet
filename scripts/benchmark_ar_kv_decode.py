@@ -6,6 +6,10 @@ import argparse
 import json
 import time
 
+from stepcovnet import wsl_gpu
+
+wsl_gpu.bootstrap_gpu_script("scripts/benchmark_ar_kv_decode.py")
+
 import keras
 import numpy as np
 
@@ -87,6 +91,7 @@ def _time_decode(
 
 def main() -> None:
     args = _parse_args()
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
     experiment_config = config.ArExperimentConfig.from_json(args.config)
     sample = datasets.load_overfit_sample(experiment_config)
     batch = datasets.sample_to_training_batch(sample, experiment_config)

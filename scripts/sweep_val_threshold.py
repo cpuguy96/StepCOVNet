@@ -6,6 +6,11 @@ import pathlib
 
 import librosa
 import numpy as np
+
+from stepcovnet import wsl_gpu
+
+wsl_gpu.bootstrap_gpu_script("scripts/sweep_val_threshold.py")
+
 import tensorflow as tf
 
 from stepcovnet import config, datasets, dense_overfit_eval, pairing, ssl_features
@@ -285,6 +290,7 @@ def main() -> int:
         default="models_wsl/dense_mert_v2_75train_200ep/investigate_bad_val.json",
     )
     args = parser.parse_args()
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
     model_dir = pathlib.Path(experiment.run.model_output_dir)

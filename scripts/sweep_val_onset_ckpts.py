@@ -4,6 +4,10 @@ import argparse
 import pathlib
 import sys
 
+from stepcovnet import wsl_gpu
+
+wsl_gpu.bootstrap_gpu_script("scripts/sweep_val_onset_ckpts.py")
+
 import tensorflow as tf
 
 from stepcovnet import config, dense_overfit_eval
@@ -24,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Peak-pick confidence threshold (default 0.25)",
     )
     args = parser.parse_args(argv)
+    wsl_gpu.guard_tensorflow_gpu_job(__file__)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
     pattern_path = pathlib.Path(args.pattern)

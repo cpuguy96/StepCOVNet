@@ -285,28 +285,47 @@ def require_tensorflow_gpu() -> None:
 
 
 def _wsl_bash_command(
-    repo_root_wsl: str, python_cmd: str, script_rel: str, args: list[str]
+    repo_root_wsl: str,
+    python_cmd: str,
+    script_rel: str,
+    args: list[str],
+    *,
+    lock_held: bool = False,
 ) -> str:
     ensure = f"{repo_root_wsl}/scripts/wsl_ensure_env.sh"
     gpu_env = f"{repo_root_wsl}/scripts/wsl_gpu_env.sh"
     quoted_args = " ".join(shlex.quote(arg) for arg in args)
     script_path = f"{repo_root_wsl}/{script_rel}"
+    lock_export = (
+        "export STEPCOVNET_GPU_LOCK_HELD=1 && "
+        if lock_held
+        else ""
+    )
+    script_export = f"export STEPCOVNET_GPU_SCRIPT={shlex.quote(script_rel)} && "
     return (
         f"bash {shlex.quote(ensure)} && "
         f"source {shlex.quote(gpu_env)} && "
         f"export STEPCOVNET_WSL_GPU_ENV=1 && "
         f"cd {shlex.quote(repo_root_wsl)} && "
         f"export STEPCOVNET_IN_WSL=1 && "
+        f"{script_export}"
+        f"{lock_export}"
         f"{python_cmd} {shlex.quote(script_path)} {quoted_args}"
     )
 
 
-def run_script_in_wsl(script_rel: str, argv: list[str]) -> int:
+def run_script_in_wsl(
+    script_rel: str,
+    argv: list[str],
+    *,
+    lock_held: bool = False,
+) -> int:
     """Run a repo script inside WSL using the project GPU venv.
 
     Args:
         script_rel: Script path relative to repo root (e.g. ``scripts/train_onset.py``).
         argv: Full process argv (``sys.argv``), including script path at index 0.
+        lock_held: When True, child sets ``STEPCOVNET_GPU_LOCK_HELD=1`` (parent holds lock).
 
     Returns:
         Subprocess exit code from WSL.
@@ -316,13 +335,32 @@ def run_script_in_wsl(script_rel: str, argv: list[str]) -> int:
     wsl_argv = translate_argv_for_wsl(argv)
     wsl_args = wsl_argv[1:]
     python_cmd = "${STEPCOVNET_WSL_PYTHON:-$HOME/stepcovnet-venv-wsl/bin/python}"
-    command = _wsl_bash_command(repo_root_wsl, python_cmd, script_rel, wsl_args)
+    command = _wsl_bash_command(
+        repo_root_wsl,
+        python_cmd,
+        script_rel,
+        wsl_args,
+        lock_held=lock_held,
+    )
     print(f"Dispatching to WSL GPU: {script_rel}", flush=True)
     completed = subprocess.run(
         ["wsl", "-e", "bash", "-lc", command],
         check=False,
     )
     return int(completed.returncode)
+
+
+def _dispatch_gpu_script(script_rel: str, argv: list[str]) -> int:
+    """Acquire GPU lock, run script in WSL, release lock."""
+    from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
+
+    wsl_gpu_lock.assert_gpu_lock_available()
+    assert_wsl_gpu_free_for_training()
+    wsl_gpu_lock.acquire_gpu_lock(script_rel)
+    try:
+        return run_script_in_wsl(script_rel, argv, lock_held=True)
+    finally:
+        wsl_gpu_lock.release_gpu_lock(script_rel)
 
 
 def maybe_dispatch_for_mert_extract(script_rel: str, argv: list[str]) -> bool:
@@ -345,7 +383,7 @@ def maybe_dispatch_for_mert_extract(script_rel: str, argv: list[str]) -> bool:
             "CUDA device requested but WSL GPU is unavailable. "
             "Install WSL + NVIDIA drivers, or pass --device=cpu."
         )
-    code = run_script_in_wsl(script_rel, argv)
+    code = _dispatch_gpu_script(script_rel, argv)
     raise SystemExit(code)
 
 
@@ -448,8 +486,11 @@ def list_wsl_training_pids() -> list[int]:
 
 def assert_wsl_gpu_free_for_training(*, force: bool | None = None) -> None:
     """Raise ``RuntimeError`` when the WSL GPU already has a compute workload."""
+    from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
+
     if force is None:
         force = gpu_force_enabled()
+    wsl_gpu_lock.assert_gpu_lock_available(force=force)
     if force:
         return
     training_pids = list_wsl_training_pids()
@@ -483,6 +524,55 @@ def maybe_dispatch_for_training(script_rel: str, argv: list[str]) -> bool:
         return False
     if not wsl_gpu_available():
         return False
-    assert_wsl_gpu_free_for_training()
-    code = run_script_in_wsl(script_rel, argv)
+    code = _dispatch_gpu_script(script_rel, argv)
     raise SystemExit(code)
+
+
+GPU_SCRIPT_ENV = "STEPCOVNET_GPU_SCRIPT"
+
+
+def job_name_from_script(script_file: str | None = None) -> str:
+    """Repo-relative script path used as the GPU lock job id."""
+    if script_file is None:
+        script_file = sys.argv[0]
+    try:
+        root = find_repo_root(script_file)
+        return pathlib.Path(script_file).resolve().relative_to(root).as_posix()
+    except (ValueError, RuntimeError, OSError):
+        return pathlib.Path(script_file).name
+
+
+def bootstrap_gpu_script(
+    script_rel: str,
+    argv: list[str] | None = None,
+    *,
+    dispatch: str = "training",
+) -> None:
+    """Windows WSL dispatch, GPU env re-exec, and script id for lock enforcement."""
+    os.environ.setdefault(GPU_SCRIPT_ENV, script_rel)
+    if argv is None:
+        argv = [str(find_repo_root() / script_rel), *sys.argv[1:]]
+    if not wsl_disabled() and is_windows() and not is_running_in_wsl():
+        if dispatch == "mert":
+            maybe_dispatch_for_mert_extract(script_rel, argv)
+        elif wsl_gpu_available():
+            maybe_dispatch_for_training(script_rel, argv)
+    reexec_with_tensorflow_gpu_env_if_needed(argv)
+
+
+def guard_tensorflow_gpu_job(script_file: str | None = None) -> None:
+    """Acquire the shared GPU lock when TensorFlow sees a GPU device."""
+    import tensorflow as tf  # noqa: PLC0415
+
+    from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
+
+    if tf.config.list_physical_devices("GPU"):
+        wsl_gpu_lock.ensure_gpu_job_lock(job_name_from_script(script_file))
+
+
+def guard_gpu_device_job(device: str, script_file: str | None = None) -> None:
+    """Acquire the shared GPU lock for CUDA/torch or similar device strings."""
+    from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
+
+    if device_requests_gpu(device):
+        wsl_gpu_lock.ensure_gpu_job_lock(job_name_from_script(script_file))

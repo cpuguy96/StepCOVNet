@@ -38,7 +38,7 @@ The WSL GPU is **single-tenant** for the agent:
 | ---- | ------ |
 | **One training job** | Do not start a second WSL GPU **training** run while one is already active (train, overfit, MERT extract with `--device=cuda`). |
 | **No train + infer overlap** | Do not run GPU **training** and GPU **inference** (`debug_*`, `--ar_decode`, `eval_dense_*`, `model.predict`) in **separate processes** at the same time. |
-| **Before launching** | `wsl_gpu.assert_wsl_gpu_free_for_training()` runs automatically in `maybe_dispatch_for_training` and `train_onset_ar.py` (queries WSL `nvidia-smi` for **any** active GPU compute process). Override: `STEPCOVNET_FORCE_GPU=1`. |
+| **Before launching** | `assert_wsl_gpu_free_for_training()` checks `nvidia-smi` **and** `logs/gpu_wsl.lock` (`stepcovnet.wsl_gpu_lock`). Windows dispatch acquires the lock before `wsl`; a second parallel launch fails on `O_EXCL`. Override: `STEPCOVNET_FORCE_GPU=1`. |
 | **Manual check** | `python -c "from stepcovnet import wsl_gpu; wsl_gpu.assert_wsl_gpu_free_for_training()"` |
 | **After training** | Offline decode/eval on GPU is fine **sequentially** once training has exited. |
 

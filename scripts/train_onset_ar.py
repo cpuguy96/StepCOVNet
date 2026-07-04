@@ -10,22 +10,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import pathlib
-import sys
 
 from stepcovnet import wsl_gpu
 
 SCRIPT_REL = "scripts/train_onset_ar.py"
 
-
-def _bootstrap_wsl_gpu() -> None:
-    script_path = str(pathlib.Path(__file__).resolve())
-    argv = [script_path, *sys.argv[1:]]
-    wsl_gpu.maybe_dispatch_for_training(SCRIPT_REL, argv)
-    wsl_gpu.reexec_with_tensorflow_gpu_env_if_needed(argv)
-
-
-_bootstrap_wsl_gpu()
+wsl_gpu.bootstrap_gpu_script(SCRIPT_REL)
 
 from stepcovnet.onset_ar import config, datasets, trainers
 
@@ -123,8 +113,6 @@ def main() -> None:
 
     if not experiment_config.run.model_output_dir:
         PARSER.error("--model_output_dir is required (config or CLI)")
-
-    wsl_gpu.assert_wsl_gpu_free_for_training()
 
     take_count = -1 if args.take_count is None else args.take_count
     val_take_count = -1 if args.val_take_count is None else args.val_take_count

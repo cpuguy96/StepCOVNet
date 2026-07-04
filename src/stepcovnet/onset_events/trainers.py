@@ -12,7 +12,7 @@ import keras
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet import reproducibility
+from stepcovnet import reproducibility, wsl_gpu
 from stepcovnet.dataset_prep import training_index
 from stepcovnet.onset_events import config, datasets, losses, matching, metrics, models
 
@@ -680,6 +680,7 @@ def train_onset_event(
     Returns:
         Tuple of the trained base Keras model and training history.
     """
+    wsl_gpu.guard_tensorflow_gpu_job()
     dataset_config = experiment_config.dataset
     run_config = experiment_config.run
     model_config = _sync_model_config_with_dataset(

@@ -21,6 +21,8 @@ import sys
 import time
 from datetime import datetime
 
+from stepcovnet import wsl_gpu_lock
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 _ITER_PKG = pathlib.Path(__file__).resolve().parent
 if str(_ITER_PKG) not in sys.path:
@@ -152,6 +154,7 @@ def _eval(
     model_path: pathlib.Path,
     *,
     ar_decode: bool = False,
+    gpu_lock_held: bool = False,
 ) -> dict:
     cmd = [
         str(PY),
@@ -164,6 +167,9 @@ def _eval(
     ]
     if ar_decode:
         cmd.append("--ar_decode")
+    env = os.environ.copy()
+    if gpu_lock_held:
+        env[wsl_gpu_lock.GPU_LOCK_HELD_ENV] = "1"
     t0 = time.perf_counter()
     proc = subprocess.run(
         cmd,
@@ -172,6 +178,7 @@ def _eval(
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     elapsed = time.perf_counter() - t0
     blob = proc.stdout or proc.stderr
@@ -188,6 +195,7 @@ def _train(
     *,
     exp_id: str,
     force: bool = False,
+    gpu_lock_held: bool = False,
 ) -> int:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     from training_log import (  # noqa: PLC0415
@@ -216,6 +224,8 @@ def _train(
     env = os.environ.copy()
     if force:
         env["STEPCOVNET_FORCE_GPU"] = "1"
+    if gpu_lock_held:
+        env[wsl_gpu_lock.GPU_LOCK_HELD_ENV] = "1"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     epochs_total = int(ep) if ep is not None else None
     epoch = 0
@@ -399,7 +409,13 @@ def main() -> int:
                 return 1
             acquire_training_lock(args.id)
             lock_held = True
-            train_exit = _train(config, train_log, exp_id=args.id, force=args.force)
+            train_exit = _train(
+                config,
+                train_log,
+                exp_id=args.id,
+                force=args.force,
+                gpu_lock_held=True,
+            )
             if train_exit != 0:
                 print(f"train failed exit={train_exit}", file=sys.stderr)
             if not model_path.is_file():
@@ -407,7 +423,7 @@ def main() -> int:
                 return 1
 
         print(f"[{args.id}] eval teacher-fed")
-        teacher_report = _eval(config, model_path, ar_decode=False)
+        teacher_report = _eval(config, model_path, ar_decode=False, gpu_lock_held=lock_held)
         teacher = teacher_report.get("ordered_onset_match", {})
         t_str = f"{teacher.get('n_matched')}/{teacher.get('n_denom')} ({teacher.get('rate'):.4f})"
         event_f1 = float(teacher_report.get("event_f1", 0.0))
@@ -429,7 +445,7 @@ def main() -> int:
             f"[{args.id}] teacher gate pass ({t_str}; aux event_f1={event_f1:.4f})",
         )
         print(f"[{args.id}] eval free-run")
-        report = _eval(config, model_path, ar_decode=True)
+        report = _eval(config, model_path, ar_decode=True, gpu_lock_held=lock_held)
         free = report["ar_decode"]["ordered_onset_match"]
         chart = report["ar_decode"].get("chart_ordered_onset_match", {})
         f_str = (

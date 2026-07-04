@@ -11,6 +11,10 @@ Usage:
 
 import argparse
 
+from stepcovnet import wsl_gpu
+
+wsl_gpu.bootstrap_gpu_script("scripts/train_arrow.py")
+
 import tensorflow as tf
 
 from stepcovnet import config, trainers
