@@ -30,12 +30,18 @@ Use the relevant test file when scope is narrow. Import conventions beyond Ruff:
 
 ## Test patterns
 
-**Mocks:** `from unittest import mock`; `mock.patch.object(..., autospec=True)` for callables. Omit `autospec` when replacing attributes with explicit values. Patch where imported, not dotted strings.
+**Mocks:** `from unittest import mock`.
+
+- **Stand-in objects:** prefer a **real minimal instance** (small class with only the fields the code touches) when no behavior needs stubbing. Otherwise use `mock.create_autospec(SpecClass, instance=True)` — pass a **live instance** (`create_autospec(_Model(), instance=True)`) when attributes must keep real values (e.g. `stop_training: bool`). Avoid bare `mock.MagicMock()`.
+- **`patch.object` / `@patch`:** pass `autospec=True` when replacing callables (functions, methods, bound hooks). Patch where imported, not dotted strings.
+- **Skip `autospec`** only when replacing a module attribute with a plain value (`sys.argv`, env constants, `Path` flags) or when `create=True` adds a non-existent attribute (e.g. `sys.frozen`).
+- **`patch.dict`:** no autospec (not applicable).
+- **Opaque third-party handles** (torch models, Tk events): `create_autospec` when a real type is available; otherwise `tests/mock_helpers.py` (`keras_model_stub`, `mert_model_and_processor`, etc.).
 
 **Temp files:** `tempfile.TemporaryDirectory()` or `NamedTemporaryFile` inside `with` (`delete=True`); never `delete=False` + manual unlink.
 
-**Duplication:** shared helpers, `@pytest.mark.parametrize`, fixtures ΓÇö avoid copy-pasted bodies.
+**Duplication:** shared helpers, `@pytest.mark.parametrize`, fixtures — avoid copy-pasted bodies.
 
-**Flat tests:** `with mock.patch("a"), mock.patch("b"):` or stacked `@mock.patch` ΓÇö avoid deep nesting.
+**Flat tests:** `with mock.patch("a"), mock.patch("b"):` or stacked `@mock.patch` — avoid deep nesting.
 
 **Test module docstrings:** omit unless documenting non-obvious setup.

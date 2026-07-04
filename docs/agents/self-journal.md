@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260703-02: Prefer create_autospec and patch autospec in tests
+
+| Field            | Value                                                                 |
+| ---------------- | --------------------------------------------------------------------- |
+| **Timestamp**    | 2026-07-03                                                            |
+| **Category**     | convention                                                            |
+| **Summary**      | User wants `create_autospec` (not bare `MagicMock`) and `patch.object(..., autospec=True)` as the default mock pattern; early-stop test showed bool class attrs on autospec still behave like truthy mocks. |
+| **Artifact**     | `.cursor/rules/python-tests.mdc` (scoped `tests/**`); `tests/onset_ar/trainers_test.py`, `tests/test_wsl_gpu_lock.py`, `tests/ar_tide_iter_training_lock_test.py`, `tests/extract_mert_features_test.py` |
+| **Action taken** | Rule: real minimal instance > create_autospec(live instance) > MagicMock; require `autospec=True` on callable patches. Exemplar fixes in GPU-lock and AR trainer tests. |
+| **Related**      | [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md) |
+
 ### JRN-20260630-03: Repo-root `_tmp_*` scratch + same-turn self-improvement
 
 | Field            | Value                                                                 |
