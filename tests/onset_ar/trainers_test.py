@@ -3,6 +3,7 @@ import unittest.mock
 
 import keras
 
+from stepcovnet import onset_metric_names as mn
 from stepcovnet.onset_ar import trainers
 
 
@@ -101,31 +102,33 @@ class TrainersTest(unittest.TestCase):
     def test_overfit_gate_callback_publishes_metrics(self) -> None:
         callback = trainers.OverfitGateCallback()
         logs = {
-            "val_token_accuracy": 0.95,
-            "val_timing_match_teacher": 633 / 634,
+            mn.val_name(mn.TOKEN_ACCURACY): 0.95,
+            mn.val_name(mn.TIMING_MATCH_TEACHER): 633 / 634,
         }
         callback.on_epoch_end(0, logs)
-        self.assertEqual(logs["val_gate_teacher"], 0.95)
-        self.assertEqual(logs["val_overfit_gate"], 0.95)
-        self.assertEqual(logs["val_ordered_onset_match"], 633 / 634)
+        self.assertEqual(logs[mn.val_name(mn.GATE_TEACHER)], 0.95)
+        self.assertEqual(logs[mn.val_name("overfit_gate")], 0.95)
+        self.assertEqual(logs[mn.val_name("ordered_onset_match")], 633 / 634)
 
     def test_overfit_gate_callback_early_stops_on_primary_monitor(self) -> None:
         callback = trainers.OverfitGateCallback(
             early_stop=True,
-            early_stop_monitor="val_ordered_onset_match",
+            early_stop_monitor=mn.val_name("ordered_onset_match"),
             min_score=1.0,
             patience=2,
         )
-        callback.model = unittest.mock.MagicMock()
+        mock_model = unittest.mock.MagicMock()
+        mock_model.stop_training = False
+        callback.set_model(mock_model)
         perfect_logs = {
-            "val_token_accuracy": 0.95,
-            "val_timing_match_teacher": 1.0,
-            "val_ordered_onset_match": 1.0,
+            mn.val_name(mn.TOKEN_ACCURACY): 0.95,
+            mn.val_name(mn.TIMING_MATCH_TEACHER): 1.0,
+            mn.val_name("ordered_onset_match"): 1.0,
         }
         callback.on_epoch_end(0, perfect_logs)
-        self.assertFalse(callback.model.stop_training)
+        self.assertFalse(mock_model.stop_training)
         callback.on_epoch_end(1, perfect_logs)
-        self.assertTrue(callback.model.stop_training)
+        self.assertTrue(mock_model.stop_training)
 
 
 class BuildArOptimizerTest(unittest.TestCase):

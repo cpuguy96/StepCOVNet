@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 import tensorflow as tf
 
+from stepcovnet import onset_metric_names as mn
 from stepcovnet import timing_match
 from stepcovnet.onset_ar import config, datasets, losses, models, targets, trainers
 
@@ -111,7 +112,7 @@ class TrainersTest(unittest.TestCase):
         )
         metrics = training_model.train_step((tf_batch,))
         self.assertIn("loss", metrics)
-        self.assertIn("event_onset_f1", metrics)
+        self.assertIn(mn.AUX_F1_HUNGARIAN, metrics)
 
     def test_train_step_reports_incremental_consistency_loss(self) -> None:
         experiment_config = _tiny_experiment_config()
@@ -267,12 +268,12 @@ class TrainersTest(unittest.TestCase):
         expected_f1 = 2.0 * precision * recall / (precision + recall + 1e-9)
 
         self.assertAlmostEqual(
-            float(val_metrics["ordered_onset_match"].numpy()),
+            float(val_metrics[mn.TIMING_MATCH_TEACHER].numpy()),
             expected_ordered,
             places=5,
         )
         self.assertAlmostEqual(
-            float(val_metrics["event_onset_f1"].numpy()),
+            float(val_metrics[mn.AUX_F1_HUNGARIAN].numpy()),
             expected_f1,
             places=5,
         )
