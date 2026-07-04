@@ -21,6 +21,8 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 import hyperparameter_search_arrow  # noqa: E402
 
+from tests import mock_helpers as mh
+
 _SCRIPT_PATH = _SCRIPT_DIR / "hyperparameter_search_arrow.py"
 _PROJECT_ROOT = _SCRIPT_DIR.parent
 
@@ -1210,11 +1212,12 @@ class ExtractMetricsTest(unittest.TestCase):
     """Extract best/final metrics from history."""
 
     def test_extract_metrics(self):
-        history = mock.Mock()
-        history.history = {
-            "val_loss": [0.8, 0.5, 0.4],
-            "val_acc": [0.6, 0.7, 0.85],
-        }
+        history = mh.keras_history_stub(
+            {
+                "val_loss": [0.8, 0.5, 0.4],
+                "val_acc": [0.6, 0.7, 0.85],
+            },
+        )
         metrics = hyperparameter_search_arrow.extract_metrics(history)
         self.assertEqual(metrics["final_val_loss"], 0.4)
         self.assertEqual(metrics["best_val_loss"], 0.4)
@@ -1225,12 +1228,13 @@ class ExtractMetricsTest(unittest.TestCase):
 
     def test_extract_metrics_treats_loss_suffix_as_minimize(self):
         """val_main_loss and other *_loss metrics use min for best, not max."""
-        history = mock.Mock()
-        history.history = {
-            "val_main_loss": [0.9, 0.5, 0.7],
-            "val_chart_validity_aux_loss": [0.2, 0.1, 0.15],
-            "val_acc": [0.6, 0.8, 0.7],
-        }
+        history = mh.keras_history_stub(
+            {
+                "val_main_loss": [0.9, 0.5, 0.7],
+                "val_chart_validity_aux_loss": [0.2, 0.1, 0.15],
+                "val_acc": [0.6, 0.8, 0.7],
+            },
+        )
         metrics = hyperparameter_search_arrow.extract_metrics(history)
         self.assertEqual(metrics["best_val_main_loss"], 0.5)
         self.assertEqual(metrics["best_epoch_val_main_loss"], 2)
@@ -1780,7 +1784,7 @@ class WorkersOptionTest(unittest.TestCase):
                     "as_completed",
                     side_effect=ordered_as_completed,
                 ),
-                mock.patch.object(builtins, "print", side_effect=capture_print),
+                mock.patch.object(builtins, "print", side_effect=capture_print, autospec=True),
                 mock.patch.object(
                     sys,
                     "argv",

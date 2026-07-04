@@ -58,7 +58,7 @@ class TrainingLockTest(unittest.TestCase):
             '{"job": "old", "pid": 999999999, "platform": "linux", "started_at": "x"}\n',
             encoding="utf-8",
         )
-        with mock.patch.object(wsl_gpu_lock, "_pid_alive", return_value=False):
+        with mock.patch.object(wsl_gpu_lock, "_pid_alive", return_value=False, autospec=True):
             self.assertTrue(training_lock.clear_stale_lock())
         training_lock.acquire_training_lock("iter99")
         training_lock.release_training_lock("iter99")

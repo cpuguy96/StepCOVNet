@@ -13,6 +13,8 @@ if _SCRIPT_DIR not in sys.path:
 
 import eval_dense_onset  # noqa: E402
 
+from tests import mock_helpers as mh
+
 
 class EvalDenseOnsetScriptTest(unittest.TestCase):
     def test_main_writes_report(self) -> None:
@@ -63,7 +65,7 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
                 "eval_kwargs": {"confidence_threshold": 0.5},
                 "per_song": {},
             }
-            stub_model = mock.Mock()
+            stub_model = mh.keras_model_stub()
             argv = [
                 f"--config={config_path}",
                 f"--model_path={model_path}",

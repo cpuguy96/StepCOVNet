@@ -16,6 +16,8 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 import generate_ui  # noqa: E402
 
+from tests import mock_helpers as mh
+
 TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
 
@@ -158,8 +160,7 @@ class RunGenerationTest(unittest.TestCase):
     def test_run_generation_success(self):
         """_run_generation loads models, runs generator, writes file and puts (True, path) in queue."""
         mock_output = "TITLE Test\nBPM 120\nNOTES\nDIFFICULTY Challenge\n1.0 0001\n"
-        mock_output_data = mock.MagicMock()
-        mock_output_data.generate_txt_output.return_value = mock_output
+        mock_output_data = mh.GenerateOutputDataStub(mock_output)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = pathlib.Path(tmpdir) / "output.txt"
@@ -180,7 +181,7 @@ class RunGenerationTest(unittest.TestCase):
                 mock.patch.object(
                     generate_ui.keras.models,
                     "load_model",
-                    return_value=mock.MagicMock(),
+                    return_value=mh.keras_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -210,8 +211,7 @@ class RunGenerationTest(unittest.TestCase):
 
     def test_run_generation_with_none_bpm_calls_generator_with_none(self):
         """_run_generation with bpm=None calls generate_output_data with bpm=None."""
-        mock_output_data = mock.MagicMock()
-        mock_output_data.generate_txt_output.return_value = "TITLE X\nBPM 100\nNOTES\n"
+        mock_output_data = mh.GenerateOutputDataStub("TITLE X\nBPM 100\nNOTES\n")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = pathlib.Path(tmpdir) / "output.txt"
@@ -232,7 +232,7 @@ class RunGenerationTest(unittest.TestCase):
                 mock.patch.object(
                     generate_ui.keras.models,
                     "load_model",
-                    return_value=mock.MagicMock(),
+                    return_value=mh.keras_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -262,8 +262,7 @@ class RunGenerationTest(unittest.TestCase):
 
     def test_run_generation_writes_txt_format(self):
         """Written file contains TITLE, BPM, NOTES, DIFFICULTY."""
-        mock_output_data = mock.MagicMock()
-        mock_output_data.generate_txt_output.return_value = (
+        mock_output_data = mh.GenerateOutputDataStub(
             "TITLE My Song\nBPM 128\nNOTES\nDIFFICULTY Challenge\n0.5 1000\n"
         )
 
@@ -286,7 +285,7 @@ class RunGenerationTest(unittest.TestCase):
                 mock.patch.object(
                     generate_ui.keras.models,
                     "load_model",
-                    return_value=mock.MagicMock(),
+                    return_value=mh.keras_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -370,7 +369,7 @@ class RunGenerationTest(unittest.TestCase):
             mock.patch.object(
                 generate_ui.keras.models,
                 "load_model",
-                return_value=mock.MagicMock(),
+                return_value=mh.keras_model_stub(),
                 autospec=True,
             ),
             mock.patch.object(
@@ -397,8 +396,7 @@ class RunGenerationTest(unittest.TestCase):
 
     def test_run_generation_with_none_model_paths_calls_resolve(self):
         """When onset/arrow paths are None, resolve_onset_model_path and resolve_arrow_model_path are called."""
-        mock_output_data = mock.MagicMock()
-        mock_output_data.generate_txt_output.return_value = "TITLE X\nBPM 100\nNOTES\n"
+        mock_output_data = mh.GenerateOutputDataStub("TITLE X\nBPM 100\nNOTES\n")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = pathlib.Path(tmpdir) / "output.txt"
@@ -421,7 +419,7 @@ class RunGenerationTest(unittest.TestCase):
                 mock.patch.object(
                     generate_ui.keras.models,
                     "load_model",
-                    return_value=mock.MagicMock(),
+                    return_value=mh.keras_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -966,7 +964,7 @@ class CanvasHandlersTest(unittest.TestCase):
         with mock.patch.object(
             self.app.canvas, "itemconfig", autospec=True
         ) as m_itemconfig:
-            self.app._on_canvas_configure(mock.MagicMock(width=300))
+            self.app._on_canvas_configure(mh.tk_event(width=300))
             m_itemconfig.assert_called()
             call_kw = m_itemconfig.call_args[1]
             self.assertEqual(call_kw.get("width"), 300)
@@ -975,7 +973,7 @@ class CanvasHandlersTest(unittest.TestCase):
         with mock.patch.object(
             self.app.canvas, "yview_scroll", autospec=True
         ) as m_scroll:
-            self.app._on_mousewheel(mock.MagicMock(delta=120))
+            self.app._on_mousewheel(mh.tk_event(delta=120))
         m_scroll.assert_called_once_with(-1, "units")
 
 
@@ -1136,9 +1134,7 @@ class SingleInstanceTest(unittest.TestCase):
 
     def test_returns_true_when_frozen_win32_first_instance(self):
         """When frozen on win32 and mutex is new (first instance), returns True and does not exit."""
-        mock_kernel = mock.MagicMock()
-        mock_kernel.CreateMutexW.return_value = 12345
-        mock_kernel.GetLastError.return_value = 0
+        mock_kernel = mh.win32_kernel32_stub()
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
@@ -1152,10 +1148,8 @@ class SingleInstanceTest(unittest.TestCase):
 
     def test_exits_when_frozen_win32_second_instance(self):
         """When frozen on win32 and mutex already exists, shows message and sys.exit(0)."""
-        mock_kernel = mock.MagicMock()
-        mock_kernel.CreateMutexW.return_value = 12345
-        mock_kernel.GetLastError.return_value = 183  # ERROR_ALREADY_EXISTS
-        mock_user = mock.MagicMock()
+        mock_kernel = mh.win32_kernel32_stub(last_error=183)
+        mock_user = mh.win32_user32_stub()
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),
@@ -1174,9 +1168,9 @@ class SingleInstanceTest(unittest.TestCase):
 
     def test_returns_true_when_create_mutex_returns_none(self):
         """When frozen on win32 and CreateMutexW fails (returns None), returns True and does not exit."""
-        mock_kernel = mock.MagicMock()
+        mock_kernel = mh.win32_kernel32_stub(mutex_handle=0)
         mock_kernel.CreateMutexW.return_value = None
-        mock_user = mock.MagicMock()
+        mock_user = mh.win32_user32_stub()
         with (
             mock.patch.object(sys, "frozen", True, create=True),
             mock.patch.object(sys, "platform", "win32"),

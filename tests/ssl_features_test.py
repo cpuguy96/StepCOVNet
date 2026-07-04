@@ -8,6 +8,7 @@ import librosa
 import numpy as np
 
 from stepcovnet import config, constants, datasets, mel_onset, ssl_features
+from tests import mock_helpers as mh
 
 
 class SslFeaturesTest(unittest.TestCase):
@@ -85,8 +86,7 @@ class SslFeaturesTest(unittest.TestCase):
     def test_extract_mert_features_from_audio_with_mocks(self):
         fake_hidden = np.random.randn(10, constants.MERT_HIDDEN_SIZE).astype(np.float32)
         fake_waveform = np.random.randn(24000).astype(np.float32)
-        mock_model = mock.Mock()
-        mock_processor = mock.Mock()
+        mock_model, mock_processor = mh.mert_model_and_processor()
         with (
             mock.patch.object(
                 librosa, "load", return_value=(fake_waveform, 24000), autospec=True
@@ -168,7 +168,7 @@ class SslFeaturesTest(unittest.TestCase):
             mock.patch.object(
                 ssl_features,
                 "_load_mert_model",
-                return_value=(mock.Mock(), mock.Mock()),
+                return_value=mh.mert_model_and_processor(),
                 autospec=True,
             ),
             mock.patch.object(
@@ -206,7 +206,7 @@ class SslFeaturesTest(unittest.TestCase):
             mock.patch.object(
                 ssl_features,
                 "_load_mert_model",
-                return_value=(mock.Mock(), mock.Mock()),
+                return_value=mh.mert_model_and_processor(),
                 autospec=True,
             ),
             mock.patch.object(
@@ -252,10 +252,11 @@ class SslFeaturesTest(unittest.TestCase):
             ssl_features.extract_mert_features_from_audio(tmp.name)
 
     def test_mert_hidden_states_for_empty_chunk(self):
+        model, processor = mh.mert_model_and_processor()
         out = ssl_features._mert_hidden_states_for_chunk(
             np.array([], dtype=np.float32),
-            model=mock.Mock(),
-            processor=mock.Mock(),
+            model=model,
+            processor=processor,
             layer=0,
             device="cpu",
         )

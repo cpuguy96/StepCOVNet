@@ -13,6 +13,7 @@ import tensorflow as tf
 from stepcovnet import config, datasets, dense_overfit_eval, losses, models, trainers
 from stepcovnet.dataset_prep import config as prep_config
 from stepcovnet.dataset_prep import pipeline, training_index
+from tests import mock_helpers as mh
 
 TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
@@ -349,7 +350,7 @@ class TrainersTest(unittest.TestCase):
                 mock.patch.object(
                     trainers.keras.models,
                     "load_model",
-                    return_value=mock.Mock(),
+                    return_value=mh.keras_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -394,9 +395,9 @@ class TrainersTest(unittest.TestCase):
                     "post_hoc_event_f1_thresholds": [0.2],
                 },
             )
-            stub_model = mock.Mock()
+            stub_model = mh.keras_model_stub()
             stub_model.name = "dense_model"
-            best_model = mock.Mock()
+            best_model = mh.keras_model_stub()
 
             def _save(filepath):
                 with pathlib.Path(filepath).open("wb") as out_file:
@@ -441,7 +442,7 @@ class TrainersTest(unittest.TestCase):
                 pathlib.Path(tmp) / "models",
                 run_kwargs={"callback_root_dir": pathlib.Path(tmp) / "callbacks"},
             )
-            stub_model = mock.Mock()
+            stub_model = mh.keras_model_stub()
             stub_model.name = "dense_model"
             self.assertIsNone(
                 trainers._export_best_event_f1_checkpoint(
@@ -538,8 +539,7 @@ class TrainersTest(unittest.TestCase):
         y_true[0, 10, 0] = 1.0
         y_pred = np.zeros((1, 50, 1), dtype=np.float32)
         y_pred[0, 10, 0] = 0.9
-        stub_model = mock.Mock()
-        stub_model.predict.return_value = y_pred
+        stub_model = mh.keras_model_stub(predict_return_value=y_pred)
         val_ds = tf.data.Dataset.from_tensor_slices((features, y_true)).batch(1)
         callback = dense_overfit_eval.DenseValEventF1Callback(
             val_ds,
@@ -660,11 +660,7 @@ class TrainersTest(unittest.TestCase):
 
     def test_run_arrow_train_from_config_fit_receives_verbose(self):
         """model.fit is called with verbose from run_config.fit_verbose."""
-        mock_model = mock.Mock()
-        mock_model.compile = mock.Mock()
-        mock_model.fit = mock.Mock(
-            return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
-        )
+        mock_model = mh.keras_model_stub()
 
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
             exp = _make_arrow_experiment_config(
@@ -688,11 +684,7 @@ class TrainersTest(unittest.TestCase):
         self,
     ):
         """When show_model_summary is False, model.summary() is not called."""
-        mock_model = mock.Mock()
-        mock_model.compile = mock.Mock()
-        mock_model.fit = mock.Mock(
-            return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
-        )
+        mock_model = mh.keras_model_stub()
 
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
             exp = _make_arrow_experiment_config(
@@ -715,11 +707,7 @@ class TrainersTest(unittest.TestCase):
         self,
     ):
         """When show_model_summary is True (default), model.summary() is called."""
-        mock_model = mock.Mock()
-        mock_model.compile = mock.Mock()
-        mock_model.fit = mock.Mock(
-            return_value=mock.Mock(history={"val_loss": [1.0], "loss": [1.0]})
-        )
+        mock_model = mh.keras_model_stub()
 
         with _temp_model_and_callback_dirs() as (model_output_dir, _):
             exp = _make_arrow_experiment_config(

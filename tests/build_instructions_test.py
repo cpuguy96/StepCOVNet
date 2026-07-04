@@ -21,6 +21,8 @@ _EXE_NAME = "generate_ui.exe" if sys.platform == "win32" else "generate_ui"
 
 import build_generate_ui_binary  # noqa: E402
 
+from tests import mock_helpers as mh
+
 
 class BuildArtifactsExistTest(unittest.TestCase):
     """Check that all files referenced in the README build instructions exist."""
@@ -75,7 +77,7 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
             mock.patch.object(
                 build_generate_ui_binary.subprocess,
                 "run",
-                return_value=mock.MagicMock(returncode=3),
+                return_value=mh.completed_process(3),
                 autospec=True,
             ) as run_mock,
             self.assertRaises(SystemExit) as cm,
@@ -97,7 +99,7 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
             mock.patch.object(
                 build_generate_ui_binary.subprocess,
                 "run",
-                return_value=mock.MagicMock(returncode=0),
+                return_value=mh.completed_process(0),
                 autospec=True,
             ) as run_mock,
             self.assertRaises(SystemExit) as cm,

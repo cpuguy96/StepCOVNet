@@ -111,24 +111,26 @@ class TrainersTest(unittest.TestCase):
         self.assertEqual(logs[mn.val_name("ordered_onset_match")], 633 / 634)
 
     def test_overfit_gate_callback_early_stops_on_primary_monitor(self) -> None:
+        class _EarlyStopModel:
+            stop_training = False
+
         callback = trainers.OverfitGateCallback(
             early_stop=True,
             early_stop_monitor=mn.val_name("ordered_onset_match"),
             min_score=1.0,
             patience=2,
         )
-        mock_model = unittest.mock.MagicMock()
-        mock_model.stop_training = False
-        callback.set_model(mock_model)
+        fit_model = _EarlyStopModel()
+        callback.set_model(fit_model)
         perfect_logs = {
             mn.val_name(mn.TOKEN_ACCURACY): 0.95,
             mn.val_name(mn.TIMING_MATCH_TEACHER): 1.0,
             mn.val_name("ordered_onset_match"): 1.0,
         }
         callback.on_epoch_end(0, perfect_logs)
-        self.assertFalse(mock_model.stop_training)
+        self.assertFalse(fit_model.stop_training)
         callback.on_epoch_end(1, perfect_logs)
-        self.assertTrue(mock_model.stop_training)
+        self.assertTrue(fit_model.stop_training)
 
 
 class BuildArOptimizerTest(unittest.TestCase):

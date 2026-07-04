@@ -46,7 +46,7 @@ class WslGpuLockTest(unittest.TestCase):
             '{"job":"old","pid":999999,"platform":"linux","started_at":"2026-01-01"}\n',
             encoding="utf-8",
         )
-        with mock.patch.object(wsl_gpu_lock, "_pid_alive", return_value=False):
+        with mock.patch.object(wsl_gpu_lock, "_pid_alive", return_value=False, autospec=True):
             self.assertTrue(wsl_gpu_lock.clear_stale_lock())
         self.assertFalse(self._lock_path.is_file())
 

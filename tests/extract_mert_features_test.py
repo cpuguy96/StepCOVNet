@@ -17,6 +17,8 @@ if _SCRIPT_DIR not in sys.path:
 
 import extract_mert_features  # noqa: E402
 
+from tests import mock_helpers as mh
+
 
 class ExtractMertFeaturesScriptTest(unittest.TestCase):
     def test_main_extracts_pairs(self):
@@ -46,7 +48,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(
                     ssl_features,
                     "_load_mert_model",
-                    return_value=(mock.Mock(), mock.Mock()),
+                    return_value=mh.mert_model_and_processor(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -87,7 +89,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(
                     ssl_features,
                     "_load_mert_model",
-                    return_value=(mock.Mock(), mock.Mock()),
+                    return_value=mh.mert_model_and_processor(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -125,7 +127,7 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
                 mock.patch.object(
                     ssl_features,
                     "_load_mert_model",
-                    return_value=(mock.Mock(), mock.Mock()),
+                    return_value=mh.mert_model_and_processor(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -219,14 +221,16 @@ class ExtractMertFeaturesScriptTest(unittest.TestCase):
         with (
             mock.patch.object(
                 wsl_gpu,
-                "maybe_dispatch_for_mert_extract",
+                "bootstrap_gpu_script",
                 side_effect=SystemExit(0),
-            ) as mock_dispatch,
+                autospec=True,
+            ) as mock_bootstrap,
             self.assertRaises(SystemExit) as ctx,
         ):
             extract_mert_features.main(argv)
         self.assertEqual(ctx.exception.code, 0)
-        mock_dispatch.assert_called_once()
-        dispatch_argv = mock_dispatch.call_args[0][1]
-        self.assertTrue(dispatch_argv[0].endswith("extract_mert_features.py"))
-        self.assertIn("--device=cuda", dispatch_argv[1:])
+        mock_bootstrap.assert_called_once()
+        bootstrap_argv = mock_bootstrap.call_args[0][1]
+        self.assertTrue(bootstrap_argv[0].endswith("extract_mert_features.py"))
+        self.assertIn("--device=cuda", bootstrap_argv[1:])
+        self.assertEqual(mock_bootstrap.call_args.kwargs.get("dispatch"), "mert")
