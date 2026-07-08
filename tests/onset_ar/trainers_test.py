@@ -114,16 +114,18 @@ class TrainersTest(unittest.TestCase):
             min_score=1.0,
             patience=2,
         )
-        callback.model = unittest.mock.MagicMock()
+        mock_model = unittest.mock.MagicMock()
+        mock_model.stop_training = False
+        callback.set_model(mock_model)
         perfect_logs = {
             "val_token_accuracy": 0.95,
             "val_timing_match_teacher": 1.0,
             "val_ordered_onset_match": 1.0,
         }
         callback.on_epoch_end(0, perfect_logs)
-        self.assertFalse(callback.model.stop_training)
+        self.assertFalse(mock_model.stop_training)
         callback.on_epoch_end(1, perfect_logs)
-        self.assertTrue(callback.model.stop_training)
+        self.assertTrue(mock_model.stop_training)
 
 
 if __name__ == "__main__":
