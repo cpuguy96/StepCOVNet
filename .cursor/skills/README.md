@@ -20,6 +20,7 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | tide overfit, overfit suite, frontend ablation, smoke test on tide       | tide-overfit-protocol     | [tide-overfit-protocol/SKILL.md](tide-overfit-protocol/SKILL.md)         |
 | run autoresearch, research goal + time budget, one-prompt overnight loop | autoresearch              | [autoresearch/SKILL.md](autoresearch/SKILL.md)                             |
 | AR tide 634/634 scratch overfit (profile)                                  | autoresearch → ar-tide-overfit | [autoresearch/profiles/ar-tide-overfit.md](autoresearch/profiles/ar-tide-overfit.md) |
+| deprecated AR tide autoresearch links                                      | ar-tide-autoresearch alias | [ar-tide-autoresearch/SKILL.md](ar-tide-autoresearch/SKILL.md)             |
 | F1 zero or low, conv1d collapse, train vs eval matching, threshold debug | onset-event-eval-matching | [onset-event-eval-matching/SKILL.md](onset-event-eval-matching/SKILL.md) |
 | loss weights, arch ablation, threshold sweep, plateau investigation      | tide-ablations            | [tide-ablations/SKILL.md](tide-ablations/SKILL.md)                       |
 | start research session, log EXP/NOTE                                     | research-session-workflow | [research-session-workflow/SKILL.md](research-session-workflow/SKILL.md) |

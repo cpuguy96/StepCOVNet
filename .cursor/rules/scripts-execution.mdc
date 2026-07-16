@@ -12,6 +12,17 @@ Applies when running or editing files under `scripts/`.
 
 - Stream train/decode/long jobs to a **visible Cursor terminal**; log-only redirect as the sole sink is not OK.
 - **Console + `logs/<topic>.log` (tee)** is fine — terminal remains primary.
+- Never launch a long job with `> logs/... 2>&1`, `*> logs/...`, or any equivalent that hides live output from the terminal.
+
+From PowerShell, use:
+
+```powershell
+& venv\Scripts\python.exe scripts/<script>.py <args> 2>&1 | Tee-Object -FilePath logs/<topic>_<run>.log
+$code = $LASTEXITCODE
+if ($code -ne 0) { exit $code }
+```
+
+If a tool backgrounds the command after its foreground timeout, the same tee pipeline must remain attached so the visible terminal continues receiving live output.
 
 ## Temp paths
 

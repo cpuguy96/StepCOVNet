@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260716-01: Training output must remain live
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-16 01:22:37 |
+| **Category**     | mistake |
+| **Summary**      | Agent launched benchmark training with stdout/stderr redirected only to log files, hiding live progress despite the established visible-console rule. |
+| **Artifact**     | `.cursor/rules/scripts-execution.mdc` (scoped rule for `scripts/**`); `.cursor/skills/README.md`; `docs/agents/agent-brain.md` |
+| **Action taken** | Explicitly bans log-only redirection for long jobs and provides the required PowerShell console-plus-log `Tee-Object` template, including backgrounded jobs; quick refresh also cataloged the pre-existing deprecated skill alias. |
+| **Related**      | [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md), [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
+
 ### JRN-20260630-03: Repo-root `_tmp_*` scratch + same-turn self-improvement
 
 | Field            | Value                                                                 |
