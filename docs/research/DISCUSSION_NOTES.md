@@ -4,6 +4,32 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-07-16 — AR training correctness and throughput
+
+### NOTE-20260716-01: AR attention-mask semantics were inverted
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-16 01:15:49 |
+| **Topic** | Keras `MultiHeadAttention` mask semantics during dynamic-padding work |
+
+**Context:** Dynamic padding for [EXP-20260716-01](EXPERIMENT_LOG.md#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing) removes most padded positions. The first dynamic run changed loss more than expected, prompting inspection of Keras 3.13.2 mask handling.
+
+**Discovery:** Keras softmax **keeps** positions where `attention_mask=True` and zeros positions where it is false. The AR `PairwiseValidMask`, `CrossAttentionMask`, and `DecoderSelfAttentionMask` implemented the opposite contract: valid pairs were false and padded/future pairs true. Historical models therefore learned with attention directed at padding (while residual paths still carried inputs).
+
+**Compatibility decision:**
+
+- New smoke/scale-up models set `legacy_inverted_attention_masks: false` and use correct keep-valid masks.
+- `ArModelConfig` defaults the compatibility flag to `true`, so existing JSON recipes retain their historical behavior unless explicitly migrated.
+- Serialized historical mask layers omit `keep_valid`; its default remains `false`, preserving old checkpoint behavior when loaded.
+- Dynamic padding is opt-in (`dataset.dynamic_padding: true`); historical configs remain fixed-padding by default.
+
+**Implication:** Tide champion results remain valid as historical overfit measurements, but they do **not** demonstrate useful audio cross-attention. Do not silently compare a corrected-mask scale-up against champion training curves as if only padding changed. The corrected stack needs its own overfit and multi-song validation gates.
+
+**Related:** [EXP-20260716-01](EXPERIMENT_LOG.md#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing) · [`src/stepcovnet/onset_ar/models.py`](../../src/stepcovnet/onset_ar/models.py) · [`configs/ar/smoke.json`](../../configs/ar/smoke.json)
+
+---
+
 ## Session 2026-07-03 — AR token class weights on champion recipe
 
 ### NOTE-20260703-01: Class weights need co-tuned loss recipe (deferred)

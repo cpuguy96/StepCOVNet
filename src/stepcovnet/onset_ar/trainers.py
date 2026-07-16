@@ -561,7 +561,6 @@ class ArOnsetTrainingModel(keras.Model):
         return self._metric_results(self._batch_metrics())
 
     def test_step(self, data):
-        self._reset_metrics()
         batch = self._unpack_batch(data)
         total_loss, parts, outputs = self._forward_and_loss(batch, training=False)
         self.loss_tracker.update_state(total_loss)

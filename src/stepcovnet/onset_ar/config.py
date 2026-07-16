@@ -49,6 +49,10 @@ class ArDatasetConfig(_DictSerializableMixin):
     normalize_mert_features: bool = (
         False  # default raw; see EXP-20260630-03 / NOTE-20260701-01
     )
+    dynamic_padding: bool = False
+    length_bucket_boundaries: list[int] = dataclasses.field(
+        default_factory=lambda: [512, 768, 1024, 1536],
+    )
 
 
 @dataclasses.dataclass
@@ -67,6 +71,7 @@ class ArModelConfig(_DictSerializableMixin):
     n_first_abs_bins: int = targets.DEFAULT_N_FIRST_ABS_BINS
     num_heads: int = 4
     dropout_rate: float = 0.1
+    legacy_inverted_attention_masks: bool = True
 
 
 @dataclasses.dataclass

@@ -5,7 +5,9 @@
     "mert_features_dir": "",
     "batch_size": 1,
     "max_audio_seconds": 300,
-    "max_steps_per_chart": 2048
+    "max_steps_per_chart": 2048,
+    "dynamic_padding": true,
+    "length_bucket_boundaries": [512, 768, 1024, 1536]
   },
   "model": {
     "patch_frames": 8,
@@ -15,7 +17,8 @@
     "token_scheme": "delta_bucketed",
     "alignment": "pointer_residual",
     "max_decode_steps": 2048,
-    "dropout_rate": 0.1
+    "dropout_rate": 0.1,
+    "legacy_inverted_attention_masks": false
   },
   "run": {
     "overfit_one_song": false,

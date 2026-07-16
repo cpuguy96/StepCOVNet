@@ -400,24 +400,32 @@ def count_dataset_batches(
 def sample_to_training_arrays(
     sample: ArSample,
     experiment_config: config.ArExperimentConfig,
+    *,
+    pad_to_configured_max: bool = True,
 ) -> dict[str, np.ndarray]:
     """Convert one :class:`ArSample` into padded per-sample numpy arrays."""
     model_config = experiment_config.model
     dataset_config = experiment_config.dataset
-    max_patches = experiment_config.max_encoder_patches()
     patch_dim = experiment_config.patch_input_dim()
-    max_dec = experiment_config.max_decoder_len()
-    max_gt = int(model_config.max_decode_steps)
+    n_patches = int(sample.n_patches)
+    dec_len = int(sample.token_seq.decoder_target_ids.size)
+    n_gt = int(sample.gt_times_sec.size)
+    if pad_to_configured_max:
+        max_patches = experiment_config.max_encoder_patches()
+        max_dec = experiment_config.max_decoder_len()
+        max_gt = int(model_config.max_decode_steps)
+    else:
+        max_patches = n_patches
+        max_dec = dec_len
+        max_gt = max(1, n_gt)
 
     patches = np.zeros((max_patches, patch_dim), dtype=np.float32)
     patch_mask = np.zeros((max_patches,), dtype=np.float32)
-    n_patches = int(sample.n_patches)
     patches[:n_patches] = sample.mert_patches
     patch_mask[:n_patches] = 1.0
 
     dec_in = sample.token_seq.decoder_input_ids
     dec_tgt = sample.token_seq.decoder_target_ids
-    dec_len = int(dec_tgt.size)
     decoder_input_ids = np.zeros((max_dec,), dtype=np.int32)
     decoder_target_ids = np.zeros((max_dec,), dtype=np.int32)
     decoder_mask = np.zeros((max_dec,), dtype=np.float32)
@@ -443,7 +451,6 @@ def sample_to_training_arrays(
 
     gt_times = np.zeros((max_gt,), dtype=np.float32)
     gt_mask = np.zeros((max_gt,), dtype=np.float32)
-    n_gt = int(sample.gt_times_sec.size)
     gt_times[:n_gt] = sample.gt_times_sec
     gt_mask[:n_gt] = 1.0
 
@@ -496,7 +503,11 @@ def _load_ar_sample_py_callback(
         vocab=experiment_config.build_vocab(),
         chart_index=chart_index,
     )
-    arrays = sample_to_training_arrays(sample, experiment_config)
+    arrays = sample_to_training_arrays(
+        sample,
+        experiment_config,
+        pad_to_configured_max=not experiment_config.dataset.dynamic_padding,
+    )
     return (
         arrays["mert_patches"],
         arrays["patch_mask"],
@@ -519,10 +530,11 @@ def _map_ar_sample_to_batch(
     chart_index_t: tf.Tensor,
     experiment_config: config.ArExperimentConfig,
 ) -> dict[str, tf.Tensor]:
-    max_patches = experiment_config.max_encoder_patches()
+    dynamic_padding = experiment_config.dataset.dynamic_padding
+    max_patches = None if dynamic_padding else experiment_config.max_encoder_patches()
     patch_dim = experiment_config.patch_input_dim()
-    max_dec = experiment_config.max_decoder_len()
-    max_gt = int(experiment_config.model.max_decode_steps)
+    max_dec = None if dynamic_padding else experiment_config.max_decoder_len()
+    max_gt = None if dynamic_padding else int(experiment_config.model.max_decode_steps)
     (
         mert_patches,
         patch_mask,
@@ -618,7 +630,34 @@ def create_ar_tf_dataset_from_pairs(
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
-    ds = ds.batch(dataset_config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+    if dataset_config.dynamic_padding:
+        max_patches = experiment_config.max_encoder_patches()
+        max_dec = experiment_config.max_decoder_len()
+
+        def _normalized_sequence_length(batch: dict[str, tf.Tensor]) -> tf.Tensor:
+            n_patches = tf.cast(tf.reduce_sum(batch["patch_mask"]), tf.int32)
+            n_dec = tf.cast(tf.reduce_sum(batch["decoder_mask"]), tf.int32)
+            encoder_length = tf.math.floordiv(
+                n_patches * max_dec + max_patches - 1,
+                max_patches,
+            )
+            return tf.maximum(n_dec, encoder_length)
+
+        boundaries = sorted(
+            {
+                int(boundary)
+                for boundary in dataset_config.length_bucket_boundaries
+                if 0 < int(boundary) < max_dec
+            },
+        )
+        ds = ds.bucket_by_sequence_length(
+            element_length_func=_normalized_sequence_length,
+            bucket_boundaries=boundaries,
+            bucket_batch_sizes=[dataset_config.batch_size] * (len(boundaries) + 1),
+            drop_remainder=False,
+        )
+    else:
+        ds = ds.batch(dataset_config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
     ds = ds.prefetch(tf.data.AUTOTUNE)
     return ds
 

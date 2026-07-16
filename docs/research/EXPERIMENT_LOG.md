@@ -10,7 +10,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-07-03
+**Updated:** 2026-07-16
 
 ### Dataset prep (PRE ingestion)
 
@@ -30,13 +30,15 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
 | **AR 10-song smoke** | **PASS** — **10/10** train batches, **2/2** val; `val_loss` **53.4 → 38.7** over 5 ep; teacher `event_onset_f1` > 0 ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)) |
-| **AR next gate** | **`final-data-mert`** (full manifest MERT cache) → **`gate-val-vs-dense`** ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §10.1) |
+| **AR corrected-mask regression gate** | **Required before scale-up** — historical attention masks were inverted; new smoke config fixes them with backward compatibility ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing), [NOTE-20260716-01](DISCUSSION_NOTES.md#note-20260716-01-ar-attention-mask-semantics-were-inverted)) |
+| **AR next gate** | Re-run corrected-mask `gate-tide-overfit` → **`final-data-mert`** (full manifest MERT cache) → **`gate-val-vs-dense`** |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
+| **AR training throughput / validation** | **Improved** — validation metrics now aggregate all batches; opt-in dynamic length buckets reduce matched 10-song steady epoch time **21.5 s → 17.5 s** (**18.6%**); corrected Keras attention masks enabled for new smoke/scale-up configs ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing)) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) (graduated **v8**, iter175 recipe). Checkpoint: `models_wsl/ar/tide_overfit/`. **10-song smoke passed** ([`configs/ar/smoke.json`](../../configs/ar/smoke.json), EXP-20260630-02). Next: extract MERT for full `final_data` if needed, then AR multi-song train / **`gate-val-vs-dense`**.
+- **Track B (AR scale-up):** Historical champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) remains reproducible in legacy-mask mode. First re-run the tide perfect-overfit gate with corrected masks; then extract MERT for full `final_data` if needed and proceed to AR multi-song train / **`gate-val-vs-dense`**.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -47,6 +49,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260716-01 | `pre` + `model` + `metric` + `train` | Do correct val aggregation and dynamic length buckets improve AR smoke training? | **Supported** | Val now covers both batches; matched steady epoch **21.5 s → 17.5 s** (**18.6% faster**); found/fixed inverted attention-mask semantics for new models |
 | EXP-20260703-01 | `train` + `metric` | AR tide token class weight ablation on champion v8 recipe | **Partial** | Drop-in on v8: teacher **634/634**, free-run **≤360/634**; co-tuned recipe revisit later |
 | EXP-20260630-03 | `pre` + `train` | AR tide MERT normalization A/B (`normalize_mert_features`) | **Supported** | Raw wins perfect gate **1.0** @ ep 399; norm plateaus **0.9984** — keep raw |
 | EXP-20260630-02 | `pre` + `train` | AR **`gate-10song-smoke`** (`training_index_path`) | **Supported** | **10/10** train + **2/2** val batches; `val_loss` **53.4 → 38.7** @ 5 ep GPU; teacher F1 > 0 |
@@ -100,6 +103,22 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260716-01: AR validation aggregation + dynamic length bucketing
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-16 01:15:00 |
+| **Track** | `pre` + `model` + `metric` + `train` (AR) |
+| **Question** | On the 10-song smoke, what changes after (1) fixing validation accumulation and (2) replacing fixed 300 s / 2048-step tensors with dynamic padding and normalized length buckets? |
+| **Baseline** | [`configs/ar/smoke.json`](../../configs/ar/smoke.json), RTX 3070 Ti, seed 42, 10 train + 2 val batches. Historical fixed-padding run: epoch times **57 / 23 / 22 s**; `test_step` reset metrics per batch, so reported val values represented only the final val chart. |
+| **Step 1 — validation fix** | Removed the per-batch metric reset and added a two-batch regression test. One-epoch retry: **52 s**; full two-chart aggregate `val_loss=51.0036`, `val_aux_f1_hungarian=0.0143`, `val_token_accuracy=0.0144`. Baseline epoch 1 reported last-chart-only `val_loss=53.4066`, F1 `0.0125`, token accuracy `0.0`. Runtime difference (**57 → 52 s**) is compile/run noise; the gain is correct checkpoint data. An earlier retry hit the existing fixed-padding 5.5 GB GPU ceiling. |
+| **Step 2 — dynamic buckets** | Added compact per-sample arrays, dynamic Keras sequence dimensions, normalized encoder/decoder length buckets `[512, 768, 1024, 1536]`, and pointer-logit cropping. Matched corrected-mask fixed-padding control: **51 / 22 / 21 s**. Dynamic: **47 / 17 / 18 s** — steady mean **21.5 → 17.5 s** (**18.6% faster**), first epoch **51 → 47 s** (7.8% faster), with no OOM. |
+| **Attention-mask discovery** | During step 2, source inspection confirmed Keras keeps entries where `attention_mask=True`; the AR layers historically returned the inverse and therefore attended to padding. New smoke/scale-up models use correct masks; legacy configs/checkpoints retain historical semantics through `legacy_inverted_attention_masks=true` / serialized layer defaults ([NOTE-20260716-01](DISCUSSION_NOTES.md#note-20260716-01-ar-attention-mask-semantics-were-inverted)). |
+| **Final 3-epoch signal** | Correct-mask dynamic run: train loss **52.1889 → 50.3317**; `val_loss` **35.0410 / 37.2351 / 38.9519**; val Hungarian F1 **0.0128 / 0.0128 / 0.0114**; val token accuracy **0.0017 / 0.0041 / 0.0041**. Matched fixed-padding ep3: val F1 **0.0086**, token accuracy **0.0554**, `val_loss=59.6918`. Loss magnitudes are not directly comparable because dynamic pointer CE has fewer padded classes; three epochs show no reliable convergence winner. |
+| **Tests** | `venv\Scripts\python.exe -m pytest tests/onset_ar -q` — **48 passed**. |
+| **Logs** | `logs/ar_perf_baseline.log` · `logs/ar_perf_validation_fix_retry.log` · `logs/ar_perf_fixed_padding_valid_masks.log` · `logs/ar_perf_dynamic_buckets.log` (diagnostic legacy-mask run) · `logs/ar_perf_dynamic_buckets_valid_masks.log` |
+| **Conclusion** | **Supported.** Step 1 fixes model selection correctness without a meaningful speed cost. Step 2 gives a matched **18.6%** steady epoch speedup on the small smoke and removes fixed-padding OOM pressure. Convergence quality remains open; run a longer matched scale-up after the corrected-mask tide regression gate. |
 
 ### EXP-20260703-01: AR tide token class weight ablation (champion recipe)
 

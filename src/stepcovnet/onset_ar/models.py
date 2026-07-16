@@ -46,20 +46,31 @@ class SinusoidalPositionEncoding(keras.layers.Layer):
 class PairwiseValidMask(keras.layers.Layer):
     """Self-attention mask from per-position validity.
 
-    Keras ``MultiHeadAttention`` uses ``True`` to **mask out** a position.
+    Keras ``MultiHeadAttention`` uses ``True`` to keep an attention pair.
     """
+
+    def __init__(self, keep_valid: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.keep_valid = bool(keep_valid)
 
     def call(self, valid: tf.Tensor) -> tf.Tensor:
         valid_bool = keras.ops.cast(valid > 0.5, "bool")
         valid_q = keras.ops.expand_dims(valid_bool, axis=-1)
         valid_k = keras.ops.expand_dims(valid_bool, axis=-2)
         can_attend = keras.ops.logical_and(valid_q, valid_k)
-        return keras.ops.logical_not(can_attend)
+        return can_attend if self.keep_valid else keras.ops.logical_not(can_attend)
+
+    def get_config(self) -> dict:
+        return {**super().get_config(), "keep_valid": self.keep_valid}
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
 class CrossAttentionMask(keras.layers.Layer):
     """Cross-attention mask from query and memory validity."""
+
+    def __init__(self, keep_valid: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.keep_valid = bool(keep_valid)
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor]) -> tf.Tensor:
         query_valid, memory_valid = inputs
@@ -68,32 +79,46 @@ class CrossAttentionMask(keras.layers.Layer):
         query_q = keras.ops.expand_dims(query_bool, axis=-1)
         memory_k = keras.ops.expand_dims(memory_bool, axis=-2)
         can_attend = keras.ops.logical_and(query_q, memory_k)
-        return keras.ops.logical_not(can_attend)
+        return can_attend if self.keep_valid else keras.ops.logical_not(can_attend)
+
+    def get_config(self) -> dict:
+        return {**super().get_config(), "keep_valid": self.keep_valid}
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
 class DecoderSelfAttentionMask(keras.layers.Layer):
     """Causal decoder self-attention mask combined with padding."""
 
-    def __init__(self, max_decoder_len: int, **kwargs) -> None:
+    def __init__(
+        self,
+        max_decoder_len: int,
+        keep_valid: bool = False,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
+        self.keep_valid = bool(keep_valid)
         positions = np.arange(max_decoder_len)
         future = positions[:, np.newaxis] < positions[np.newaxis, :]
         self._future_mask = tf.constant(future[np.newaxis, ...], dtype=tf.bool)
 
     def call(self, decoder_mask: tf.Tensor) -> tf.Tensor:
+        seq_len = keras.ops.shape(decoder_mask)[1]
         dec_valid = keras.ops.cast(decoder_mask > 0.5, "bool")
         valid_q = keras.ops.expand_dims(dec_valid, axis=-1)
         valid_k = keras.ops.expand_dims(dec_valid, axis=-2)
         can_attend = keras.ops.logical_and(valid_q, valid_k)
-        return keras.ops.logical_or(
-            self._future_mask, keras.ops.logical_not(can_attend)
-        )
+        future = self._future_mask[:, :seq_len, :seq_len]
+        if self.keep_valid:
+            return keras.ops.logical_and(can_attend, keras.ops.logical_not(future))
+        return keras.ops.logical_or(future, keras.ops.logical_not(can_attend))
 
     def get_config(self) -> dict:
         config_dict = super().get_config()
         config_dict.update(
-            {"max_decoder_len": int(self._future_mask.shape[1])},
+            {
+                "max_decoder_len": int(self._future_mask.shape[1]),
+                "keep_valid": self.keep_valid,
+            },
         )
         return config_dict
 
@@ -104,6 +129,8 @@ class MaskPointerLogits(keras.layers.Layer):
 
     def call(self, inputs: tuple[tf.Tensor, tf.Tensor]) -> tf.Tensor:
         pointer_logits, patch_mask = inputs
+        n_patches = keras.ops.shape(patch_mask)[1]
+        pointer_logits = pointer_logits[..., :n_patches]
         valid = keras.ops.cast(patch_mask > 0.5, pointer_logits.dtype)
         valid = keras.ops.expand_dims(valid, axis=1)
         bias = (1.0 - valid) * -1e9
@@ -229,13 +256,17 @@ def _encode_patches(
     num_heads: int,
     n_enc_layers: int,
     dropout_rate: float,
+    keep_valid_attention_mask: bool,
 ) -> tf.Tensor:
     """Run the patch encoder stack and return memory."""
     memory = keras.layers.Dense(d_model, name="patch_embed")(mert_patches)
     memory = SinusoidalPositionEncoding(max_patches, d_model, name="enc_pos")(
         memory,
     )
-    enc_mask = PairwiseValidMask(name="enc_mask")(patch_mask)
+    enc_mask = PairwiseValidMask(
+        keep_valid=keep_valid_attention_mask,
+        name="enc_mask",
+    )(patch_mask)
     for layer_idx in range(n_enc_layers):
         memory = _transformer_encoder_block(
             memory,
@@ -262,6 +293,7 @@ def _decode_from_memory(
     n_dec_layers: int,
     dropout_rate: float,
     patch_duration: float,
+    keep_valid_attention_mask: bool,
 ) -> dict[str, tf.Tensor]:
     """Run the causal decoder and return logits and residual outputs."""
     token_embed = keras.layers.Embedding(
@@ -278,9 +310,13 @@ def _decode_from_memory(
 
     dec_self_mask = DecoderSelfAttentionMask(
         max_decoder_len,
+        keep_valid=keep_valid_attention_mask,
         name="dec_self_mask",
     )(decoder_mask)
-    cross_mask = CrossAttentionMask(name="cross_mask")([decoder_mask, patch_mask])
+    cross_mask = CrossAttentionMask(
+        keep_valid=keep_valid_attention_mask,
+        name="cross_mask",
+    )([decoder_mask, patch_mask])
     for layer_idx in range(n_dec_layers):
         decoder = _transformer_decoder_block(
             decoder,
@@ -303,9 +339,7 @@ def _decode_from_memory(
         activation="sigmoid",
         name="residual_ratio",
     )(decoder)
-    residual_ratio = keras.layers.Reshape(
-        (max_decoder_len,), name="residual_ratio_flat"
-    )(
+    residual_ratio = keras.layers.Reshape((-1,), name="residual_ratio_flat")(
         residual_ratio,
     )
     residual_sec = ScaleByPatchDuration(
@@ -328,8 +362,6 @@ def build_ar_onset_inference_models(
     model_config = experiment_config.model
     n_enc_layers = model_config.n_enc_layers
     n_dec_layers = model_config.n_dec_layers
-    max_patches = experiment_config.max_encoder_patches()
-    max_decoder_len = experiment_config.max_decoder_len()
     d_model = model_config.d_model
 
     memory_tensor = full_model.get_layer(f"enc_{n_enc_layers - 1}_ln2").output
@@ -343,22 +375,22 @@ def build_ar_onset_inference_models(
     )
 
     memory = keras.Input(
-        shape=(max_patches, d_model),
+        shape=(None, d_model),
         name="encoder_memory",
         dtype=tf.float32,
     )
     patch_mask = keras.Input(
-        shape=(max_patches,),
+        shape=(None,),
         name="patch_mask",
         dtype=tf.float32,
     )
     decoder_input_ids = keras.Input(
-        shape=(max_decoder_len,),
+        shape=(None,),
         name="decoder_input_ids",
         dtype=tf.int32,
     )
     decoder_mask = keras.Input(
-        shape=(max_decoder_len,),
+        shape=(None,),
         name="decoder_mask",
         dtype=tf.float32,
     )
@@ -425,24 +457,25 @@ def build_ar_onset_model(
     d_model = model_config.d_model
     num_heads = model_config.num_heads
     dropout_rate = model_config.dropout_rate
+    keep_valid_attention_mask = not model_config.legacy_inverted_attention_masks
 
     mert_patches = keras.Input(
-        shape=(max_patches, patch_dim),
+        shape=(None, patch_dim),
         name="mert_patches",
         dtype=tf.float32,
     )
     patch_mask = keras.Input(
-        shape=(max_patches,),
+        shape=(None,),
         name="patch_mask",
         dtype=tf.float32,
     )
     decoder_input_ids = keras.Input(
-        shape=(max_decoder_len,),
+        shape=(None,),
         name="decoder_input_ids",
         dtype=tf.int32,
     )
     decoder_mask = keras.Input(
-        shape=(max_decoder_len,),
+        shape=(None,),
         name="decoder_mask",
         dtype=tf.float32,
     )
@@ -455,6 +488,7 @@ def build_ar_onset_model(
         num_heads=num_heads,
         n_enc_layers=model_config.n_enc_layers,
         dropout_rate=dropout_rate,
+        keep_valid_attention_mask=keep_valid_attention_mask,
     )
     patch_duration = float(model_config.patch_frames) * float(
         experiment_config.dataset.hop_sec,
@@ -472,6 +506,7 @@ def build_ar_onset_model(
         n_dec_layers=model_config.n_dec_layers,
         dropout_rate=dropout_rate,
         patch_duration=patch_duration,
+        keep_valid_attention_mask=keep_valid_attention_mask,
     )
 
     return keras.Model(
