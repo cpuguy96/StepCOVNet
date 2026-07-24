@@ -53,7 +53,17 @@ class ArDatasetConfig(_DictSerializableMixin):
     length_bucket_boundaries: list[int] = dataclasses.field(
         default_factory=lambda: [512, 768, 1024, 1536],
     )
-    cache_overfit_batch: bool = True
+    cache_in_memory: bool = True
+    cache_max_samples: int = 64
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Load dataset config, mapping legacy ``cache_overfit_batch`` if present."""
+        fields = {field.name for field in dataclasses.fields(cls)}
+        payload = dict(data)
+        if "cache_in_memory" not in payload and "cache_overfit_batch" in payload:
+            payload["cache_in_memory"] = bool(payload["cache_overfit_batch"])
+        return cls(**{key: value for key, value in payload.items() if key in fields})
 
 
 @dataclasses.dataclass

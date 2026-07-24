@@ -137,7 +137,7 @@ class TideIntegrationTest(unittest.TestCase):
         experiment_config = config.ArExperimentConfig.from_json(
             "configs/ar/tide_overfit.json"
         )
-        experiment_config.dataset.cache_overfit_batch = True
+        experiment_config.dataset.cache_in_memory = True
         cached = next(iter(datasets.create_overfit_tf_dataset(experiment_config)))
         sample = datasets.load_overfit_sample(experiment_config)
         expected = datasets.sample_to_training_batch(sample, experiment_config)

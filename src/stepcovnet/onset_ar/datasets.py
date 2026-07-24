@@ -618,8 +618,6 @@ def create_ar_tf_dataset_from_pairs(
             list(chart_indices),
         ),
     )
-    if shuffle and len(samples) > 1:
-        ds = ds.shuffle(buffer_size=len(samples), seed=seed)
 
     ds = ds.map(
         lambda audio_path, chart_path, chart_index: _map_ar_sample_to_batch(
@@ -630,6 +628,30 @@ def create_ar_tf_dataset_from_pairs(
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
+
+    should_cache = dataset_config.cache_in_memory and (
+        len(samples) <= int(dataset_config.cache_max_samples)
+    )
+    if should_cache:
+        logging.info(
+            "Caching %d AR samples in memory (cache_max_samples=%d)",
+            len(samples),
+            dataset_config.cache_max_samples,
+        )
+        ds = ds.cache()
+        # Warm the cache once so training epochs do not re-enter py_function.
+        for _ in ds:
+            pass
+    elif dataset_config.cache_in_memory:
+        logging.warning(
+            "Skipping AR in-memory cache: %d samples > cache_max_samples=%d",
+            len(samples),
+            dataset_config.cache_max_samples,
+        )
+
+    if shuffle and len(samples) > 1:
+        ds = ds.shuffle(buffer_size=len(samples), seed=seed)
+
     if dataset_config.dynamic_padding:
         max_patches = experiment_config.max_encoder_patches()
         max_dec = experiment_config.max_decoder_len()
@@ -662,6 +684,11 @@ def create_ar_tf_dataset_from_pairs(
     return ds
 
 
+def _should_cache_ar_samples(experiment_config: config.ArExperimentConfig) -> bool:
+    """Return whether single-song overfit should use the in-memory batch helper."""
+    return bool(experiment_config.dataset.cache_in_memory)
+
+
 def create_ar_training_datasets(
     experiment_config: config.ArExperimentConfig,
 ) -> tuple[tf.data.Dataset, tf.data.Dataset, int, int]:
@@ -672,7 +699,7 @@ def create_ar_training_datasets(
     if _is_single_song_mode(experiment_config):
         audio_path, chart_path = _resolve_overfit_pair(dataset_config, run_config)
         logging.info("Single-song AR overfit mode: %s + %s", audio_path, chart_path)
-        if dataset_config.cache_overfit_batch:
+        if _should_cache_ar_samples(experiment_config):
             logging.info("Caching single-song AR overfit batch in memory")
             overfit_dataset = create_overfit_tf_dataset(experiment_config)
         else:
