@@ -157,6 +157,7 @@ class TrainersTest(unittest.TestCase):
         metrics = training_model.train_step((tf_batch,))
         self.assertIn("loss", metrics)
         self.assertIn(mn.AUX_F1_HUNGARIAN, metrics)
+        self.assertNotIn("incremental_consistency_loss", metrics)
 
     def test_train_step_reports_incremental_consistency_loss(self) -> None:
         experiment_config = _tiny_experiment_config()

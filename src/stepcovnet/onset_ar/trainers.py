@@ -237,9 +237,13 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker = keras.metrics.Mean(name="pointer_loss")
         self.time_loss_tracker = keras.metrics.Mean(name="time_loss")
         self.residual_loss_tracker = keras.metrics.Mean(name="residual_loss")
-        self.incremental_consistency_loss_tracker = keras.metrics.Mean(
-            name="incremental_consistency_loss",
-        )
+        self.incremental_consistency_loss_tracker: keras.metrics.Mean | None
+        if self.lambda_incremental_consistency > 0.0:
+            self.incremental_consistency_loss_tracker = keras.metrics.Mean(
+                name="incremental_consistency_loss",
+            )
+        else:
+            self.incremental_consistency_loss_tracker = None
         self.token_accuracy = keras.metrics.Mean(name="token_accuracy")
         self.use_ordered_onset_gate = run_config.overfit_one_song
         self.event_f1_metric = ArEventOnsetF1Metric(
@@ -268,10 +272,15 @@ class ArOnsetTrainingModel(keras.Model):
             self.pointer_loss_tracker,
             self.time_loss_tracker,
             self.residual_loss_tracker,
-            self.incremental_consistency_loss_tracker,
-            self.token_accuracy,
-            self.event_f1_metric,
         ]
+        if self.incremental_consistency_loss_tracker is not None:
+            tracked.append(self.incremental_consistency_loss_tracker)
+        tracked.extend(
+            [
+                self.token_accuracy,
+                self.event_f1_metric,
+            ],
+        )
         if self.ordered_match_metric is not None:
             tracked.append(self.ordered_match_metric)
         return tracked
@@ -403,7 +412,8 @@ class ArOnsetTrainingModel(keras.Model):
         training: bool,
     ) -> None:
         """Log incremental-consistency loss without affecting teacher-fed val metrics."""
-        if self.lambda_incremental_consistency <= 0.0:
+        tracker = self.incremental_consistency_loss_tracker
+        if tracker is None:
             return
         memory, parallel_outputs = self._forward_parallel_infer(
             batch,
@@ -414,7 +424,7 @@ class ArOnsetTrainingModel(keras.Model):
             batch,
             encoder_memory=memory,
         )
-        self.incremental_consistency_loss_tracker.update_state(inc_loss)
+        tracker.update_state(inc_loss)
 
     def _forward_and_loss(
         self,
@@ -546,10 +556,9 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
         self.residual_loss_tracker.update_state(parts["residual_loss"])
-        if "incremental_consistency_loss" in parts:
-            self.incremental_consistency_loss_tracker.update_state(
-                parts["incremental_consistency_loss"],
-            )
+        tracker = self.incremental_consistency_loss_tracker
+        if tracker is not None and "incremental_consistency_loss" in parts:
+            tracker.update_state(parts["incremental_consistency_loss"])
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],
@@ -568,12 +577,12 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
         self.residual_loss_tracker.update_state(parts["residual_loss"])
-        if "incremental_consistency_loss" in parts:
-            self.incremental_consistency_loss_tracker.update_state(
-                parts["incremental_consistency_loss"],
-            )
-        else:
-            self._update_incremental_consistency_metric(batch, training=False)
+        tracker = self.incremental_consistency_loss_tracker
+        if tracker is not None:
+            if "incremental_consistency_loss" in parts:
+                tracker.update_state(parts["incremental_consistency_loss"])
+            else:
+                self._update_incremental_consistency_metric(batch, training=False)
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],
