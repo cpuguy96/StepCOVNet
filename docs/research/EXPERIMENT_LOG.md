@@ -10,7 +10,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-07-16
+**Updated:** 2026-07-23
 
 ### Dataset prep (PRE ingestion)
 
@@ -30,15 +30,15 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
 | **AR 10-song smoke** | **PASS** — **10/10** train batches, **2/2** val; `val_loss` **53.4 → 38.7** over 5 ep; teacher `event_onset_f1` > 0 ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)) |
-| **AR corrected-mask regression gate** | **Required before scale-up** — historical attention masks were inverted; new smoke config fixes them with backward compatibility ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing), [NOTE-20260716-01](DISCUSSION_NOTES.md#note-20260716-01-ar-attention-mask-semantics-were-inverted)) |
-| **AR next gate** | Re-run corrected-mask `gate-tide-overfit` → **`final-data-mert`** (full manifest MERT cache) → **`gate-val-vs-dense`** |
+| **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
+| **AR next gate** | Accept Partial → corrected-mask 10-song smoke → **`final-data-mert`** → **`gate-val-vs-dense`** |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
-| **AR training throughput / validation** | **Improved** — validation metrics now aggregate all batches; opt-in dynamic length buckets reduce matched 10-song steady epoch time **21.5 s → 17.5 s** (**18.6%**); corrected Keras attention masks enabled for new smoke/scale-up configs ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing)) |
+| **AR training throughput / validation** | **Improved** — val aggregation + dynamic buckets (**18.6%** on smoke); single-song overfit batch cache default-on (~**9×** steady epoch on tide) ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing), [EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** Historical champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) remains reproducible in legacy-mask mode. First re-run the tide perfect-overfit gate with corrected masks; then extract MERT for full `final_data` if needed and proceed to AR multi-song train / **`gate-val-vs-dense`**.
+- **Track B (AR scale-up):** Corrected-mask tide stayed **633/634** across two scratch runs — treat as Partial (masks OK; free-run = teacher). Next: corrected-mask 10-song smoke → `final-data-mert` → **`gate-val-vs-dense`**.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -49,6 +49,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260716-02 | `train` + `metric` | Does corrected-mask champion recipe still hit tide **634/634**? | **Partial** | Run1+run2 teacher+free-run **633/634**; free-run tracks teacher; `λ_inc=0`; cache ~**9×** |
 | EXP-20260716-01 | `pre` + `model` + `metric` + `train` | Do correct val aggregation and dynamic length buckets improve AR smoke training? | **Supported** | Val now covers both batches; matched steady epoch **21.5 s → 17.5 s** (**18.6% faster**); found/fixed inverted attention-mask semantics for new models |
 | EXP-20260703-01 | `train` + `metric` | AR tide token class weight ablation on champion v8 recipe | **Partial** | Drop-in on v8: teacher **634/634**, free-run **≤360/634**; co-tuned recipe revisit later |
 | EXP-20260630-03 | `pre` + `train` | AR tide MERT normalization A/B (`normalize_mert_features`) | **Supported** | Raw wins perfect gate **1.0** @ ep 399; norm plateaus **0.9984** — keep raw |
@@ -103,6 +104,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260716-02: AR corrected-mask tide overfit regression
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-23 21:22:19 (log); run1 train/decode 2026-07-16 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With Keras keep-valid attention masks (`legacy_inverted_attention_masks: false`), does the champion tide recipe still reach teacher + free-run **634/634** @ 20 ms vs `target_times`? |
+| **Config** | [`configs/ar/tide_overfit_corrected_masks.json`](../../configs/ar/tide_overfit_corrected_masks.json) — v8 stack (`d_model=384`, `λ_residual=30`, `lr=1e-4`, 400 ep, seed 42); **`λ_incremental_consistency=0`** (champion used **0.01**; OOM on RTX 3070 Ti ~5.5 GB at ep~2 with `0.01`) |
+| **Run1 train** | 400 ep completed; final `val_token_accuracy=1.0`, `val_overfit_gate≈0.9984`. Log: `logs/ar_tide_overfit_corrected_masks.log`. Model: `models_wsl/ar/tide_overfit_corrected_masks/ar_onset_model.keras` |
+| **Run1 decode** | Offline `--ar_decode`: teacher **633/634**, free-run **633/634** ordered @ 20 ms vs `target_times`; chart aux **627/634**; AR F1 **≈0.989**. Log: `logs/ar_tide_overfit_corrected_masks_decode.log` |
+| **Throughput (2026-07-23)** | Default-on in-memory overfit batch cache (`dataset.cache_overfit_batch=true`): matched 5-ep tide A/B steady epoch **~3.5 s → ~0.39 s** (~**9×**). Host RAM ~**123 MB**/song fixed-pad. |
+| **Run2** | Same recipe, fresh scratch (`models_wsl/ar/tide_overfit_corrected_masks_run2/`); 400 ep in ~5.5 min with batch cache. Offline decode: teacher **633/634**, free-run **633/634**; chart aux **630/634**. Log: `logs/ar_tide_overfit_corrected_masks_run2.log` · `logs/ar_tide_overfit_corrected_masks_run2_decode.log` |
+| **Conclusion** | **Partial** — two independent scratch runs both stop at **633/634** with free-run matching teacher exactly. Corrected masks are trainable and free-run-consistent; the perfect overfit bar is not recovered on this GPU recipe (`λ_inc=0`). Do not graduate as a new champion. Proceed to corrected-mask multi-song smoke / scale-up gates, or chase the missing onset only if perfect-bar parity is required before that. |
 
 ### EXP-20260716-01: AR validation aggregation + dynamic length bucketing
 
