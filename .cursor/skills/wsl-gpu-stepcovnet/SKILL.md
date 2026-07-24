@@ -86,4 +86,4 @@ Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
 
 ## Console and logs
 
-When running scripts under `scripts/`, follow scoped rule [scripts-execution.mdc](../../rules/scripts-execution.mdc): visible terminal, captures under `logs/`, scratch under `_tmp/`.
+When running scripts under `scripts/`, follow scoped rule [scripts-execution.mdc](../../rules/scripts-execution.mdc): visible terminal, **TensorBoard up before/with training**, captures under `logs/`, scratch under `_tmp/`.

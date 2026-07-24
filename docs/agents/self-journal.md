@@ -42,6 +42,28 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260723-02: Do not fork artifact dirs on hyperparam reruns
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-23 22:55:36 |
+| **Category**     | mistake |
+| **Summary**      | On “increase epochs and rerun,” created `_ep500` model/callback/log dirs instead of reusing the existing 50t/50v paths. |
+| **Artifact**     | `.cursor/rules/scripts-execution.mdc` § Rerun path hygiene (scoped) |
+| **Action taken** | Scoped rule: hyperparam-only reruns keep same `model_output_dir` / `callback_root_dir` / log basename unless user asks to preserve or fork — not alwaysApply |
+| **Related**      | scripts-execution |
+
+### JRN-20260723-01: Start TensorBoard with training
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-23 22:43:34 |
+| **Category**     | mistake |
+| **Summary**      | Started AR 50t/50v train without TensorBoard; only launched TB after the user asked mid-run. Live metrics should be available for the whole job. |
+| **Artifact**     | `.cursor/rules/scripts-execution.mdc` (scoped); pointer in `.cursor/skills/wsl-gpu-stepcovnet/SKILL.md`; catalog `docs/agents/agent-brain.md` |
+| **Action taken** | Scoped rule: start `tensorboard.exe` before/with training, point `--logdir` at `callback_root_dir/logs`, give URL when train starts — not alwaysApply |
+| **Related**      | scripts-execution, wsl-gpu-stepcovnet |
+
 ### JRN-20260716-01: Training output must remain live
 
 | Field            | Value |
