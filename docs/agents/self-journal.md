@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260724-01: Scale-up naming + TB run suffixes
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-24 03:17:32 |
+| **Category**     | convention |
+| **Summary**      | Multi-song AR trains were mislabeled `smoke_*`; TensorBoard run names lacked train/val/epoch so splits were hard to tell apart. |
+| **Artifact**     | Code: `onset_ar/trainers.py` `_get_experiment_name`; configs `configs/ar/scale_*t_*v.json`; scoped rule `.cursor/rules/scripts-execution.mdc` § AR config / TensorBoard naming |
+| **Action taken** | Reserve `smoke` for 10-song gate; scale-up uses `scale_Nt_Nv`; TB suffix includes `{N}t{M}v-ep{E}-es{P}` — not alwaysApply |
+| **Related**      | scripts-execution |
+
 ### JRN-20260723-02: Do not fork artifact dirs on hyperparam reruns
 
 | Field            | Value |

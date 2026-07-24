@@ -52,6 +52,11 @@ Use `tensorboard.exe` (not `python -m tensorboard`). Reuse an existing server on
 
 When the user says **rerun** / **increase epochs** / tweak hyperparams on an existing config: **keep the same** `model_output_dir` and `callback_root_dir` (and log basename). Do **not** invent `_epN` / `_run2` suffixes unless they ask for a separate artifact tree or to preserve the prior checkpoint.
 
+## AR config / TensorBoard naming
+
+- Reserve **`smoke`** for tiny gate runs (e.g. 10-song `configs/ar/smoke.json`). Multi-song scale-up configs use **`scale_<Nt>t_<Nv>v`** (not `smoke_…`).
+- AR TensorBoard run suffixes include **`{train}t{val}v-ep{epochs}`** (and `es{patience}` when early stopping is on) via `_get_experiment_name` — do not rely on the parent `callback_root_dir` alone to tell splits apart.
+
 ## GPU scheduling
 
 WSL GPU jobs are **serial**: one training run at a time; no parallel GPU training + GPU inference (see [wsl-gpu-stepcovnet skill](../../skills/wsl-gpu-stepcovnet/SKILL.md) § GPU scheduling).

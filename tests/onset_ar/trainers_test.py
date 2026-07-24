@@ -103,6 +103,49 @@ class TrainersTest(unittest.TestCase):
         self.assertTrue(trainers.should_attach_overfit_gate_callback(overfit))
         self.assertFalse(trainers.should_attach_overfit_gate_callback(multi_song))
 
+    def test_early_stopping_patience_defaults_disabled(self) -> None:
+        run = ar_config.ArRunConfig()
+        self.assertEqual(run.early_stopping_patience, 0)
+
+    def test_experiment_name_includes_split_and_epochs(self) -> None:
+        experiment = ar_config.ArExperimentConfig(
+            dataset=ar_config.ArDatasetConfig(),
+            model=ar_config.ArModelConfig(
+                patch_frames=8,
+                d_model=384,
+                n_enc_layers=4,
+                n_dec_layers=4,
+            ),
+            run=ar_config.ArRunConfig(
+                epochs=500,
+                early_stopping_patience=25,
+                overfit_one_song=False,
+            ),
+        )
+        name = trainers._get_experiment_name(
+            experiment,
+            n_train_samples=200,
+            n_val_samples=50,
+        )
+        self.assertEqual(
+            name,
+            "AR_ONSET-P8-d384-enc4-dec4-200t50v-ep500-es25",
+        )
+
+    def test_experiment_name_overfit_tag(self) -> None:
+        experiment = ar_config.ArExperimentConfig(
+            dataset=ar_config.ArDatasetConfig(),
+            model=ar_config.ArModelConfig(
+                patch_frames=8,
+                d_model=384,
+                n_enc_layers=4,
+                n_dec_layers=4,
+            ),
+            run=ar_config.ArRunConfig(epochs=400, overfit_one_song=True),
+        )
+        name = trainers._get_experiment_name(experiment)
+        self.assertEqual(name, "AR_ONSET-P8-d384-enc4-dec4-overfit-ep400")
+
     def test_overfit_gate_callback_publishes_metrics(self) -> None:
         callback = trainers.OverfitGateCallback()
         logs = {

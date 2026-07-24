@@ -604,13 +604,28 @@ def _save_config(
     experiment_config.to_json(str(logdir / "config.json"))
 
 
-def _get_experiment_name(experiment_config: config.ArExperimentConfig) -> str:
-    return (
-        f"AR_ONSET-P{experiment_config.model.patch_frames}-"
-        f"d{experiment_config.model.d_model}-"
-        f"enc{experiment_config.model.n_enc_layers}-"
-        f"dec{experiment_config.model.n_dec_layers}"
-    )
+def _get_experiment_name(
+    experiment_config: config.ArExperimentConfig,
+    *,
+    n_train_samples: int | None = None,
+    n_val_samples: int | None = None,
+) -> str:
+    """Build TensorBoard / callback run suffix from model + data + schedule."""
+    parts = [
+        "AR_ONSET",
+        f"P{experiment_config.model.patch_frames}",
+        f"d{experiment_config.model.d_model}",
+        f"enc{experiment_config.model.n_enc_layers}",
+        f"dec{experiment_config.model.n_dec_layers}",
+    ]
+    if experiment_config.run.overfit_one_song:
+        parts.append("overfit")
+    elif n_train_samples is not None and n_val_samples is not None:
+        parts.append(f"{n_train_samples}t{n_val_samples}v")
+    parts.append(f"ep{experiment_config.run.epochs}")
+    if experiment_config.run.early_stopping_patience > 0:
+        parts.append(f"es{experiment_config.run.early_stopping_patience}")
+    return "-".join(parts)
 
 
 def lambda_time_for_epoch(
@@ -851,7 +866,11 @@ def train_ar_onset(
     monitor_metric = mn.resolve_checkpoint_metric(run_config.checkpoint_metric)
     monitor_mode = "min" if "loss" in monitor_metric else "max"
     if run_config.callback_root_dir:
-        experiment_name = _get_experiment_name(experiment_config)
+        experiment_name = _get_experiment_name(
+            experiment_config,
+            n_train_samples=n_train_samples,
+            n_val_samples=n_val_samples,
+        )
         tb_callbacks, callback_name = event_trainers._get_callbacks(  # noqa: SLF001
             root_dir=run_config.callback_root_dir,
             monitor_metric=monitor_metric,
@@ -893,6 +912,17 @@ def train_ar_onset(
                 ),
                 min_score=run_config.perfect_overfit_min_score,
                 patience=run_config.perfect_overfit_patience,
+            ),
+        )
+
+    if run_config.early_stopping_patience > 0:
+        callbacks.append(
+            keras.callbacks.EarlyStopping(
+                monitor=monitor_metric,
+                mode=monitor_mode,
+                patience=run_config.early_stopping_patience,
+                restore_best_weights=True,
+                verbose=1,
             ),
         )
 

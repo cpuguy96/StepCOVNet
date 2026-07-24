@@ -108,6 +108,7 @@ class ArRunConfig(_DictSerializableMixin):
     tolerance_sec: float = 0.02
     min_onset_distance_ms: float = 50.0
     checkpoint_metric: str = "val_event_onset_f1"
+    early_stopping_patience: int = 0
     perfect_overfit_early_stop: bool = False
     perfect_overfit_min_score: float = 0.9999
     perfect_overfit_patience: int = 3
