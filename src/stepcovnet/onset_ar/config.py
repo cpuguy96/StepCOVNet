@@ -53,6 +53,7 @@ class ArDatasetConfig(_DictSerializableMixin):
     length_bucket_boundaries: list[int] = dataclasses.field(
         default_factory=lambda: [512, 768, 1024, 1536],
     )
+    cache_overfit_batch: bool = True
 
 
 @dataclasses.dataclass

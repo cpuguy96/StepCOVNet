@@ -672,11 +672,15 @@ def create_ar_training_datasets(
     if _is_single_song_mode(experiment_config):
         audio_path, chart_path = _resolve_overfit_pair(dataset_config, run_config)
         logging.info("Single-song AR overfit mode: %s + %s", audio_path, chart_path)
-        overfit_dataset = create_ar_tf_dataset_from_pairs(
-            experiment_config,
-            [(audio_path, chart_path)],
-            shuffle=False,
-        )
+        if dataset_config.cache_overfit_batch:
+            logging.info("Caching single-song AR overfit batch in memory")
+            overfit_dataset = create_overfit_tf_dataset(experiment_config)
+        else:
+            overfit_dataset = create_ar_tf_dataset_from_pairs(
+                experiment_config,
+                [(audio_path, chart_path)],
+                shuffle=False,
+            )
         return overfit_dataset, overfit_dataset, 1, 1
 
     index_ref = str(dataset_config.training_index_path).strip()
@@ -735,7 +739,23 @@ def create_ar_training_datasets(
 def create_overfit_tf_dataset(
     experiment_config: config.ArExperimentConfig,
 ) -> tf.data.Dataset:
-    """Repeat a single overfit batch for ``model.fit``."""
+    """Return an in-memory single-batch overfit dataset for ``model.fit``.
+
+    Loads audio/MERT/chart once so each epoch reuses the same tensors instead of
+    re-entering ``tf.py_function`` loaders.
+    """
     sample = load_overfit_sample(experiment_config)
-    batch = sample_to_training_batch(sample, experiment_config)
-    return tf.data.Dataset.from_tensors(batch)
+    arrays = sample_to_training_arrays(
+        sample,
+        experiment_config,
+        pad_to_configured_max=not experiment_config.dataset.dynamic_padding,
+    )
+    batch = {
+        key: (
+            np.asarray([value], dtype=value.dtype)
+            if key == "duration"
+            else value[np.newaxis, ...]
+        )
+        for key, value in arrays.items()
+    }
+    return tf.data.Dataset.from_tensors(batch).prefetch(1)
