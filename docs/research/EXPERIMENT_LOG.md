@@ -29,16 +29,16 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
-| **AR 10-song smoke** | **PASS** — **10/10** train batches, **2/2** val; `val_loss` **53.4 → 38.7** over 5 ep; teacher `event_onset_f1` > 0 ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)) |
+| **AR 10-song smoke** | **PASS** — 5-ep corrected-mask ([EXP-20260723-01](#exp-20260723-01-ar-corrected-mask-10song-smoke)); **50-ep cached** `val_loss` **35.0 → 12.1**, teacher F1 **0.11** ([EXP-20260723-02](#exp-20260723-02-ar-corrected-mask-10song-smoke-50ep)) |
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
-| **AR next gate** | Accept Partial → corrected-mask 10-song smoke → **`final-data-mert`** → **`gate-val-vs-dense`** |
+| **AR next gate** | **`final-data-mert`** (full manifest MERT cache) → AR multi-song train / **`gate-val-vs-dense`** |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
 | **AR training throughput / validation** | **Improved** — val aggregation + dynamic buckets (**18.6%** on smoke); single-song overfit batch cache default-on (~**9×** steady epoch on tide) ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing), [EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** Corrected-mask tide stayed **633/634** across two scratch runs — treat as Partial (masks OK; free-run = teacher). Next: corrected-mask 10-song smoke → `final-data-mert` → **`gate-val-vs-dense`**.
+- **Track B (AR scale-up):** Corrected-mask tide Partial (**633/634**) + 10-song smoke green through **50 ep** (`val_loss` **~12**). Next: `final-data-mert` → AR multi-song / **`gate-val-vs-dense`**.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -49,6 +49,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260723-02 | `train` + `metric` | Does corrected-mask 10-song smoke keep improving to 50 ep with in-memory cache? | **Supported** | `val_loss` **35.0 → 12.1**; teacher F1 **0.01 → 0.11**; ~**2 s**/ep with cache |
+| EXP-20260723-01 | `train` + `metric` | Does corrected-mask + dynamic-pad 10-song smoke still pass the gate? | **Supported** | **10/10** steps; `val_loss` **35.0 → 26.9**; teacher F1 > 0 |
 | EXP-20260716-02 | `train` + `metric` | Does corrected-mask champion recipe still hit tide **634/634**? | **Partial** | Run1+run2 teacher+free-run **633/634**; free-run tracks teacher; `λ_inc=0`; cache ~**9×** |
 | EXP-20260716-01 | `pre` + `model` + `metric` + `train` | Do correct val aggregation and dynamic length buckets improve AR smoke training? | **Supported** | Val now covers both batches; matched steady epoch **21.5 s → 17.5 s** (**18.6% faster**); found/fixed inverted attention-mask semantics for new models |
 | EXP-20260703-01 | `train` + `metric` | AR tide token class weight ablation on champion v8 recipe | **Partial** | Drop-in on v8: teacher **634/634**, free-run **≤360/634**; co-tuned recipe revisit later |
@@ -104,6 +106,31 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260723-02: AR corrected-mask 10-song smoke (50 ep, in-memory cache)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-23 21:42:59 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With keep-valid masks, dynamic padding, and in-memory sample cache, does the 10-song smoke keep improving through 50 epochs? |
+| **Config** | [`configs/ar/smoke.json`](../../configs/ar/smoke.json) — `epochs: 50`, `cache_in_memory: true`, `cache_max_samples: 64`, `legacy_inverted_attention_masks: false`, `dynamic_padding: true` |
+| **Train** | WSL GPU **10/10** steps/ep; `val_loss` **35.0410 → 12.0962** (best **11.5262** @ ep 49); `val_event_onset_f1` **0.0128 → 0.1141**; `val_token_accuracy` **0.0017 → 0.1585**; train loss **52.2 → 9.6**. Steady epochs ~**2 s** (cache warmed at dataset build; vs ~16–18 s uncached 5-ep run). |
+| **Artifacts** | `models_wsl/ar/smoke_10song_corrected_masks_ep50/` · `callbacks/ar/smoke_10song_corrected_masks_ep50/` · `logs/ar_smoke_10song_corrected_masks_ep50.log` |
+| **Conclusion** | **Supported.** Corrected-mask multi-song training continues past the 5-ep gate with clear loss/F1 gains; in-memory cache is the right default for this smoke size. Next: **`final-data-mert`**. |
+
+### EXP-20260723-01: AR corrected-mask 10-song smoke
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-23 21:35:54 |
+| **Track** | `train` + `metric` (AR) |
+| **Gate** | **`gate-10song-smoke`** on corrected masks + dynamic padding — batches run; loss decreases; teacher F1 > 0 |
+| **Config** | [`configs/ar/smoke.json`](../../configs/ar/smoke.json) — `legacy_inverted_attention_masks: false`, `dynamic_padding: true`, `λ_residual=5`, 5 ep |
+| **Train** | WSL GPU: **10/10** steps/ep; epoch walls **43 / 16 / 16 / 17 / 18 s**. `val_loss` **35.0410 → 26.8546**; `val_event_onset_f1` **0.0128 → 0.0143** (> 0); `val_token_accuracy` ep5 **0.0041** (not all-EOS) |
+| **Compare** | Legacy-mask smoke ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)): `val_loss` **53.4 → 38.7**. Curves not 1:1 comparable (masks + padding), but gate criteria met. |
+| **Artifacts** | `models_wsl/ar/smoke_10song_corrected_masks/` · `callbacks/ar/smoke_10song_corrected_masks/` · `logs/ar_smoke_10song_corrected_masks.log` |
+| **Conclusion** | **PASS.** Corrected-mask multi-song smoke is green after the Partial tide regression. Next: **`final-data-mert`** then AR scale-up / **`gate-val-vs-dense`**. |
 
 ### EXP-20260716-02: AR corrected-mask tide overfit regression
 
