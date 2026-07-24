@@ -11,6 +11,7 @@
 | Situation | Run |
 | --------- | --- |
 | AR tide overfit finished (or mid-run spot check) | `debug_ar_onset_overfit.py --ar_decode` |
+| AR multi-song val (or train) offline | `debug_ar_onset_overfit.py --split val --ar_decode` |
 | AR teacher-fed only (fast) | `debug_ar_onset_overfit.py` (no `--ar_decode`) |
 | Dense model on val manifest | `eval_dense_onset.py` |
 | Event model smoke | `eval_onset_event_f1.py` |
@@ -87,8 +88,10 @@ Each block includes: `n_matched`, `n_pred`, `n_ref`, `n_denom`, `rate`.
 
 | Flag | Effect |
 | ---- | ------ |
+| `--split overfit\|train\|val` | Single-song overfit (default) or micro-avg over manifest split |
+| `--limit N` | With `--split train\|val`, evaluate at most N songs |
 | `--ar_decode` | Run free-run gate (required for tide PASS) |
-| `--full-diagnostics` | Slow extras under `ar_decode.diagnostics` |
+| `--full-diagnostics` | Slow extras under `ar_decode.diagnostics` (overfit split only) |
 | `--json-only` | Suppress stderr summary |
 | `--worst_k N` | Number of worst onsets in JSON (default 20) |
 
