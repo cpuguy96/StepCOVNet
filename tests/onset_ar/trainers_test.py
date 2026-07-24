@@ -1,6 +1,7 @@
 import unittest
 import unittest.mock
 
+from stepcovnet.onset_ar import config as ar_config
 from stepcovnet.onset_ar import trainers
 
 
@@ -95,6 +96,12 @@ class TrainersTest(unittest.TestCase):
             ),
             0.9,
         )
+
+    def test_should_attach_overfit_gate_only_for_overfit_runs(self) -> None:
+        overfit = ar_config.ArRunConfig(overfit_one_song=True)
+        multi_song = ar_config.ArRunConfig(overfit_one_song=False)
+        self.assertTrue(trainers.should_attach_overfit_gate_callback(overfit))
+        self.assertFalse(trainers.should_attach_overfit_gate_callback(multi_song))
 
     def test_overfit_gate_callback_publishes_metrics(self) -> None:
         callback = trainers.OverfitGateCallback()

@@ -628,6 +628,13 @@ def lambda_time_for_epoch(
     return float(lambda_time_final) * progress
 
 
+def should_attach_overfit_gate_callback(
+    run_config: config.ArRunConfig,
+) -> bool:
+    """Overfit gate metrics / early-stop apply only to single-song overfit runs."""
+    return bool(run_config.overfit_one_song)
+
+
 def overfit_gate_score(
     *,
     token_accuracy: float,
@@ -638,7 +645,10 @@ def overfit_gate_score(
 
 
 class OverfitGateCallback(keras.callbacks.Callback):
-    """Publish teacher-fed gate metrics for checkpointing and early stop."""
+    """Publish teacher-fed overfit gate metrics for checkpointing and early stop.
+
+    Attach only when :func:`should_attach_overfit_gate_callback` is true.
+    """
 
     def __init__(
         self,
@@ -873,17 +883,18 @@ def train_ar_onset(
             ),
         )
 
-    callbacks.insert(
-        0,
-        OverfitGateCallback(
-            early_stop=run_config.perfect_overfit_early_stop,
-            early_stop_monitor=(
-                monitor_metric if run_config.perfect_overfit_early_stop else None
+    if should_attach_overfit_gate_callback(run_config):
+        callbacks.insert(
+            0,
+            OverfitGateCallback(
+                early_stop=run_config.perfect_overfit_early_stop,
+                early_stop_monitor=(
+                    monitor_metric if run_config.perfect_overfit_early_stop else None
+                ),
+                min_score=run_config.perfect_overfit_min_score,
+                patience=run_config.perfect_overfit_patience,
             ),
-            min_score=run_config.perfect_overfit_min_score,
-            patience=run_config.perfect_overfit_patience,
-        ),
-    )
+        )
 
     history = training_model.fit(
         train_ds,
