@@ -28,20 +28,20 @@ def _tiny_experiment_config() -> config.ArExperimentConfig:
 
 class ModelsTest(unittest.TestCase):
     def test_pairwise_valid_mask_masks_padding(self) -> None:
-        layer = models.PairwiseValidMask()
+        layer = models.PairwiseValidMask(keep_valid=True)
         valid = tf.constant([[1.0, 1.0, 0.0]], dtype=tf.float32)
         mask = layer(valid)
-        self.assertTrue(bool(mask[0, 0, 0].numpy()) is False)
-        self.assertTrue(bool(mask[0, 2, 2].numpy()) is True)
-        self.assertTrue(bool(mask[0, 0, 2].numpy()) is True)
+        self.assertTrue(bool(mask[0, 0, 0].numpy()) is True)
+        self.assertTrue(bool(mask[0, 2, 2].numpy()) is False)
+        self.assertTrue(bool(mask[0, 0, 2].numpy()) is False)
 
     def test_decoder_self_attention_masks_future(self) -> None:
-        layer = models.DecoderSelfAttentionMask(max_decoder_len=4)
+        layer = models.DecoderSelfAttentionMask(max_decoder_len=4, keep_valid=True)
         decoder_mask = tf.ones((1, 4), dtype=tf.float32)
         mask = layer(decoder_mask)
-        self.assertTrue(bool(mask[0, 0, 0].numpy()) is False)
-        self.assertTrue(bool(mask[0, 0, 1].numpy()) is True)
-        self.assertTrue(bool(mask[0, 1, 0].numpy()) is False)
+        self.assertTrue(bool(mask[0, 0, 0].numpy()) is True)
+        self.assertTrue(bool(mask[0, 0, 1].numpy()) is False)
+        self.assertTrue(bool(mask[0, 1, 0].numpy()) is True)
 
     def test_build_ar_onset_model_output_shapes(self) -> None:
         experiment_config = _tiny_experiment_config()
@@ -73,6 +73,50 @@ class ModelsTest(unittest.TestCase):
         self.assertEqual(outputs["token_logits"].shape, (1, max_dec, vocab_size))
         self.assertEqual(outputs["pointer_logits"].shape, (1, max_dec, max_patches))
         self.assertEqual(outputs["residual_sec"].shape, (1, max_dec))
+
+    def test_ar_onset_model_accepts_compact_dynamic_shapes(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        times = np.asarray([0.05, 0.12], dtype=np.float64)
+        token_seq = targets.encode_onset_times(
+            times,
+            duration_sec=1.0,
+            hop_sec=experiment_config.dataset.hop_sec,
+            patch_frames=experiment_config.model.patch_frames,
+            vocab=experiment_config.build_vocab(),
+            max_steps=16,
+        )
+        sample = datasets.ArSample(
+            mert_patches=np.random.randn(3, experiment_config.patch_input_dim()).astype(
+                np.float32,
+            ),
+            n_patches=3,
+            n_frames=10,
+            duration_sec=1.0,
+            token_seq=token_seq,
+            gt_times_sec=times.astype(np.float32),
+            audio_path="a.ogg",
+            chart_path="a.txt",
+        )
+        arrays = datasets.sample_to_training_arrays(
+            sample,
+            experiment_config,
+            pad_to_configured_max=False,
+        )
+        inputs = {
+            key: tf.constant(arrays[key][np.newaxis, ...])
+            for key in (
+                "mert_patches",
+                "patch_mask",
+                "decoder_input_ids",
+                "decoder_mask",
+            )
+        }
+
+        outputs = models.build_ar_onset_model(experiment_config)(inputs, training=False)
+
+        self.assertEqual(outputs["token_logits"].shape[1], token_seq.n_steps + 1)
+        self.assertEqual(outputs["pointer_logits"].shape, (1, token_seq.n_steps + 1, 3))
+        self.assertEqual(outputs["residual_sec"].shape, (1, token_seq.n_steps + 1))
 
 
 class TrainersTest(unittest.TestCase):
@@ -113,6 +157,7 @@ class TrainersTest(unittest.TestCase):
         metrics = training_model.train_step((tf_batch,))
         self.assertIn("loss", metrics)
         self.assertIn(mn.AUX_F1_HUNGARIAN, metrics)
+        self.assertNotIn("incremental_consistency_loss", metrics)
 
     def test_train_step_reports_incremental_consistency_loss(self) -> None:
         experiment_config = _tiny_experiment_config()
@@ -192,6 +237,44 @@ class TrainersTest(unittest.TestCase):
         metrics = training_model.test_step((tf_batch,))
         self.assertIn("incremental_consistency_loss", metrics)
         self.assertGreater(float(metrics["incremental_consistency_loss"].numpy()), 0.0)
+
+    def test_test_step_accumulates_metrics_across_validation_batches(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        times = np.asarray([0.05, 0.12], dtype=np.float64)
+        token_seq = targets.encode_onset_times(
+            times,
+            duration_sec=1.0,
+            hop_sec=experiment_config.dataset.hop_sec,
+            patch_frames=experiment_config.model.patch_frames,
+            vocab=experiment_config.build_vocab(),
+            max_steps=16,
+        )
+        sample = datasets.ArSample(
+            mert_patches=np.random.randn(3, experiment_config.patch_input_dim()).astype(
+                np.float32,
+            ),
+            n_patches=3,
+            n_frames=10,
+            duration_sec=1.0,
+            token_seq=token_seq,
+            gt_times_sec=times.astype(np.float32),
+            audio_path="a.ogg",
+            chart_path="a.txt",
+        )
+        batch = datasets.sample_to_training_batch(sample, experiment_config)
+        tf_batch = {key: tf.constant(value) for key, value in batch.items()}
+        training_model = trainers.ArOnsetTrainingModel(
+            models.build_ar_onset_model(experiment_config),
+            experiment_config=experiment_config,
+        )
+        training_model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+        )
+
+        training_model.test_step((tf_batch,))
+        training_model.test_step((tf_batch,))
+
+        self.assertEqual(float(training_model.loss_tracker.count.numpy()), 2.0)
 
     def test_test_step_metrics_match_base_model_with_incremental_loss(self) -> None:
         """Val metrics must use full-model forward (same path as offline debug)."""

@@ -29,7 +29,7 @@ audits — not duplicated into [AGENTS.md](../../AGENTS.md) as prose.
 | `python-style.mdc`      | `**/*.py`                  | Python code style — imports, third-party submodules, and docstrings                        |
 | `python-tests.mdc`      | `{src,scripts,tests}/**/*` | Tests and coverage when changing src/, scripts/, or tests/                                 |
 | `research-logging.mdc`  | `docs/research/**`         | Log experiments and discussion in docs/research/                                           |
-| `scripts-execution.mdc` | `scripts/**`               | Visible console, logs/\_tmp captures, and no repo-root tmp when running or editing scripts |
+| `scripts-execution.mdc` | `scripts/**`               | Visible console, TensorBoard with train jobs, scale-up naming, logs/\_tmp captures, no repo-root tmp |
 
 ## Skills
 
@@ -37,6 +37,7 @@ audits — not duplicated into [AGENTS.md](../../AGENTS.md) as prose.
 | ----------------------------- | ----------------------------------------------------------------------- |
 | agent-brain-refresh           | [SKILL.md](../../.cursor/skills/agent-brain-refresh/SKILL.md)           |
 | agent-self-improvement        | [SKILL.md](../../.cursor/skills/agent-self-improvement/SKILL.md)        |
+| ar-tide-autoresearch (deprecated alias) | [SKILL.md](../../.cursor/skills/ar-tide-autoresearch/SKILL.md) |
 | onset-event-eval-matching     | [SKILL.md](../../.cursor/skills/onset-event-eval-matching/SKILL.md)     |
 | research-session-workflow     | [SKILL.md](../../.cursor/skills/research-session-workflow/SKILL.md)     |
 | steering-correction-promotion | [SKILL.md](../../.cursor/skills/steering-correction-promotion/SKILL.md) |

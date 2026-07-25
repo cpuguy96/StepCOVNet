@@ -10,13 +10,14 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-07-03
+**Updated:** 2026-07-24
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
 | P0–P9 | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val) |
+| MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
 **Recommended next step (Track A — scoreboard):** First full multi-song **dense** training on `final_data` via `--training_index_path=data/final_data/training_index.json` (WSL GPU). Extract MERT features for `final_data` if not using mel baseline; then `eval_dense_onset.py` + threshold sweep on val.
 
@@ -29,14 +30,18 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
-| **AR 10-song smoke** | **PASS** — **10/10** train batches, **2/2** val; `val_loss` **53.4 → 38.7** over 5 ep; teacher `event_onset_f1` > 0 ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)) |
-| **AR next gate** | **`final-data-mert`** (full manifest MERT cache) → **`gate-val-vs-dense`** ([AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §10.1) |
+| **AR 10-song smoke** | **PASS** — 5-ep corrected-mask ([EXP-20260723-01](#exp-20260723-01-ar-corrected-mask-10song-smoke)); **50-ep cached** `val_loss` **35.0 → 12.1**, teacher F1 **0.11** ([EXP-20260723-02](#exp-20260723-02-ar-corrected-mask-10song-smoke-50ep)) |
+| **AR 50t/50v scale-up** | **Partial** — 500 ep: best `val_loss` **~20.9 @ ep 65**, then severe overfit; val F1 peaks **~0.22** ([EXP-20260724-01](#exp-20260724-01-ar-corrected-mask-50t50v-500-ep-scale-up)) |
+| **AR 200t/50v scale-up** | **Partial** — ES @ ep **65**, best `val_loss` **~12.7 @ ep 40**; offline val teacher F1 **0.120**, free-run F1 **0.036** (severe under-gen) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) |
+| **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
+| **AR next gate** | Free-run / length control on multi-song before **`gate-val-vs-dense`**; optional denser train (300t cache-safe) still open |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
+| **AR training throughput / validation** | **Improved** — val aggregation + dynamic buckets (**18.6%** on smoke); single-song overfit batch cache default-on (~**9×** steady epoch on tide) ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing), [EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** Champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) (graduated **v8**, iter175 recipe). Checkpoint: `models_wsl/ar/tide_overfit/`. **10-song smoke passed** ([`configs/ar/smoke.json`](../../configs/ar/smoke.json), EXP-20260630-02). Next: extract MERT for full `final_data` if needed, then AR multi-song train / **`gate-val-vs-dense`**.
+- **Track B (AR scale-up):** 200t teacher Hungarian F1 matches train val (~**0.12**), but free-run **collapses** (early EOS / ~**70** preds/song vs ~**700** GT). Next: diagnose multi-song free-run length (EOS / scheduled sampling / decode constraints) before chasing **`gate-val-vs-dense`**.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -47,6 +52,12 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260724-02 | `train` + `metric` | Does 200t/50v + ES improve val, and does offline free-run hold? | **Partial** | Best `val_loss` **12.7 @ ep 40**; offline teacher F1 **0.120**, free-run F1 **0.036** |
+| EXP-20260724-01 | `train` + `metric` | Does corrected-mask AR on 50t/50v keep improving through 500 ep? | **Partial** | Best `val_loss` **20.9 @ ep 65**; ep 500 overfits (train **0.06** / val **33.6**); val F1 **~0.22** |
+| EXP-20260723-02 | `train` + `metric` | Does corrected-mask 10-song smoke keep improving to 50 ep with in-memory cache? | **Supported** | `val_loss` **35.0 → 12.1**; teacher F1 **0.01 → 0.11**; ~**2 s**/ep with cache |
+| EXP-20260723-01 | `train` + `metric` | Does corrected-mask + dynamic-pad 10-song smoke still pass the gate? | **Supported** | **10/10** steps; `val_loss` **35.0 → 26.9**; teacher F1 > 0 |
+| EXP-20260716-02 | `train` + `metric` | Does corrected-mask champion recipe still hit tide **634/634**? | **Partial** | Run1+run2 teacher+free-run **633/634**; free-run tracks teacher; `λ_inc=0`; cache ~**9×** |
+| EXP-20260716-01 | `pre` + `model` + `metric` + `train` | Do correct val aggregation and dynamic length buckets improve AR smoke training? | **Supported** | Val now covers both batches; matched steady epoch **21.5 s → 17.5 s** (**18.6% faster**); found/fixed inverted attention-mask semantics for new models |
 | EXP-20260703-01 | `train` + `metric` | AR tide token class weight ablation on champion v8 recipe | **Partial** | Drop-in on v8: teacher **634/634**, free-run **≤360/634**; co-tuned recipe revisit later |
 | EXP-20260630-03 | `pre` + `train` | AR tide MERT normalization A/B (`normalize_mert_features`) | **Supported** | Raw wins perfect gate **1.0** @ ep 399; norm plateaus **0.9984** — keep raw |
 | EXP-20260630-02 | `pre` + `train` | AR **`gate-10song-smoke`** (`training_index_path`) | **Supported** | **10/10** train + **2/2** val batches; `val_loss` **53.4 → 38.7** @ 5 ep GPU; teacher F1 > 0 |
@@ -101,6 +112,87 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
 
+### EXP-20260724-02: AR corrected-mask 200t/50v train + offline val decode
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-24 09:45:05 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With early stopping on a 200-train / 50-val corrected-mask run, does best-`val_loss` transfer to offline teacher + free-run on the val split? |
+| **Config** | [`configs/ar/scale_200t_50v.json`](../../configs/ar/scale_200t_50v.json) — index `data/final_data/training_index_200t_50v.json`; `cache_in_memory` + `cache_max_samples: 250`; `epochs: 500`, `early_stopping_patience: 25`; `checkpoint_metric: val_loss`; `λ_inc=0`; corrected masks |
+| **Train** | WSL GPU **200/50** steps/ep; early stop **ep 65**, restored best **ep 40**. Best `val_loss` **~12.73**; at best: `val_aux_f1_hungarian` **~0.120**, `val_token_accuracy` **~0.50**. Steady ~**50–55 s**/ep with cache. |
+| **Offline eval** | `debug_ar_onset_overfit.py --split val --ar_decode` on `models_wsl/ar/scale_200t_50v_corrected_masks/ar_onset_model.keras` (**50** songs, ~**524 s**). Teacher: ordered **105/36860** @ 20 ms (`rate` **0.0028**); Hungarian F1 **0.1199** (matches train val). Free-run: ordered **1/36860**; Hungarian F1 **0.0360**; **3400** preds vs **36860** GT (`ar_decode_length_sum` **3500**; all **50** songs stopped on EOS). |
+| **Artifacts** | Model: `models_wsl/ar/scale_200t_50v_corrected_masks/ar_onset_model.keras`. Train log: `logs/ar_scale_200t_50v_corrected_masks.log`. Decode: `logs/ar_scale_200t_50v_val_decode_clean.json` (+ mixed `logs/ar_scale_200t_50v_val_decode.json`). |
+| **Conclusion** | **Partial.** Scaling train rows + ES improves `val_loss` vs 50t (**~20.9 → ~12.7**) and holds teacher Hungarian F1 ~**0.12**, but **free-run collapses** via early EOS / severe under-generation. Ordered `timing_match` remains near-zero (pointer-dominated). Blocker for **`gate-val-vs-dense`** is multi-song free-run length/quality, not more train songs alone. |
+
+### EXP-20260724-01: AR corrected-mask 50t/50v 500-ep scale-up
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-24 02:52:28 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | On a 50-train / 50-val corrected-mask smoke, does extending to **500** epochs keep improving val quality, or does the run overfit? |
+| **Config** | [`configs/ar/scale_50t_50v.json`](../../configs/ar/scale_50t_50v.json) (logged as `smoke_50t_50v.json`; renamed) — index `data/final_data/training_index_50t_50v.json` (50/50 rows; 48/45 songs); `legacy_inverted_attention_masks: false`; `cache_in_memory: true`, `cache_max_samples: 128`; `checkpoint_metric: val_loss`; `λ_inc=0`; **500** ep |
+| **Prior 50-ep** | Same recipe/paths earlier the same evening: `val_loss` **44.3 → 21.0**, `val_aux_f1_hungarian` **0.008 → 0.126**, `val_token_accuracy` **0.10 → 0.43** (run `20260723-222238`) |
+| **Train (500 ep)** | WSL GPU **50/50** steps/ep; wall ~**2.3 h**. Ep1 → ep65 → ep500: train loss **51.1 → 7.2 → 0.06**; `val_loss` **44.3 → 20.9 → 33.6**; `val_aux_f1_hungarian` **0.008 → 0.141 → 0.221**; `val_token_accuracy` **0.10 → 0.43 → 0.36** (train token acc ep500 **0.98**). Best `val_loss` **20.911 @ ep 65**; best val F1 **0.223 @ ep 466**. Steady ~**16–17 s**/ep with cache. |
+| **Artifacts** | Model: `models_wsl/ar/smoke_50t_50v_corrected_masks/ar_onset_model.keras` (final weights; pre-rename path). Callbacks/TB: `callbacks/ar/smoke_50t_50v_corrected_masks/` run **`20260723-225906-…`**. Log: `logs/ar_smoke_50t_50v_corrected_masks.log`. Best-`val_loss` Keras ckpt under `callbacks/.../models/20260723-225906-…/`. |
+| **Conclusion** | **Partial.** Multi-song corrected-mask training on 50/50 is healthy through ~ep **65**, then **severe overfit** (train collapses while `val_loss` rises ~**21 → 34**). Late val F1 gains are small and do not justify 500 ep. Prefer best-`val_loss` checkpoint / early stop; next scale **train rows** (300t/50v MERT ready), not epoch count. |
+
+### EXP-20260723-02: AR corrected-mask 10-song smoke (50 ep, in-memory cache)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-23 21:42:59 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With keep-valid masks, dynamic padding, and in-memory sample cache, does the 10-song smoke keep improving through 50 epochs? |
+| **Config** | [`configs/ar/smoke.json`](../../configs/ar/smoke.json) — `epochs: 50`, `cache_in_memory: true`, `cache_max_samples: 64`, `legacy_inverted_attention_masks: false`, `dynamic_padding: true` |
+| **Train** | WSL GPU **10/10** steps/ep; `val_loss` **35.0410 → 12.0962** (best **11.5262** @ ep 49); `val_event_onset_f1` **0.0128 → 0.1141**; `val_token_accuracy` **0.0017 → 0.1585**; train loss **52.2 → 9.6**. Steady epochs ~**2 s** (cache warmed at dataset build; vs ~16–18 s uncached 5-ep run). |
+| **Artifacts** | `models_wsl/ar/smoke_10song_corrected_masks_ep50/` · `callbacks/ar/smoke_10song_corrected_masks_ep50/` · `logs/ar_smoke_10song_corrected_masks_ep50.log` |
+| **Conclusion** | **Supported.** Corrected-mask multi-song training continues past the 5-ep gate with clear loss/F1 gains; in-memory cache is the right default for this smoke size. Next: **`final-data-mert`**. |
+
+### EXP-20260723-01: AR corrected-mask 10-song smoke
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-23 21:35:54 |
+| **Track** | `train` + `metric` (AR) |
+| **Gate** | **`gate-10song-smoke`** on corrected masks + dynamic padding — batches run; loss decreases; teacher F1 > 0 |
+| **Config** | [`configs/ar/smoke.json`](../../configs/ar/smoke.json) — `legacy_inverted_attention_masks: false`, `dynamic_padding: true`, `λ_residual=5`, 5 ep |
+| **Train** | WSL GPU: **10/10** steps/ep; epoch walls **43 / 16 / 16 / 17 / 18 s**. `val_loss` **35.0410 → 26.8546**; `val_event_onset_f1` **0.0128 → 0.0143** (> 0); `val_token_accuracy` ep5 **0.0041** (not all-EOS) |
+| **Compare** | Legacy-mask smoke ([EXP-20260630-02](#exp-20260630-02-ar-gate-10song-smoke)): `val_loss` **53.4 → 38.7**. Curves not 1:1 comparable (masks + padding), but gate criteria met. |
+| **Artifacts** | `models_wsl/ar/smoke_10song_corrected_masks/` · `callbacks/ar/smoke_10song_corrected_masks/` · `logs/ar_smoke_10song_corrected_masks.log` |
+| **Conclusion** | **PASS.** Corrected-mask multi-song smoke is green after the Partial tide regression. Next: **`final-data-mert`** then AR scale-up / **`gate-val-vs-dense`**. |
+
+### EXP-20260716-02: AR corrected-mask tide overfit regression
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-23 21:22:19 (log); run1 train/decode 2026-07-16 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With Keras keep-valid attention masks (`legacy_inverted_attention_masks: false`), does the champion tide recipe still reach teacher + free-run **634/634** @ 20 ms vs `target_times`? |
+| **Config** | [`configs/ar/tide_overfit_corrected_masks.json`](../../configs/ar/tide_overfit_corrected_masks.json) — v8 stack (`d_model=384`, `λ_residual=30`, `lr=1e-4`, 400 ep, seed 42); **`λ_incremental_consistency=0`** (champion used **0.01**; OOM on RTX 3070 Ti ~5.5 GB at ep~2 with `0.01`) |
+| **Run1 train** | 400 ep completed; final `val_token_accuracy=1.0`, `val_overfit_gate≈0.9984`. Log: `logs/ar_tide_overfit_corrected_masks.log`. Model: `models_wsl/ar/tide_overfit_corrected_masks/ar_onset_model.keras` |
+| **Run1 decode** | Offline `--ar_decode`: teacher **633/634**, free-run **633/634** ordered @ 20 ms vs `target_times`; chart aux **627/634**; AR F1 **≈0.989**. Log: `logs/ar_tide_overfit_corrected_masks_decode.log` |
+| **Throughput (2026-07-23)** | Default-on in-memory overfit batch cache (`dataset.cache_overfit_batch=true`): matched 5-ep tide A/B steady epoch **~3.5 s → ~0.39 s** (~**9×**). Host RAM ~**123 MB**/song fixed-pad. |
+| **Run2** | Same recipe, fresh scratch (`models_wsl/ar/tide_overfit_corrected_masks_run2/`); 400 ep in ~5.5 min with batch cache. Offline decode: teacher **633/634**, free-run **633/634**; chart aux **630/634**. Log: `logs/ar_tide_overfit_corrected_masks_run2.log` · `logs/ar_tide_overfit_corrected_masks_run2_decode.log` |
+| **Conclusion** | **Partial** — two independent scratch runs both stop at **633/634** with free-run matching teacher exactly. Corrected masks are trainable and free-run-consistent; the perfect overfit bar is not recovered on this GPU recipe (`λ_inc=0`). Do not graduate as a new champion. Proceed to corrected-mask multi-song smoke / scale-up gates, or chase the missing onset only if perfect-bar parity is required before that. |
+
+### EXP-20260716-01: AR validation aggregation + dynamic length bucketing
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-16 01:15:00 |
+| **Track** | `pre` + `model` + `metric` + `train` (AR) |
+| **Question** | On the 10-song smoke, what changes after (1) fixing validation accumulation and (2) replacing fixed 300 s / 2048-step tensors with dynamic padding and normalized length buckets? |
+| **Baseline** | [`configs/ar/smoke.json`](../../configs/ar/smoke.json), RTX 3070 Ti, seed 42, 10 train + 2 val batches. Historical fixed-padding run: epoch times **57 / 23 / 22 s**; `test_step` reset metrics per batch, so reported val values represented only the final val chart. |
+| **Step 1 — validation fix** | Removed the per-batch metric reset and added a two-batch regression test. One-epoch retry: **52 s**; full two-chart aggregate `val_loss=51.0036`, `val_aux_f1_hungarian=0.0143`, `val_token_accuracy=0.0144`. Baseline epoch 1 reported last-chart-only `val_loss=53.4066`, F1 `0.0125`, token accuracy `0.0`. Runtime difference (**57 → 52 s**) is compile/run noise; the gain is correct checkpoint data. An earlier retry hit the existing fixed-padding 5.5 GB GPU ceiling. |
+| **Step 2 — dynamic buckets** | Added compact per-sample arrays, dynamic Keras sequence dimensions, normalized encoder/decoder length buckets `[512, 768, 1024, 1536]`, and pointer-logit cropping. Matched corrected-mask fixed-padding control: **51 / 22 / 21 s**. Dynamic: **47 / 17 / 18 s** — steady mean **21.5 → 17.5 s** (**18.6% faster**), first epoch **51 → 47 s** (7.8% faster), with no OOM. |
+| **Attention-mask discovery** | During step 2, source inspection confirmed Keras keeps entries where `attention_mask=True`; the AR layers historically returned the inverse and therefore attended to padding. New smoke/scale-up models use correct masks; legacy configs/checkpoints retain historical semantics through `legacy_inverted_attention_masks=true` / serialized layer defaults ([NOTE-20260716-01](DISCUSSION_NOTES.md#note-20260716-01-ar-attention-mask-semantics-were-inverted)). |
+| **Final 3-epoch signal** | Correct-mask dynamic run: train loss **52.1889 → 50.3317**; `val_loss` **35.0410 / 37.2351 / 38.9519**; val Hungarian F1 **0.0128 / 0.0128 / 0.0114**; val token accuracy **0.0017 / 0.0041 / 0.0041**. Matched fixed-padding ep3: val F1 **0.0086**, token accuracy **0.0554**, `val_loss=59.6918`. Loss magnitudes are not directly comparable because dynamic pointer CE has fewer padded classes; three epochs show no reliable convergence winner. |
+| **Tests** | `venv\Scripts\python.exe -m pytest tests/onset_ar -q` — **48 passed**. |
+| **Logs** | `logs/ar_perf_baseline.log` · `logs/ar_perf_validation_fix_retry.log` · `logs/ar_perf_fixed_padding_valid_masks.log` · `logs/ar_perf_dynamic_buckets.log` (diagnostic legacy-mask run) · `logs/ar_perf_dynamic_buckets_valid_masks.log` |
+| **Conclusion** | **Supported.** Step 1 fixes model selection correctness without a meaningful speed cost. Step 2 gives a matched **18.6%** steady epoch speedup on the small smoke and removes fixed-padding OOM pressure. Convergence quality remains open; run a longer matched scale-up after the corrected-mask tide regression gate. |
+
 ### EXP-20260703-01: AR tide token class weight ablation (champion recipe)
 
 | Field | Value |
@@ -126,7 +218,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Timestamp** | 2026-07-01 01:00:00 |
 | **Track** | `pre` + `train` (AR ablation) |
 | **Question** | Does dense-style per-song MERT z-score (`normalize_onset_spectrogram`) speed tide perfect overfit vs raw hidden states? |
-| **Config** | Champion tide recipe (`d_model=384`, `lr=1e-4`, `lambda_residual=30`, 400 ep, `val_overfit_gate` checkpoint); `lambda_incremental_consistency=0` (OOM at 0.01 on 3070 Ti — see NOTE) |
+| **Config** | [`tide_overfit_raw_ab.json`](../../configs/ar/tide_overfit_raw_ab.json) · [`tide_overfit_norm_ab.json`](../../configs/ar/tide_overfit_norm_ab.json) — champion tide recipe (`d_model=384`, `lr=1e-4`, `lambda_residual=30`, 400 ep, `val_overfit_gate` checkpoint); `lambda_incremental_consistency=0` (OOM at 0.01 on 3070 Ti — see NOTE) |
 | **Arms** | **Raw:** `normalize_mert_features: false` · **Norm:** `normalize_mert_features: true` (applied after `resample_features_to_hop_grid`, before patch) |
 | **Logs** | `_tmp/tide_norm_ab/raw.log`, `norm.log` (local; UTF-16 from PowerShell `Tee-Object`) |
 | **Raw outcome** | First `val_overfit_gate` ≥ 0.9999 @ **ep 399** (gate **1.0**); ≥ 0.99 @ ep 289 |

@@ -1,9 +1,11 @@
-"""Diagnose AR onset overfit checkpoints (per-onset timing errors).
+"""Diagnose AR onset checkpoints (per-onset timing errors).
 
 Usage:
     python scripts/debug_ar_onset_overfit.py --config configs/ar/tide_overfit.json
     python scripts/debug_ar_onset_overfit.py \\
         --config configs/ar/tide_overfit.json --ar_decode
+    python scripts/debug_ar_onset_overfit.py \\
+        --config configs/ar/scale_200t_50v.json --split val --ar_decode
     python scripts/debug_ar_onset_overfit.py \\
         --config configs/ar/versions/tide_overfit/v3.json \\
         --model_path models_wsl/ar/perfect_overfit/run2/ar_onset_model.keras \\
@@ -15,6 +17,10 @@ With ``--ar_decode``, top-level ``ar_decode.ordered_onset_match`` uses **two-pas
 timing vs training ``target_times`` (primary). Raw chart ``gt_times`` is logged as
 ``chart_ordered_onset_match`` and Hungarian F1 (aux). Pass ``--full-diagnostics``
 for token trace, gt_timing parity, and other slow ``ar_decode.diagnostics``.
+
+``--split train|val`` evaluates every valid sample in that manifest split and
+reports micro-averaged ``ordered_onset_match`` / Hungarian F1 (plus optional
+free-run). ``--split overfit`` (default) keeps the single-song overfit path.
 
 Human-readable progress and a completion summary go to **stderr**; full JSON stays
 on **stdout** (pipe-friendly).
@@ -41,7 +47,9 @@ from stepcovnet import onset_metric_names as mn
 from stepcovnet import timing_match
 from stepcovnet.onset_ar import config, datasets, inference, targets, trainers
 
-PARSER = argparse.ArgumentParser(description="Debug AR onset overfit checkpoint.")
+PARSER = argparse.ArgumentParser(
+    description="Debug AR onset checkpoint (overfit or split)."
+)
 PARSER.add_argument(
     "--config",
     type=str,
@@ -53,6 +61,19 @@ PARSER.add_argument(
     type=str,
     default="",
     help="Checkpoint path (default: run.model_output_dir/ar_onset_model.keras).",
+)
+PARSER.add_argument(
+    "--split",
+    type=str,
+    choices=("overfit", "train", "val"),
+    default="overfit",
+    help="overfit: single-song path; train/val: micro-avg over manifest split.",
+)
+PARSER.add_argument(
+    "--limit",
+    type=int,
+    default=-1,
+    help="With --split train|val, evaluate at most N songs (-1 = all).",
 )
 PARSER.add_argument(
     "--worst_k",
@@ -70,7 +91,8 @@ PARSER.add_argument(
     action="store_true",
     help=(
         "With --ar_decode, also run slow diagnostics (token trace, gt_timing, "
-        "incremental vs parallel pointer, token detokenize)."
+        "incremental vs parallel pointer, token detokenize). "
+        "Single-song overfit only."
     ),
 )
 PARSER.add_argument(
@@ -208,7 +230,9 @@ def _attach_metrics_by_tier(report: dict[str, object]) -> None:
     if isinstance(teacher, dict):
         primary[mn.TIMING_MATCH_TEACHER] = teacher
 
-    chart = report.get(mn.AUX_TIMING_MATCH_CHART, report.get("chart_ordered_onset_match"))
+    chart = report.get(
+        mn.AUX_TIMING_MATCH_CHART, report.get("chart_ordered_onset_match")
+    )
     if isinstance(chart, dict):
         aux[mn.AUX_TIMING_MATCH_CHART] = chart
 
@@ -311,11 +335,19 @@ def _print_ar_decode_summary(
 
     _log("", quiet=quiet)
     _log("=== Free-run AR gate (two-pass) ===", quiet=quiet)
-    _log(
-        f"  Decode length: {ar_decode['ar_decode_length']} | "
-        f"EOS: {'yes' if ar_decode['stopped_on_eos'] else 'no'}",
-        quiet=quiet,
-    )
+    if "ar_decode_length" in ar_decode:
+        _log(
+            f"  Decode length: {ar_decode['ar_decode_length']} | "
+            f"EOS: {'yes' if ar_decode['stopped_on_eos'] else 'no'}",
+            quiet=quiet,
+        )
+    elif "ar_decode_length_sum" in ar_decode:
+        n_eos = int(ar_decode.get("n_songs_stopped_on_eos", 0))
+        _log(
+            f"  Decode length (sum): {ar_decode['ar_decode_length_sum']} | "
+            f"songs stopped on EOS: {n_eos}",
+            quiet=quiet,
+        )
     _log(
         f"  {_ordered_gate_line(ordered, tol_ms=tol_ms)} (vs target_times)",
         quiet=quiet,
@@ -389,7 +421,14 @@ def _print_debug_summary(
     ar_decode: bool,
     quiet: bool,
 ) -> None:
-    _log("=== AR overfit debug ===", quiet=quiet)
+    split = report.get("split", "overfit")
+    n_songs = report.get("n_songs")
+    title = "=== AR offline eval ==="
+    if n_songs is not None:
+        title = f"=== AR offline eval ({split}, {n_songs} songs) ==="
+    elif split != "overfit":
+        title = f"=== AR offline eval ({split}) ==="
+    _log(title, quiet=quiet)
     _log(f"Model: {model_path}", quiet=quiet)
     ordered = report["ordered_onset_match"]
     assert isinstance(ordered, dict)
@@ -805,6 +844,283 @@ def _ar_decode_gate_only_report(
     )
 
 
+def _sum_ordered(blocks: list[dict[str, object]]) -> dict[str, float | int]:
+    n_matched = sum(int(b["n_matched"]) for b in blocks)
+    n_pred = sum(int(b["n_pred"]) for b in blocks)
+    n_ref = sum(int(b["n_ref"]) for b in blocks)
+    n_denom = sum(int(b["n_denom"]) for b in blocks)
+    return {
+        "n_matched": n_matched,
+        "n_pred": n_pred,
+        "n_gt": n_ref,
+        "n_ref": n_ref,
+        "n_denom": n_denom,
+        "rate": float(n_matched / n_denom) if n_denom else 0.0,
+    }
+
+
+def _sum_event_f1(rows: list[dict[str, object]]) -> dict[str, float | int]:
+    tp = sum(int(r["true_positives"]) for r in rows)
+    fp = sum(int(r["false_positives"]) for r in rows)
+    fn = sum(int(r["false_negatives"]) for r in rows)
+    precision = tp / (tp + fp + 1e-9)
+    recall = tp / (tp + fn + 1e-9)
+    event_f1 = 2.0 * precision * recall / (precision + recall + 1e-9)
+    return {
+        "n_pred_onsets": sum(
+            int(r.get("n_pred_onsets", r.get("n_onsets", 0))) for r in rows
+        ),
+        "n_gt_onsets": tp + fn,
+        "event_f1": float(event_f1),
+        "true_positives": tp,
+        "false_positives": fp,
+        "false_negatives": fn,
+    }
+
+
+def _percentile_stats(values_ms: np.ndarray) -> dict[str, float]:
+    if values_ms.size == 0:
+        return {"p50": 0.0, "p90": 0.0, "p99": 0.0, "max": 0.0, "mean": 0.0}
+    return {
+        "p50": float(np.percentile(values_ms, 50)),
+        "p90": float(np.percentile(values_ms, 90)),
+        "p99": float(np.percentile(values_ms, 99)),
+        "max": float(np.max(values_ms)),
+        "mean": float(np.mean(values_ms)),
+    }
+
+
+def _list_split_samples(
+    experiment_config: config.ArExperimentConfig,
+    *,
+    split: str,
+    limit: int,
+) -> list[tuple[str, str, int]]:
+    samples = datasets._filter_valid_ar_samples(  # noqa: SLF001
+        datasets.list_ar_training_samples(experiment_config, split=split),
+        experiment_config.dataset,
+    )
+    if limit > 0:
+        samples = samples[:limit]
+    return samples
+
+
+def _load_split_batch(
+    experiment_config: config.ArExperimentConfig,
+    audio_path: str,
+    chart_path: str,
+    chart_index: int,
+) -> dict[str, np.ndarray]:
+    sample = datasets.load_ar_sample(
+        audio_path,
+        chart_path,
+        dataset_config=experiment_config.dataset,
+        model_config=experiment_config.model,
+        vocab=experiment_config.build_vocab(),
+        chart_index=chart_index,
+    )
+    return datasets.sample_to_training_batch(sample, experiment_config)
+
+
+def _eval_one_batch(
+    model: tf.keras.Model,
+    batch_np: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+    ar_decode: bool,
+    full_diagnostics: bool,
+    token_trace_steps: int,
+    ar_decode_time_source: str,
+    worst_k: int,
+    keep_error_arrays: bool = False,
+) -> dict[str, object]:
+    batch_tf = {key: tf.constant(value) for key, value in batch_np.items()}
+    outputs = model(_model_inputs(batch_tf), training=False)
+    report = _diagnose_batch(outputs, batch_np, experiment_config=experiment_config)
+    report["worst_onsets"] = _worst_onsets(report, worst_k)
+    if ar_decode:
+        if full_diagnostics:
+            report["ar_decode"] = _ar_decode_report(
+                model,
+                batch_np,
+                experiment_config=experiment_config,
+                token_trace_steps=token_trace_steps,
+                time_source=ar_decode_time_source,
+                compare_time_sources=True,
+            )
+        else:
+            report["ar_decode"] = _ar_decode_gate_only_report(
+                model,
+                batch_np,
+                experiment_config=experiment_config,
+            )
+    abs_err = report.get("_abs_err_ms")
+    residual_err = report.get("_residual_err_ms")
+    for key in list(report):
+        if key.startswith("_"):
+            del report[key]
+    if keep_error_arrays:
+        if abs_err is not None:
+            report["_abs_err_ms_all"] = np.asarray(abs_err, dtype=np.float64).tolist()
+        if residual_err is not None:
+            report["_residual_err_ms_all"] = np.asarray(
+                residual_err,
+                dtype=np.float64,
+            ).tolist()
+    return report
+
+
+def _aggregate_split_reports(
+    song_reports: list[dict[str, object]],
+    *,
+    ar_decode: bool,
+) -> dict[str, object]:
+    teacher_ordered = _sum_ordered(
+        [r["ordered_onset_match"] for r in song_reports],  # type: ignore[arg-type]
+    )
+    teacher_chart = _sum_ordered(
+        [r["chart_ordered_onset_match"] for r in song_reports],  # type: ignore[arg-type]
+    )
+    teacher_f1 = _sum_event_f1(song_reports)
+    abs_chunks = []
+    residual_chunks = []
+    public_songs: list[dict[str, object]] = []
+    for row in song_reports:
+        errs = row.pop("_abs_err_ms_all", None)
+        if isinstance(errs, list):
+            abs_chunks.append(np.asarray(errs, dtype=np.float64))
+        res = row.pop("_residual_err_ms_all", None)
+        if isinstance(res, list):
+            residual_chunks.append(np.asarray(res, dtype=np.float64))
+        public_songs.append(row)
+
+    abs_all = (
+        np.concatenate(abs_chunks) if abs_chunks else np.asarray([], dtype=np.float64)
+    )
+    residual_all = (
+        np.concatenate(residual_chunks)
+        if residual_chunks
+        else np.asarray([], dtype=np.float64)
+    )
+
+    report: dict[str, object] = {
+        "n_songs": len(public_songs),
+        "n_onsets": int(teacher_ordered["n_pred"]),
+        mn.TIMING_MATCH_TEACHER: teacher_ordered,
+        "timing_match": teacher_ordered,
+        "ordered_onset_match": teacher_ordered,
+        mn.AUX_TIMING_MATCH_CHART: teacher_chart,
+        "chart_ordered_onset_match": teacher_chart,
+        "event_f1": float(teacher_f1["event_f1"]),
+        mn.AUX_F1_HUNGARIAN: float(teacher_f1["event_f1"]),
+        "true_positives": teacher_f1["true_positives"],
+        "false_positives": teacher_f1["false_positives"],
+        "false_negatives": teacher_f1["false_negatives"],
+        "abs_error_ms": _percentile_stats(abs_all),
+        "n_within_tolerance": sum(
+            int(r.get("n_within_tolerance", 0)) for r in public_songs
+        ),
+        "n_patch_wrong": sum(int(r.get("n_patch_wrong", 0)) for r in public_songs),
+        "n_patch_ok_timing_wrong": sum(
+            int(r.get("n_patch_ok_timing_wrong", 0)) for r in public_songs
+        ),
+        "residual_error_ms": _percentile_stats(residual_all),
+        "songs": public_songs,
+    }
+    if ar_decode:
+        ar_rows = [
+            r["ar_decode"] for r in public_songs if isinstance(r.get("ar_decode"), dict)
+        ]
+        ar_ordered = _sum_ordered(
+            [r["ordered_onset_match"] for r in ar_rows],  # type: ignore[arg-type]
+        )
+        ar_chart = _sum_ordered(
+            [r["chart_ordered_onset_match"] for r in ar_rows],  # type: ignore[arg-type]
+        )
+        ar_f1 = _sum_event_f1(ar_rows)
+        report["ar_decode"] = {
+            "timing_mode": "two_pass",
+            mn.TIMING_MATCH_AR_DECODE: ar_ordered,
+            "timing_match": ar_ordered,
+            "ordered_onset_match": ar_ordered,
+            mn.AUX_TIMING_MATCH_CHART: ar_chart,
+            "chart_ordered_onset_match": ar_chart,
+            **ar_f1,
+            mn.AUX_F1_HUNGARIAN: ar_f1["event_f1"],
+            "n_songs_stopped_on_eos": sum(
+                1 for r in ar_rows if bool(r.get("stopped_on_eos"))
+            ),
+            "ar_decode_length_sum": sum(
+                int(r.get("ar_decode_length", 0)) for r in ar_rows
+            ),
+        }
+    return report
+
+
+def _eval_split(
+    model: tf.keras.Model,
+    *,
+    experiment_config: config.ArExperimentConfig,
+    split: str,
+    limit: int,
+    ar_decode: bool,
+    quiet: bool,
+    worst_k: int,
+) -> dict[str, object]:
+    samples = _list_split_samples(experiment_config, split=split, limit=limit)
+    if not samples:
+        raise ValueError(f"No valid AR samples for split={split!r}")
+    mode = "teacher+free-run" if ar_decode else "teacher-fed"
+    _log(f"Evaluating {len(samples)} {split} songs ({mode})...", quiet=quiet)
+    song_reports: list[dict[str, object]] = []
+    for i, (audio_path, chart_path, chart_index) in enumerate(samples, start=1):
+        label = f"{pathlib.Path(chart_path).name}#{chart_index}"
+        _log(f"  [{i}/{len(samples)}] {label}", quiet=quiet)
+        batch_np = _load_split_batch(
+            experiment_config,
+            audio_path,
+            chart_path,
+            chart_index,
+        )
+        song = _eval_one_batch(
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            ar_decode=ar_decode,
+            full_diagnostics=False,
+            token_trace_steps=0,
+            ar_decode_time_source="pointer_residual",
+            worst_k=worst_k,
+            keep_error_arrays=True,
+        )
+        song["audio_path"] = audio_path
+        song["chart_path"] = chart_path
+        song["chart_index"] = chart_index
+        song["label"] = label
+        teacher = song.get("ordered_onset_match", {})
+        assert isinstance(teacher, dict)
+        _log(
+            f"       teacher ordered "
+            f"{int(teacher.get('n_matched', 0))}/{int(teacher.get('n_denom', 0))} "
+            f"rate={float(teacher.get('rate', 0.0)):.4f}",
+            quiet=quiet,
+        )
+        if ar_decode:
+            ar_block = song.get("ar_decode")
+            if isinstance(ar_block, dict):
+                ordered = ar_block.get("ordered_onset_match", {})
+                assert isinstance(ordered, dict)
+                _log(
+                    f"       free-run ordered "
+                    f"{int(ordered.get('n_matched', 0))}/"
+                    f"{int(ordered.get('n_denom', 0))} "
+                    f"rate={float(ordered.get('rate', 0.0)):.4f}",
+                    quiet=quiet,
+                )
+        song_reports.append(song)
+    return _aggregate_split_reports(song_reports, ar_decode=ar_decode)
+
+
 def main() -> int:
     args = PARSER.parse_args()
     quiet = args.json_only
@@ -813,6 +1129,12 @@ def main() -> int:
 
 
 def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
+    if args.full_diagnostics and args.split != "overfit":
+        print(
+            "--full-diagnostics is only supported with --split overfit",
+            file=sys.stderr,
+        )
+        return 1
     experiment_config = config.ArExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment_config, args.model_path)
     if not model_path.is_file():
@@ -820,45 +1142,48 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
         return 1
 
     _log(f"Loading checkpoint: {model_path}", quiet=quiet)
-    batch_np = datasets.sample_to_training_batch(
-        datasets.load_overfit_sample(experiment_config),
-        experiment_config,
-    )
-    batch_tf = {key: tf.constant(value) for key, value in batch_np.items()}
-
     model = tf.keras.models.load_model(str(model_path), compile=False)
     t0 = time.perf_counter()
-    _log("Running teacher-fed eval...", quiet=quiet)
-    outputs = model(_model_inputs(batch_tf), training=False)
-    report = _diagnose_batch(outputs, batch_np, experiment_config=experiment_config)
-    report["model_path"] = str(model_path)
-    report["worst_onsets"] = _worst_onsets(report, args.worst_k)
-    if args.ar_decode:
-        if args.full_diagnostics:
+
+    if args.split == "overfit":
+        _log("Running teacher-fed eval...", quiet=quiet)
+        if args.ar_decode and args.full_diagnostics:
             _log(
                 "Running free-run AR decode (two-pass, full diagnostics)...",
                 quiet=quiet,
             )
-            report["ar_decode"] = _ar_decode_report(
-                model,
-                batch_np,
-                experiment_config=experiment_config,
-                token_trace_steps=args.token_trace_steps,
-                time_source=args.ar_decode_time_source,
-                compare_time_sources=True,
-            )
-        else:
+        elif args.ar_decode:
             _log("Running free-run AR gate (two-pass)...", quiet=quiet)
-            report["ar_decode"] = _ar_decode_gate_only_report(
-                model,
-                batch_np,
-                experiment_config=experiment_config,
-            )
+        batch_np = datasets.sample_to_training_batch(
+            datasets.load_overfit_sample(experiment_config),
+            experiment_config,
+        )
+        report = _eval_one_batch(
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            ar_decode=args.ar_decode,
+            full_diagnostics=args.full_diagnostics,
+            token_trace_steps=args.token_trace_steps,
+            ar_decode_time_source=args.ar_decode_time_source,
+            worst_k=args.worst_k,
+        )
+    else:
+        report = _eval_split(
+            model,
+            experiment_config=experiment_config,
+            split=args.split,
+            limit=args.limit,
+            ar_decode=args.ar_decode,
+            quiet=quiet,
+            worst_k=args.worst_k,
+        )
+
     elapsed_sec = time.perf_counter() - t0
+    report["model_path"] = str(model_path)
+    report["config"] = args.config
+    report["split"] = args.split
     report["eval_elapsed_sec"] = round(elapsed_sec, 3)
-    for key in list(report):
-        if key.startswith("_"):
-            del report[key]
     _attach_metrics_by_tier(report)
     _print_debug_summary(
         report,
@@ -868,6 +1193,9 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
         quiet=quiet,
     )
     if not quiet:
+        n_songs = report.get("n_songs")
+        if n_songs is not None:
+            _log(f"Songs evaluated: {n_songs}", quiet=False)
         _log(f"Eval wall time: {elapsed_sec:.2f} s", quiet=False)
     print(json.dumps(report, indent=2))
     return 0

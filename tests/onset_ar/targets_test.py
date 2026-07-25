@@ -133,6 +133,24 @@ class TideIntegrationTest(unittest.TestCase):
             "target_times must be hop-quantized chart times",
         )
 
+    def test_cached_overfit_dataset_matches_uncached_batch(self) -> None:
+        experiment_config = config.ArExperimentConfig.from_json(
+            "configs/ar/tide_overfit.json"
+        )
+        experiment_config.dataset.cache_in_memory = True
+        cached = next(iter(datasets.create_overfit_tf_dataset(experiment_config)))
+        sample = datasets.load_overfit_sample(experiment_config)
+        expected = datasets.sample_to_training_batch(sample, experiment_config)
+        self.assertEqual(set(cached.keys()), set(expected.keys()))
+        for key, value in expected.items():
+            np.testing.assert_allclose(
+                cached[key].numpy(),
+                value,
+                rtol=0.0,
+                atol=0.0,
+                err_msg=key,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

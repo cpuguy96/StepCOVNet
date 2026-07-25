@@ -49,6 +49,21 @@ class ArDatasetConfig(_DictSerializableMixin):
     normalize_mert_features: bool = (
         False  # default raw; see EXP-20260630-03 / NOTE-20260701-01
     )
+    dynamic_padding: bool = False
+    length_bucket_boundaries: list[int] = dataclasses.field(
+        default_factory=lambda: [512, 768, 1024, 1536],
+    )
+    cache_in_memory: bool = True
+    cache_max_samples: int = 64
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Load dataset config, mapping legacy ``cache_overfit_batch`` if present."""
+        fields = {field.name for field in dataclasses.fields(cls)}
+        payload = dict(data)
+        if "cache_in_memory" not in payload and "cache_overfit_batch" in payload:
+            payload["cache_in_memory"] = bool(payload["cache_overfit_batch"])
+        return cls(**{key: value for key, value in payload.items() if key in fields})
 
 
 @dataclasses.dataclass
@@ -67,6 +82,7 @@ class ArModelConfig(_DictSerializableMixin):
     n_first_abs_bins: int = targets.DEFAULT_N_FIRST_ABS_BINS
     num_heads: int = 4
     dropout_rate: float = 0.1
+    legacy_inverted_attention_masks: bool = True
 
 
 @dataclasses.dataclass
@@ -92,6 +108,7 @@ class ArRunConfig(_DictSerializableMixin):
     tolerance_sec: float = 0.02
     min_onset_distance_ms: float = 50.0
     checkpoint_metric: str = "val_event_onset_f1"
+    early_stopping_patience: int = 0
     perfect_overfit_early_stop: bool = False
     perfect_overfit_min_score: float = 0.9999
     perfect_overfit_patience: int = 3

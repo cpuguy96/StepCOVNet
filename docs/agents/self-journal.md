@@ -42,6 +42,50 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260724-01: Scale-up naming + TB run suffixes
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-24 03:17:32 |
+| **Category**     | convention |
+| **Summary**      | Multi-song AR trains were mislabeled `smoke_*`; TensorBoard run names lacked train/val/epoch so splits were hard to tell apart. |
+| **Artifact**     | Code: `onset_ar/trainers.py` `_get_experiment_name`; configs `configs/ar/scale_*t_*v.json`; scoped rule `.cursor/rules/scripts-execution.mdc` § AR config / TensorBoard naming |
+| **Action taken** | Reserve `smoke` for 10-song gate; scale-up uses `scale_Nt_Nv`; TB suffix includes `{N}t{M}v-ep{E}-es{P}` — not alwaysApply |
+| **Related**      | scripts-execution |
+
+### JRN-20260723-02: Do not fork artifact dirs on hyperparam reruns
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-23 22:55:36 |
+| **Category**     | mistake |
+| **Summary**      | On “increase epochs and rerun,” created `_ep500` model/callback/log dirs instead of reusing the existing 50t/50v paths. |
+| **Artifact**     | `.cursor/rules/scripts-execution.mdc` § Rerun path hygiene (scoped) |
+| **Action taken** | Scoped rule: hyperparam-only reruns keep same `model_output_dir` / `callback_root_dir` / log basename unless user asks to preserve or fork — not alwaysApply |
+| **Related**      | scripts-execution |
+
+### JRN-20260723-01: Start TensorBoard with training
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-23 22:43:34 |
+| **Category**     | mistake |
+| **Summary**      | Started AR 50t/50v train without TensorBoard; only launched TB after the user asked mid-run. Live metrics should be available for the whole job. |
+| **Artifact**     | `.cursor/rules/scripts-execution.mdc` (scoped); pointer in `.cursor/skills/wsl-gpu-stepcovnet/SKILL.md`; catalog `docs/agents/agent-brain.md` |
+| **Action taken** | Scoped rule: start `tensorboard.exe` before/with training, point `--logdir` at `callback_root_dir/logs`, give URL when train starts — not alwaysApply |
+| **Related**      | scripts-execution, wsl-gpu-stepcovnet |
+
+### JRN-20260716-01: Training output must remain live
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-16 01:22:37 |
+| **Category**     | mistake |
+| **Summary**      | Agent launched benchmark training with stdout/stderr redirected only to log files, hiding live progress despite the established visible-console rule. |
+| **Artifact**     | `.cursor/rules/scripts-execution.mdc` (scoped rule for `scripts/**`); `.cursor/skills/README.md`; `docs/agents/agent-brain.md` |
+| **Action taken** | Explicitly bans log-only redirection for long jobs and provides the required PowerShell console-plus-log `Tee-Object` template, including backgrounded jobs; quick refresh also cataloged the pre-existing deprecated skill alias. |
+| **Related**      | [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md), [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
+
 ### JRN-20260703-02: Prefer create_autospec and patch autospec in tests
 
 | Field            | Value                                                                 |

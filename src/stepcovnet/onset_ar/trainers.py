@@ -267,9 +267,13 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker = keras.metrics.Mean(name="pointer_loss")
         self.time_loss_tracker = keras.metrics.Mean(name="time_loss")
         self.residual_loss_tracker = keras.metrics.Mean(name="residual_loss")
-        self.incremental_consistency_loss_tracker = keras.metrics.Mean(
-            name="incremental_consistency_loss",
-        )
+        self.incremental_consistency_loss_tracker: keras.metrics.Mean | None
+        if self.lambda_incremental_consistency > 0.0:
+            self.incremental_consistency_loss_tracker = keras.metrics.Mean(
+                name="incremental_consistency_loss",
+            )
+        else:
+            self.incremental_consistency_loss_tracker = None
         self.token_accuracy = keras.metrics.Mean(name="token_accuracy")
         self.use_ordered_onset_gate = run_config.overfit_one_song
         self.event_f1_metric = ArEventOnsetF1Metric(
@@ -298,10 +302,15 @@ class ArOnsetTrainingModel(keras.Model):
             self.pointer_loss_tracker,
             self.time_loss_tracker,
             self.residual_loss_tracker,
-            self.incremental_consistency_loss_tracker,
-            self.token_accuracy,
-            self.event_f1_metric,
         ]
+        if self.incremental_consistency_loss_tracker is not None:
+            tracked.append(self.incremental_consistency_loss_tracker)
+        tracked.extend(
+            [
+                self.token_accuracy,
+                self.event_f1_metric,
+            ],
+        )
         if self.ordered_match_metric is not None:
             tracked.append(self.ordered_match_metric)
         return tracked
@@ -433,7 +442,8 @@ class ArOnsetTrainingModel(keras.Model):
         training: bool,
     ) -> None:
         """Log incremental-consistency loss without affecting teacher-fed val metrics."""
-        if self.lambda_incremental_consistency <= 0.0:
+        tracker = self.incremental_consistency_loss_tracker
+        if tracker is None:
             return
         memory, parallel_outputs = self._forward_parallel_infer(
             batch,
@@ -444,7 +454,7 @@ class ArOnsetTrainingModel(keras.Model):
             batch,
             encoder_memory=memory,
         )
-        self.incremental_consistency_loss_tracker.update_state(inc_loss)
+        tracker.update_state(inc_loss)
 
     def _forward_and_loss(
         self,
@@ -580,10 +590,9 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
         self.residual_loss_tracker.update_state(parts["residual_loss"])
-        if "incremental_consistency_loss" in parts:
-            self.incremental_consistency_loss_tracker.update_state(
-                parts["incremental_consistency_loss"],
-            )
+        tracker = self.incremental_consistency_loss_tracker
+        if tracker is not None and "incremental_consistency_loss" in parts:
+            tracker.update_state(parts["incremental_consistency_loss"])
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],
@@ -595,7 +604,6 @@ class ArOnsetTrainingModel(keras.Model):
         return self._metric_results(self._batch_metrics())
 
     def test_step(self, data):
-        self._reset_metrics()
         batch = self._unpack_batch(data)
         total_loss, parts, outputs = self._forward_and_loss(batch, training=False)
         self.loss_tracker.update_state(total_loss)
@@ -603,12 +611,12 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_loss_tracker.update_state(parts["pointer_loss"])
         self.time_loss_tracker.update_state(parts["time_loss"])
         self.residual_loss_tracker.update_state(parts["residual_loss"])
-        if "incremental_consistency_loss" in parts:
-            self.incremental_consistency_loss_tracker.update_state(
-                parts["incremental_consistency_loss"],
-            )
-        else:
-            self._update_incremental_consistency_metric(batch, training=False)
+        tracker = self.incremental_consistency_loss_tracker
+        if tracker is not None:
+            if "incremental_consistency_loss" in parts:
+                tracker.update_state(parts["incremental_consistency_loss"])
+            else:
+                self._update_incremental_consistency_metric(batch, training=False)
         self.token_accuracy.update_state(
             losses.masked_token_accuracy(
                 outputs["token_logits"],
@@ -630,13 +638,28 @@ def _save_config(
     experiment_config.to_json(str(logdir / "config.json"))
 
 
-def _get_experiment_name(experiment_config: config.ArExperimentConfig) -> str:
-    return (
-        f"AR_ONSET-P{experiment_config.model.patch_frames}-"
-        f"d{experiment_config.model.d_model}-"
-        f"enc{experiment_config.model.n_enc_layers}-"
-        f"dec{experiment_config.model.n_dec_layers}"
-    )
+def _get_experiment_name(
+    experiment_config: config.ArExperimentConfig,
+    *,
+    n_train_samples: int | None = None,
+    n_val_samples: int | None = None,
+) -> str:
+    """Build TensorBoard / callback run suffix from model + data + schedule."""
+    parts = [
+        "AR_ONSET",
+        f"P{experiment_config.model.patch_frames}",
+        f"d{experiment_config.model.d_model}",
+        f"enc{experiment_config.model.n_enc_layers}",
+        f"dec{experiment_config.model.n_dec_layers}",
+    ]
+    if experiment_config.run.overfit_one_song:
+        parts.append("overfit")
+    elif n_train_samples is not None and n_val_samples is not None:
+        parts.append(f"{n_train_samples}t{n_val_samples}v")
+    parts.append(f"ep{experiment_config.run.epochs}")
+    if experiment_config.run.early_stopping_patience > 0:
+        parts.append(f"es{experiment_config.run.early_stopping_patience}")
+    return "-".join(parts)
 
 
 def lambda_time_for_epoch(
@@ -652,6 +675,13 @@ def lambda_time_for_epoch(
         return 0.0
     progress = min(1.0, float(epoch_index + 1) / float(ramp_epochs))
     return float(lambda_time_final) * progress
+
+
+def should_attach_overfit_gate_callback(
+    run_config: config.ArRunConfig,
+) -> bool:
+    """Overfit gate metrics / early-stop apply only to single-song overfit runs."""
+    return bool(run_config.overfit_one_song)
 
 
 def overfit_gate_score(
@@ -692,7 +722,10 @@ class EpochTimingCallback(keras.callbacks.Callback):
 
 
 class OverfitGateCallback(keras.callbacks.Callback):
-    """Publish teacher-fed gate metrics for checkpointing and early stop."""
+    """Publish teacher-fed overfit gate metrics for checkpointing and early stop.
+
+    Attach only when :func:`should_attach_overfit_gate_callback` is true.
+    """
 
     def __init__(
         self,
@@ -895,7 +928,11 @@ def train_ar_onset(
     monitor_metric = mn.resolve_checkpoint_metric(run_config.checkpoint_metric)
     monitor_mode = "min" if "loss" in monitor_metric else "max"
     if run_config.callback_root_dir:
-        experiment_name = _get_experiment_name(experiment_config)
+        experiment_name = _get_experiment_name(
+            experiment_config,
+            n_train_samples=n_train_samples,
+            n_val_samples=n_val_samples,
+        )
         tb_callbacks, callback_name = event_trainers._get_callbacks(  # noqa: SLF001
             root_dir=run_config.callback_root_dir,
             monitor_metric=monitor_metric,
@@ -928,17 +965,29 @@ def train_ar_onset(
         )
 
     callbacks.insert(0, EpochTimingCallback())
-    callbacks.insert(
-        1,
-        OverfitGateCallback(
-            early_stop=run_config.perfect_overfit_early_stop,
-            early_stop_monitor=(
-                monitor_metric if run_config.perfect_overfit_early_stop else None
+    if should_attach_overfit_gate_callback(run_config):
+        callbacks.insert(
+            1,
+            OverfitGateCallback(
+                early_stop=run_config.perfect_overfit_early_stop,
+                early_stop_monitor=(
+                    monitor_metric if run_config.perfect_overfit_early_stop else None
+                ),
+                min_score=run_config.perfect_overfit_min_score,
+                patience=run_config.perfect_overfit_patience,
             ),
-            min_score=run_config.perfect_overfit_min_score,
-            patience=run_config.perfect_overfit_patience,
-        ),
-    )
+        )
+
+    if run_config.early_stopping_patience > 0:
+        callbacks.append(
+            keras.callbacks.EarlyStopping(
+                monitor=monitor_metric,
+                mode=monitor_mode,
+                patience=run_config.early_stopping_patience,
+                restore_best_weights=True,
+                verbose=1,
+            ),
+        )
 
     history = training_model.fit(
         train_ds,

@@ -1,5 +1,5 @@
 ---
-description: Visible console, logs/_tmp captures, and no repo-root tmp when running or editing scripts
+description: Visible console, TensorBoard with train jobs, logs/_tmp captures, no repo-root tmp
 globs: scripts/**
 alwaysApply: false
 ---
@@ -12,6 +12,31 @@ Applies when running or editing files under `scripts/`.
 
 - Stream train/decode/long jobs to a **visible Cursor terminal**; log-only redirect as the sole sink is not OK.
 - **Console + `logs/<topic>.log` (tee)** is fine — terminal remains primary.
+- Never launch a long job with `> logs/... 2>&1`, `*> logs/...`, or any equivalent that hides live output from the terminal.
+
+From PowerShell, use:
+
+```powershell
+& venv\Scripts\python.exe scripts/<script>.py <args> 2>&1 | Tee-Object -FilePath logs/<topic>_<run>.log
+$code = $LASTEXITCODE
+if ($code -ne 0) { exit $code }
+```
+
+If a tool backgrounds the command after its foreground timeout, the same tee pipeline must remain attached so the visible terminal continues receiving live output.
+
+## TensorBoard with training
+
+When launching a **training** job that writes Keras TensorBoard callbacks (`callback_root_dir` / `callbacks/.../logs`):
+
+1. **Start TensorBoard in a separate terminal before or with the train command** — do not wait for the user to ask.
+2. Point `--logdir` at that run’s `…/logs` parent (timestamped run dirs appear under it).
+3. Tell the user the URL (`http://localhost:6006/` by default) when training starts.
+
+```powershell
+& venv\Scripts\tensorboard.exe --logdir callbacks/<track>/<run>/logs --port 6006
+```
+
+Use `tensorboard.exe` (not `python -m tensorboard`). Reuse an existing server on the same port only if its `--logdir` already covers this run; otherwise restart with the correct logdir.
 
 ## Temp paths
 
@@ -22,6 +47,15 @@ Applies when running or editing files under `scripts/`.
 | Research record    | `EXPERIMENT_LOG.md` (`EXP-…`) — not raw logs in git |
 
 **Do not** create `tmp_*` or `_tmp_*` at the repository root (use `_tmp/<topic>/`). Do not commit captures or scratch files.
+
+## Rerun path hygiene
+
+When the user says **rerun** / **increase epochs** / tweak hyperparams on an existing config: **keep the same** `model_output_dir` and `callback_root_dir` (and log basename). Do **not** invent `_epN` / `_run2` suffixes unless they ask for a separate artifact tree or to preserve the prior checkpoint.
+
+## AR config / TensorBoard naming
+
+- Reserve **`smoke`** for tiny gate runs (e.g. 10-song `configs/ar/smoke.json`). Multi-song scale-up configs use **`scale_<Nt>t_<Nv>v`** (not `smoke_…`).
+- AR TensorBoard run suffixes include **`{train}t{val}v-ep{epochs}`** (and `es{patience}` when early stopping is on) via `_get_experiment_name` — do not rely on the parent `callback_root_dir` alone to tell splits apart.
 
 ## GPU scheduling
 
