@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260725-01: Commit messages via repeated -m, never a scratch file
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-25 01:14:00 |
+| **Category**     | convention |
+| **Summary**      | Bash heredoc commit syntax fails to parse in PowerShell, so I fell back to writing message prose into `_tmp/commit/msg.txt` and running `git commit -F`. Nothing temp was ever staged (explicit `git add` paths; `_tmp/` gitignored), but the user flagged the pattern as wrong regardless. |
+| **Artifact**     | alwaysApply rule `.cursor/rules/state-and-paths.mdc` § Commit messages (PowerShell) — merged into existing scratch-policy rule, no new file |
+| **Action taken** | Multi-line commit messages use repeated `-m` flags, one per paragraph; `_tmp/` is for analysis artifacts, not commit prose |
+| **Related**      | steering-correction-promotion |
+
 ### JRN-20260724-01: Scale-up naming + TB run suffixes
 
 | Field            | Value |

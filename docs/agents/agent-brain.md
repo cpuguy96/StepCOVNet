@@ -19,7 +19,7 @@ audits — not duplicated into [AGENTS.md](../../AGENTS.md) as prose.
 | ------------------------ | ------------------------------------------------------------------------------------------ |
 | `agents-entry.mdc`       | Session entry — route through AGENTS.md to one index only                                  |
 | `python-environment.mdc` | Which Python executable to use — Windows venv (CPU) vs WSL (GPU)                           |
-| `state-and-paths.mdc`    | Refresh repo state before routing edits; keep tracked files free of machine-specific paths |
+| `state-and-paths.mdc`    | Refresh repo state before routing edits; portable paths, scratch hygiene, PowerShell commit messages |
 
 ## Scoped rules
 

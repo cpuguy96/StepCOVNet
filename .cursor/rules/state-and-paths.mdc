@@ -1,5 +1,5 @@
 ---
-description: Refresh repo state before routing edits; keep tracked files free of machine-specific paths
+description: Refresh repo state before routing edits; portable paths, scratch hygiene, PowerShell commit messages
 alwaysApply: true
 ---
 
@@ -47,6 +47,14 @@ Never hardcode `C:\Users\...` or `/mnt/c/Users/<name>/...` clone paths. WSL `$HO
 **Do not** create `tmp_*` or `_tmp_*` files at the **repository root**. Delete `_tmp/` contents when done; never commit them.
 
 On user steering about agent process (paths, hygiene, “remember this”), run [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md) **same turn** — journal alone is incomplete.
+
+## Commit messages (PowerShell)
+
+Build multi-line messages with **repeated `-m` flags**, one per paragraph. Bash heredoc (`-m "$(cat <<'EOF' …)"`) does not parse in PowerShell, and a scratch file + `git commit -F` is **not** the fallback — `_tmp/` is for analysis artifacts, not commit prose.
+
+```powershell
+git commit -m "subject line" -m "body paragraph" -m "second paragraph"
+```
 
 ## Pre-push validation
 
