@@ -108,6 +108,8 @@ def assert_gpu_lock_available(*, start: str | None = None, force: bool = False) 
     if force or wsl_gpu.gpu_force_enabled():
         clear_stale_lock(start)
         return
+    if gpu_lock_held_by_parent():
+        return
     path = lock_path(start)
     if path.is_file() and not clear_stale_lock(start):
         _raise_lock_busy(read_lock(start), path=path)

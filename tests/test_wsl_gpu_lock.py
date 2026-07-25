@@ -58,6 +58,16 @@ class WslGpuLockTest(unittest.TestCase):
             pass
         self.assertIsNone(wsl_gpu_lock.read_lock())
 
+    def test_assert_available_passes_when_parent_holds_lock(self) -> None:
+        wsl_gpu_lock.acquire_gpu_lock("dispatcher")
+        try:
+            with self.assertRaises(RuntimeError):
+                wsl_gpu_lock.assert_gpu_lock_available()
+            with mock.patch.dict(os.environ, {"STEPCOVNET_GPU_LOCK_HELD": "1"}):
+                wsl_gpu_lock.assert_gpu_lock_available()
+        finally:
+            wsl_gpu_lock.release_gpu_lock("dispatcher")
+
     def test_ensure_gpu_job_lock_idempotent(self) -> None:
         wsl_gpu_lock.ensure_gpu_job_lock("job_a")
         try:

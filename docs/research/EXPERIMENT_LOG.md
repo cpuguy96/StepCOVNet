@@ -36,7 +36,8 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 | **AR free-run length diagnostics** | **Ready** — `eos_trace` + `--ar_decode_min_onset_tokens` / `--ar_decode_eos_logit_bias` land offline decode probes; healthy tide reference: EOS mean **0.0017**, single spike at step **634** ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)) |
 | **AR next gate** | Free-run / length control on multi-song before **`gate-val-vs-dense`**; optional denser train (300t cache-safe) still open |
-| **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone** — EXP-20260724-01/02 cannot be re-measured here without rebuilding indices + MERT and retraining |
+| **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone**; a 50t/50v rebuild reached comparable `val_loss` but **10× worse** val F1 and the **opposite** free-run pathology ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)) — local rebuilds do **not** currently stand in for the logged runs |
+| **AR termination stability** | **Open** — same recipe gives early EOS at 200t ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) and never-EOS at 50t ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)); termination is unstable, not one-directionally biased |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
 | **AR training throughput / validation** | **Improved** — val aggregation + dynamic buckets (**18.6%** on smoke); single-song overfit batch cache default-on (~**9×** steady epoch on tide) ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing), [EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 
@@ -54,6 +55,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260724-04 | `train` + `metric` | Does a local 50t/50v rebuild reproduce the early-EOS free-run collapse? | **Fail to reproduce** | Opposite failure: **0/10** songs emit EOS, all hit the **2048** cap; EOS prob max **0.0087**; teacher ordered **14/6544** |
 | EXP-20260724-03 | `post` + `metric` | Can free-run length be probed offline, and what does healthy `<EOS>` look like? | **Supported** (tooling) | `eos_trace` + `ArLengthControl` added; tide EOS flat ~**0.0017**, spikes only at step **634**; forcing length yields **1479** FP |
 | EXP-20260724-02 | `train` + `metric` | Does 200t/50v + ES improve val, and does offline free-run hold? | **Partial** | Best `val_loss` **12.7 @ ep 40**; offline teacher F1 **0.120**, free-run F1 **0.036** |
 | EXP-20260724-01 | `train` + `metric` | Does corrected-mask AR on 50t/50v keep improving through 500 ep? | **Partial** | Best `val_loss` **20.9 @ ep 65**; ep 500 overfits (train **0.06** / val **33.6**); val F1 **~0.22** |
@@ -114,6 +116,22 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260724-04: AR 50t/50v local rebuild — free-run fails in the opposite direction
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-25 00:24:12 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Rebuilding 50t/50v locally (the July artifacts are absent from this clone), does the checkpoint reproduce the early-EOS free-run collapse of [EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode), so the new `eos_trace` can be read against it? |
+| **Setup** | `build_training_index_subset.py --train-rows 50 --val-rows 50` (seed 42) → **48** train / **43** val songs, 50/50 rows (logged run had 48/**45**; source manifest here is 1755/186 rows vs 1745/197, so the sample is **not** identical). MERT extracted for all **91** unique audio (`--device=cuda`, **5m36s**). Hardware: **RTX 2080 6 GB** (logged runs used an RTX 3070 Ti). |
+| **Train** | [`configs/ar/scale_50t_50v.json`](../../configs/ar/scale_50t_50v.json) unchanged. WSL GPU 50/50 steps/ep, ~**13–15 s**/ep. Early stop **ep 131**, restored best **ep 106**. Best `val_loss` **21.772**; best `val_aux_f1_hungarian` **0.0128**. |
+| **Divergence from logged run** | `val_loss` is comparable (**21.8** here vs **20.9** at ep 65 there), but val Hungarian F1 is **~10× worse** (**0.0128** vs **0.126**). Same config, same recipe — the difference is the subset sample and/or hardware. |
+| **Offline val decode** | `--split val --limit 10 --ar_decode` (**1284 s**). Teacher ordered **14/6544** (0.0021) @ 20 ms — essentially no timing skill. Free-run: **0/10** songs stopped on EOS; `ar_decode_length_sum` **20490** = the **2048** cap on every song. Ordered **1/20480**; Hungarian F1 **0.0035** (**47** TP, **20433** FP, **6497** FN). |
+| **EOS trace** | first **0.0007**, final **0.0053**, max **0.0087** across 10 songs; **0** songs ever reach 0.5. Compare tide ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)): mean **0.0017** but a clean spike to **0.978** at the true end. |
+| **Artifacts** | `models_wsl/ar/scale_50t_50v_corrected_masks/ar_onset_model.keras` · `callbacks/ar/scale_50t_50v_corrected_masks/` · `logs/ar_scale_50t_50v_rebuild.log` · `logs/ar_scale_50t_50v_val_decode_10.log` · `logs/mert_extract_50t_50v.log` |
+| **Conclusion** | **Fail to reproduce.** This rebuild does **not** show early-EOS under-generation; it shows the **opposite** — `<EOS>` is never selected and every song runs to the decode cap, producing **20433** false positives. Two runs of the same recipe therefore land at opposite termination pathologies (early EOS at 200t vs no EOS at 50t), which says the model is not learning termination **stably** at this data scale rather than being biased in one direction. It also means this checkpoint cannot stand in for the EXP-20260724-02 artifact when testing length fixes. Teacher timing is far too weak here (**0.0021** ordered) to attribute the free-run behavior to exposure bias alone. |
+| **Next** | Either recover the original 200t/50v artifacts from the machine that produced them, or first close the teacher-quality gap on a local rebuild (investigate why val F1 is 10× lower on the same config) before drawing conclusions about free-run length. |
 
 ### EXP-20260724-03: AR decode length control + EOS trace diagnostics
 
