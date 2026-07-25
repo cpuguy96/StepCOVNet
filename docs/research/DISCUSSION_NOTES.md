@@ -4,6 +4,46 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-07-24 — AR free-run length collapse diagnosis
+
+### NOTE-20260724-01: `eos_token_weight_scale` is a no-op under `token_class_weight: none`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-24 22:40:39 |
+| **Topic** | EOS loss weighting while diagnosing multi-song free-run under-generation |
+
+**Discovery:** `losses.build_token_class_weights_numpy` returns `None` immediately when `scheme == "none"`, **before** `eos_token_weight_scale` is applied. Every config that pairs `token_class_weight: none` with `eos_token_weight_scale != 1.0` therefore trains with **uniform** token CE, including the champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) (`0.2`) and its `v8` / `v9` variants.
+
+**Correction to prior notes:** the recipe table in [NOTE-20260703-01](#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) lists `eos_token_weight_scale` **0.2** as a champion-v8 differentiator versus the historical gate-tide bundle. That row never took effect — v8 and the historical recipe both trained with unscaled EOS. The historical recipe used `inverse_freq`, so its EOS scale of `1.0` was applied but changed nothing either.
+
+**Why it matters now:** [EXP-20260724-02](EXPERIMENT_LOG.md#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode) shows multi-song free-run collapsing through early EOS (~**70** predictions/song vs ~**700** GT). Down-weighting EOS in the token CE is an obvious first training-side lever, and the config surface implies it is already available. It is not. Enabling it currently requires turning on full inverse-frequency class weighting, which [EXP-20260703-01](EXPERIMENT_LOG.md#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe) showed hurts free-run.
+
+**Proposed fix (not yet applied):** apply the EOS scale for **any** scheme by returning a ones-vector with `EOS_ID` scaled when `scheme == "none"`, and simultaneously set `eos_token_weight_scale: 1.0` in every config that currently relies on the value being ignored, so past results stay reproducible. Touches a graduated champion config, so it needs an explicit decision.
+
+**Related:** [`src/stepcovnet/onset_ar/losses.py`](../../src/stepcovnet/onset_ar/losses.py) · [EXP-20260724-03](EXPERIMENT_LOG.md#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)
+
+### NOTE-20260724-02: Hypotheses eliminated for multi-song free-run under-generation
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-24 22:40:39 |
+| **Topic** | Source review of the AR decode/target path before retraining |
+
+Reading `onset_ar/{datasets,targets,losses,inference,kv_decode}.py` against the [EXP-20260724-02](EXPERIMENT_LOG.md#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode) failure removes three plausible causes:
+
+| Hypothesis | Verdict |
+| ---------- | ------- |
+| Charts over `max_steps_per_chart` are truncated and teach `<EOS>` at arbitrary positions | **Eliminated** — `_filter_valid_ar_samples` **skips** charts that exceed the cap (`charts.chart_exceeds_step_cap`); no truncated sequence reaches training |
+| Audio capped at `max_audio_seconds` while targets keep later onsets | **Eliminated** — `load_ar_sample` applies `event_targets.clip_times_to_duration(raw_times, duration_sec)` after truncation |
+| `<EOS>` is over-represented in the token CE | **Eliminated as over-representation** — one `<EOS>` per ~700-token sequence; if anything it is rare |
+
+**Remaining live hypothesis:** exposure bias. `scale_200t_50v.json` trains with `scheduled_sampling_max_p: 0.0`, so the decoder only ever conditions on ground-truth prefixes. With a `delta_bucketed` (relative) token scheme, free-run drift compounds, and `<EOS>` becomes the argmax once the prefix leaves the training manifold. Consistent with teacher F1 (**0.120**) transferring while free-run F1 (**0.036**) does not.
+
+**Contrast measured on tide** ([EXP-20260724-03](EXPERIMENT_LOG.md#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)): a well-fit single-song checkpoint holds EOS probability at ~**0.0017** mean across 635 steps and first crosses 0.5 at step **634** — the correct end. The new `eos_trace` block makes this directly comparable against a collapsing multi-song checkpoint.
+
+---
+
 ## Session 2026-07-16 — AR training correctness and throughput
 
 ### NOTE-20260716-01: AR attention-mask semantics were inverted

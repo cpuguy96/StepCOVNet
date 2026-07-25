@@ -34,14 +34,16 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR 50t/50v scale-up** | **Partial** — 500 ep: best `val_loss` **~20.9 @ ep 65**, then severe overfit; val F1 peaks **~0.22** ([EXP-20260724-01](#exp-20260724-01-ar-corrected-mask-50t50v-500-ep-scale-up)) |
 | **AR 200t/50v scale-up** | **Partial** — ES @ ep **65**, best `val_loss` **~12.7 @ ep 40**; offline val teacher F1 **0.120**, free-run F1 **0.036** (severe under-gen) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) |
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
+| **AR free-run length diagnostics** | **Ready** — `eos_trace` + `--ar_decode_min_onset_tokens` / `--ar_decode_eos_logit_bias` land offline decode probes; healthy tide reference: EOS mean **0.0017**, single spike at step **634** ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)) |
 | **AR next gate** | Free-run / length control on multi-song before **`gate-val-vs-dense`**; optional denser train (300t cache-safe) still open |
+| **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone** — EXP-20260724-01/02 cannot be re-measured here without rebuilding indices + MERT and retraining |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
 | **AR training throughput / validation** | **Improved** — val aggregation + dynamic buckets (**18.6%** on smoke); single-song overfit batch cache default-on (~**9×** steady epoch on tide) ([EXP-20260716-01](#exp-20260716-01-ar-validation-aggregation--dynamic-length-bucketing), [EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** 200t teacher Hungarian F1 matches train val (~**0.12**), but free-run **collapses** (early EOS / ~**70** preds/song vs ~**700** GT). Next: diagnose multi-song free-run length (EOS / scheduled sampling / decode constraints) before chasing **`gate-val-vs-dense`**.
+- **Track B (AR scale-up):** 200t teacher Hungarian F1 matches train val (~**0.12**), but free-run **collapses** (early EOS / ~**70** preds/song vs ~**700** GT). Source review eliminates chart truncation, audio/target duration mismatch, and EOS over-representation; **exposure bias** (`scheduled_sampling_max_p: 0.0`) remains the live cause ([NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)). Length control is now measurable offline, but on tide it trades FN for **1479** FP — treat it as a probe, not a fix. Next: rebuild a multi-song checkpoint locally, read its `eos_trace`, then test **scheduled sampling** at train time.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -52,6 +54,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260724-03 | `post` + `metric` | Can free-run length be probed offline, and what does healthy `<EOS>` look like? | **Supported** (tooling) | `eos_trace` + `ArLengthControl` added; tide EOS flat ~**0.0017**, spikes only at step **634**; forcing length yields **1479** FP |
 | EXP-20260724-02 | `train` + `metric` | Does 200t/50v + ES improve val, and does offline free-run hold? | **Partial** | Best `val_loss` **12.7 @ ep 40**; offline teacher F1 **0.120**, free-run F1 **0.036** |
 | EXP-20260724-01 | `train` + `metric` | Does corrected-mask AR on 50t/50v keep improving through 500 ep? | **Partial** | Best `val_loss` **20.9 @ ep 65**; ep 500 overfits (train **0.06** / val **33.6**); val F1 **~0.22** |
 | EXP-20260723-02 | `train` + `metric` | Does corrected-mask 10-song smoke keep improving to 50 ep with in-memory cache? | **Supported** | `val_loss` **35.0 → 12.1**; teacher F1 **0.01 → 0.11**; ~**2 s**/ep with cache |
@@ -111,6 +114,25 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260724-03: AR decode length control + EOS trace diagnostics
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-24 23:02:12 |
+| **Track** | `post` + `metric` (AR) |
+| **Question** | Can free-run under-generation be probed offline without retraining, and what does `<EOS>` behavior look like on a checkpoint that does **not** collapse? |
+| **Tooling** | `inference.ArLengthControl` (`eos_logit_bias`, `min_onset_tokens`) threaded through both free-run paths (prefix loop and KV decode); `ArDecodeStats.eos_prob_trace` records per-step `<EOS>` probability **before** control is applied; `debug_ar_onset_overfit.py` gains `--ar_decode_eos_logit_bias` / `--ar_decode_min_onset_tokens` and an `ar_decode.eos_trace` report block (per song and split-aggregated) |
+| **Checkpoint** | `models_wsl/ar/tide_overfit/ar_onset_model.keras` (local 2026-07-02 retrain; **not** the graduated EXP-20260630-01 artifact — see caveat) |
+| **Baseline (no control)** | Teacher ordered **627/634** (0.9890) @ 20 ms vs `target_times`; free-run two-pass **622/634** (0.9811); chart aux **617/634**; Hungarian F1 **0.9795**. Decode length **636**, stopped on EOS. |
+| **EOS trace (baseline)** | first step **0.0001**, mean **0.0017** over 635 steps, max **0.9778**, first crosses 0.5 at step **634** — i.e. `<EOS>` stays near zero for the whole song and spikes exactly at the true end |
+| **Arm: `--ar_decode_min_onset_tokens 650`** | `<EOS>` suppressed past its spike; decode runs to the **2048** cap without stopping. Ordered **547/2048** (0.2671); Hungarian F1 **0.4243** (**569** TP, **1479** FP, **65** FN). After the suppressed spike, EOS probability falls back to ~**0.002** rather than staying high. |
+| **CPU/GPU parity** | Identical metrics on Windows CPU (`STEPCOVNET_NO_WSL=1`, **330 s**) and WSL GPU (**94 s**) |
+| **Tests** | `venv\Scripts\python.exe -m pytest tests/onset_ar -q` — **70 passed** (7 new: EOS softmax, argmax default, min-token suppression, logit bias, trace length, prefix/KV parity under control, forced-length invariant) |
+| **Incidental fix** | WSL GPU dispatch was failing outright: `.gitattributes` had no `*.sh` rule, so with `core.autocrlf=true` all `scripts/wsl_*.sh` were checked out CRLF and bash rejected `set -o pipefail`. Added `*.sh text eol=lf` and renormalized. |
+| **Logs** | `logs/ar_tide_decode_baseline_gpu.log` · `logs/ar_tide_decode_min_tokens_650.log` |
+| **Conclusion** | **Supported** as tooling; **cautionary** as a fix. The `eos_trace` block gives a direct, retrain-free readout of length behavior and establishes the healthy reference shape (flat-near-zero, single spike at the true end) to compare a collapsing multi-song checkpoint against. But forcing length on tide converts the failure rather than fixing it — **1479** false positives once decode is pushed past the true end. Expect the same on multi-song: `min_onset_tokens` / EOS bias are **diagnostics**, and length control alone will not deliver **`gate-val-vs-dense`**. Remaining live cause is exposure bias (`scheduled_sampling_max_p: 0.0`); see [NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation). |
+| **Caveat** | None of the July 16–24 AR artifacts (200t/50v and 50t/50v checkpoints, subset indices, their logs) exist in this clone, so EXP-20260724-02 could not be re-measured here. The local tide checkpoint scores **627/634** teacher, below the graduated **634/634**; treat it as a working checkpoint, not the champion artifact. |
 
 ### EXP-20260724-02: AR corrected-mask 200t/50v train + offline val decode
 

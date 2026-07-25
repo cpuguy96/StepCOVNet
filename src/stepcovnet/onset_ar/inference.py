@@ -16,13 +16,80 @@ ArTimeSource = Literal["pointer_residual", "tokens"]
 
 @dataclasses.dataclass(frozen=True)
 class ArDecodeStats:
-    """Free-running autoregressive decode summary."""
+    """Free-running autoregressive decode summary.
+
+    Attributes:
+        times: Predicted onset times in seconds.
+        n_forward_steps: Decoder forward passes run.
+        n_onset_tokens: Onset tokens emitted before stopping.
+        stopped_on_eos: Whether decode ended on ``<EOS>`` rather than the cap.
+        onset_token_ids: Emitted onset token ids, when available.
+        eos_prob_trace: Per-step ``<EOS>`` probability before length control.
+    """
 
     times: np.ndarray
     n_forward_steps: int
     n_onset_tokens: int
     stopped_on_eos: bool
     onset_token_ids: np.ndarray | None = None
+    eos_prob_trace: np.ndarray | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class ArLengthControl:
+    """Decode-time constraints on free-run sequence length.
+
+    Attributes:
+        eos_logit_bias: Added to the ``<EOS>`` logit before argmax; negative
+            values discourage stopping.
+        min_onset_tokens: Suppress ``<EOS>`` until this many onset tokens have
+            been emitted.
+    """
+
+    eos_logit_bias: float = 0.0
+    min_onset_tokens: int = 0
+
+    def is_active(self) -> bool:
+        """Return whether this control changes greedy decoding at all."""
+        return self.eos_logit_bias != 0.0 or self.min_onset_tokens > 0
+
+
+def eos_probability(token_logits: np.ndarray, *, eos_id: int = targets.EOS_ID) -> float:
+    """Return the softmax probability of ``<EOS>`` for one step's token logits.
+
+    Args:
+        token_logits: Unnormalized token scores for a single decoder position.
+        eos_id: Vocabulary id of the end-of-sequence token.
+    """
+    logits = np.asarray(token_logits, dtype=np.float64).reshape(-1)
+    shifted = np.exp(logits - float(np.max(logits)))
+    return float(shifted[eos_id] / max(float(np.sum(shifted)), 1e-12))
+
+
+def select_next_token(
+    token_logits: np.ndarray,
+    *,
+    eos_id: int = targets.EOS_ID,
+    n_emitted: int = 0,
+    length_control: ArLengthControl | None = None,
+) -> int:
+    """Return the greedy next token id after applying ``length_control``.
+
+    Args:
+        token_logits: Unnormalized token scores for a single decoder position.
+        eos_id: Vocabulary id of the end-of-sequence token.
+        n_emitted: Onset tokens emitted so far in this sequence.
+        length_control: Optional length constraints; ``None`` is plain argmax.
+    """
+    logits = np.asarray(token_logits, dtype=np.float32)
+    if length_control is None or not length_control.is_active():
+        return int(np.argmax(logits))
+    logits = logits.copy()
+    if n_emitted < length_control.min_onset_tokens:
+        logits[eos_id] = -np.inf
+    else:
+        logits[eos_id] += float(length_control.eos_logit_bias)
+    return int(np.argmax(logits))
 
 
 @dataclasses.dataclass
@@ -279,6 +346,7 @@ def decode_autoregressive_two_pass_with_stats_numpy(
     eos_id: int = targets.EOS_ID,
     use_kv_cache: bool = True,
     token_pass: ArDecodeStats | None = None,
+    length_control: ArLengthControl | None = None,
 ) -> ArDecodeStats:
     """Parallel pointer+residual re-forward for free-run (or supplied) onset tokens."""
     if token_pass is None:
@@ -294,6 +362,7 @@ def decode_autoregressive_two_pass_with_stats_numpy(
             eos_id=eos_id,
             use_kv_cache=use_kv_cache,
             time_source="pointer_residual",
+            length_control=length_control,
         )
     if token_pass.onset_token_ids is None or token_pass.onset_token_ids.size == 0:
         return ArDecodeStats(
@@ -302,6 +371,7 @@ def decode_autoregressive_two_pass_with_stats_numpy(
             n_onset_tokens=0,
             stopped_on_eos=token_pass.stopped_on_eos,
             onset_token_ids=token_pass.onset_token_ids,
+            eos_prob_trace=token_pass.eos_prob_trace,
         )
     parallel_times = decode_parallel_pointer_times_numpy(
         model,
@@ -316,6 +386,7 @@ def decode_autoregressive_two_pass_with_stats_numpy(
         n_onset_tokens=int(parallel_times.size),
         stopped_on_eos=token_pass.stopped_on_eos,
         onset_token_ids=token_pass.onset_token_ids,
+        eos_prob_trace=token_pass.eos_prob_trace,
     )
 
 
@@ -331,6 +402,7 @@ def decode_autoregressive_gate_with_stats_numpy(
     bos_id: int = targets.BOS_ID,
     eos_id: int = targets.EOS_ID,
     use_kv_cache: bool = True,
+    length_control: ArLengthControl | None = None,
 ) -> ArDecodeStats:
     """Offline gate decode: incremental tokens, parallel pointer+residual times."""
     return decode_autoregressive_two_pass_with_stats_numpy(
@@ -344,6 +416,7 @@ def decode_autoregressive_gate_with_stats_numpy(
         bos_id=bos_id,
         eos_id=eos_id,
         use_kv_cache=use_kv_cache,
+        length_control=length_control,
     )
 
 
@@ -447,12 +520,14 @@ def _decode_autoregressive_prefix_numpy(
     eos_id: int,
     time_source: ArTimeSource = "pointer_residual",
     experiment_config: config.ArExperimentConfig | None = None,
+    length_control: ArLengthControl | None = None,
 ) -> ArDecodeStats:
     """Legacy full-prefix decode loop (one forward per token)."""
     decoder_input = decoder_inputs["decoder_input_ids"]
     decoder_mask_arr = decoder_inputs["decoder_mask"]
     pointer_times: list[float] = []
     onset_token_ids: list[int] = []
+    eos_probs: list[float] = []
     cur_len = 1
     n_forward_steps = 0
     stopped_on_eos = False
@@ -463,7 +538,13 @@ def _decode_autoregressive_prefix_numpy(
         token_logits = np.asarray(outputs["token_logits"][0, pos], dtype=np.float32)
         pointer_logits = np.asarray(outputs["pointer_logits"][0, pos], dtype=np.float32)
         residual_sec = float(outputs["residual_sec"][0, pos].numpy())
-        next_token = int(np.argmax(token_logits))
+        eos_probs.append(eos_probability(token_logits, eos_id=eos_id))
+        next_token = select_next_token(
+            token_logits,
+            eos_id=eos_id,
+            n_emitted=len(onset_token_ids),
+            length_control=length_control,
+        )
         if next_token == eos_id:
             stopped_on_eos = True
             break
@@ -490,6 +571,7 @@ def _decode_autoregressive_prefix_numpy(
         n_onset_tokens=len(onset_token_ids),
         stopped_on_eos=stopped_on_eos,
         onset_token_ids=token_arr,
+        eos_prob_trace=np.asarray(eos_probs, dtype=np.float32),
     )
 
 
@@ -506,29 +588,22 @@ def decode_autoregressive_with_stats_numpy(
     eos_id: int = targets.EOS_ID,
     use_kv_cache: bool = True,
     time_source: ArTimeSource = "pointer_residual",
+    length_control: ArLengthControl | None = None,
 ) -> ArDecodeStats:
     """Free-running decode until ``<EOS>`` or ``max_decoder_len``."""
     if experiment_config is not None and use_kv_cache:
-        times, n_forward_steps, n_onset_tokens, stopped_on_eos, onset_token_ids = (
-            kv_decode.decode_autoregressive_with_kv_cache_numpy(
-                model,
-                mert_patches,
-                patch_mask,
-                experiment_config=experiment_config,
-                max_decoder_len=max_decoder_len,
-                patch_frames=patch_frames,
-                hop_sec=hop_sec,
-                bos_id=bos_id,
-                eos_id=eos_id,
-                time_source=time_source,
-            )
-        )
-        return ArDecodeStats(
-            times=times,
-            n_forward_steps=n_forward_steps,
-            n_onset_tokens=n_onset_tokens,
-            stopped_on_eos=stopped_on_eos,
-            onset_token_ids=onset_token_ids,
+        return kv_decode.decode_autoregressive_with_kv_cache_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            experiment_config=experiment_config,
+            max_decoder_len=max_decoder_len,
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+            bos_id=bos_id,
+            eos_id=eos_id,
+            time_source=time_source,
+            length_control=length_control,
         )
 
     mert_patches = np.asarray(mert_patches, dtype=np.float32)
@@ -574,6 +649,7 @@ def decode_autoregressive_with_stats_numpy(
         eos_id=eos_id,
         time_source=time_source,
         experiment_config=experiment_config,
+        length_control=length_control,
     )
 
 
@@ -589,6 +665,7 @@ def decode_autoregressive_times_numpy(
     bos_id: int = targets.BOS_ID,
     eos_id: int = targets.EOS_ID,
     time_source: ArTimeSource = "pointer_residual",
+    length_control: ArLengthControl | None = None,
 ) -> np.ndarray:
     """Free-running token decode until ``<EOS>``; return onset times in seconds."""
     return decode_autoregressive_with_stats_numpy(
@@ -602,6 +679,7 @@ def decode_autoregressive_times_numpy(
         bos_id=bos_id,
         eos_id=eos_id,
         time_source=time_source,
+        length_control=length_control,
     ).times
 
 

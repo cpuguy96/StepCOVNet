@@ -195,6 +195,56 @@ class KvDecodeTest(unittest.TestCase):
             token_stats.times, expected_times, rtol=1e-4, atol=1e-4
         )
 
+    def test_kv_and_prefix_agree_under_length_control(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        max_patches = experiment_config.max_encoder_patches()
+        max_dec = experiment_config.max_decoder_len()
+        patch_dim = experiment_config.patch_input_dim()
+
+        rng = np.random.default_rng(0)
+        mert_patches = rng.standard_normal((1, max_patches, patch_dim)).astype(
+            np.float32
+        )
+        patch_mask = np.zeros((1, max_patches), dtype=np.float32)
+        patch_mask[0, :6] = 1.0
+
+        decode_kwargs = {
+            "max_decoder_len": max_dec,
+            "patch_frames": experiment_config.model.patch_frames,
+            "hop_sec": experiment_config.dataset.hop_sec,
+            "experiment_config": experiment_config,
+            "length_control": inference.ArLengthControl(
+                eos_logit_bias=-5.0,
+                min_onset_tokens=3,
+            ),
+        }
+
+        prefix_stats = inference.decode_autoregressive_with_stats_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            use_kv_cache=False,
+            **decode_kwargs,
+        )
+        kv_stats = inference.decode_autoregressive_with_stats_numpy(
+            model,
+            mert_patches,
+            patch_mask,
+            use_kv_cache=True,
+            **decode_kwargs,
+        )
+
+        self.assertGreaterEqual(prefix_stats.n_onset_tokens, 3)
+        self.assertEqual(prefix_stats.n_onset_tokens, kv_stats.n_onset_tokens)
+        self.assertEqual(prefix_stats.stopped_on_eos, kv_stats.stopped_on_eos)
+        np.testing.assert_allclose(
+            prefix_stats.eos_prob_trace,
+            kv_stats.eos_prob_trace,
+            rtol=1e-4,
+            atol=1e-4,
+        )
+
     def test_kv_decode_step_output_shapes(self) -> None:
         experiment_config = _tiny_experiment_config()
         model = models.build_ar_onset_model(experiment_config)

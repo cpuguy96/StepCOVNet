@@ -153,6 +153,103 @@ class InferenceDecodeTest(unittest.TestCase):
             incremental.n_forward_steps + 1,
         )
 
+    def test_eos_probability_matches_softmax(self) -> None:
+        logits = np.asarray([0.0, 1.0, 2.0, 3.0], dtype=np.float32)
+        expected = float(np.exp(2.0) / np.exp(logits).sum())
+        self.assertAlmostEqual(
+            inference.eos_probability(logits, eos_id=targets.EOS_ID),
+            expected,
+            places=6,
+        )
+
+    def test_select_next_token_defaults_to_argmax(self) -> None:
+        logits = np.asarray([0.0, 1.0, 5.0, 3.0], dtype=np.float32)
+        self.assertEqual(inference.select_next_token(logits), targets.EOS_ID)
+        self.assertEqual(
+            inference.select_next_token(
+                logits,
+                length_control=inference.ArLengthControl(),
+            ),
+            targets.EOS_ID,
+        )
+
+    def test_min_onset_tokens_suppresses_eos(self) -> None:
+        logits = np.asarray([0.0, 1.0, 5.0, 3.0], dtype=np.float32)
+        length_control = inference.ArLengthControl(min_onset_tokens=2)
+        self.assertEqual(
+            inference.select_next_token(
+                logits,
+                n_emitted=0,
+                length_control=length_control,
+            ),
+            3,
+        )
+        self.assertEqual(
+            inference.select_next_token(
+                logits,
+                n_emitted=2,
+                length_control=length_control,
+            ),
+            targets.EOS_ID,
+        )
+
+    def test_eos_logit_bias_shifts_stop_decision(self) -> None:
+        logits = np.asarray([0.0, 1.0, 5.0, 3.0], dtype=np.float32)
+        self.assertEqual(
+            inference.select_next_token(
+                logits,
+                length_control=inference.ArLengthControl(eos_logit_bias=-3.0),
+            ),
+            3,
+        )
+        self.assertEqual(
+            inference.select_next_token(
+                logits,
+                length_control=inference.ArLengthControl(eos_logit_bias=-1.0),
+            ),
+            targets.EOS_ID,
+        )
+
+    def test_free_run_records_eos_trace_per_step(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        batch = _synthetic_batch(experiment_config)
+        stats = inference.decode_autoregressive_with_stats_numpy(
+            model,
+            batch["mert_patches"],
+            batch["patch_mask"],
+            max_decoder_len=experiment_config.max_decoder_len(),
+            patch_frames=experiment_config.model.patch_frames,
+            hop_sec=experiment_config.dataset.hop_sec,
+            experiment_config=experiment_config,
+        )
+        self.assertIsNotNone(stats.eos_prob_trace)
+        assert stats.eos_prob_trace is not None
+        self.assertEqual(stats.eos_prob_trace.size, stats.n_forward_steps)
+        self.assertTrue(np.all(stats.eos_prob_trace >= 0.0))
+        self.assertTrue(np.all(stats.eos_prob_trace <= 1.0))
+
+    def test_length_control_blocks_early_eos_in_free_run(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        batch = _synthetic_batch(experiment_config)
+        max_decoder_len = experiment_config.max_decoder_len()
+        min_onset_tokens = max_decoder_len - 1
+        stats = inference.decode_autoregressive_with_stats_numpy(
+            model,
+            batch["mert_patches"],
+            batch["patch_mask"],
+            max_decoder_len=max_decoder_len,
+            patch_frames=experiment_config.model.patch_frames,
+            hop_sec=experiment_config.dataset.hop_sec,
+            experiment_config=experiment_config,
+            length_control=inference.ArLengthControl(
+                min_onset_tokens=min_onset_tokens,
+            ),
+        )
+        self.assertFalse(stats.stopped_on_eos)
+        self.assertEqual(stats.n_onset_tokens, min_onset_tokens)
+
     def test_encoder_memory_cache_reused(self) -> None:
         experiment_config = _tiny_experiment_config()
         model = models.build_ar_onset_model(experiment_config)

@@ -110,8 +110,23 @@ def decode_autoregressive_with_kv_cache_numpy(
     bos_id: int,
     eos_id: int,
     time_source: ar_inference.ArTimeSource = "pointer_residual",
-) -> tuple[np.ndarray, int, int, bool, np.ndarray]:
-    """Free-run decode with cached encoder memory; returns times and decode stats."""
+    length_control: ar_inference.ArLengthControl | None = None,
+) -> ar_inference.ArDecodeStats:
+    """Free-run decode with cached encoder memory; returns times and decode stats.
+
+    Args:
+        model: Trained AR onset model.
+        mert_patches: Patched MERT features for one song.
+        patch_mask: Validity mask over encoder patches.
+        experiment_config: Config used to build the inference submodels.
+        max_decoder_len: Hard cap on decoder positions.
+        patch_frames: Hop frames per encoder patch.
+        hop_sec: Seconds per hop frame.
+        bos_id: Vocabulary id of the start token.
+        eos_id: Vocabulary id of the end token.
+        time_source: Whether times come from pointer+residual or token deltas.
+        length_control: Optional decode-time ``<EOS>`` constraints.
+    """
     mert_patches = np.asarray(mert_patches, dtype=np.float32)
     patch_mask = np.asarray(patch_mask, dtype=np.float32)
     if mert_patches.ndim == 2:
@@ -147,6 +162,7 @@ def decode_autoregressive_with_kv_cache_numpy(
     patch_duration = float(patch_frames) * float(hop_sec)
     pointer_times: list[float] = []
     onset_token_ids: list[int] = []
+    eos_probs: list[float] = []
     n_forward_steps = 0
     stopped_on_eos = False
     cur_len = 1
@@ -162,7 +178,13 @@ def decode_autoregressive_with_kv_cache_numpy(
         token_logits = np.asarray(outputs["token_logits"][0, 0], dtype=np.float32)
         pointer_logits = np.asarray(outputs["pointer_logits"][0, 0], dtype=np.float32)
         residual_sec = float(np.asarray(outputs["residual_sec"]).reshape(-1)[0])
-        next_token = int(np.argmax(token_logits))
+        eos_probs.append(ar_inference.eos_probability(token_logits, eos_id=eos_id))
+        next_token = ar_inference.select_next_token(
+            token_logits,
+            eos_id=eos_id,
+            n_emitted=len(onset_token_ids),
+            length_control=length_control,
+        )
         if next_token == eos_id:
             stopped_on_eos = True
             break
@@ -184,10 +206,11 @@ def decode_autoregressive_with_kv_cache_numpy(
     else:
         times = np.asarray(pointer_times, dtype=np.float32)
 
-    return (
-        times,
-        n_forward_steps,
-        len(onset_token_ids),
-        stopped_on_eos,
-        token_arr,
+    return ar_inference.ArDecodeStats(
+        times=times,
+        n_forward_steps=n_forward_steps,
+        n_onset_tokens=len(onset_token_ids),
+        stopped_on_eos=stopped_on_eos,
+        onset_token_ids=token_arr,
+        eos_prob_trace=np.asarray(eos_probs, dtype=np.float32),
     )

@@ -18,6 +18,15 @@ timing vs training ``target_times`` (primary). Raw chart ``gt_times`` is logged 
 ``chart_ordered_onset_match`` and Hungarian F1 (aux). Pass ``--full-diagnostics``
 for token trace, gt_timing parity, and other slow ``ar_decode.diagnostics``.
 
+Free-run length is reported as ``ar_decode.eos_trace`` (per-step ``<EOS>``
+probability summary). ``--ar_decode_eos_logit_bias`` and
+``--ar_decode_min_onset_tokens`` constrain when the decoder may stop, so an
+under-generating checkpoint can be probed without retraining:
+
+    python scripts/debug_ar_onset_overfit.py \\
+        --config configs/ar/scale_200t_50v.json --split val --ar_decode \\
+        --ar_decode_min_onset_tokens 400
+
 ``--split train|val`` evaluates every valid sample in that manifest split and
 reports micro-averaged ``ordered_onset_match`` / Hungarian F1 (plus optional
 free-run). ``--split overfit`` (default) keeps the single-song overfit path.
@@ -103,6 +112,24 @@ PARSER.add_argument(
     help="How to convert free-run tokens into onset times (with --ar_decode).",
 )
 PARSER.add_argument(
+    "--ar_decode_eos_logit_bias",
+    type=float,
+    default=0.0,
+    help=(
+        "Additive bias on the <EOS> logit during free-run decode; negative "
+        "values discourage stopping (with --ar_decode)."
+    ),
+)
+PARSER.add_argument(
+    "--ar_decode_min_onset_tokens",
+    type=int,
+    default=0,
+    help=(
+        "Suppress <EOS> during free-run decode until this many onset tokens "
+        "have been emitted (with --ar_decode)."
+    ),
+)
+PARSER.add_argument(
     "--json-only",
     action="store_true",
     help="Skip human-readable stderr progress/summary; emit JSON only.",
@@ -142,6 +169,31 @@ def _event_f1_line(block: dict[str, object]) -> str:
     )
 
 
+def _eos_trace_line(block: dict[str, object]) -> str:
+    """Return a one-line ``<EOS>`` probability summary for a song or a split.
+
+    Args:
+        block: Per-song ``eos_trace`` summary or its split-level aggregate.
+    """
+    if "first_mean" in block:
+        return (
+            f"EOS prob (mean over {int(block['n_songs'])} songs): "
+            f"first {float(block['first_mean']):.4f} | "
+            f"final {float(block['final_mean']):.4f} | "
+            f"max {float(block['max_mean']):.4f} | "
+            f"songs reaching 0.5: {int(block['n_songs_ge_half'])}"
+        )
+    ge_half = block.get("first_step_ge_half")
+    ge_half_text = "never" if ge_half is None else f"step {int(ge_half)}"
+    return (
+        f"EOS prob over {int(block['n_steps'])} steps: "
+        f"first {float(block['first']):.4f} | "
+        f"final {float(block['final']):.4f} | "
+        f"max {float(block['max']):.4f} | "
+        f"reaches 0.5: {ge_half_text}"
+    )
+
+
 def _ordered_onset_report(
     pred_times: np.ndarray,
     target_times: np.ndarray,
@@ -174,6 +226,69 @@ def _onset_reference_times(
     return target, chart
 
 
+def _eos_trace_stats(eos_prob_trace: np.ndarray | None) -> dict[str, object] | None:
+    """Summarize the per-step ``<EOS>`` probability trace of one free-run decode.
+
+    Args:
+        eos_prob_trace: Per-step ``<EOS>`` probability, or ``None`` if unavailable.
+
+    Returns:
+        Summary of the trace, or ``None`` when no steps were recorded.
+    """
+    if eos_prob_trace is None:
+        return None
+    trace = np.asarray(eos_prob_trace, dtype=np.float64).reshape(-1)
+    if trace.size == 0:
+        return None
+    above_half = np.flatnonzero(trace >= 0.5)
+    return {
+        "n_steps": int(trace.size),
+        "first": float(trace[0]),
+        "final": float(trace[-1]),
+        "mean": float(trace.mean()),
+        "max": float(trace.max()),
+        "first_step_ge_half": int(above_half[0]) if above_half.size else None,
+    }
+
+
+def _aggregate_eos_traces(eos_traces: list[dict[str, object]]) -> dict[str, object]:
+    """Average per-song ``<EOS>`` trace summaries across a split.
+
+    Args:
+        eos_traces: Per-song summaries produced by ``_eos_trace_stats``.
+    """
+
+    def _mean(key: str) -> float:
+        values = [float(t[key]) for t in eos_traces if isinstance(t.get(key), float)]
+        return float(np.mean(values)) if values else 0.0
+
+    return {
+        "n_songs": len(eos_traces),
+        "first_mean": _mean("first"),
+        "final_mean": _mean("final"),
+        "max_mean": _mean("max"),
+        "n_songs_ge_half": sum(
+            1 for t in eos_traces if t.get("first_step_ge_half") is not None
+        ),
+    }
+
+
+def _length_control_report(
+    length_control: inference.ArLengthControl | None,
+) -> dict[str, object] | None:
+    """Return a JSON-friendly record of active decode length control, if any.
+
+    Args:
+        length_control: Length control applied during free-run decode.
+    """
+    if length_control is None or not length_control.is_active():
+        return None
+    return {
+        "eos_logit_bias": length_control.eos_logit_bias,
+        "min_onset_tokens": length_control.min_onset_tokens,
+    }
+
+
 def _ar_decode_gate_metrics(
     pred_times: np.ndarray,
     target_times: np.ndarray,
@@ -183,6 +298,8 @@ def _ar_decode_gate_metrics(
     ar_decode_length: int,
     stopped_on_eos: bool,
     timing_mode: str = "two_pass",
+    eos_prob_trace: np.ndarray | None = None,
+    length_control: inference.ArLengthControl | None = None,
 ) -> dict[str, object]:
     """Primary ordered match vs target_times; aux vs raw chart."""
     ordered = _ordered_onset_report(
@@ -200,7 +317,7 @@ def _ar_decode_gate_metrics(
         chart_times,
         tolerance_sec=tolerance_sec,
     )
-    return {
+    metrics: dict[str, object] = {
         "timing_mode": timing_mode,
         mn.TIMING_MATCH_AR_DECODE: ordered,
         "timing_match": ordered,
@@ -212,6 +329,13 @@ def _ar_decode_gate_metrics(
         **event_block,
         mn.AUX_F1_HUNGARIAN: event_block["event_f1"],
     }
+    eos_trace = _eos_trace_stats(eos_prob_trace)
+    if eos_trace is not None:
+        metrics["eos_trace"] = eos_trace
+    control = _length_control_report(length_control)
+    if control is not None:
+        metrics["length_control"] = control
+    return metrics
 
 
 def _primary_timing_block(report: dict[str, object]) -> dict[str, object]:
@@ -358,6 +482,16 @@ def _print_ar_decode_summary(
             f"  {_ordered_gate_line(chart, tol_ms=tol_ms)} (aux: raw chart)",
             quiet=quiet,
         )
+    control = ar_decode.get("length_control")
+    if isinstance(control, dict):
+        _log(
+            f"  Length control: eos_logit_bias={control['eos_logit_bias']} "
+            f"min_onset_tokens={control['min_onset_tokens']}",
+            quiet=quiet,
+        )
+    eos_trace = ar_decode.get("eos_trace")
+    if isinstance(eos_trace, dict):
+        _log(f"  {_eos_trace_line(eos_trace)}", quiet=quiet)
     _log("", quiet=quiet)
     _log("--- Aux ---", quiet=quiet)
     _log(f"  Hungarian F1: {_event_f1_line(ar_decode)}", quiet=quiet)
@@ -680,6 +814,7 @@ def _ar_decode_report(
     token_trace_steps: int,
     time_source: inference.ArTimeSource = "pointer_residual",
     compare_time_sources: bool = False,
+    length_control: inference.ArLengthControl | None = None,
 ) -> dict[str, object]:
     """Two-pass gate metrics; incremental timing under ``diagnostics``."""
     run_config = experiment_config.run
@@ -703,6 +838,7 @@ def _ar_decode_report(
         mert,
         patch_mask,
         time_source=time_source,
+        length_control=length_control,
         **decode_kwargs,
     )
     gate_stats = inference.decode_autoregressive_two_pass_with_stats_numpy(
@@ -753,6 +889,8 @@ def _ar_decode_report(
             tolerance_sec=run_config.tolerance_sec,
             ar_decode_length=gate_stats.n_forward_steps,
             stopped_on_eos=gate_stats.stopped_on_eos,
+            eos_prob_trace=gate_stats.eos_prob_trace,
+            length_control=length_control,
         ),
         "diagnostics": diagnostics,
     }
@@ -817,6 +955,7 @@ def _ar_decode_gate_only_report(
     batch_np: dict[str, np.ndarray],
     *,
     experiment_config: config.ArExperimentConfig,
+    length_control: inference.ArLengthControl | None = None,
 ) -> dict[str, object]:
     """Two-pass gate metrics only (no diagnostics overhead)."""
     run_config = experiment_config.run
@@ -833,6 +972,7 @@ def _ar_decode_gate_only_report(
         patch_frames=model_config.patch_frames,
         hop_sec=experiment_config.dataset.hop_sec,
         experiment_config=experiment_config,
+        length_control=length_control,
     )
     return _ar_decode_gate_metrics(
         gate_stats.times,
@@ -841,6 +981,8 @@ def _ar_decode_gate_only_report(
         tolerance_sec=run_config.tolerance_sec,
         ar_decode_length=gate_stats.n_forward_steps,
         stopped_on_eos=gate_stats.stopped_on_eos,
+        eos_prob_trace=gate_stats.eos_prob_trace,
+        length_control=length_control,
     )
 
 
@@ -933,6 +1075,7 @@ def _eval_one_batch(
     ar_decode_time_source: str,
     worst_k: int,
     keep_error_arrays: bool = False,
+    length_control: inference.ArLengthControl | None = None,
 ) -> dict[str, object]:
     batch_tf = {key: tf.constant(value) for key, value in batch_np.items()}
     outputs = model(_model_inputs(batch_tf), training=False)
@@ -947,12 +1090,14 @@ def _eval_one_batch(
                 token_trace_steps=token_trace_steps,
                 time_source=ar_decode_time_source,
                 compare_time_sources=True,
+                length_control=length_control,
             )
         else:
             report["ar_decode"] = _ar_decode_gate_only_report(
                 model,
                 batch_np,
                 experiment_config=experiment_config,
+                length_control=length_control,
             )
     abs_err = report.get("_abs_err_ms")
     residual_err = report.get("_residual_err_ms")
@@ -1038,7 +1183,7 @@ def _aggregate_split_reports(
             [r["chart_ordered_onset_match"] for r in ar_rows],  # type: ignore[arg-type]
         )
         ar_f1 = _sum_event_f1(ar_rows)
-        report["ar_decode"] = {
+        ar_block: dict[str, object] = {
             "timing_mode": "two_pass",
             mn.TIMING_MATCH_AR_DECODE: ar_ordered,
             "timing_match": ar_ordered,
@@ -1054,6 +1199,18 @@ def _aggregate_split_reports(
                 int(r.get("ar_decode_length", 0)) for r in ar_rows
             ),
         }
+        eos_traces = [
+            r["eos_trace"] for r in ar_rows if isinstance(r.get("eos_trace"), dict)
+        ]
+        if eos_traces:
+            ar_block["eos_trace"] = _aggregate_eos_traces(eos_traces)
+        control = next(
+            (r["length_control"] for r in ar_rows if r.get("length_control")),
+            None,
+        )
+        if control is not None:
+            ar_block["length_control"] = control
+        report["ar_decode"] = ar_block
     return report
 
 
@@ -1066,6 +1223,7 @@ def _eval_split(
     ar_decode: bool,
     quiet: bool,
     worst_k: int,
+    length_control: inference.ArLengthControl | None = None,
 ) -> dict[str, object]:
     samples = _list_split_samples(experiment_config, split=split, limit=limit)
     if not samples:
@@ -1092,6 +1250,7 @@ def _eval_split(
             ar_decode_time_source="pointer_residual",
             worst_k=worst_k,
             keep_error_arrays=True,
+            length_control=length_control,
         )
         song["audio_path"] = audio_path
         song["chart_path"] = chart_path
@@ -1145,6 +1304,18 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
     model = tf.keras.models.load_model(str(model_path), compile=False)
     t0 = time.perf_counter()
 
+    length_control = inference.ArLengthControl(
+        eos_logit_bias=args.ar_decode_eos_logit_bias,
+        min_onset_tokens=args.ar_decode_min_onset_tokens,
+    )
+    if args.ar_decode and length_control.is_active():
+        _log(
+            f"Free-run length control: eos_logit_bias="
+            f"{length_control.eos_logit_bias} "
+            f"min_onset_tokens={length_control.min_onset_tokens}",
+            quiet=quiet,
+        )
+
     if args.split == "overfit":
         _log("Running teacher-fed eval...", quiet=quiet)
         if args.ar_decode and args.full_diagnostics:
@@ -1167,6 +1338,7 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             token_trace_steps=args.token_trace_steps,
             ar_decode_time_source=args.ar_decode_time_source,
             worst_k=args.worst_k,
+            length_control=length_control,
         )
     else:
         report = _eval_split(
@@ -1177,6 +1349,7 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             ar_decode=args.ar_decode,
             quiet=quiet,
             worst_k=args.worst_k,
+            length_control=length_control,
         )
 
     elapsed_sec = time.perf_counter() - t0
