@@ -30,8 +30,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         help=(
             "Output manifest path (default: "
-            "{output_dir}/training_index_scoreboard_{train}t_{val}v.json)"
+            "{output_dir}/training_index_{policy_tag}_{train}t_{val}v.json)"
         ),
+    )
+    parser.add_argument(
+        "--policy-tag",
+        default=training_index.SUBSET_POLICY_LADDER_V1,
+        help="Tag recorded in split_policy and used in the default filename",
     )
     parser.add_argument(
         "--train-rows",
@@ -59,9 +64,24 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def default_subset_path(output_dir: str, train_rows: int, val_rows: int) -> str:
-    """Return the default scoreboard subset manifest path under ``output_dir``."""
-    name = f"training_index_scoreboard_{train_rows}t_{val_rows}v.json"
+def default_subset_path(
+    output_dir: str,
+    train_rows: int,
+    val_rows: int,
+    policy_tag: str = training_index.SUBSET_POLICY_LADDER_V1,
+) -> str:
+    """Return the default subset manifest path under ``output_dir``.
+
+    Args:
+        output_dir: Preprocess output root recorded in the source manifest.
+        train_rows: Number of train chart rows in the subset.
+        val_rows: Number of val chart rows in the subset.
+        policy_tag: Tag recorded in ``split_policy``; also names the file.
+
+    Returns:
+        Path to ``{output_dir}/training_index_{policy_tag}_{train}t_{val}v.json``.
+    """
+    name = f"training_index_{policy_tag}_{train_rows}t_{val_rows}v.json"
     return str(training_index.training_index_path(output_dir).with_name(name))
 
 
@@ -83,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             train_rows=args.train_rows,
             val_rows=args.val_rows,
             seed=args.seed,
+            policy_tag=args.policy_tag,
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -92,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         subset.output_dir,
         args.train_rows,
         args.val_rows,
+        args.policy_tag,
     )
     output_path = pathlib.Path(output)
     if output_path.is_file() and not args.overwrite:
@@ -116,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = {
         "source": str(source_path),
+        "source_sha256": subset.source_sha256,
         "path": str(saved),
         "split_policy": subset.split_policy,
         "split_seed": subset.split_seed,

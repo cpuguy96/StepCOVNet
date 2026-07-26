@@ -18,6 +18,7 @@ SplitName = Literal["train", "val"]
 SPLIT_TRAIN: SplitName = "train"
 SPLIT_VAL: SplitName = "val"
 SPLIT_POLICY_STRATIFIED_SONG_V1 = "stratified_song_v1"
+SUBSET_POLICY_LADDER_V1 = "ladder_v1"
 TRAINING_INDEX_FILENAME = "training_index.json"
 
 
@@ -76,6 +77,8 @@ class TrainingIndex:
         created_at: ISO-8601 UTC timestamp when the manifest was built.
         counts: Aggregate song and row counts per split.
         entries: One row per chart block with split label and relative paths.
+        source_sha256: Hex digest of the manifest a subset was sampled from;
+            empty for manifests built directly from a preprocess output root.
     """
 
     schema_version: int
@@ -86,6 +89,7 @@ class TrainingIndex:
     created_at: str
     counts: TrainingIndexCounts
     entries: list[TrainingIndexEntry]
+    source_sha256: str = ""
 
 
 def training_index_path(output_dir: str | os.PathLike[str]) -> pathlib.Path:
@@ -473,7 +477,7 @@ def _index_to_dict(index: TrainingIndex) -> dict:
     Returns:
         Dictionary suitable for ``json.dump``.
     """
-    return {
+    payload = {
         "schema_version": index.schema_version,
         "output_dir": index.output_dir,
         "split_policy": index.split_policy,
@@ -486,6 +490,9 @@ def _index_to_dict(index: TrainingIndex) -> dict:
         },
         "entries": [dataclasses.asdict(entry) for entry in index.entries],
     }
+    if index.source_sha256:
+        payload["source_sha256"] = index.source_sha256
+    return payload
 
 
 def _index_from_dict(data: dict) -> TrainingIndex:
@@ -530,6 +537,7 @@ def _index_from_dict(data: dict) -> TrainingIndex:
         created_at=str(data.get("created_at", "")),
         counts=counts,
         entries=entries,
+        source_sha256=str(data.get("source_sha256", "")),
     )
 
 
@@ -580,15 +588,80 @@ def load_training_index(path: str | os.PathLike[str]) -> TrainingIndex:
     return index
 
 
+def file_sha256(path: str | os.PathLike[str]) -> str:
+    """Return the hex SHA-256 digest of a file.
+
+    Args:
+        path: File to digest.
+
+    Returns:
+        Lowercase hex digest.
+    """
+    digest = hashlib.sha256()
+    with pathlib.Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _entry_sort_key(entry: TrainingIndexEntry) -> tuple[str, str, str, int]:
+    """Return the canonical ordering key for a manifest row.
+
+    Args:
+        entry: Row to order.
+
+    Returns:
+        Split, bundle, song id, and chart index.
+    """
+    return (
+        entry.split,
+        entry.normalized_bundle,
+        entry.normalized_id,
+        entry.chart_index,
+    )
+
+
+def _nested_sample(
+    pool: list[TrainingIndexEntry],
+    count: int,
+    *,
+    seed: int,
+    label: str,
+) -> list[TrainingIndexEntry]:
+    """Return ``count`` rows drawn in a size-independent, nesting order.
+
+    The pool is sorted, then shuffled once by a generator seeded only from
+    ``seed`` and ``label``. Taking a prefix means a larger ``count`` is a
+    superset of a smaller one, and a draw for one split cannot be perturbed by
+    the size of another split's draw.
+
+    Args:
+        pool: Candidate rows for one split.
+        count: Number of rows to take.
+        seed: Sampling seed shared by the whole manifest.
+        label: Split name mixed into the generator seed.
+
+    Returns:
+        Selected rows, in shuffled order.
+    """
+    shuffled = sorted(pool, key=_entry_sort_key)
+    random.Random(f"{seed}:{label}").shuffle(shuffled)
+    return shuffled[:count]
+
+
 def build_training_index_subset(
     source_path: str | os.PathLike[str],
     *,
     train_rows: int,
     val_rows: int,
     seed: int = 42,
-    policy_tag: str = "scoreboard_subset",
+    policy_tag: str = SUBSET_POLICY_LADDER_V1,
 ) -> TrainingIndex:
     """Sample fixed train/val row counts from an existing P8 manifest.
+
+    Draws are independent per split and nest as counts grow, so a subset built
+    with a larger ``train_rows`` keeps the same val rows and contains the
+    smaller subset's train rows. Protocol: ``docs/research/AR_SCALING_LADDER.md``.
 
     Args:
         source_path: Path to a full ``training_index.json``.
@@ -616,16 +689,13 @@ def build_training_index_subset(
         raise ValueError(
             f"val_rows={val_rows} exceeds available val rows ({len(val_pool)})",
         )
-    rng = random.Random(seed)
-    sampled = rng.sample(train_pool, train_rows) + rng.sample(val_pool, val_rows)
-    sampled.sort(
-        key=lambda entry: (
-            entry.split,
-            entry.normalized_bundle,
-            entry.normalized_id,
-            entry.chart_index,
-        ),
-    )
+    sampled = _nested_sample(
+        train_pool,
+        train_rows,
+        seed=seed,
+        label=SPLIT_TRAIN,
+    ) + _nested_sample(val_pool, val_rows, seed=seed, label=SPLIT_VAL)
+    sampled.sort(key=_entry_sort_key)
     subset = TrainingIndex(
         schema_version=source.schema_version,
         output_dir=source.output_dir,
@@ -637,6 +707,7 @@ def build_training_index_subset(
         ),
         counts=_counts_from_entries(sampled),
         entries=sampled,
+        source_sha256=file_sha256(source_path),
     )
     errors = validate_training_index(subset)
     if errors:

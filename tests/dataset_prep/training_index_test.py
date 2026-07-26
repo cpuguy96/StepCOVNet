@@ -9,7 +9,13 @@ import tempfile
 import unittest
 
 from stepcovnet import pairing
-from stepcovnet.dataset_prep import config, pipeline, training_index, training_loader
+from stepcovnet.dataset_prep import (
+    config,
+    constants,
+    pipeline,
+    training_index,
+    training_loader,
+)
 
 _FIXTURES_ROOT = (
     pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "dataset_prep"
@@ -200,7 +206,111 @@ class TrainingIndexTest(unittest.TestCase):
         self.assertEqual(len(subset.entries), 150)
         self.assertEqual(subset.counts.rows[training_index.SPLIT_TRAIN], 50)
         self.assertEqual(subset.counts.rows[training_index.SPLIT_VAL], 100)
-        self.assertIn("scoreboard_subset", subset.split_policy)
+        self.assertIn(training_index.SUBSET_POLICY_LADDER_V1, subset.split_policy)
+
+
+class TrainingIndexSubsetLadderTest(unittest.TestCase):
+    """Guarantees the AR scaling ladder depends on (AR_SCALING_LADDER.md § 3)."""
+
+    @staticmethod
+    def _entry(split: str, position: int) -> training_index.TrainingIndexEntry:
+        song = f"{split}{position:04d}"
+        return training_index.TrainingIndexEntry(
+            split=split,
+            normalized_bundle="bundle",
+            normalized_id=song,
+            chart_index=0,
+            output_relpath=f"bundle/{song}",
+            difficulty="hard",
+            meter=9,
+            num_steps=100,
+            audio_relpath=f"bundle/{song}/{song}.ogg",
+            chart_relpath=f"bundle/{song}/{song}.chart.json",
+        )
+
+    @contextlib.contextmanager
+    def _source_manifest(self, train_rows: int, val_rows: int):
+        entries = [
+            self._entry(training_index.SPLIT_TRAIN, i) for i in range(train_rows)
+        ] + [self._entry(training_index.SPLIT_VAL, i) for i in range(val_rows)]
+        index = training_index.TrainingIndex(
+            schema_version=constants.SCHEMA_VERSION,
+            output_dir="/tmp/out",
+            split_policy=training_index.SPLIT_POLICY_STRATIFIED_SONG_V1,
+            split_seed=42,
+            val_fraction=val_rows / (train_rows + val_rows),
+            created_at="2026-01-01T00:00:00Z",
+            counts=training_index.TrainingIndexCounts(
+                songs={"train": train_rows, "val": val_rows},
+                rows={"train": train_rows, "val": val_rows},
+            ),
+            entries=entries,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield training_index.save_training_index(
+                index,
+                pathlib.Path(tmpdir) / "training_index.json",
+            )
+
+    @staticmethod
+    def _keys(subset: training_index.TrainingIndex, split: str) -> list[str]:
+        return [entry.normalized_id for entry in subset.entries if entry.split == split]
+
+    def test_val_rows_are_identical_across_train_sizes(self):
+        with self._source_manifest(400, 60) as source:
+            val_draws = [
+                self._keys(
+                    training_index.build_training_index_subset(
+                        source,
+                        train_rows=train_rows,
+                        val_rows=20,
+                        seed=42,
+                    ),
+                    training_index.SPLIT_VAL,
+                )
+                for train_rows in (10, 50, 200, 300)
+            ]
+        for draw in val_draws[1:]:
+            self.assertEqual(draw, val_draws[0])
+
+    def test_train_rows_nest_as_the_ladder_climbs(self):
+        with self._source_manifest(400, 60) as source:
+            draws = [
+                set(
+                    self._keys(
+                        training_index.build_training_index_subset(
+                            source,
+                            train_rows=train_rows,
+                            val_rows=20,
+                            seed=42,
+                        ),
+                        training_index.SPLIT_TRAIN,
+                    )
+                )
+                for train_rows in (10, 50, 200)
+            ]
+        self.assertTrue(draws[0] < draws[1])
+        self.assertTrue(draws[1] < draws[2])
+
+    def test_subset_records_source_digest(self):
+        with self._source_manifest(40, 20) as source:
+            subset = training_index.build_training_index_subset(
+                source,
+                train_rows=10,
+                val_rows=5,
+                seed=42,
+            )
+            self.assertEqual(
+                subset.source_sha256,
+                training_index.file_sha256(source),
+            )
+            round_tripped = training_index.load_training_index(
+                training_index.save_training_index(
+                    subset,
+                    pathlib.Path(source).with_name("subset.json"),
+                ),
+            )
+        self.assertEqual(round_tripped.source_sha256, subset.source_sha256)
 
 
 if __name__ == "__main__":
