@@ -42,6 +42,39 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260725-04: Check for uncommitted work before renormalizing line endings
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-25 22:34:00 |
+| **Category**     | mistake |
+| **Summary**      | While force re-checking out `*.sh` to fix CRLF, I also clobbered uncommitted edits to `scripts/debug_ar_onset_overfit.py` and had to reapply the whole change from memory. `git checkout --` gives no prompt and no recovery. |
+| **Artifact**     | alwaysApply rule `.cursor/rules/state-and-paths.mdc` § Git on Windows (PowerShell) → **Destructive checkout** |
+| **Action taken** | Check `git status` and commit or stash before any `git checkout --` or renormalization pass |
+| **Related**      | JRN-20260725-02 |
+
+### JRN-20260725-03: STEPCOVNET_NO_WSL=1 silently forces Windows CPU
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-25 22:33:00 |
+| **Category**     | mistake |
+| **Summary**      | I set `STEPCOVNET_NO_WSL=1` on an AR decode expecting only to skip the dispatch wrapper. It ran on Windows CPU at 330s vs 94s on GPU, and nothing in the output flagged the downgrade — the user had to point out the GPU was idle. The rule documented the variable as a neutral opt-out. |
+| **Artifact**     | alwaysApply rule `.cursor/rules/python-environment.mdc` § Windows development model — cost caveat added inline where the variable is defined |
+| **Action taken** | Never set `STEPCOVNET_NO_WSL=1` for training, decode, or MERT; it does not fall back to GPU |
+| **Related**      | EXP-20260724-03, wsl-gpu-stepcovnet |
+
+### JRN-20260725-02: WSL shell scripts must be checked out LF
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-07-25 22:32:00 |
+| **Category**     | fix |
+| **Summary**      | WSL GPU dispatch failed with `: invalid option name` and `set: pipefail`. Root cause was `core.autocrlf=true` checking out `scripts/wsl_*.sh` with CRLF, which bash cannot parse. Cost significant time because the error text points at the script body, not the line endings. |
+| **Artifact**     | Code: `.gitattributes` — `*.sh text eol=lf` (commit `3361b04`) |
+| **Action taken** | Structural fix: `*.sh` now always lands LF on checkout regardless of `core.autocrlf`, so this cannot recur for new clones |
+| **Related**      | JRN-20260725-04 |
+
 ### JRN-20260725-01: Commit messages via repeated -m, never a scratch file
 
 | Field            | Value |
@@ -49,7 +82,7 @@ Insert **at the top** of [Entries](#entries) (below this section):
 | **Timestamp**    | 2026-07-25 01:14:00 |
 | **Category**     | convention |
 | **Summary**      | Bash heredoc commit syntax fails to parse in PowerShell, so I fell back to writing message prose into `_tmp/commit/msg.txt` and running `git commit -F`. Nothing temp was ever staged (explicit `git add` paths; `_tmp/` gitignored), but the user flagged the pattern as wrong regardless. |
-| **Artifact**     | alwaysApply rule `.cursor/rules/state-and-paths.mdc` § Commit messages (PowerShell) — merged into existing scratch-policy rule, no new file |
+| **Artifact**     | alwaysApply rule `.cursor/rules/state-and-paths.mdc` § Git on Windows (PowerShell) — merged into existing scratch-policy rule, no new file |
 | **Action taken** | Multi-line commit messages use repeated `-m` flags, one per paragraph; `_tmp/` is for analysis artifacts, not commit prose |
 | **Related**      | steering-correction-promotion |
 

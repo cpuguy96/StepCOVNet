@@ -1,5 +1,5 @@
 ---
-description: Refresh repo state before routing edits; portable paths, scratch hygiene, PowerShell commit messages
+description: Refresh repo state before routing edits; portable paths, scratch hygiene, Windows git hygiene
 alwaysApply: true
 ---
 
@@ -48,13 +48,15 @@ Never hardcode `C:\Users\...` or `/mnt/c/Users/<name>/...` clone paths. WSL `$HO
 
 On user steering about agent process (paths, hygiene, “remember this”), run [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md) **same turn** — journal alone is incomplete.
 
-## Commit messages (PowerShell)
+## Git on Windows (PowerShell)
 
-Build multi-line messages with **repeated `-m` flags**, one per paragraph. Bash heredoc (`-m "$(cat <<'EOF' …)"`) does not parse in PowerShell, and a scratch file + `git commit -F` is **not** the fallback — `_tmp/` is for analysis artifacts, not commit prose.
+**Commit messages** — build multi-line messages with **repeated `-m` flags**, one per paragraph. Bash heredoc (`-m "$(cat <<'EOF' …)"`) does not parse in PowerShell, and a scratch file + `git commit -F` is **not** the fallback — `_tmp/` is for analysis artifacts, not commit prose.
 
 ```powershell
 git commit -m "subject line" -m "body paragraph" -m "second paragraph"
 ```
+
+**Destructive checkout** — `git checkout -- <path>` and line-ending renormalization discard uncommitted edits with no prompt. Check `git status` and commit or stash **first**. With `core.autocrlf=true` this is easy to trigger while fixing `*.sh` endings.
 
 ## Pre-push validation
 

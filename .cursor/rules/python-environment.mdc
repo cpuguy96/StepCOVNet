@@ -18,6 +18,8 @@ GPU scripts that call `wsl_gpu.maybe_dispatch_for_training` re-exec in WSL and t
 
 Override WSL venv location: `WSL_VENV` or `STEPCOVNET_WSL_PYTHON`. Opt out of WSL dispatch: `STEPCOVNET_NO_WSL=1`.
 
+`STEPCOVNET_NO_WSL=1` **silently forces Windows CPU** — it does not fall back to GPU. Never set it for training, decode, or MERT extraction (measured ~3.5× slower on an AR decode); reserve it for CPU-only debugging where you intend to skip CUDA.
+
 ## Decision
 
 | Workload                                            | Where          | Executable                                                    |
