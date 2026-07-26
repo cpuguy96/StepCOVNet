@@ -721,6 +721,30 @@ class EpochTimingCallback(keras.callbacks.Callback):
         )
 
 
+class MetricAliasCallback(keras.callbacks.Callback):
+    """Publish canonical/legacy metric aliases before monitors read ``logs``.
+
+    ``ModelCheckpoint`` and ``EarlyStopping`` look up one exact key, while
+    :func:`onset_metric_names.resolve_checkpoint_metric` may map a config value
+    to the other spelling of the same metric. Without both keys present a
+    monitor silently no-ops. :class:`OverfitGateCallback` publishes these
+    aliases too, but only attaches to single-song overfit runs.
+    """
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        """Mirror canonical and legacy names for every metric in ``logs``.
+
+        Args:
+            epoch: Zero-based epoch index (unused).
+            logs: Metric mapping Keras passes between callbacks.
+        """
+        del epoch
+        if logs is None:
+            return
+        mn.publish_legacy_val_aliases(logs)
+        mn.publish_legacy_val_aliases(logs, val_prefix=False)
+
+
 class OverfitGateCallback(keras.callbacks.Callback):
     """Publish teacher-fed overfit gate metrics for checkpointing and early stop.
 
@@ -965,9 +989,10 @@ def train_ar_onset(
         )
 
     callbacks.insert(0, EpochTimingCallback())
+    callbacks.insert(0, MetricAliasCallback())
     if should_attach_overfit_gate_callback(run_config):
         callbacks.insert(
-            1,
+            2,
             OverfitGateCallback(
                 early_stop=run_config.perfect_overfit_early_stop,
                 early_stop_monitor=(

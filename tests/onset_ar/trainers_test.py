@@ -159,6 +159,18 @@ class TrainersTest(unittest.TestCase):
         self.assertEqual(logs[mn.val_name("overfit_gate")], 0.95)
         self.assertEqual(logs[mn.val_name("ordered_onset_match")], 633 / 634)
 
+    def test_metric_alias_callback_publishes_monitor_key(self) -> None:
+        callback = trainers.MetricAliasCallback()
+        logs = {
+            mn.val_name(mn.AUX_F1_HUNGARIAN): 0.178,
+            mn.AUX_F1_HUNGARIAN: 0.42,
+        }
+        callback.on_epoch_end(0, logs)
+        monitor = mn.resolve_checkpoint_metric("val_aux_f1_hungarian")
+        self.assertIn(monitor, logs)
+        self.assertEqual(logs[monitor], 0.178)
+        self.assertEqual(logs["event_onset_f1"], 0.42)
+
     def test_overfit_gate_callback_early_stops_on_primary_monitor(self) -> None:
         class _EarlyStopModel:
             stop_training = False
