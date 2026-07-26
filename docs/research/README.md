@@ -20,6 +20,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 | [PAPER_OUTLINE.md](PAPER_OUTLINE.md)                                       | Paper draft skeleton — promote findings from log when drafting |
 | [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md)                           | Open decisions before ablation runs                           |
 | [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)                                   | **Autoregressive onset** — v1 stack locked 2026-06; **`gate-tide-overfit` + `gate-ar-decode` passed** on tide (EXP-20260630-01); next: **`gate-10song-smoke`** |
+| [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)                               | **Scaling protocol** — frozen val set, nested train sets, rungs R0–R5; why current rungs are not comparable |
 | [archive/onset_events_plan.md](archive/onset_events_plan.md)                 | Historical event-onset WP plan (superseded for routing)       |
 
 ## For agents and contributors

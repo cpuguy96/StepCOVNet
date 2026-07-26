@@ -1,0 +1,46 @@
+{
+  "dataset": {
+    "training_index_path": "data/final_data/training_index_ladder_v1_10t_50v.json",
+    "data_root": "data/final_data",
+    "mert_features_dir": "",
+    "batch_size": 1,
+    "max_audio_seconds": 300,
+    "max_steps_per_chart": 2048,
+    "dynamic_padding": true,
+    "length_bucket_boundaries": [512, 768, 1024, 1536],
+    "cache_in_memory": true,
+    "cache_max_samples": 64
+  },
+  "model": {
+    "patch_frames": 8,
+    "d_model": 384,
+    "n_enc_layers": 4,
+    "n_dec_layers": 4,
+    "token_scheme": "delta_bucketed",
+    "alignment": "pointer_residual",
+    "max_decode_steps": 2048,
+    "dropout_rate": 0.1,
+    "legacy_inverted_attention_masks": false
+  },
+  "run": {
+    "overfit_one_song": false,
+    "lambda_time": 1.0,
+    "lambda_time_ramp_epochs": 0,
+    "lambda_residual": 5.0,
+    "lambda_incremental_consistency": 0.0,
+    "incremental_consistency_max_steps": 0,
+    "token_class_weight": "none",
+    "eos_token_weight_scale": 1.0,
+    "scheduled_sampling_max_p": 0.0,
+    "use_soft_pointer_time": false,
+    "learning_rate": 0.0001,
+    "length_normalize_ce": true,
+    "tolerance_sec": 0.02,
+    "epochs": 500,
+    "checkpoint_metric": "val_aux_f1_hungarian",
+    "early_stopping_patience": 50,
+    "perfect_overfit_early_stop": false,
+    "model_output_dir": "models_wsl/ar/ladder_10t_50v",
+    "callback_root_dir": "callbacks/ar/ladder_10t_50v"
+  }
+}

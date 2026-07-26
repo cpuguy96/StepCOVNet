@@ -4,6 +4,57 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-07-25 — AR 50t/50v rebuild gap triage
+
+### NOTE-20260725-01: The 50t/50v rebuild gap is val-side, not recipe or early stopping
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-25 22:35:29 |
+| **Topic** | Why [EXP-20260724-04](EXPERIMENT_LOG.md#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction) reached ~10× worse val Hungarian F1 than [EXP-20260724-01](EXPERIMENT_LOG.md#exp-20260724-01-ar-corrected-mask-50t50v-500-ep-scale-up) on the same config |
+
+Desk analysis of committed artifacts only — no new runs. Three candidate explanations are removed or sharpened:
+
+| Candidate | Verdict |
+| --------- | ------- |
+| Recipe drift when `smoke_50t_50v.json` was renamed to `scale_50t_50v.json` | **Eliminated** — `git show c282002 -- configs/ar/` shows the rename changed only `early_stopping_patience: 25` and the two output paths; every hyperparameter is identical |
+| Early stopping truncated a run whose F1 was still climbing | **Insufficient** — val F1 was indeed still rising when ES fired at ep **131** (0.0012 @ ep10 → 0.0128 @ ep129), but the gap exists at **matched** epochs: ep **50** gives **0.0058** here vs **0.126** in the logged 50-ep run, with comparable `val_loss` (**24.8** vs **21.0**) |
+| Training-side degradation (features, code, hardware affecting fit) | **Narrowed to the val side** — at ep 131 the rebuild has train `aux_f1_hungarian` **0.0499** / train `token_accuracy` **0.4691** against val `token_accuracy` **0.0925**. The logged run reported val token accuracy **0.43** at ep 65, i.e. roughly the rebuild's *train* level. The local model fits its train songs at a plausible rate and then fails to transfer at all |
+
+**Reading:** val loss tracks the logged run while val F1 and val token accuracy do not, which is the signature of a val-split or feature problem rather than an optimization problem. Both the subset sample and the MERT features were regenerated locally (91 unique audio, `--device=cuda`), and the original subset index was overwritten, so neither is byte-comparable to the logged run.
+
+**Cheapest discriminating test:** re-extract MERT for the tide song with the current local pipeline and diff numerically against the known-good features behind the champion overfit.
+
+**Result — feature drift eliminated.** Run the same evening as [EXP-20260725-01](EXPERIMENT_LOG.md#exp-20260725-01-ladder-r0--mert-extraction-is-bit-identical-tide-champion-artifact-was-overwritten): the re-extracted tide features are **bit-for-bit identical** (`np.array_equal` True, max abs diff **0.0**), and a real checkpoint decodes at **98.9%** teacher with correct EOS placement. Local extraction is not the cause of the rebuild gap, so the remaining candidates are the val **subset** itself ([NOTE-20260725-02](#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) and per-song val-split composition.
+
+**Related:** [EXP-20260724-04](EXPERIMENT_LOG.md#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction) · `logs/ar_scale_50t_50v_rebuild.log` · `callbacks/ar/scale_50t_50v_corrected_masks/`
+
+### NOTE-20260725-02: Subset sampling gives every train size a different val set
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-25 22:35:29 |
+| **Topic** | Whether a small-to-large scaling ladder can be trusted with the current subset builder |
+
+**Discovery:** `training_index.build_training_index_subset` draws both splits from a single generator, train first:
+
+```python
+rng = random.Random(seed)
+sampled = rng.sample(train_pool, train_rows) + rng.sample(val_pool, val_rows)
+```
+
+`rng.sample` consumes generator state proportional to the draw, so changing `train_rows` shifts the **val** draw as well. Reproduced against a 1755/186 pool with `train_rows` ∈ {10, 50, 200, 300} and identical `seed=42`, `val_rows=50`: four different val samples.
+
+**Why it matters:** every AR scale-up rung logged so far was scored on a **different** held-out set. The apparent plateau across 10 / 50 / 200 rows (**0.11** / **0.126** / **0.120** val teacher F1) may be val-set variance rather than a data-scale ceiling, and cannot be read either way. It also compounds [NOTE-20260725-01](#note-20260725-01-the-50t50v-rebuild-gap-is-val-side-not-recipe-or-early-stopping): the rebuild's val songs were never the logged run's val songs.
+
+**Second-order finding:** the source manifest is gitignored and has drifted — on disk **1755/186** rows, created 2026-07-03, against the **1745/197** recorded in [EXP-20260623-02](EXPERIMENT_LOG.md#exp-20260623-02-p8-trainval-manifest-on-full-final_data). A fixed seed cannot reproduce a subset whose source pool changed.
+
+**Proposed fix (not yet applied):** independent generator per split plus shuffle-then-take, which both stabilizes val and makes train sets **nest** as the ladder climbs; record the source SHA-256 in the subset summary. Protocol and rungs: [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md).
+
+**Related:** [`src/stepcovnet/dataset_prep/training_index.py`](../../src/stepcovnet/dataset_prep/training_index.py) L619–620 · [`scripts/build_training_index_subset.py`](../../scripts/build_training_index_subset.py)
+
+---
+
 ## Session 2026-07-24 — AR free-run length collapse diagnosis
 
 ### NOTE-20260724-01: `eos_token_weight_scale` is a no-op under `token_class_weight: none`

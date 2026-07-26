@@ -10,13 +10,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-07-24
+**Updated:** 2026-07-25
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
-| P0–P9 | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val) |
+| P0–P9 | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
 **Recommended next step (Track A — scoreboard):** First full multi-song **dense** training on `final_data` via `--training_index_path=data/final_data/training_index.json` (WSL GPU). Extract MERT features for `final_data` if not using mel baseline; then `eval_dense_onset.py` + threshold sweep on val.
@@ -35,7 +35,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR 200t/50v scale-up** | **Partial** — ES @ ep **65**, best `val_loss` **~12.7 @ ep 40**; offline val teacher F1 **0.120**, free-run F1 **0.036** (severe under-gen) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) |
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 | **AR free-run length diagnostics** | **Ready** — `eos_trace` + `--ar_decode_min_onset_tokens` / `--ar_decode_eos_logit_bias` land offline decode probes; healthy tide reference: EOS mean **0.0017**, single spike at step **634** ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)) |
-| **AR next gate** | Free-run / length control on multi-song before **`gate-val-vs-dense`**; optional denser train (300t cache-safe) still open |
+| **AR next gate** | **Scaling ladder R0→R5** on a frozen val set ([AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)) — prior rungs each used a **different** val set ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)), so the 10/50/200 plateau is not yet a real finding. **R0 partial** ([EXP-20260725-01](#exp-20260725-01-ladder-r0--mert-extraction-is-bit-identical-tide-champion-artifact-was-overwritten)), **R1 = 0.178** ([EXP-20260725-02](#exp-20260725-02-ladder-r1--first-rung-on-the-frozen-val-set-10-train-rows)). **Next: R2** (50 rows, nested, same val). Free-run / length control and **`gate-val-vs-dense`** follow a trustworthy R2 |
 | **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone**; a 50t/50v rebuild reached comparable `val_loss` but **10× worse** val F1 and the **opposite** free-run pathology ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)) — local rebuilds do **not** currently stand in for the logged runs |
 | **AR termination stability** | **Open** — same recipe gives early EOS at 200t ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) and never-EOS at 50t ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)); termination is unstable, not one-directionally biased |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
@@ -44,7 +44,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** 200t teacher Hungarian F1 matches train val (~**0.12**), but free-run **collapses** (early EOS / ~**70** preds/song vs ~**700** GT). Source review eliminates chart truncation, audio/target duration mismatch, and EOS over-representation; **exposure bias** (`scheduled_sampling_max_p: 0.0`) remains the live cause ([NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)). Length control is now measurable offline, but on tide it trades FN for **1479** FP — treat it as a probe, not a fix. Next: rebuild a multi-song checkpoint locally, read its `eos_trace`, then test **scheduled sampling** at train time.
+- **Track B (AR scale-up):** 200t teacher Hungarian F1 matches train val (~**0.12**), but free-run **collapses** (early EOS / ~**70** preds/song vs ~**700** GT). Source review eliminates chart truncation, audio/target duration mismatch, and EOS over-representation; **exposure bias** (`scheduled_sampling_max_p: 0.0`) remains the live cause ([NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)). Length control is now measurable offline, but on tide it trades FN for **1479** FP — treat it as a probe, not a fix. The local rebuild cannot yet stand in for that checkpoint: its shortfall is **val-side**, not recipe or early stopping ([NOTE-20260725-01](DISCUSSION_NOTES.md#note-20260725-01-the-50t50v-rebuild-gap-is-val-side-not-recipe-or-early-stopping)). Next: verify local MERT extraction against known-good tide features, then rebuild a multi-song checkpoint, read its `eos_trace`, then test **scheduled sampling** at train time.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -55,6 +55,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260725-02 | `train` + `metric` | Ladder R1: what does 10 train rows score on the frozen val set? | **Supported** | val F1 **0.178** @ ep 497 (still climbing); `val_loss` best @ ep 104 is **32×** worse on F1; found inert checkpoint/ES monitor |
+| EXP-20260725-01 | `pre` + `metric` | Ladder R0: are local MERT features and the tide champion still good? | **Partial** | Features **bit-identical**; champion path decodes **627/634** teacher — graduated v8 weights were **overwritten** on 2026-07-02 |
 | EXP-20260724-04 | `train` + `metric` | Does a local 50t/50v rebuild reproduce the early-EOS free-run collapse? | **Fail to reproduce** | Opposite failure: **0/10** songs emit EOS, all hit the **2048** cap; EOS prob max **0.0087**; teacher ordered **14/6544** |
 | EXP-20260724-03 | `post` + `metric` | Can free-run length be probed offline, and what does healthy `<EOS>` look like? | **Supported** (tooling) | `eos_trace` + `ArLengthControl` added; tide EOS flat ~**0.0017**, spikes only at step **634**; forcing length yields **1479** FP |
 | EXP-20260724-02 | `train` + `metric` | Does 200t/50v + ES improve val, and does offline free-run hold? | **Partial** | Best `val_loss` **12.7 @ ep 40**; offline teacher F1 **0.120**, free-run F1 **0.036** |
@@ -116,6 +118,36 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260725-02: Ladder R1 — first rung on the frozen val set (10 train rows)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-25 23:45:40 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Rung **R1** of [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md): what does 10 train rows score on the **frozen** 50-row val set, establishing the baseline every later rung must beat? |
+| **Setup** | [`configs/ar/ladder_10t_50v.json`](../../configs/ar/ladder_10t_50v.json) — `training_index_ladder_v1_10t_50v.json` (10 train rows / 10 songs; **50** val rows / **42** songs; source pinned `1fac516f06fe69b6…`). MERT extracted for the 32 uncached audio (2m14s). WSL GPU, 10 steps/ep, ~**5 s**/ep, 500 ep in ~**41 min** |
+| **Result** | Best `val_aux_f1_hungarian` **0.1784 @ ep 497** (ep 500: **0.1784**). Curve: **0.0003** @ ep 10 → 0.0021 @ 50 → 0.0087 @ 150 → 0.0292 @ 250 → 0.128 @ 350 → **0.178** @ 500. Best `val_loss` **26.59 @ ep 104** |
+| **`val_loss` vs F1 (D3 confirmed)** | The `val_loss` optimum sits at ep **104**, where val F1 is **0.0055** — **32×** worse than the F1-selected checkpoint. Selecting on `val_loss`, as [EXP-20260724-01/02/04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction) did, discards nearly all of the model's timing skill. `val_loss` rises from ep ~150 onward while F1 climbs monotonically to the end |
+| **Defect found** | Early stopping and best-checkpoint saving were **silently inert** all run: `resolve_checkpoint_metric("val_aux_f1_hungarian")` returns the legacy key `val_event_onset_f1`, but the AR trainer publishes only canonical names outside single-song overfit runs. Keras warned `metric val_event_onset_f1 which is not available` each epoch, and `callbacks/ar/ladder_10t_50v/models/` was never created. Fixed by `MetricAliasCallback` (dual-publishes both spellings ahead of the monitors); test added |
+| **Impact on this run** | None material — F1 peaked at ep 497 of a 500-ep budget, so the saved final weights are within **0.0000** of the best epoch. The number stands; only the artifact-selection path was broken |
+| **Caveat** | val F1 was **still climbing** at the budget end, so **0.178 is a lower bound**, not a converged value. A fixed *epoch* budget also gives larger rungs proportionally more gradient steps (10 rows × 500 ep = 5k steps vs 50 rows × 500 ep = 25k) |
+| **Artifacts** | `models_wsl/ar/ladder_10t_50v/ar_onset_model.keras` · `callbacks/ar/ladder_10t_50v/logs/20260725-230351-…` · `logs/ladder_r1_train.log` · `logs/ladder_r1_mert_extract.log` |
+| **Conclusion** | **Supported.** The ladder has its first trustworthy rung: **0.178** val Hungarian F1 on a frozen, reproducible val set with a pinned source manifest. R2 (50 rows, same val set, nested train set) must beat it |
+
+### EXP-20260725-01: Ladder R0 — MERT extraction is bit-identical; tide champion artifact was overwritten
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-25 23:06:36 |
+| **Track** | `pre` + `metric` (AR) |
+| **Question** | Rung **R0** of [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md): is this machine's pipeline healthy — do locally extracted MERT features match the known-good ones, and does the graduated tide champion still hit **634/634**? |
+| **Feature check** | Re-extracted `data/v2/test/tide.ogg` to a scratch dir (`--device cuda`, 4.4 s) and compared to the on-disk `tide.mert.npy`: shape **(12852, 1024)** float32 both, **`np.array_equal` True**, max abs diff **0.0**. Local MERT extraction is **bit-for-bit reproducible** |
+| **Champion gate** | [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json) + `models_wsl/ar/tide_overfit/ar_onset_model.keras`, `--ar_decode`: teacher ordered **627/634** (0.9890), free-run ordered **622/634** (0.9811), Hungarian F1 **0.9811** teacher / **0.9795** free-run. Decode length **636**, EOS fires correctly (`first_step_ge_half` **634**, max prob **0.978**, mean **0.0017**) |
+| **Artifact provenance** | [`configs/ar/tide_overfit.manifest.json`](../../configs/ar/tide_overfit.manifest.json) records this exact path as the graduated **v8** champion at **634/634** teacher **and** free-run, dated **2026-06-30**. The file on disk is dated **2026-07-02**, and `callbacks/ar/tide_overfit/models/20260702-000621-…/best.keras` returns **identical** numbers — a later run reusing the same `model_output_dir` overwrote the graduated weights |
+| **Conclusion** | **Partial.** The two integrity questions separate cleanly. Feature extraction and the decode path are **healthy** — features are bit-identical and a real checkpoint decodes at **98.9%** teacher with correct termination, so [NOTE-20260725-01](DISCUSSION_NOTES.md#note-20260725-01-the-50t50v-rebuild-gap-is-val-side-not-recipe-or-early-stopping)'s feature hypothesis is **eliminated**. But the perfect-overfit bar cannot be verified from stored weights, because the champion artifact no longer exists in this clone. Third artifact loss in a week, after the July 16–24 AR checkpoints and the 200t/50v model |
+| **Follow-up** | Reusing `model_output_dir` across runs (per the rerun-hygiene convention) silently destroys graduated checkpoints. Graduated artifacts need a write-protected path or a copy under `configs/ar/versions/`. Retraining tide from scratch is the only way to restore an R0 reference |
+| **Artifacts** | `logs/ladder_r0_mert_tide.log` · `logs/ladder_r0_tide_gate.log` · `logs/ladder_r0_tide_best_ckpt.log` |
 
 ### EXP-20260724-04: AR 50t/50v local rebuild — free-run fails in the opposite direction
 

@@ -8,6 +8,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | **Research** (experiments, design, pipeline; log runs in EXPERIMENT_LOG) | [docs/research/README.md](docs/research/README.md) |
 | **Onset metrics** (`timing_match`, F1, gates) | [docs/research/ONSET_METRICS.md](docs/research/ONSET_METRICS.md) |
 | **AR onset design** (locked stack, gates, debug notes) | [docs/research/AR_ONSET_DESIGN.md](docs/research/AR_ONSET_DESIGN.md) |
+| **Scaling AR training** (how to add songs and keep numbers comparable) | [docs/research/AR_SCALING_LADDER.md](docs/research/AR_SCALING_LADDER.md) |
 | **What's next** (current phase) | [docs/research/EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
 | **Research autoresearch** (one-prompt goal + budget loop) | [.cursor/skills/autoresearch/SKILL.md](.cursor/skills/autoresearch/SKILL.md) |
 | **AR tide overfit** (gate **PASS** — champion v8) | [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase · champion: [configs/ar/tide_overfit.json](configs/ar/tide_overfit.json) |
