@@ -92,6 +92,12 @@ Two things the rung taught beyond its own number:
 
 **Open:** F1 was still rising at ep 500, so 0.178 is a lower bound, and a fixed epoch budget gives larger rungs more gradient steps (10 rows × 500 ep = 5k steps; 50 rows × 500 ep = 25k). Decide before R3 whether the budget should be counted in steps.
 
+### R2 attempt 1 (2026-07-26) — aborted
+
+**Aborted at ep 152**, unscored — [EXP-20260726-01](EXPERIMENT_LOG.md#exp-20260726-01-ladder-r2-aborted-at-ep-152--wsl-vm-terminated-mid-run). The WSL VM shut down mid-run at 01:29; the partial curve was ~**2.2×** ahead of R1 at matched epochs but must **not** be reported as R2's number. Suspected in-guest memory exhaustion (15 GB WSL ceiling, ~5.5 GB of cached features), unconfirmed because the kernel log was wiped by the VM restart.
+
+Adds an operational item to § 6: **long rungs need a memory mitigation and a guest-memory probe.** R3–R5 cache more than R2 did, so this blocks the rest of the ladder, not just the rerun.
+
 ## 5. Work required before R1 — **done 2026-07-25**
 
 | # | Change | Status |

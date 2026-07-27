@@ -35,7 +35,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR 200t/50v scale-up** | **Partial** — ES @ ep **65**, best `val_loss` **~12.7 @ ep 40**; offline val teacher F1 **0.120**, free-run F1 **0.036** (severe under-gen) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) |
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 | **AR free-run length diagnostics** | **Ready** — `eos_trace` + `--ar_decode_min_onset_tokens` / `--ar_decode_eos_logit_bias` land offline decode probes; healthy tide reference: EOS mean **0.0017**, single spike at step **634** ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)) |
-| **AR next gate** | **Scaling ladder R0→R5** on a frozen val set ([AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)) — prior rungs each used a **different** val set ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)), so the 10/50/200 plateau is not yet a real finding. **R0 partial** ([EXP-20260725-01](#exp-20260725-01-ladder-r0--mert-extraction-is-bit-identical-tide-champion-artifact-was-overwritten)), **R1 = 0.178** ([EXP-20260725-02](#exp-20260725-02-ladder-r1--first-rung-on-the-frozen-val-set-10-train-rows)). **Next: R2** (50 rows, nested, same val). Free-run / length control and **`gate-val-vs-dense`** follow a trustworthy R2 |
+| **AR next gate** | **Scaling ladder R0→R5** on a frozen val set ([AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)) — prior rungs each used a **different** val set ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)), so the 10/50/200 plateau is not yet a real finding. **R0 partial** ([EXP-20260725-01](#exp-20260725-01-ladder-r0--mert-extraction-is-bit-identical-tide-champion-artifact-was-overwritten)), **R1 = 0.178** ([EXP-20260725-02](#exp-20260725-02-ladder-r1--first-rung-on-the-frozen-val-set-10-train-rows)), **R2 aborted @ ep 152** by a WSL VM shutdown ([EXP-20260726-01](#exp-20260726-01-ladder-r2-aborted-at-ep-152--wsl-vm-terminated-mid-run)). **Next: rerun R2** with a memory mitigation + guest-memory probe. Free-run / length control and **`gate-val-vs-dense`** follow a trustworthy R2 |
 | **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone**; a 50t/50v rebuild reached comparable `val_loss` but **10× worse** val F1 and the **opposite** free-run pathology ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)) — local rebuilds do **not** currently stand in for the logged runs |
 | **AR termination stability** | **Open** — same recipe gives early EOS at 200t ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) and never-EOS at 50t ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)); termination is unstable, not one-directionally biased |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
@@ -55,6 +55,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260726-01 | `train` | Ladder R2: does 50 train rows beat R1's 0.178? | **Aborted** | WSL VM terminated at ep **152**; partial curve ~2.2× ahead of R1 at matched epochs; suspected guest OOM (unconfirmed) |
 | EXP-20260725-02 | `train` + `metric` | Ladder R1: what does 10 train rows score on the frozen val set? | **Supported** | val F1 **0.178** @ ep 497 (still climbing); `val_loss` best @ ep 104 is **32×** worse on F1; found inert checkpoint/ES monitor |
 | EXP-20260725-01 | `pre` + `metric` | Ladder R0: are local MERT features and the tide champion still good? | **Partial** | Features **bit-identical**; champion path decodes **627/634** teacher — graduated v8 weights were **overwritten** on 2026-07-02 |
 | EXP-20260724-04 | `train` + `metric` | Does a local 50t/50v rebuild reproduce the early-EOS free-run collapse? | **Fail to reproduce** | Opposite failure: **0/10** songs emit EOS, all hit the **2048** cap; EOS prob max **0.0087**; teacher ordered **14/6544** |
@@ -119,7 +120,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
 
-### EXP-20260725-02: Ladder R1 — first rung on the frozen val set (10 train rows)
+### EXP-20260726-01: Ladder R2 aborted at ep 152 — WSL VM terminated mid-run
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-07-26 02:21:59 |
+| **Track** | `train` (AR) |
+| **Question** | Rung **R2** of [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md): does 50 train rows beat R1's **0.178** on the frozen val set? |
+| **Setup** | [`configs/ar/ladder_50t_50v.json`](../../configs/ar/ladder_50t_50v.json) — `training_index_ladder_v1_50t_50v.json` (50 train rows / 49 songs, nested superset of R1's 10; same frozen **50**-row / 42-song val). MERT: 36 extracted, **55 reused** from R1 (2m23s). WSL GPU, 50 steps/ep, ~**13 s**/ep |
+| **Progress before abort** | **152** epochs (~32 min). Best `val_aux_f1_hungarian` **0.0204 @ ep 146**; best `val_loss` **19.52 @ ep 87`. Ahead of R1 at matched epochs: ep 150 gives **0.0192** here vs **0.0087** in R1 (~2.2×), with `val_loss` **22.9** vs **28.3** |
+| **Abort** | Training stopped at **01:28**; the WSL VM shut down at **01:29:22** (Hyper-V VmSwitch port disconnect, event 69). No new VM until a status probe cold-booted one at 02:19. No Windows sleep/resume events in the window. The trainer left no traceback — only cancelled-rendezvous lines, consistent with abrupt termination |
+| **Suspected cause** | Guest memory. No `.wslconfig`, so WSL gets **15 GB** of a 31 GB host. R2 caches **100** samples (`cache_max_samples: 128`) at ~50 MB of MERT features each ≈ **5.5 GB**, up from R1's 60 (~3 GB). An in-guest OOM kill would leave no processes, and WSL then terminates the VM — matching the observed sequence. **Unconfirmed:** `dmesg` was wiped by the VM restart, and the cache fills during epoch 1, so a plain cache blowup should have aborted far earlier than ep 152. A slow leak or host-side pressure fits the timing better |
+| **Salvage** | `callbacks/ar/ladder_50t_50v/models/20260726-005833-…/best.keras` (ep ~146) survived — the first checkpoint the AR trainer has written since the monitor fix in [EXP-20260725-02](#exp-20260725-02-ladder-r1--first-rung-on-the-frozen-val-set-10-train-rows). Before that fix this crash would have left nothing |
+| **Artifacts** | `logs/ladder_r2_train.log` · `logs/ladder_r2_mert_extract.log` |
+| **Conclusion** | **Aborted, not a result.** R2 is unscored; the partial curve is encouraging but must not be compared to R1's completed 0.178. Rerun needs a memory mitigation (raise the WSL ceiling via `.wslconfig`, or lower `cache_max_samples`) and a guest-memory probe to convert the suspicion into evidence |
 
 | Field | Value |
 | ----- | ----- |
