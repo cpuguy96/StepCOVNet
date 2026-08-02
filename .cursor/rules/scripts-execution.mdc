@@ -29,14 +29,20 @@ If a tool backgrounds the command after its foreground timeout, the same tee pip
 When launching a **training** job that writes Keras TensorBoard callbacks (`callback_root_dir` / `callbacks/.../logs`):
 
 1. **Start TensorBoard in a separate terminal before or with the train command** — do not wait for the user to ask.
-2. Point `--logdir` at that run’s `…/logs` parent (timestamped run dirs appear under it).
+2. Prefer [`scripts/tensorboard_compare.py`](../../scripts/tensorboard_compare.py) so reruns and related experiments stay comparable.
 3. Tell the user the URL (`http://localhost:6006/` by default) when training starts.
 
-```powershell
-& venv\Scripts\tensorboard.exe --logdir callbacks/<track>/<run>/logs --port 6006
-```
+| Goal | Command |
+| ---- | ------- |
+| All runs under one track (e.g. every AR experiment + rerun) | `venv\Scripts\python.exe scripts/tensorboard_compare.py --root callbacks/ar` |
+| Named experiments side by side (ladder R1/R2, config A/B) | `venv\Scripts\python.exe scripts/tensorboard_compare.py --preset ladder` or `--config configs/ar/ladder_10t_50v.json configs/ar/ladder_50t_50v.json` |
+| See what exists before launching | `venv\Scripts\python.exe scripts/tensorboard_compare.py --list` |
 
-Use `tensorboard.exe` (not `python -m tensorboard`). Reuse an existing server on the same port only if its `--logdir` already covers this run; otherwise restart with the correct logdir.
+Each train writes a **new timestamped folder** under `{callback_root_dir}/logs/` — reruns do not overwrite prior curves. In the TensorBoard UI, check multiple runs in the left sidebar to overlay metrics.
+
+New scripts like `tensorboard_compare.py` with discovery/path logic require `tests/<script>_test.py` in the same change ([python-tests.mdc](../../rules/python-tests.mdc) § Scripts).
+
+Use `tensorboard.exe` via the script (not `python -m tensorboard`). Reuse an existing server on the same port only if its scope already covers the new run; otherwise restart with a broader `--root` or matching `--preset`.
 
 ## Temp paths
 
