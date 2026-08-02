@@ -35,6 +35,7 @@ audits — not duplicated into [AGENTS.md](../../AGENTS.md) as prose.
 
 | Skill                         | Path                                                                    |
 | ----------------------------- | ----------------------------------------------------------------------- |
+| whats-next                    | [SKILL.md](../../.cursor/skills/whats-next/SKILL.md)                    |
 | agent-brain-refresh           | [SKILL.md](../../.cursor/skills/agent-brain-refresh/SKILL.md)           |
 | agent-self-improvement        | [SKILL.md](../../.cursor/skills/agent-self-improvement/SKILL.md)        |
 | ar-tide-autoresearch (deprecated alias) | [SKILL.md](../../.cursor/skills/ar-tide-autoresearch/SKILL.md) |

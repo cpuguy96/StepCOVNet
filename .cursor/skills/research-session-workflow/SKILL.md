@@ -63,4 +63,5 @@ Cite `EXP-…` / `NOTE-…`. Link back to EXPERIMENT_LOG for full history.
 ## Session end
 
 - Prepend [self-journal.md](../../../docs/agents/self-journal.md) if a process gap was found → [agent-self-improvement](../agent-self-improvement/SKILL.md)
-- After a major phase shift, refresh **Current phase** / **Recommended next step** at the top of [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) (same session as the `EXP-…` that changed routing)
+- After any `EXP-…` that changes routing (pass, fail, abort, new gate), refresh the compact block at the top of § **Current phase** in [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) **same turn** — at minimum **Updated**, **Next action**, and **Blockers** (see [whats-next § Maintenance](../whats-next/SKILL.md#maintenance-agents))
+- Keep detail tables below the compact block; do not duplicate long prose in **Next action**

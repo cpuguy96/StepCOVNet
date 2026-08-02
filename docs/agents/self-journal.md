@@ -42,6 +42,28 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260801-02: whats-next "do it" contract
+
+| Field            | Value                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-08-01 21:35:00                                                                                        |
+| **Category**     | convention                                                                                                 |
+| **Summary**      | User wants "do it" after whats-next to unambiguously trigger execution; added **If you say "do it"** block and § "Do it" rules to the skill. |
+| **Artifact**     | `.cursor/skills/whats-next/SKILL.md`                                                                       |
+| **Action taken** | Every whats-next answer lists numbered execute steps + **Done when**; follow-up "do it" runs that list without re-asking. |
+| **Related**      | [whats-next](../../.cursor/skills/whats-next/SKILL.md), JRN-20260801-01                                    |
+
+### JRN-20260801-01: whats-next orientation stack
+
+| Field            | Value                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-08-01 21:30:00                                                                                                                   |
+| **Category**     | skill-gap                                                                                                                             |
+| **Summary**      | User asks "what to do now?" often; answers varied because strategic doc was stale and local clone state was not checked systematically. |
+| **Artifact**     | `.cursor/skills/whats-next/SKILL.md`, `scripts/project_status.py`, `EXPERIMENT_LOG.md` § Current phase compact block, `AGENTS.md` row |
+| **Action taken** | Skill runs `project_status.py` + reads Current phase compact fields; fixed answer template; research-session-workflow updates block on routing EXPs. |
+| **Related**      | [research-session-workflow](../../.cursor/skills/research-session-workflow/SKILL.md), [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md) |
+
 ### JRN-20260725-04: Check for uncommitted work before renormalizing line endings
 
 | Field            | Value |

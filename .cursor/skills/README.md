@@ -23,6 +23,7 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | deprecated AR tide autoresearch links                                      | ar-tide-autoresearch alias | [ar-tide-autoresearch/SKILL.md](ar-tide-autoresearch/SKILL.md)             |
 | F1 zero or low, conv1d collapse, train vs eval matching, threshold debug | onset-event-eval-matching | [onset-event-eval-matching/SKILL.md](onset-event-eval-matching/SKILL.md) |
 | loss weights, arch ablation, threshold sweep, plateau investigation      | tide-ablations            | [tide-ablations/SKILL.md](tide-ablations/SKILL.md)                       |
+| what to do now, what's next, where are we, project status, orientation; **do it** after whats-next | whats-next                  | [whats-next/SKILL.md](whats-next/SKILL.md)                               |
 | start research session, log EXP/NOTE                                     | research-session-workflow | [research-session-workflow/SKILL.md](research-session-workflow/SKILL.md) |
 | WSL GPU training, MERT extract, TensorFlow CUDA on Windows               | wsl-gpu-stepcovnet        | [wsl-gpu-stepcovnet/SKILL.md](wsl-gpu-stepcovnet/SKILL.md)               |
 | agent mistake, process improvement, new repeated workflow                | agent-self-improvement    | [agent-self-improvement/SKILL.md](agent-self-improvement/SKILL.md)       |
@@ -51,6 +52,7 @@ Maintain this table during [agent-brain-refresh](agent-brain-refresh/SKILL.md).
 | train/val split manifest for `final_data`             | `scripts/build_training_index.py`, [DATASET_PREP_PIPELINE.md](../../docs/research/DATASET_PREP_PIPELINE.md) §2 |
 | dense / event train on `final_data`                     | `scripts/train_onset.py` or `train_onset_event.py` + `--training_index_path`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
 | bisection, half-cheat, grid oracle, smoke gate bug hunt | `scripts/run_overfit_tide_bisection.py`, [EXP-11](../../docs/research/EXPERIMENT_LOG.md) |
+| what to do now / project orientation                     | `scripts/project_status.py`, [whats-next/SKILL.md](whats-next/SKILL.md) |
 | AR onset train / `gate-tide-overfit` debug            | `scripts/train_onset_ar.py`, [AR_ONSET_DESIGN.md](../../docs/research/AR_ONSET_DESIGN.md) §10.5 |
 
 ## Adding a skill

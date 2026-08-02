@@ -15,7 +15,7 @@ Project context for Cursor agents — **not** research findings. Routed from [AG
 | Question | Authoritative doc |
 | -------- | ----------------- |
 | What did we run / measure? | [EXPERIMENT_LOG.md](../research/EXPERIMENT_LOG.md) |
-| What should we do next? | Same file, **§ Current phase** (do not duplicate in this folder) |
+| What should we do next? | [whats-next skill](../../.cursor/skills/whats-next/SKILL.md) → [EXPERIMENT_LOG.md](../research/EXPERIMENT_LOG.md) § Current phase; local checks via `scripts/project_status.py` |
 | Why did we decide X? | [DISCUSSION_NOTES.md](../research/DISCUSSION_NOTES.md) |
 | Dataset prep / `final_data` | [DATASET_PREP_PIPELINE.md](../research/DATASET_PREP_PIPELINE.md) |
 | Paper draft (optional) | [PAPER_OUTLINE.md](../research/PAPER_OUTLINE.md) — promote from log when drafting |

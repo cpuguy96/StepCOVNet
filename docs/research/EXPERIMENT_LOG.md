@@ -10,7 +10,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-07-25
+**Updated:** 2026-08-01
+**Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
+**Next action:** Rerun ladder **R2** (50 train rows) to completion with memory mitigation + guest-memory probe; use [`configs/ar/ladder_50t_50v.json`](../../configs/ar/ladder_50t_50v.json).
+**Blockers:** WSL 15 GB default ceiling vs ~5.5 GB cached MERT (`cache_max_samples: 128`); ladder manifests may be absent on clone — rebuild with `scripts/build_training_index_subset.py` before train.
+**Alternate track:** Full multi-song **dense** train on `final_data` (Track A scoreboard) — compare to `data/v2` best **0.686** micro event F1.
+**Defer until R2 lands:** scheduled sampling, free-run bar, offline `eos_trace` probes at scale, R3–R5 ladder rungs, `gate-val-vs-dense`.
 
 ### Dataset prep (PRE ingestion)
 
