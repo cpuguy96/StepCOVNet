@@ -120,6 +120,84 @@ class ModelsTest(unittest.TestCase):
 
 
 class TrainersTest(unittest.TestCase):
+    def test_scheduled_sampling_applies_after_train_step_is_traced(self) -> None:
+        """Regression: the ramp must survive tracing.
+
+        ``train_step`` is traced during warmup while ``p`` is still 0. When the
+        branch was a Python ``if`` the sampling path was compiled out and the
+        ramp callback silently did nothing for the rest of the run.
+        """
+        tf.random.set_seed(0)
+        np.random.seed(0)
+        experiment_config = _tiny_experiment_config()
+        experiment_config.run.scheduled_sampling_max_p = 1.0
+        experiment_config.run.scheduled_sampling_warmup_epochs = 1
+        experiment_config.run.scheduled_sampling_ramp_epochs = 1
+        times = np.asarray([0.05, 0.12], dtype=np.float64)
+        token_seq = targets.encode_onset_times(
+            times,
+            duration_sec=1.0,
+            hop_sec=experiment_config.dataset.hop_sec,
+            patch_frames=experiment_config.model.patch_frames,
+            vocab=experiment_config.build_vocab(),
+            max_steps=16,
+        )
+        sample = datasets.ArSample(
+            mert_patches=np.random.randn(3, experiment_config.patch_input_dim()).astype(
+                np.float32,
+            ),
+            n_patches=3,
+            n_frames=10,
+            duration_sec=1.0,
+            token_seq=token_seq,
+            gt_times_sec=times.astype(np.float32),
+            audio_path="a.ogg",
+            chart_path="a.txt",
+        )
+        batch = datasets.sample_to_training_batch(sample, experiment_config)
+        tf_batch = {key: tf.constant(value) for key, value in batch.items()}
+
+        training_model = trainers.ArOnsetTrainingModel(
+            models.build_ar_onset_model(experiment_config),
+            experiment_config=experiment_config,
+        )
+
+        # Closure, not a bound method: this is the form Keras uses to build the
+        # train function, and the only one that actually traces a graph here.
+        @tf.function
+        def select_inputs(batch: dict[str, tf.Tensor]) -> tf.Tensor:
+            return training_model._decoder_inputs_for_step(batch)
+
+        teacher_inputs = tf_batch["decoder_input_ids"].numpy()
+        during_warmup = select_inputs(tf_batch).numpy()
+        np.testing.assert_array_equal(during_warmup, teacher_inputs)
+
+        training_model.scheduled_sampling_p.assign(1.0)
+        after_ramp = select_inputs(tf_batch).numpy()
+        self.assertFalse(
+            np.array_equal(after_ramp, teacher_inputs),
+            "scheduled sampling did not change decoder inputs after the ramp",
+        )
+
+    def test_scheduled_sampling_ramp_callback_updates_variable(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        experiment_config.run.scheduled_sampling_max_p = 0.4
+        experiment_config.run.scheduled_sampling_ramp_epochs = 2
+        training_model = trainers.ArOnsetTrainingModel(
+            models.build_ar_onset_model(experiment_config),
+            experiment_config=experiment_config,
+        )
+        callback = trainers.ScheduledSamplingRampCallback(
+            training_model,
+            max_p=0.4,
+            ramp_epochs=2,
+            warmup_epochs=1,
+        )
+        callback.on_epoch_begin(0)
+        self.assertAlmostEqual(float(training_model.scheduled_sampling_p), 0.0)
+        callback.on_epoch_begin(2)
+        self.assertAlmostEqual(float(training_model.scheduled_sampling_p), 0.4)
+
     def test_train_step_runs_on_synthetic_batch(self) -> None:
         experiment_config = _tiny_experiment_config()
         times = np.asarray([0.05, 0.12], dtype=np.float64)

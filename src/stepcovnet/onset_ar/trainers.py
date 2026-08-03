@@ -251,11 +251,19 @@ class ArOnsetTrainingModel(keras.Model):
         self.scheduled_sampling_warmup_epochs = (
             run_config.scheduled_sampling_warmup_epochs
         )
-        self.scheduled_sampling_p = scheduled_sampling_for_epoch(
-            -1,
-            max_p=self.scheduled_sampling_max_p,
-            ramp_epochs=self.scheduled_sampling_ramp_epochs,
-            warmup_epochs=self.scheduled_sampling_warmup_epochs,
+        # A tf.Variable, not a float: train_step is traced once (during warmup,
+        # while p is still 0), so a Python value would freeze the sampling
+        # branch out of the graph for the whole run.
+        self.scheduled_sampling_p = tf.Variable(
+            scheduled_sampling_for_epoch(
+                -1,
+                max_p=self.scheduled_sampling_max_p,
+                ramp_epochs=self.scheduled_sampling_ramp_epochs,
+                warmup_epochs=self.scheduled_sampling_warmup_epochs,
+            ),
+            trainable=False,
+            dtype=tf.float32,
+            name="scheduled_sampling_p",
         )
         self.max_decoder_len = experiment_config.max_decoder_len()
         self.tolerance_sec = run_config.tolerance_sec
@@ -556,29 +564,43 @@ class ArOnsetTrainingModel(keras.Model):
         for metric in self._batch_metrics():
             metric.reset_state()
 
+    def _scheduled_sampled_decoder_inputs(
+        self,
+        batch: dict[str, tf.Tensor],
+    ) -> tf.Tensor:
+        """Replace teacher tokens with the model's own predictions at rate ``p``."""
+        probe_outputs = self.base_model(self._model_inputs(batch), training=True)
+        mixed_inputs = inference.build_scheduled_decoder_inputs(
+            batch["decoder_input_ids"],
+            tf.stop_gradient(probe_outputs["token_logits"]),
+            batch["decoder_mask"],
+            self.scheduled_sampling_p,
+        )
+        return tf.cast(mixed_inputs, batch["decoder_input_ids"].dtype)
+
+    def _decoder_inputs_for_step(self, batch: dict[str, tf.Tensor]) -> tf.Tensor:
+        """Choose teacher-forced or scheduled-sampled decoder inputs at run time.
+
+        The branch must stay in the graph. A Python ``if`` on
+        ``scheduled_sampling_p`` is resolved when Keras traces ``train_step``,
+        which happens while the ramp is still in warmup at ``p = 0``, and the
+        sampling path is then dropped for every later epoch.
+        """
+        return tf.cond(
+            self.scheduled_sampling_p > 0.0,
+            lambda: self._scheduled_sampled_decoder_inputs(batch),
+            lambda: batch["decoder_input_ids"],
+        )
+
     def train_step(self, data):
         batch = self._unpack_batch(data)
-        probe_outputs = None
-        if self.scheduled_sampling_p > 0.0:
-            _, _, probe_outputs = self._forward_and_loss(batch, training=True)
+        decoder_input_ids = self._decoder_inputs_for_step(batch)
         with tf.GradientTape() as tape:
-            if probe_outputs is not None:
-                mixed_inputs = inference.build_scheduled_decoder_inputs(
-                    batch["decoder_input_ids"],
-                    tf.stop_gradient(probe_outputs["token_logits"]),
-                    batch["decoder_mask"],
-                    self.scheduled_sampling_p,
-                )
-                total_loss, parts, outputs = self._forward_and_loss(
-                    batch,
-                    training=True,
-                    decoder_input_ids=mixed_inputs,
-                )
-            else:
-                total_loss, parts, outputs = self._forward_and_loss(
-                    batch,
-                    training=True,
-                )
+            total_loss, parts, outputs = self._forward_and_loss(
+                batch,
+                training=True,
+                decoder_input_ids=decoder_input_ids,
+            )
         trainable_vars = self.base_model.trainable_variables
         if hasattr(self.optimizer, "scale_loss"):
             scaled_loss = self.optimizer.scale_loss(total_loss)
@@ -882,11 +904,13 @@ class ScheduledSamplingRampCallback(keras.callbacks.Callback):
 
     def on_epoch_begin(self, epoch: int, logs: dict | None = None) -> None:
         _ = logs
-        self.training_model.scheduled_sampling_p = scheduled_sampling_for_epoch(
-            epoch,
-            max_p=self.max_p,
-            ramp_epochs=self.ramp_epochs,
-            warmup_epochs=self.warmup_epochs,
+        self.training_model.scheduled_sampling_p.assign(
+            scheduled_sampling_for_epoch(
+                epoch,
+                max_p=self.max_p,
+                ramp_epochs=self.ramp_epochs,
+                warmup_epochs=self.warmup_epochs,
+            ),
         )
 
 

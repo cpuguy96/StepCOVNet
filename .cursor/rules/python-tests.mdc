@@ -52,6 +52,10 @@ Agents: do **not** skip script tests for “ops helpers” when they match the f
 - **`patch.dict`:** no autospec (not applicable).
 - **Opaque third-party handles** (torch models, Tk events): `create_autospec` when a real type is available; otherwise `mock.Mock(spec=[...])` or `SimpleNamespace` for attribute bags.
 
+**Schedules and knobs:** test that the knob **changes behavior**, not just that its schedule computes the right number. A ramp helper covered only by arithmetic assertions can be green while the value it produces is ignored at run time — that is how scheduled sampling stayed inert for months ([EXP-20260802-05](../../docs/research/EXPERIMENT_LOG.md#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step)).
+
+**Values read inside `tf.function`:** anything a callback mutates mid-training (sampling `p`, loss weights) must be a `tf.Variable` read under `tf.cond`; a Python attribute is frozen when Keras traces `train_step`. Assert this by tracing **first**, then changing the value, then asserting the output changed. Wrap the call in a module-level closure — `tf.function(model.some_method)` on a bound Keras method does **not** reliably build a graph, so a test written that way passes against broken code.
+
 **Temp files:** `tempfile.TemporaryDirectory()` or `NamedTemporaryFile` inside `with` (`delete=True`); never `delete=False` + manual unlink.
 
 **Duplication:** shared helpers, `@pytest.mark.parametrize`, fixtures — avoid copy-pasted bodies.
