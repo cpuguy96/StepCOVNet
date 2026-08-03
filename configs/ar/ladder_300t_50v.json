@@ -46,6 +46,7 @@
     "early_stopping_patience": 50,
     "perfect_overfit_early_stop": false,
     "model_output_dir": "models_wsl/ar/ladder_300t_50v",
-    "callback_root_dir": "callbacks/ar/ladder_300t_50v"
+    "callback_root_dir": "callbacks/ar/ladder",
+    "run_label": "r4_300t"
   }
 }

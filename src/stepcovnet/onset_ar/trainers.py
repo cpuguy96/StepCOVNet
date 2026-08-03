@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 import time
 
 import keras
@@ -644,9 +645,20 @@ def _get_experiment_name(
     n_train_samples: int | None = None,
     n_val_samples: int | None = None,
 ) -> str:
-    """Build TensorBoard / callback run suffix from model + data + schedule."""
-    parts = [
-        "AR_ONSET",
+    """Build TensorBoard / callback run suffix from model + data + schedule.
+
+    Rungs of one ladder share a ``callback_root_dir``, so ``run.run_label``
+    carries the rung identity into the timestamped run folder name.
+    """
+    parts = ["AR_ONSET"]
+    run_label = re.sub(
+        r"[^A-Za-z0-9_]+",
+        "_",
+        experiment_config.run.run_label,
+    ).strip("_")
+    if run_label:
+        parts.append(run_label)
+    parts += [
         f"P{experiment_config.model.patch_frames}",
         f"d{experiment_config.model.d_model}",
         f"enc{experiment_config.model.n_enc_layers}",

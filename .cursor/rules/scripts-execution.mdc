@@ -22,6 +22,19 @@ $code = $LASTEXITCODE
 if ($code -ne 0) { exit $code }
 ```
 
+**PowerShell anti-pattern (hides the console):** never combine a file redirect with Tee like
+`1> logs/out.json 2>&1 | Tee-Object ...` or `> logs/out.log 2>&1 | Tee-Object ...`.
+Stdout is bound to the file **before** the pipeline, so Tee (and the Cursor terminal) receive nothing — progress vanishes into the file only. That violates visible-console even if a log path looks correct.
+
+For scripts that split **JSON on stdout** / **progress on stderr** (e.g. `debug_ar_onset_overfit.py`):
+
+```powershell
+& venv\Scripts\python.exe scripts/debug_ar_onset_overfit.py <args> `
+  2>&1 | Tee-Object -FilePath logs/<topic>_<run>.log
+```
+
+Keep one tee stream to the terminal + log; extract JSON from the log afterward if needed. Do **not** `1>`-redirect stdout away from Tee to “save JSON cleanly” unless you also mirror progress to the console some other way.
+
 If a tool backgrounds the command after its foreground timeout, the same tee pipeline must remain attached so the visible terminal continues receiving live output.
 
 ## TensorBoard with training
@@ -29,20 +42,21 @@ If a tool backgrounds the command after its foreground timeout, the same tee pip
 When launching a **training** job that writes Keras TensorBoard callbacks (`callback_root_dir` / `callbacks/.../logs`):
 
 1. **Start TensorBoard in a separate terminal before or with the train command** — do not wait for the user to ask.
-2. Prefer [`scripts/tensorboard_compare.py`](../../scripts/tensorboard_compare.py) so reruns and related experiments stay comparable.
+2. Point `--logdir` at the **stage** log tree, not one run folder.
 3. Tell the user the URL (`http://localhost:6006/` by default) when training starts.
 
-| Goal | Command |
-| ---- | ------- |
-| All runs under one track (e.g. every AR experiment + rerun) | `venv\Scripts\python.exe scripts/tensorboard_compare.py --root callbacks/ar` |
-| Named experiments side by side (ladder R1/R2, config A/B) | `venv\Scripts\python.exe scripts/tensorboard_compare.py --preset ladder` or `--config configs/ar/ladder_10t_50v.json configs/ar/ladder_50t_50v.json` |
-| See what exists before launching | `venv\Scripts\python.exe scripts/tensorboard_compare.py --list` |
+```powershell
+& venv\Scripts\tensorboard.exe --logdir callbacks/ar/ladder/logs --port 6006
+```
 
-Each train writes a **new timestamped folder** under `{callback_root_dir}/logs/` — reruns do not overwrite prior curves. In the TensorBoard UI, check multiple runs in the left sidebar to overlay metrics.
+Runs of one **stage** share a `callback_root_dir`, so every run lands in the same `logs/` tree as `{YYYYMMDD-HHMMSS}-AR_ONSET-{run_label}-…`. Sorting that tree by name is chronological, and one `--logdir` shows the whole stage — no launcher script or `--logdir_spec` juggling.
 
-New scripts like `tensorboard_compare.py` with discovery/path logic require `tests/<script>_test.py` in the same change ([python-tests.mdc](../../rules/python-tests.mdc) § Scripts).
+| Stage | `callback_root_dir` | `--logdir` |
+| ----- | ------------------- | ---------- |
+| AR scaling ladder (all rungs + SS variants) | `callbacks/ar/ladder` | `callbacks/ar/ladder/logs` |
+| Everything AR | — | `callbacks/ar` |
 
-Use `tensorboard.exe` via the script (not `python -m tensorboard`). Reuse an existing server on the same port only if its scope already covers the new run; otherwise restart with a broader `--root` or matching `--preset`.
+Reruns never overwrite prior curves. In the UI, check multiple runs in the left sidebar to overlay metrics. Reuse a server on the same port only when its `--logdir` already covers the new run.
 
 ## Temp paths
 
@@ -62,6 +76,7 @@ When the user says **rerun** / **increase epochs** / tweak hyperparams on an exi
 
 - Reserve **`smoke`** for tiny gate runs (e.g. 10-song `configs/ar/smoke.json`). Multi-song scale-up configs use **`scale_<Nt>t_<Nv>v`** (not `smoke_…`).
 - AR TensorBoard run suffixes include **`{train}t{val}v-ep{epochs}`** (and `es{patience}` when early stopping is on) via `_get_experiment_name` — do not rely on the parent `callback_root_dir` alone to tell splits apart.
+- `callback_root_dir` names the **stage** (e.g. `callbacks/ar/ladder`), shared by every run in it; `run.run_label` (e.g. `r2_50t`, `r2_ss_50t`) names the variant inside the run folder. `model_output_dir` stays **per variant** — it writes a fixed `ar_onset_model.keras` that would otherwise be overwritten.
 
 ## GPU scheduling
 

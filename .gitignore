@@ -207,7 +207,6 @@ scripts/*
 !scripts/benchmark_ar_kv_decode.py
 !scripts/audit_agent_brain.py
 !scripts/project_status.py
-!scripts/tensorboard_compare.py
 !scripts/visualize_arrow_data.py
 !scripts/wsl_*.sh
 

@@ -114,6 +114,7 @@ class ArRunConfig(_DictSerializableMixin):
     perfect_overfit_patience: int = 3
     model_output_dir: str = ""
     callback_root_dir: str = ""
+    run_label: str = ""
     seed: int = 42
     learning_rate: float = 2e-3
     mixed_precision: bool = False

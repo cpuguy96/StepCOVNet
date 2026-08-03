@@ -38,7 +38,7 @@ Use the relevant test file when scope is narrow. Import conventions beyond Ruff:
 | Thin CLI that only calls `src/stepcovnet` with no local logic | No dedicated script test | Existing `tests/` for the imported package |
 | Mixed (local helpers + `src/` calls) | Yes for the local helpers | Script tests for discovery/paths; package tests for core behavior |
 
-Examples: `audit_agent_brain.py` → `audit_agent_brain_test.py`; `tensorboard_compare.py` → `tensorboard_compare_test.py`. Pattern: import the script module from `tests/` via `sys.path` insert on `scripts/` (see `tests/conftest.py` — set `STEPCOVNET_NO_WSL=1` is already global).
+Examples: `audit_agent_brain.py` → `audit_agent_brain_test.py`; `project_status.py` → `project_status_test.py`. Pattern: import the script module from `tests/` via `sys.path` insert on `scripts/` (see `tests/conftest.py` — set `STEPCOVNET_NO_WSL=1` is already global).
 
 Agents: do **not** skip script tests for “ops helpers” when they match the first row — that is the default, not optional.
 

@@ -134,6 +134,32 @@ class TrainersTest(unittest.TestCase):
             "AR_ONSET-P8-d384-enc4-dec4-200t50v-ep500-es25",
         )
 
+    def test_experiment_name_includes_sanitized_run_label(self) -> None:
+        experiment = ar_config.ArExperimentConfig(
+            dataset=ar_config.ArDatasetConfig(),
+            model=ar_config.ArModelConfig(
+                patch_frames=8,
+                d_model=384,
+                n_enc_layers=4,
+                n_dec_layers=4,
+            ),
+            run=ar_config.ArRunConfig(
+                epochs=200,
+                early_stopping_patience=50,
+                overfit_one_song=False,
+                run_label="r2/ss 50t",
+            ),
+        )
+        name = trainers._get_experiment_name(
+            experiment,
+            n_train_samples=50,
+            n_val_samples=50,
+        )
+        self.assertEqual(
+            name,
+            "AR_ONSET-r2_ss_50t-P8-d384-enc4-dec4-50t50v-ep200-es50",
+        )
+
     def test_experiment_name_overfit_tag(self) -> None:
         experiment = ar_config.ArExperimentConfig(
             dataset=ar_config.ArDatasetConfig(),
