@@ -4,6 +4,58 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-03 — ladder difficulty composition and the audio-only ceiling
+
+### NOTE-20260803-01: Difficulty is unconditioned and unfiltered, but it is not what caps the ladder
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-03 01:31:44 |
+| **Topic** | Which chart difficulties the `ladder_v1` manifests select, whether the mix is consistent across splits and rungs, and whether the model's lack of a difficulty input is blocking progress |
+
+**The model has no difficulty input.** `ArOnsetTrainingModel._model_inputs` passes only `mert_patches`, `patch_mask`, `decoder_input_ids`, `decoder_mask`; `onset_ar/datasets.py` never mentions `difficulty` or `meter`. Sampling is over chart **rows**, with no difficulty filter, so the same audio can appear under several charts with different onset counts and one prediction is scored against all of them.
+
+**Composition (audit of all four `ladder_v1` manifests):**
+
+| Split | beginner | easy | medium | hard | challenge | edit | rows / songs |
+| ----- | -------- | ---- | ------ | ---- | --------- | ---- | ------------ |
+| Val (frozen, identical at every rung) | 28% | 4% | 2% | 8% | 56% | 2% | 50 / 39 |
+| R1 train | 20% | — | — | — | 80% | — | 10 / 10 |
+| R2 train | 16% | 4% | 2% | 2% | 76% | — | 50 / 49 |
+| R3 train | 26% | 4% | 2% | 4% | 63% | 0.5% | 200 / 183 |
+| R4 train | 27% | 5% | 4% | 4% | 60% | 0.3% | 300 / 270 |
+
+**Protocol checks pass:** zero train/val **song** overlap at every rung (no leakage), train sets properly nested R1 ⊂ R2 ⊂ R3 ⊂ R4, and the val row set is byte-identical across all four manifests.
+
+**Protocol gap:** rungs are **not** matched on difficulty mix — the challenge share falls 80% → 76% → 63% → 60% as the ladder climbs, so "train size is the only variable" is not strictly true. This cuts *against* the observed non-monotonicity rather than explaining it: R3's mix is closer to val's than R2's is, yet R3 scored **0.199** vs R2's **0.227** ([EXP-20260802-02](EXPERIMENT_LOG.md#exp-20260802-02-ladder-r3--200-train-rows-does-not-beat-r2-on-frozen-val)).
+
+**Audio-only ceiling = 0.9574.** For each val song, take the single onset sequence that maximizes matches across that song's charts, then micro-average at 20 ms tolerance: **tp 35280 / fp 2982 / fn 159 → F1 0.9574**. Multi-chart ambiguity therefore costs at most ~4 F1 points, because charts of one song overlap heavily in time. Against a current **0.227** teacher / **0.132** free-run, difficulty ambiguity is **not** the binding constraint — it becomes one above ~0.9.
+
+**Difficulty labels are partly wrong**, so "normalize by difficulty label" would launder bad metadata:
+
+| Song | Charts (onsets) | Pairwise F1 @ 20 ms |
+| ---- | --------------- | ------------------- |
+| `see_the_lights.ogg` | challenge 624, medium 351, easy 198, beginner 85 | 0.24–0.70 — sane ladder |
+| `idola.ogg` | challenge 880, beginner 138 | 0.27 |
+| `started.mp3` | **beginner 735**, challenge 724, hard 524 | 0.81–0.98 |
+| `act_000000.mp3` | challenge 979, **beginner 980** | 1.00 |
+
+`started.mp3` lists its beginner slot at **meter 12**, equal to its challenge — the numeric `meter` corroborates the mislabeling, making it a more trustworthy signal than the difficulty string.
+
+**Secondary effects worth remembering.** Val rows are unevenly weighted by audio: `see_the_lights` contributes 8% of the metric from one audio file (4 charts) while a single-chart song contributes 2%. Conflicting-target rows in **training** grow with rung size — 4% of rows at R2, 15% at R3, 18% at R4 — a candidate contributor to R3 < R2, though the high pairwise agreement above suggests the conflict is mild.
+
+**Reading / options (no action taken):**
+
+| Option | Effect |
+| ------ | ------ |
+| Deduplicate to one chart per song when rebuilding manifests | Removes ambiguity and the uneven audio weighting; costs 11 val rows; requires a fresh ladder (breaks comparability with R1–R3) |
+| Condition on **measured onset density** (or numeric `meter`) via encoder input or BOS token | The substantive fix. Sidesteps unreliable labels, makes multi-chart data an asset (3–4× rows), gives difficulty control at generation time, and supplies the **length prior** the model currently lacks |
+| Filter to one difficulty tier | Rejected — labels are unreliable, so this does not guarantee homogeneity |
+
+Density conditioning is the option that also attacks the open free-run pathology: R2 emits exactly **252** onsets for all 50 val songs while R3 stops at **15** ([EXP-20260802-04](EXPERIMENT_LOG.md#exp-20260802-04-ladder-r2-vs-r3-offline-val-free-run-compare)). "How dense should this chart be" is the same missing information as difficulty.
+
+**Related:** [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md) § 3 · [EXP-20260802-04](EXPERIMENT_LOG.md#exp-20260802-04-ladder-r2-vs-r3-offline-val-free-run-compare) · [NOTE-20260724-02](#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)
+
 ## Session 2026-07-25 — AR 50t/50v rebuild gap triage
 
 ### NOTE-20260725-01: The 50t/50v rebuild gap is val-side, not recipe or early stopping

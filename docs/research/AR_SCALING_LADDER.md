@@ -48,6 +48,8 @@ Fixed for every rung. A rung that deviates on any row is not on the ladder.
 | **Epoch budget** | Same cap at every rung; early stopping on the **reported metric**, not `val_loss` | Removes "it just trained longer" as an explanation (fixes D3) |
 | **Checkpoint selection** | Best val teacher F1, not best `val_loss` | These peak ~400 epochs apart on the 50-row rung |
 | **Reported numbers** | teacher F1, free-run F1, predicted/GT onset-count ratio, EOS behavior, epochs-to-best, wall time | Free-run and length are where multi-song runs actually fail; a teacher-only number hides it |
+| **Difficulty mix** | **Not controlled** — rows are sampled without a difficulty filter, so the challenge share drifts across rungs (80% → 60% from R1 to R4) and multi-chart songs give one audio several targets. Audio-only val ceiling is **0.957**, so this is not the current cap; see [NOTE-20260803-01](DISCUSSION_NOTES.md#note-20260803-01-difficulty-is-unconditioned-and-unfiltered-but-it-is-not-what-caps-the-ladder) |
+| **Initialization** | Random init. `init_model_path` **not used** on any ladder run | Same rule the tide harness enforces by stripping the key (`scripts/ar_tide_iter/config_builder.py`): warm-started numbers are not valid bars. The checkpoint path is also mutable — rerun a rung and a warm-started child's starting point silently changes |
 | **Seed** | `apply_training_seed(42)` per [research-logging](../../.cursor/rules/research-logging.mdc) | — |
 
 **Promotion rule:** climb to the next rung only when the current rung beats the previous rung's val teacher F1 **on the frozen val set**. If a rung fails to improve, that is the result — stop and investigate rather than adding more data on top of a broken rung.
@@ -59,6 +61,16 @@ Fixed for every rung. A rung that deviates on any row is not on the ladder.
 | R1–R5 | `data/final_data/training_index_ladder_{N}t_{V}v.json` | `ladder_` prefix distinguishes these from the existing non-nested `scoreboard_`/`{N}t_{V}v` subsets, which stay valid for their own logged runs |
 
 `split_policy` carries a `ladder_v1` tag so a manifest self-identifies as ladder-built.
+
+### Run artifacts
+
+Every ladder run — rungs and variants alike — shares `"callback_root_dir": "callbacks/ar/ladder"` and sets `"run_label"` (`r1_10t`, `r2_50t`, `r3_200t`, `r2_ss_50t`, …). Runs land in `callbacks/ar/ladder/logs/{timestamp}-AR_ONSET-{run_label}-…`, so one command shows the whole ladder in chronological order:
+
+```powershell
+& venv\Scripts\tensorboard.exe --logdir callbacks/ar/ladder/logs --port 6006
+```
+
+`model_output_dir` stays **per variant** (`models_wsl/ar/ladder_{N}t_{V}v[...]`) — it writes a fixed `ar_onset_model.keras` that a shared directory would overwrite.
 
 ## 4. The ladder
 
@@ -96,7 +108,27 @@ Two things the rung taught beyond its own number:
 
 **Aborted at ep 152**, unscored — [EXP-20260726-01](EXPERIMENT_LOG.md#exp-20260726-01-ladder-r2-aborted-at-ep-152--wsl-vm-terminated-mid-run). The WSL VM shut down mid-run at 01:29; the partial curve was ~**2.2×** ahead of R1 at matched epochs but must **not** be reported as R2's number. Suspected in-guest memory exhaustion (15 GB WSL ceiling, ~5.5 GB of cached features), unconfirmed because the kernel log was wiped by the VM restart.
 
-Adds an operational item to § 6: **long rungs need a memory mitigation and a guest-memory probe.** R3–R5 cache more than R2 did, so this blocks the rest of the ladder, not just the rerun.
+### R2 complete (2026-08-02)
+
+**Supported** — [EXP-20260802-01](EXPERIMENT_LOG.md#exp-20260802-01-ladder-r2--50-train-rows-beats-r1-on-frozen-val). Val Hungarian F1 **0.2266 @ ep 470** of 500 (~**1.27×** R1's **0.178**). Rerun used `.wslconfig` `memory=24GB` (~23 GiB guest); held through full budget with mid-run guest use ~7–8 GiB. D3 again: best `val_loss` @ ep **42** has F1 only **0.120**.
+
+### R3 complete (2026-08-02)
+
+**Partial** — [EXP-20260802-02](EXPERIMENT_LOG.md#exp-20260802-02-ladder-r3--200-train-rows-does-not-beat-r2). Val Hungarian F1 **0.1991 @ ep 361**, ES @ ep **411**. **Below** R2 (**0.227**); still above R1 (**0.178**). Teacher F1 is not monotonic in train size on the frozen val set.
+
+### R2 free-run (2026-08-02)
+
+**Partial** — [EXP-20260802-03](EXPERIMENT_LOG.md#exp-20260802-03-ladder-r2-offline-val-free-run--eos_trace). Teacher F1 **0.227** holds offline; free-run F1 **0.132**; **pred/GT = 0.36**. All 50 val songs stop on `<EOS>` at exactly **252** onset tokens (`eos_trace` final ~**1.0**). Free-run bar for this rung: **0.132**.
+
+### R2 vs R3 free-run (2026-08-02)
+
+**Supported** (compare) — [EXP-20260802-04](EXPERIMENT_LOG.md#exp-20260802-04-ladder-r2-vs-r3-offline-val-free-run-compare). R3 free-run F1 **0.003**, **pred/GT = 0.021**, every song EOS at **15** onsets — much worse than R2, and a different failure mode (early EOS vs fixed-length **252**).
+
+### R2 + scheduled sampling (2026-08-03)
+
+**Not supported** — [EXP-20260803-01](EXPERIMENT_LOG.md#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2). First run with the feature actually live (it had been compiled out of the traced `train_step`, [EXP-20260802-05](EXPERIMENT_LOG.md#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step)). Teacher F1 **0.2235** vs R2 **0.2266**; free-run F1 **0.1313** vs the **0.132** bar; `pred/GT` **0.3555** and all 50 songs still stop at exactly **252** onsets — the length pathology is untouched. Note the run is not seed-exact against R2: `tf.cond` adds random ops that shift dropout seeds, worth ±0.007 on teacher F1 during warmup.
+
+**Next:** condition the decoder on **onset density** (numeric `meter` or measured density) for the missing length prior — see [NOTE-20260803-01](DISCUSSION_NOTES.md#note-20260803-01-difficulty-is-unconditioned-and-unfiltered-but-it-is-not-what-caps-the-ladder). R4 remains an alternate teacher-scale probe. Do **not** spend further budget on sampling schedules.
 
 ## 5. Work required before R1 — **done 2026-07-25**
 
@@ -114,6 +146,6 @@ W1 changes the output of an existing script. Old subsets stay reproducible only 
 ## 6. Open items
 
 - **Should manifests be tracked in git?** They are gitignored today (D2). A subset manifest is ~46 KB; the full one is ~900 KB. Tracking the ladder subsets would make rungs reproducible across machines outright.
-- **Scheduled sampling** ([NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)) stays deferred until at least R2 gives a trustworthy baseline to measure it against.
+- **Scheduled sampling** ([NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)) — **unblocked on R2.** R3 free-run is worse (**0.003**, early EOS @ **15**) — do not SS there first ([EXP-20260802-04](EXPERIMENT_LOG.md#exp-20260802-04-ladder-r2-vs-r3-offline-val-free-run-compare)).
 - **Dense track reuse:** the same frozen val set should be used for the dense scoreboard track so AR and dense are directly comparable.
-- **Free-run bar:** no rung bar is set for free-run F1 yet, because no multi-song run has produced a healthy one. Set it once R2 lands.
+- **Free-run bar:** R2 **0.132** (stop@252); R3 **0.003** (stop@15). No healthy multi-song free-run yet.

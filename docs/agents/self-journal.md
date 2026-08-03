@@ -42,6 +42,53 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260802-04: A green test suite hid a dead feature for months
+
+| Field            | Value                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-08-02 23:12:05                                                                                        |
+| **Category**     | fix                                                                                                        |
+| **Summary**      | A 2 h 15 m scheduled-sampling run reproduced its baseline to 4 dp on all 500 epochs. `train_step` gated sampling on a Python attribute inside Keras' traced `tf.function`, so the branch was compiled out at trace time (always during warmup, `p = 0`). Five existing tests asserted only the ramp **arithmetic**, so the suite was green on dead code. |
+| **Artifact**     | Code: `onset_ar/trainers.py` (`scheduled_sampling_p` → `tf.Variable`, new `_decoder_inputs_for_step` under `tf.cond`); test: `tests/onset_ar/models_test.py`; scoped rule `.cursor/rules/python-tests.mdc` § Test patterns — “Schedules and knobs” + “Values read inside `tf.function`” |
+| **Action taken** | Verified the new test **fails** against a faithful reproduction of the original bug before trusting it, then confirmed on GPU with a 5-epoch A/B: warmup epochs bit-identical, post-ramp epochs diverge. |
+| **Lesson**       | Two traps worth remembering. A knob's schedule passing its unit tests says nothing about the knob being *read*; assert the behavior change. And `tf.function(model.bound_method)` does not reliably build a graph — my first regression test passed against broken code because of it. Suspiciously identical numbers between a variant and its baseline are a defect signal, not a null result. |
+| **Related**      | [EXP-20260802-05](../research/EXPERIMENT_LOG.md#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step) · JRN-20260802-03 |
+
+### JRN-20260802-03: Warm start on a ladder run contradicted a standing scratch-only rule
+
+| Field            | Value                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-08-02 14:52:40                                                                                        |
+| **Category**     | mistake                                                                                                    |
+| **Summary**      | Built the scheduled-sampling config with `init_model_path` → R2's checkpoint, plus a lowered LR and a shortened epoch budget. The tide harness already strips `init_model_path` as “cheating” (`session_brief.py`, `ar-tide-overfit.md`), but that rule lived only in tide tooling, so I did not apply it to the ladder. User: “i don't think it make sense to be training warm start at all … seems like a bug waiting to happen.” |
+| **Artifact**     | `docs/research/AR_SCALING_LADDER.md` § 3 Protocol — new **Initialization** row (random init; `init_model_path` not used); `configs/ar/ladder_50t_50v_ss.json` restored to the R2 recipe (500 ep, LR 1e-4) |
+| **Action taken** | Killed the warm-started run, deleted its artifacts, restarted from random init with SS as the only variable vs the R2 rung. Wrote the scratch-only constraint into the ladder protocol table where the ladder's other invariants live. |
+| **Lesson**       | Warm start silently breaks reproducibility: `model_output_dir` paths are mutable, so a rerun of the parent rung changes a child run's starting weights after the fact. It also stacked three deviations at once (init, LR, epochs), so nothing would have been attributable to scheduled sampling. When a norm exists in one harness, check whether the new track needs it before deviating. |
+| **Related**      | JRN-20260802-02 · [AR_SCALING_LADDER.md](../research/AR_SCALING_LADDER.md) § 3                              |
+
+### JRN-20260802-02: Fix the directory layout, not the launcher
+
+| Field            | Value                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-08-02 14:40:12                                                                                        |
+| **Category**     | convention                                                                                                 |
+| **Summary**      | Ladder rungs each had their own `callback_root_dir`, so TensorBoard sorted `ladder_200t…` before `ladder_50t…`. I answered with sorting/labeling logic inside `scripts/tensorboard_compare.py` instead of fixing the paths. User: “do it properly and organize things by file paths … i don't think there needs to really be a seperate tensorboard launch script.” |
+| **Artifact**     | Code: `onset_ar/config.py` + `trainers.py` (`run.run_label`); configs `configs/ar/ladder_*.json`; scoped rule `.cursor/rules/scripts-execution.mdc` § TensorBoard with training + § AR config naming; deleted `scripts/tensorboard_compare.py` and its test |
+| **Action taken** | One `callback_root_dir` per **stage** (`callbacks/ar/ladder`), `run_label` per variant inside the timestamped run folder — so `tensorboard --logdir <stage>/logs` is name-sorted chronologically with no launcher. Migrated existing rung dirs into the stage tree. |
+| **Lesson**       | When a helper script exists to compensate for a layout, fix the layout. Tooling that reorders or relabels paths at read time is a smell, not a feature. |
+| **Related**      | JRN-20260802-01                                                                                            |
+
+### JRN-20260802-01: PowerShell `1>` + Tee hides console
+
+| Field            | Value                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Timestamp**    | 2026-08-02 12:52:20                                                                                        |
+| **Category**     | mistake                                                                                                    |
+| **Summary**      | R2 val decode used `1> logs/...json 2>&1 \| Tee-Object` — stdout bound to file before pipeline, so Tee/Cursor terminal got nothing despite scripts-execution visible-console rule. |
+| **Artifact**     | `.cursor/rules/scripts-execution.mdc` (scoped rule — PowerShell anti-pattern + JSON/stderr tee pattern)  |
+| **Action taken** | Documented that `1>`/`>` before Tee defeats visible console; for split stdout/stderr scripts, tee merged streams only. |
+| **Related**      | ladder R2 free-run decode                                                                                  |
+
 ### JRN-20260801-02: whats-next "do it" contract
 
 | Field            | Value                                                                                                      |

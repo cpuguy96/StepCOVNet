@@ -10,12 +10,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-01
+**Updated:** 2026-08-03
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Next action:** Rerun ladder **R2** (50 train rows) to completion with memory mitigation + guest-memory probe; use [`configs/ar/ladder_50t_50v.json`](../../configs/ar/ladder_50t_50v.json).
-**Blockers:** WSL 15 GB default ceiling vs ~5.5 GB cached MERT (`cache_max_samples: 128`); ladder manifests may be absent on clone — rebuild with `scripts/build_training_index_subset.py` before train.
-**Alternate track:** Full multi-song **dense** train on `final_data` (Track A scoreboard) — compare to `data/v2` best **0.686** micro event F1.
-**Defer until R2 lands:** scheduled sampling, free-run bar, offline `eos_trace` probes at scale, R3–R5 ladder rungs, `gate-val-vs-dense`.
+**Next action:** Scheduled sampling is **settled and negative** ([EXP-20260803-01](#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2)): with the branch live, free-run is **0.1313** vs the **0.132** bar and every val song still stops at exactly **252** onsets. Next lever is **onset-density conditioning** on the decoder (numeric `meter` or measured density, [NOTE-20260803-01](DISCUSSION_NOTES.md#note-20260803-01-difficulty-is-unconditioned-and-unfiltered-but-it-is-not-what-caps-the-ladder)) — it supplies the length prior the fixed **252** implies is missing.
+**Blockers:** None — GPU free.
+**Alternate track:** Ladder **R4** (300t) teacher-only, or Track A dense scoreboard vs **0.686**.
+**Defer:** R4–R5 as primary climb, `gate-val-vs-dense`, further sampling-schedule tuning.
 
 ### Dataset prep (PRE ingestion)
 
@@ -40,7 +40,8 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR 200t/50v scale-up** | **Partial** — ES @ ep **65**, best `val_loss` **~12.7 @ ep 40**; offline val teacher F1 **0.120**, free-run F1 **0.036** (severe under-gen) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) |
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 | **AR free-run length diagnostics** | **Ready** — `eos_trace` + `--ar_decode_min_onset_tokens` / `--ar_decode_eos_logit_bias` land offline decode probes; healthy tide reference: EOS mean **0.0017**, single spike at step **634** ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)) |
-| **AR next gate** | **Scaling ladder R0→R5** on a frozen val set ([AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)) — prior rungs each used a **different** val set ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)), so the 10/50/200 plateau is not yet a real finding. **R0 partial** ([EXP-20260725-01](#exp-20260725-01-ladder-r0--mert-extraction-is-bit-identical-tide-champion-artifact-was-overwritten)), **R1 = 0.178** ([EXP-20260725-02](#exp-20260725-02-ladder-r1--first-rung-on-the-frozen-val-set-10-train-rows)), **R2 aborted @ ep 152** by a WSL VM shutdown ([EXP-20260726-01](#exp-20260726-01-ladder-r2-aborted-at-ep-152--wsl-vm-terminated-mid-run)). **Next: rerun R2** with a memory mitigation + guest-memory probe. Free-run / length control and **`gate-val-vs-dense`** follow a trustworthy R2 |
+| **AR next gate** | Ladder teacher **R2 = 0.227** > **R3 = 0.199**; free-run **R2 = 0.132** (stop@**252**) ≫ **R3 = 0.003** (stop@**15**) ([EXP-20260802-04](#exp-20260802-04-ladder-r2-vs-r3-offline-val-free-run-compare)). **Next:** onset-density conditioning, after SS came back negative ([EXP-20260803-01](#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2)) |
+| **AR scheduled sampling** | **Closed, negative** — the feature was compiled out of the traced `train_step` ([EXP-20260802-05](#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step)); with `p` now a `tf.Variable` under `tf.cond`, a full rerun gives free-run **0.1313** vs the **0.132** bar and an unchanged fixed-**252** stop ([EXP-20260803-01](#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2)) |
 | **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone**; a 50t/50v rebuild reached comparable `val_loss` but **10× worse** val F1 and the **opposite** free-run pathology ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)) — local rebuilds do **not** currently stand in for the logged runs |
 | **AR termination stability** | **Open** — same recipe gives early EOS at 200t ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) and never-EOS at 50t ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)); termination is unstable, not one-directionally biased |
 | **AR tide class weights (champion recipe)** | **Deferred** — drop-in on v8 failed free-run ([EXP-20260703-01](#exp-20260703-01-ar-tide-token-class-weight-ablation-champion-recipe)); champion stays `none`; co-tuned recipe revisit [NOTE-20260703-01](DISCUSSION_NOTES.md#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred) |
@@ -49,7 +50,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** 200t teacher Hungarian F1 matches train val (~**0.12**), but free-run **collapses** (early EOS / ~**70** preds/song vs ~**700** GT). Source review eliminates chart truncation, audio/target duration mismatch, and EOS over-representation; **exposure bias** (`scheduled_sampling_max_p: 0.0`) remains the live cause ([NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)). Length control is now measurable offline, but on tide it trades FN for **1479** FP — treat it as a probe, not a fix. The local rebuild cannot yet stand in for that checkpoint: its shortfall is **val-side**, not recipe or early stopping ([NOTE-20260725-01](DISCUSSION_NOTES.md#note-20260725-01-the-50t50v-rebuild-gap-is-val-side-not-recipe-or-early-stopping)). Next: verify local MERT extraction against known-good tide features, then rebuild a multi-song checkpoint, read its `eos_trace`, then test **scheduled sampling** at train time.
+- **Track B (AR scale-up):** R2 beats R3 on teacher **and** free-run ([EXP-20260802-04](#exp-20260802-04-ladder-r2-vs-r3-offline-val-free-run-compare)): free-run F1 **0.132** vs **0.003**, with opposite length failure modes (fixed **252** vs early EOS at **15**). Scheduled sampling is now **eliminated** as the exposure-bias lever ([EXP-20260803-01](#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2)); next is **onset-density conditioning** for the missing length prior ([NOTE-20260803-01](DISCUSSION_NOTES.md#note-20260803-01-difficulty-is-unconditioned-and-unfiltered-but-it-is-not-what-caps-the-ladder), [NOTE-20260724-02](DISCUSSION_NOTES.md#note-20260724-02-hypotheses-eliminated-for-multi-song-free-run-under-generation)).
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -60,6 +61,12 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260803-01 | `train` + `metric` | With SS actually running, does it beat the R2 free-run bar of 0.132? | **Not supported** | Free-run **0.1313** vs **0.1319**; teacher **0.2235** vs **0.2266**; all 50 songs still stop at exactly **252** onsets |
+| EXP-20260802-05 | `train` | Does scheduled sampling on the R2 recipe improve free-run? | **Void (defect)** | Run is **bit-identical** to R2 (0.2266 @ ep 470, ep500 0.2236) — SS branch is compiled out of the traced `train_step`; feature has never been active |
+| EXP-20260802-04 | `metric` | R2 vs R3 free-run on the same frozen val? | **Supported** | R2 free-run **0.132** ≫ R3 **0.003**; R3 early-EOS @ **15** toks; SS on R2 |
+| EXP-20260802-03 | `metric` | Does R2 free-run hold on the frozen val set? | **Partial** | Teacher F1 **0.227**; free-run F1 **0.132**; all 50 songs EOS at **252** onsets (pred/GT **0.36**) |
+| EXP-20260802-02 | `train` + `metric` | Ladder R3: does 200 train rows beat R2's 0.227 on the frozen val set? | **Partial** | Best val F1 **0.1991 @ ep 361**; ES @ ep **411**; **below** R2 (**0.227**) — scale not monotonic |
+| EXP-20260802-01 | `train` + `metric` | Ladder R2 rerun: does 50 train rows beat R1's 0.178 on the frozen val set? | **Supported** | Best val F1 **0.2266 @ ep 470**; beats R1 (**0.178**); finished 500 ep under ~23 GiB WSL ceiling |
 | EXP-20260726-01 | `train` | Ladder R2: does 50 train rows beat R1's 0.178? | **Aborted** | WSL VM terminated at ep **152**; partial curve ~2.2× ahead of R1 at matched epochs; suspected guest OOM (unconfirmed) |
 | EXP-20260725-02 | `train` + `metric` | Ladder R1: what does 10 train rows score on the frozen val set? | **Supported** | val F1 **0.178** @ ep 497 (still climbing); `val_loss` best @ ep 104 is **32×** worse on F1; found inert checkpoint/ES monitor |
 | EXP-20260725-01 | `pre` + `metric` | Ladder R0: are local MERT features and the tide champion still good? | **Partial** | Features **bit-identical**; champion path decodes **627/634** teacher — graduated v8 weights were **overwritten** on 2026-07-02 |
@@ -125,6 +132,99 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
 
+### EXP-20260803-01: Scheduled sampling, now actually running, does not improve free-run on R2
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-03 02:23:15 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With the trace-time defect fixed ([EXP-20260802-05](#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step)), does scheduled sampling on the R2 recipe beat the free-run bar of **0.132**? |
+| **Setup** | [`configs/ar/ladder_50t_50v_ss.json`](../../configs/ar/ladder_50t_50v_ss.json) — random init, `scheduled_sampling_max_p: 0.3` with warmup **150** and ramp **250** (so `p` reaches 0.3 at ep 400), 500 ep, LR **1e-4**, ES patience **100**; every other knob identical to R2. 2 h 43 m train, then offline val decode (26 min) with the same command shape as [EXP-20260802-03](#exp-20260802-03-ladder-r2-offline-val-free-run--eos_trace) |
+| **Teacher result** | Best `val_aux_f1_hungarian` **0.2235 @ ep 499** (R2: **0.2266 @ ep 470**); offline teacher F1 **0.2235** vs R2 **0.2267** |
+| **Free-run result** | **0.1313** vs R2's **0.1319** — no improvement. `pred/GT` **0.3555** in both, and all 50 val songs again stop on `<EOS>` at exactly **252** onset tokens, for an identical **12600** predicted onsets. R3 for contrast: **0.0030**, stop at **15** |
+| **SS did engage** | The inert run is bit-identical to R2 on all 500 epochs (500/500 equal to 4 dp); this run diverges from R2 at **ep 2** and shares only 8 of 500 epoch values. Contrast confirmed against the same baseline the defect was found with |
+| **Caveat — not seed-exact vs R2** | Divergence begins in **warmup**, where `p = 0`, so part of the gap is not scheduled sampling. `tf.cond` traces the sampling branch, and its `tf.random.uniform` plus the probe pass's dropout ops shift the graph-level op-seed sequence, so the teacher branch draws different dropout masks than the pre-fix graph did. Size of that noise: warmup (ep 1–150) mean Δ **+0.0010**, max |Δ| **0.0066**. Size of the post-ramp effect (ep 401–500, `p = 0.3`): mean Δ **−0.0015**, max |Δ| **0.0204**. The SS effect on teacher F1 is at or below the seed-shift noise floor |
+| **Reading** | Scheduled sampling at `p = 0.3` moves neither teacher F1 nor free-run F1 outside noise, and leaves the length pathology **exactly** where it was. Feeding the model its own tokens during training does not teach it when to stop: termination is invariant to the fix, which argues the fixed **252** is not error accumulation but a missing length/density signal — the same gap flagged in [NOTE-20260803-01](DISCUSSION_NOTES.md#note-20260803-01-difficulty-is-unconditioned-and-unfiltered-but-it-is-not-what-caps-the-ladder) |
+| **Artifacts** | `callbacks/ar/ladder/logs/20260802-230953-AR_ONSET-r2_ss_50t-…` · `logs/ladder_r2_ss_train.log` · `logs/ladder_r2_ss_val_decode.log` |
+| **Conclusion** | **Not supported.** SS is not the lever for exposure bias here. Free-run bar stays R2's **0.132**. Next candidate is conditioning the decoder on target onset density rather than more sampling-schedule tuning |
+
+### EXP-20260802-05: Scheduled sampling on R2 is a no-op — the branch is compiled out of `train_step`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-02 17:12:38 |
+| **Track** | `train` (AR) |
+| **Question** | Does scheduled sampling on the R2 recipe improve free-run F1 over the **0.132** baseline? |
+| **Setup** | [`configs/ar/ladder_50t_50v_ss.json`](../../configs/ar/ladder_50t_50v_ss.json) — **random init** (no warm start, per [AR_SCALING_LADDER](AR_SCALING_LADDER.md) § 3), `scheduled_sampling_max_p: 0.3`, warmup **150**, ramp **250**, 500 ep, LR **1e-4**, ES patience **100**. Every other knob identical to R2 so SS is the only variable. ~2 h 15 m wall |
+| **Result** | Best `val_aux_f1_hungarian` **0.2266 @ ep 470**; ep 500 **0.2236** — **identical to R2 ([EXP-20260802-01](#exp-20260802-01-ladder-r2--50-train-rows-beats-r1-on-frozen-val)) to 4 dp on all 500 epochs**. Same seed, same data, and an inert feature reproduce the baseline exactly |
+| **Root cause** | `ArOnsetTrainingModel.train_step` gates the SS path on a **Python** conditional over a **Python float attribute** (`if self.scheduled_sampling_p > 0.0`). Keras wraps `train_step` in a `tf.function`, so that branch is resolved at **trace time**. `__init__` seeds the probability via `scheduled_sampling_for_epoch(-1, …)`, which returns **0.0** for every config (`-1 < warmup_epochs` for any warmup ≥ 0), so the graph is always traced with the branch removed. `ScheduledSamplingRampCallback` then mutates a plain Python attribute, which does **not** trigger retracing. Secondary defect: `scheduled_sampling_p` is passed into `build_scheduled_decoder_inputs` as a Python float, so even a live branch would freeze `p` at its trace-time value |
+| **Repro** | Minimal `tf.function` with a Python-attribute branch: returns the `p=0` result after setting `p=0.3`, and only picks up the new branch when a **new input shape** forces a retrace |
+| **Nondeterminism risk** | Because retracing *is* triggered by new input shapes, a config using `dynamic_padding` + length buckets can activate SS partway through a run if an unseen bucket shape first appears after `p > 0`. Whether SS runs at all is therefore data-order dependent, not configured |
+| **Test gap** | `tests/onset_ar/trainers_test.py` has five scheduled-sampling tests; all five assert the **arithmetic** of `scheduled_sampling_for_epoch`. None assert that a nonzero `p` changes a training step. The suite is green on dead code |
+| **Scope** | Affects every SS run in this repo, since the trace-time probability is 0.0 regardless of config. Results previously attributed in part to an SS ramp — notably [EXP-20260628-01](#) (`gate-ar-decode` v2–v4) — should be re-read as **not** demonstrating SS |
+| **Artifacts** | `callbacks/ar/ladder/logs/20260802-145100-VOID-inert-ss-…` (renamed so the flat curve is not mistaken for the rerun) · `logs/ladder_r2_ss_train.log` |
+| **Fix** | Landed same session. `scheduled_sampling_p` is now a non-trainable `tf.Variable`; input selection moved into `_decoder_inputs_for_step` using `tf.cond`, so the ramp callback's `assign` is read at run time with no retrace. Probe forward pass now skips the discarded loss computation. Regression test `test_scheduled_sampling_applies_after_train_step_is_traced` traces the selector, then asserts a post-trace `p = 1.0` changes decoder inputs — **verified to fail** against the original float-attribute code (traced graph still returned teacher inputs at `p = 1.0`) |
+| **Fix verified on GPU** | 5-epoch 10-song A/B (`max_p` **1.0** vs **0.0**, warmup **2**, ramp **1**): epochs 1–2 **bit-identical** (loss 54.2058 / 53.0184 both), epochs 3–5 **diverge** (51.2107 vs 51.1122; 46.6786 vs 47.0173; 37.6176 vs 37.0898). Sampling engages at the ramp boundary and nowhere earlier — the signature the pre-fix run could not produce |
+| **Conclusion** | **Void — not a result about scheduled sampling.** The exposure-bias hypothesis remains untested; rerun `configs/ar/ladder_50t_50v_ss.json` on the fixed code. Free-run bar remains R2's **0.132** |
+
+### EXP-20260802-04: Ladder R2 vs R3 offline val free-run compare
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-02 13:07:26 |
+| **Track** | `metric` (AR) |
+| **Question** | On the same frozen 50-row val set, how do R2 (50t) and R3 (200t) free-run + `eos_trace` compare? |
+| **Setup** | Same decode recipe: `debug_ar_onset_overfit.py --split val --ar_decode`. R2: [EXP-20260802-03](#exp-20260802-03-ladder-r2-offline-val-free-run--eos_trace). R3: `configs/ar/ladder_200t_50v.json` · `models_wsl/ar/ladder_200t_50v/ar_onset_model.keras` · ~**3.4** min wall |
+| **Compare** | Same frozen val (50 songs). Teacher F1 **0.227** (R2) vs **0.199** (R3). Free-run F1 **0.132** vs **0.003**. Pred/GT **0.36** (12600/35439) vs **0.021** (750/35439). EOS: **50/50** stop @ **252** onsets (R2) vs @ **15** onsets / `len=17` (R3). `eos_trace` final ~**1.0** both; ge_half @ **252** vs **15** |
+| **Process exit** | Shell exit **1** from PowerShell stderr→NativeCommandError under `2>&1 \| Tee`; JSON completed |
+| **Artifacts** | `logs/ladder_r3_val_decode.log` · `logs/ladder_r3_val_decode_clean.json` · R2: `logs/ladder_r2_val_decode_clean.json` |
+| **Conclusion** | **Supported** as a compare. More train rows made free-run **worse** (classic early-EOS under-generation), not better. R2 remains the free-run baseline for scheduled sampling; do not SS on R3 first |
+
+### EXP-20260802-03: Ladder R2 offline val free-run + eos_trace
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-02 12:59:54 |
+| **Track** | `metric` (AR) |
+| **Question** | On best ladder teacher (**R2**), does offline free-run hold on the frozen 50-row val set, and what does `eos_trace` look like? |
+| **Setup** | [`configs/ar/ladder_50t_50v.json`](../../configs/ar/ladder_50t_50v.json) · `models_wsl/ar/ladder_50t_50v/ar_onset_model.keras` · `debug_ar_onset_overfit.py --split val --ar_decode` · WSL GPU · ~**22.7** min wall |
+| **Teacher** | Hungarian F1 **0.2267** (matches train best **0.2266**). Ordered @ 20 ms vs `target_times`: **53/35439** (**0.0015**) — harsh gate still near-zero |
+| **Free-run** | Hungarian F1 **0.1319**; ordered **7/35962** (**0.00019**); **12600** pred / **35439** GT onsets (**pred/GT = 0.36**); TP/FP/FN **3167 / 9433 / 32272** |
+| **eos_trace** | **50/50** songs `stopped_on_eos`. Aggregate: first_mean **~4.9e-6**, final_mean **~1.0**, max_mean **~1.0**, `n_songs_ge_half` **50**. Every song: decode length **254**, **252** onset tokens, `first_step_ge_half` **252** — fixed-length stop, not song-adaptive (GT onsets range **69–1300**, mean **~709**; only **5/50** songs have GT ≤ 252) |
+| **vs prior multi-song free-run** | Better than July 200t free-run F1 **0.036** (~70 preds/song) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)); opposite of never-EOS rebuild ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)). Still a collapse vs teacher and vs GT length |
+| **Process exit** | Shell exit code **1** from PowerShell `1> … 2>&1 \| Tee` (UTF-16 capture + broken `$LASTEXITCODE`); JSON report completed cleanly |
+| **Artifacts** | `logs/ladder_r2_val_decode.json` (UTF-16 + stderr prefix) · `logs/ladder_r2_val_decode_clean.json` |
+| **Conclusion** | **Partial.** R2 free-run bar is set: **0.132** F1 with systematic **252**-onset EOS truncation. Exposure bias remains the live train-time lever — proceed to **scheduled sampling** on the R2 recipe rather than climbing R4 for teacher F1 |
+
+### EXP-20260802-02: Ladder R3 — 200 train rows does not beat R2
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-02 09:28:18 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Rung **R3** of [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md): does 200 train rows beat R2's **0.227** on the frozen val set? |
+| **Setup** | [`configs/ar/ladder_200t_50v.json`](../../configs/ar/ladder_200t_50v.json) — `training_index_ladder_v1_200t_50v.json` (200/50 rows; nested train vs R2; same frozen val). MERT: 222 extracted (~21m). WSL GPU, `cache_max_samples: 250`, ES patience **50**, checkpoint `val_aux_f1_hungarian`. ~23 GiB WSL ceiling |
+| **Result** | Best `val_aux_f1_hungarian` **0.1991 @ ep 361** (restored); early stop @ ep **411**. Best `val_loss` **14.52 @ ep 44** (F1 **0.1298** — D3 again) |
+| **vs R2 / R1** | **0.199 < 0.227** (R2); still **> 0.178** (R1). Teacher F1 is **not** monotonic in train size on this ladder |
+| **Caveat** | Fixed **epoch** budget: R3 sees more steps/epoch (200 vs 50) but ES cut at 411; not a matched step-budget comparison. Exposure bias / free-run still unmeasured on these checkpoints |
+| **Artifacts** | `models_wsl/ar/ladder_200t_50v/ar_onset_model.keras` · `callbacks/ar/ladder/logs/20260802-032843-AR_ONSET-r3_200t-…` · `logs/ladder_r3_train.log` · `logs/ladder_r3_mert_extract.log` |
+| **Conclusion** | **Partial.** R3 completes but fails the “beat R2” bar. Best ladder teacher remains R2. Prefer free-run / `eos_trace` on R2 over blind R4 |
+
+### EXP-20260802-01: Ladder R2 — 50 train rows beats R1 on frozen val
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-02 02:12:04 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Rung **R2** of [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md): does 50 train rows beat R1's **0.178** on the frozen val set? |
+| **Setup** | [`configs/ar/ladder_50t_50v.json`](../../configs/ar/ladder_50t_50v.json) — `training_index_ladder_v1_50t_50v.json` (50/50 rows; nested train vs R1; same frozen val). MERT: 88 extracted (~8m). WSL GPU (RTX 3070 Ti), `cache_max_samples: 128`, ~**15–17 s**/ep. Memory mitigation: `%UserProfile%\.wslconfig` `memory=24GB` → guest **~23 GiB** (was 15 GiB) |
+| **Result** | Best `val_aux_f1_hungarian` **0.2266 @ ep 470** (restored); ep 500: **0.2236**. Best `val_loss` **20.41 @ ep 42** (F1 only **0.1205** there — D3 again). Train overfits after ~ep 60 (val pointer/token climb); val F1 keeps slow gains to ~ep 470 |
+| **vs R1** | **0.227 > 0.178** (~**1.27×**). First trustworthy “more train rows helps” step on a fixed val set |
+| **vs abort** | Prior attempt died at ep **152** under 15 GiB ([EXP-20260726-01](#exp-20260726-01-ladder-r2-aborted-at-ep-152--wsl-vm-terminated-mid-run)); this rerun held through **500** ep with ~7–8 GiB guest used mid-run |
+| **Process exit** | Shell reported exit code **1** from WSL/TF stderr after a clean Keras restore of best ep **470** — not a training failure |
+| **Artifacts** | `models_wsl/ar/ladder_50t_50v/ar_onset_model.keras` · `callbacks/ar/ladder/logs/20260801-235427-AR_ONSET-r2_50t-…` · `logs/ladder_r2_train.log` · `logs/ladder_r2_mert_extract.log` · `logs/ladder_r2_wsl_memory_probe.log` |
+| **Conclusion** | **Supported.** R2 lands: **0.227** val Hungarian F1. Memory mitigation unblocks the ladder. Next rung **R3** (200t). Free-run / scheduled sampling still deferred |
+
 ### EXP-20260726-01: Ladder R2 aborted at ep 152 — WSL VM terminated mid-run
 
 | Field | Value |
@@ -151,7 +251,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Defect found** | Early stopping and best-checkpoint saving were **silently inert** all run: `resolve_checkpoint_metric("val_aux_f1_hungarian")` returns the legacy key `val_event_onset_f1`, but the AR trainer publishes only canonical names outside single-song overfit runs. Keras warned `metric val_event_onset_f1 which is not available` each epoch, and `callbacks/ar/ladder_10t_50v/models/` was never created. Fixed by `MetricAliasCallback` (dual-publishes both spellings ahead of the monitors); test added |
 | **Impact on this run** | None material — F1 peaked at ep 497 of a 500-ep budget, so the saved final weights are within **0.0000** of the best epoch. The number stands; only the artifact-selection path was broken |
 | **Caveat** | val F1 was **still climbing** at the budget end, so **0.178 is a lower bound**, not a converged value. A fixed *epoch* budget also gives larger rungs proportionally more gradient steps (10 rows × 500 ep = 5k steps vs 50 rows × 500 ep = 25k) |
-| **Artifacts** | `models_wsl/ar/ladder_10t_50v/ar_onset_model.keras` · `callbacks/ar/ladder_10t_50v/logs/20260725-230351-…` · `logs/ladder_r1_train.log` · `logs/ladder_r1_mert_extract.log` |
+| **Artifacts** | `models_wsl/ar/ladder_10t_50v/ar_onset_model.keras` · TB logs not retained (legacy per-rung tree, since consolidated into `callbacks/ar/ladder/`) · `logs/ladder_r1_train.log` · `logs/ladder_r1_mert_extract.log` |
 | **Conclusion** | **Supported.** The ladder has its first trustworthy rung: **0.178** val Hungarian F1 on a frozen, reproducible val set with a pinned source manifest. R2 (50 rows, same val set, nested train set) must beat it |
 
 ### EXP-20260725-01: Ladder R0 — MERT extraction is bit-identical; tide champion artifact was overwritten
