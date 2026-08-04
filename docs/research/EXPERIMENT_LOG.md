@@ -10,9 +10,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-03
+**Updated:** 2026-08-04
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Next action:** **Meter density conditioning works** on R2 ([EXP-20260803-02](#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run)): free-run **0.234** vs the **0.132** bar; stop lengths vary (**6** modes, only **8/50** at **252**). Next: rerun **R3** (200t) with the same `density_conditioning: meter` to test whether early-EOS@**15** also fixes, or ablate **onset_density** vs raw **meter**.
+**Next action:** **R3 + onset_density failed the free-run gate** ([EXP-20260804-01](#exp-20260804-01-r3--onset_density-lifts-teacher-but-free-run-still-collapses)): teacher **0.206** (≥ R3 **0.199**) but free-run **0.034** (pred/GT **0.16**); density helps vs bare R3 (**0.003**) but **not** vs R2+onset_density (**0.263**). **Do not scale to R4** on this recipe — stay at **R2 + onset_density** for generation or debug R3 termination before more rows.
 **Blockers:** None — GPU free.
 **Alternate track:** Ladder **R4** (300t) teacher-only with density, or Track A dense scoreboard vs **0.686**.
 **Defer:** R4–R5 as primary climb without density, `gate-val-vs-dense`, further sampling-schedule tuning.
@@ -40,8 +40,8 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR 200t/50v scale-up** | **Partial** — ES @ ep **65**, best `val_loss` **~12.7 @ ep 40**; offline val teacher F1 **0.120**, free-run F1 **0.036** (severe under-gen) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) |
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 | **AR free-run length diagnostics** | **Ready** — `eos_trace` + `--ar_decode_min_onset_tokens` / `--ar_decode_eos_logit_bias` land offline decode probes; healthy tide reference: EOS mean **0.0017**, single spike at step **634** ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)) |
-| **AR next gate** | Ladder teacher **R2 = 0.227** > **R3 = 0.199**; free-run **R2+density = 0.234** (stop lengths vary; **8/50** still @ **252**) vs baseline R2 **0.132** (all **252**) ([EXP-20260803-02](#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run)). **Next:** density on **R3** for early-EOS@**15** |
-| **AR density conditioning** | **Supported on R2** — decoder global embed from normalized `#METER` ([EXP-20260803-02](#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run)); `onset_density` mode implemented but not yet run |
+| **AR next gate** | **R2 + onset_density** is the multi-song free-run champion (**0.263**); R3 + onset_density teacher **0.206** but free-run **0.034** ([EXP-20260804-01](#exp-20260804-01-r3--onset_density-lifts-teacher-but-free-run-still-collapses)) — scale-up still breaks free-run |
+| **AR density conditioning** | **Supported on R2** — **meter** breaks fixed-**252** stop ([EXP-20260803-02](#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run)); **onset_density** highest free-run F1 **0.263** ([EXP-20260803-03](#exp-20260803-03-onset_density-conditioning-on-r2-beats-meter-on-free-run)) |
 | **AR scheduled sampling** | **Closed, negative** — the feature was compiled out of the traced `train_step` ([EXP-20260802-05](#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step)); with `p` now a `tf.Variable` under `tf.cond`, a full rerun gives free-run **0.1313** vs the **0.132** bar and an unchanged fixed-**252** stop ([EXP-20260803-01](#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2)) |
 | **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone**; a 50t/50v rebuild reached comparable `val_loss` but **10× worse** val F1 and the **opposite** free-run pathology ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)) — local rebuilds do **not** currently stand in for the logged runs |
 | **AR termination stability** | **Open** — same recipe gives early EOS at 200t ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) and never-EOS at 50t ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)); termination is unstable, not one-directionally biased |
@@ -51,7 +51,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 **Recommended when resuming onset work:**
 
 - **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** Meter density conditioning on R2 breaks the fixed-**252** stop and lifts free-run to **0.234** ([EXP-20260803-02](#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run)). Next: same lever on **R3** (early EOS @ **15**) or **onset_density** ablation vs **meter**.
+- **Track B (AR scale-up):** R2 **onset_density** remains best free-run (**0.263**). R3 + onset_density improves teacher to **0.206** but free-run still **0.034** — termination unstable at 200t ([EXP-20260804-01](#exp-20260804-01-r3--onset_density-lifts-teacher-but-free-run-still-collapses)).
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -62,6 +62,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260804-01 | `train` + `metric` | Does R3 (200t) + onset_density fix early-EOS@15 and beat R2 free-run? | **Not supported** | Teacher **0.206** (≥ R3 **0.199**); free-run **0.034** vs R3 **0.003** / R2+density **0.263**; pred/GT **0.16**; **50/50** EOS @ ~**115** preds/song avg |
+| EXP-20260803-03 | `model` + `train` + `metric` | Does `onset_density` beat meter density on R2 free-run? | **Supported** | Free-run **0.263** vs meter **0.234**; teacher **0.227**; **pred/GT 0.90**; all **50/50** EOS |
 | EXP-20260803-02 | `model` + `train` + `metric` | Does meter density conditioning on R2 break the fixed-252 stop and beat free-run 0.132? | **Supported** | Free-run **0.234** vs **0.132**; teacher **0.227**; **pred/GT 0.82**; **6** stop-length modes (**8/50** @ **252**) |
 | EXP-20260803-01 | `train` + `metric` | With SS actually running, does it beat the R2 free-run bar of 0.132? | **Not supported** | Free-run **0.1313** vs **0.1319**; teacher **0.2235** vs **0.2266**; all 50 songs still stop at exactly **252** onsets |
 | EXP-20260802-05 | `train` | Does scheduled sampling on the R2 recipe improve free-run? | **Void (defect)** | Run is **bit-identical** to R2 (0.2266 @ ep 470, ep500 0.2236) — SS branch is compiled out of the traced `train_step`; feature has never been active |
@@ -133,6 +135,36 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260804-01: R3 + onset_density lifts teacher but free-run still collapses
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 06:47:07 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | At 200 train rows, does **onset_density** fix R3's early-EOS free-run collapse (@ **15** toks, F1 **0.003**) while beating R3 teacher **0.199**? |
+| **Setup** | [`configs/ar/ladder_200t_50v_density_onset.json`](../../configs/ar/ladder_200t_50v_density_onset.json) — R3 ladder manifest + `density_conditioning: onset_density`. Train ES @ ep **462**, best @ **412** (~7.2 h WSL GPU); offline val decode ~11 min |
+| **Teacher** | Offline Hungarian F1 **0.2059** (matches in-train peak; **≥** bare R3 **0.199**, **<** R2 **0.227**) |
+| **Free-run** | Hungarian F1 **0.0340** vs bare R3 **0.0030** and R2+onset_density **0.2630**; **pred/GT = 0.162** (**5728** / **35439**). TP/FP/FN **698 / 4930 / 34741** |
+| **Length / eos_trace** | **50/50** stopped on `<EOS>`; decode length sum **5728** (~**115** preds/song avg vs bare R3 **15**). Many songs still early-stop; density partial fix only |
+| **vs bare R3** | Teacher holds at 200t; free-run improved **10×** (0.003 → 0.034) but still far below usable. More rows without a stable termination recipe does not transfer R2 free-run gains |
+| **Artifacts** | `models_wsl/ar/ladder_200t_50v_density_onset/ar_onset_model.keras` · `logs/ladder_r3_density_onset_train.log` · `logs/ladder_r3_density_onset_val_decode.log` |
+| **Conclusion** | **Not supported** for scale-up. **Champion for free-run remains R2 + onset_density (0.263).** Pause R4 until R3 termination is understood or accept R2 as the generation rung |
+
+### EXP-20260803-03: Onset_density conditioning on R2 beats meter on free-run
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-03 18:09:19 |
+| **Track** | `model` + `train` + `metric` (AR) |
+| **Question** | Does conditioning on measured onset rate (`n_onsets/duration/15`) beat **meter** density on R2 free-run? |
+| **Setup** | [`configs/ar/ladder_50t_50v_density_onset.json`](../../configs/ar/ladder_50t_50v_density_onset.json) — R2 recipe with `density_conditioning: onset_density`. Train ES @ best epoch **484** (~2.4 h WSL GPU); offline val decode ~54 min |
+| **Teacher** | Offline Hungarian F1 **0.2271** (matches R2 / meter density) |
+| **Free-run** | Hungarian F1 **0.2630** vs meter **0.2338** and R2 bar **0.132**; **pred/GT = 0.901** (**31908** / **35439**). TP/FP/FN **8855 / 23053 / 26584** |
+| **Length / eos_trace** | **50/50** stopped on `<EOS>`; decode length sum **32008** (~640 preds/song). `eos_trace` final_mean ~**1.0** |
+| **vs meter density** | Meter ([EXP-20260803-02](#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run)): free-run **0.234**, pred/GT **0.82**, varied stop lengths. Onset_density wins on F1 and pred/GT; meter had more length diversity |
+| **Artifacts** | `models_wsl/ar/ladder_50t_50v_density_onset/ar_onset_model.keras` · `logs/ladder_r2_density_onset_train.log` · `logs/ladder_r2_density_onset_val_decode.log` |
+| **Conclusion** | **Supported.** Use **onset_density** for R3 scale-up and blind customer decode (no simfile meter). Next: **R3 (200t)** with same conditioning |
 
 ### EXP-20260803-02: Meter density conditioning on R2 breaks the 252 stop and lifts free-run
 
