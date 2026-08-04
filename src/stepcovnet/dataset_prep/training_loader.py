@@ -208,6 +208,34 @@ def filter_rows_by_step_cap(
     return [row for row in rows if row.num_steps <= max_steps]
 
 
+def load_chart_meter(
+    chart_path: str | os.PathLike[str],
+    chart_index: int,
+) -> int:
+    """Return raw ``#METER`` for one chart block inside ``.chart.json``.
+
+    Args:
+        chart_path: Path to a ``.chart.json`` file.
+        chart_index: Index into ``charts[]`` inside the JSON file.
+
+    Returns:
+        Meter integer, or ``0`` when the path is not a chart JSON file.
+
+    Raises:
+        IndexError: When ``chart_index`` is out of range for the file.
+    """
+    path = pathlib.Path(chart_path)
+    if path.suffix != ".json" and not str(path).endswith(".chart.json"):
+        return 0
+    pack = _load_pack_from_chart_json(chart_path)
+    if chart_index < 0 or chart_index >= len(pack.charts):
+        raise IndexError(
+            f"chart_index {chart_index} out of range for {chart_path} "
+            f"({len(pack.charts)} charts)"
+        )
+    return int(pack.charts[chart_index].summary.meter)
+
+
 def load_chart_times_sec(
     chart_path: str | os.PathLike[str],
     chart_index: int,

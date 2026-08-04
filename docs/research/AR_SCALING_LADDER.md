@@ -128,7 +128,9 @@ Two things the rung taught beyond its own number:
 
 **Not supported** — [EXP-20260803-01](EXPERIMENT_LOG.md#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2). First run with the feature actually live (it had been compiled out of the traced `train_step`, [EXP-20260802-05](EXPERIMENT_LOG.md#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step)). Teacher F1 **0.2235** vs R2 **0.2266**; free-run F1 **0.1313** vs the **0.132** bar; `pred/GT` **0.3555** and all 50 songs still stop at exactly **252** onsets — the length pathology is untouched. Note the run is not seed-exact against R2: `tf.cond` adds random ops that shift dropout seeds, worth ±0.007 on teacher F1 during warmup.
 
-**Next:** condition the decoder on **onset density** (numeric `meter` or measured density) for the missing length prior — see [NOTE-20260803-01](DISCUSSION_NOTES.md#note-20260803-01-difficulty-is-unconditioned-and-unfiltered-but-it-is-not-what-caps-the-ladder). R4 remains an alternate teacher-scale probe. Do **not** spend further budget on sampling schedules.
+**Supported** — [EXP-20260803-02](EXPERIMENT_LOG.md#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run). **Meter** density conditioning on the R2 recipe: teacher F1 **0.227** (holds); free-run F1 **0.234** vs the **0.132** bar; `pred/GT` **0.82**; stop lengths vary (**6** modes, only **8/50** @ **252**). Code: `model.density_conditioning` (`none` | `meter` | `onset_density`); config [`ladder_50t_50v_density.json`](../../configs/ar/ladder_50t_50v_density.json).
+
+**Next:** apply density to **R3** for early-EOS@**15**, or ablate **onset_density** vs **meter**. R4 remains an alternate teacher-scale probe. Do **not** spend further budget on sampling schedules.
 
 ## 5. Work required before R1 — **done 2026-07-25**
 

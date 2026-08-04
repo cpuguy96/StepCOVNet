@@ -280,6 +280,19 @@ def _encode_patches(
     return memory
 
 
+def _apply_density_conditioning(
+    decoder: tf.Tensor,
+    density_scalar: tf.Tensor | None,
+    *,
+    density_proj: keras.layers.Layer | None,
+) -> tf.Tensor:
+    """Add a global density embedding to every decoder position."""
+    if density_scalar is None or density_proj is None:
+        return decoder
+    density_embed = density_proj(density_scalar)
+    return decoder + keras.ops.expand_dims(density_embed, axis=1)
+
+
 def _decode_from_memory(
     memory: tf.Tensor,
     patch_mask: tf.Tensor,
@@ -295,6 +308,8 @@ def _decode_from_memory(
     dropout_rate: float,
     patch_duration: float,
     keep_valid_attention_mask: bool,
+    density_scalar: tf.Tensor | None = None,
+    density_proj: keras.layers.Layer | None = None,
 ) -> dict[str, tf.Tensor]:
     """Run the causal decoder and return logits and residual outputs."""
     token_embed = keras.layers.Embedding(
@@ -308,6 +323,11 @@ def _decode_from_memory(
         d_model,
         name="dec_pos",
     )(decoder)
+    decoder = _apply_density_conditioning(
+        decoder,
+        density_scalar,
+        density_proj=density_proj,
+    )
 
     dec_self_mask = DecoderSelfAttentionMask(
         max_decoder_len,
@@ -373,6 +393,8 @@ def build_ar_onset_inference_models(
     n_enc_layers = model_config.n_enc_layers
     n_dec_layers = model_config.n_dec_layers
     d_model = model_config.d_model
+    use_density = config.density_conditioning_active(model_config)
+    density_proj = full_model.get_layer("density_proj") if use_density else None
 
     memory_tensor = full_model.get_layer(f"enc_{n_enc_layers - 1}_ln2").output
     encoder = keras.Model(
@@ -404,9 +426,28 @@ def build_ar_onset_inference_models(
         name="decoder_mask",
         dtype=tf.float32,
     )
+    decoder_inputs: dict[str, keras.KerasTensor] = {
+        "encoder_memory": memory,
+        "patch_mask": patch_mask,
+        "decoder_input_ids": decoder_input_ids,
+        "decoder_mask": decoder_mask,
+    }
+    density_scalar = None
+    if use_density:
+        density_scalar = keras.Input(
+            shape=(1,),
+            name="density_scalar",
+            dtype=tf.float32,
+        )
+        decoder_inputs["density_scalar"] = density_scalar
 
     decoder = full_model.get_layer("token_embed")(decoder_input_ids)
     decoder = full_model.get_layer("dec_pos")(decoder)
+    decoder = _apply_density_conditioning(
+        decoder,
+        density_scalar,
+        density_proj=density_proj,
+    )
     dec_self_mask = full_model.get_layer("dec_self_mask")(decoder_mask)
     cross_mask = full_model.get_layer("cross_mask")([decoder_mask, patch_mask])
     for layer_idx in range(n_dec_layers):
@@ -439,12 +480,7 @@ def build_ar_onset_inference_models(
     residual_ratio = full_model.get_layer("residual_ratio_flat")(residual_ratio)
     residual_sec = full_model.get_layer("residual_sec")(residual_ratio)
     decoder_model = keras.Model(
-        inputs={
-            "encoder_memory": memory,
-            "patch_mask": patch_mask,
-            "decoder_input_ids": decoder_input_ids,
-            "decoder_mask": decoder_mask,
-        },
+        inputs=decoder_inputs,
         outputs={
             "token_logits": token_logits,
             "pointer_logits": pointer_logits,
@@ -503,6 +539,23 @@ def build_ar_onset_model(
     patch_duration = float(model_config.patch_frames) * float(
         experiment_config.dataset.hop_sec,
     )
+    use_density = config.density_conditioning_active(model_config)
+    density_scalar = None
+    density_proj = None
+    model_inputs: dict[str, keras.KerasTensor] = {
+        "mert_patches": mert_patches,
+        "patch_mask": patch_mask,
+        "decoder_input_ids": decoder_input_ids,
+        "decoder_mask": decoder_mask,
+    }
+    if use_density:
+        density_scalar = keras.Input(
+            shape=(1,),
+            name="density_scalar",
+            dtype=tf.float32,
+        )
+        density_proj = keras.layers.Dense(d_model, name="density_proj")
+        model_inputs["density_scalar"] = density_scalar
     outputs = _decode_from_memory(
         memory,
         patch_mask,
@@ -517,15 +570,12 @@ def build_ar_onset_model(
         dropout_rate=dropout_rate,
         patch_duration=patch_duration,
         keep_valid_attention_mask=keep_valid_attention_mask,
+        density_scalar=density_scalar,
+        density_proj=density_proj,
     )
 
     return keras.Model(
-        inputs={
-            "mert_patches": mert_patches,
-            "patch_mask": patch_mask,
-            "decoder_input_ids": decoder_input_ids,
-            "decoder_mask": decoder_mask,
-        },
+        inputs=model_inputs,
         outputs=outputs,
         name="ar_onset_model",
     )

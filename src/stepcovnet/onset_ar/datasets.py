@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import constants, pairing, ssl_features
-from stepcovnet.dataset_prep import training_index
+from stepcovnet.dataset_prep import training_index, training_loader
 from stepcovnet.datasets import normalize_onset_spectrogram
 from stepcovnet.onset_ar import config, targets
 from stepcovnet.onset_events import (
@@ -37,6 +37,26 @@ class ArSample:
     gt_times_sec: np.ndarray
     audio_path: str
     chart_path: str
+    meter: int = 0
+    density_scalar: float = 0.0
+
+
+def compute_density_scalar_for_model(
+    *,
+    meter: int,
+    n_onsets: int,
+    duration_sec: float,
+    model_config: config.ArModelConfig,
+) -> float:
+    """Return the density feature implied by ``model_config.density_conditioning``."""
+    return config.compute_density_scalar(
+        n_onsets=n_onsets,
+        duration_sec=duration_sec,
+        mode=model_config.density_conditioning,
+        meter=meter,
+        meter_max=model_config.density_meter_max,
+        onset_hz_norm=model_config.density_onset_hz_norm,
+    )
 
 
 def patch_mert_features(
@@ -130,6 +150,13 @@ def load_ar_sample(
         vocab=vocab,
         max_steps=dataset_config.max_steps_per_chart,
     )
+    meter = training_loader.load_chart_meter(chart_path, chart_index)
+    density_scalar = compute_density_scalar_for_model(
+        meter=meter,
+        n_onsets=int(gt_times_sec.size),
+        duration_sec=duration_sec,
+        model_config=model_config,
+    )
 
     return ArSample(
         mert_patches=mert_patches,
@@ -140,6 +167,8 @@ def load_ar_sample(
         gt_times_sec=np.asarray(gt_times_sec, dtype=np.float32),
         audio_path=audio_path,
         chart_path=chart_path,
+        meter=meter,
+        density_scalar=density_scalar,
     )
 
 
@@ -454,7 +483,7 @@ def sample_to_training_arrays(
     gt_times[:n_gt] = sample.gt_times_sec
     gt_mask[:n_gt] = 1.0
 
-    return {
+    arrays = {
         "mert_patches": patches,
         "patch_mask": patch_mask,
         "decoder_input_ids": decoder_input_ids,
@@ -468,6 +497,9 @@ def sample_to_training_arrays(
         "gt_mask": gt_mask,
         "duration": np.asarray(sample.duration_sec, dtype=np.float32),
     }
+    if config.density_conditioning_active(model_config):
+        arrays["density_scalar"] = np.asarray(sample.density_scalar, dtype=np.float32)
+    return arrays
 
 
 def sample_to_training_batch(
@@ -476,14 +508,15 @@ def sample_to_training_batch(
 ) -> dict[str, np.ndarray]:
     """Convert one :class:`ArSample` into padded numpy batch arrays."""
     arrays = sample_to_training_arrays(sample, experiment_config)
-    return {
+    batch = {
         key: (
             np.asarray([value], dtype=value.dtype)
-            if key == "duration"
+            if key in ("duration", "density_scalar")
             else value[np.newaxis, ...]
         )
         for key, value in arrays.items()
     }
+    return batch
 
 
 def _load_ar_sample_py_callback(
@@ -508,7 +541,7 @@ def _load_ar_sample_py_callback(
         experiment_config,
         pad_to_configured_max=not experiment_config.dataset.dynamic_padding,
     )
-    return (
+    outputs = (
         arrays["mert_patches"],
         arrays["patch_mask"],
         arrays["decoder_input_ids"],
@@ -522,6 +555,9 @@ def _load_ar_sample_py_callback(
         arrays["gt_mask"],
         arrays["duration"],
     )
+    if config.density_conditioning_active(experiment_config.model):
+        outputs = outputs + (arrays["density_scalar"],)
+    return outputs
 
 
 def _map_ar_sample_to_batch(
@@ -535,37 +571,59 @@ def _map_ar_sample_to_batch(
     patch_dim = experiment_config.patch_input_dim()
     max_dec = None if dynamic_padding else experiment_config.max_decoder_len()
     max_gt = None if dynamic_padding else int(experiment_config.model.max_decode_steps)
-    (
-        mert_patches,
-        patch_mask,
-        decoder_input_ids,
-        decoder_target_ids,
-        decoder_mask,
-        target_patch_indices,
-        target_residual_sec,
-        target_times,
-        onset_step_mask,
-        gt_times,
-        gt_mask,
-        duration,
-    ) = tf.py_function(  # type: ignore[misc]
+    use_density = config.density_conditioning_active(experiment_config.model)
+    output_types = (
+        tf.float32,
+        tf.float32,
+        tf.int32,
+        tf.int32,
+        tf.float32,
+        tf.int32,
+        tf.float32,
+        tf.float32,
+        tf.float32,
+        tf.float32,
+        tf.float32,
+        tf.float32,
+    )
+    if use_density:
+        output_types = output_types + (tf.float32,)
+    mapped = tf.py_function(  # type: ignore[misc]
         lambda ap, cp, ci: _load_ar_sample_py_callback(ap, cp, ci, experiment_config),
         [audio_path_t, chart_path_t, chart_index_t],
-        (
-            tf.float32,
-            tf.float32,
-            tf.int32,
-            tf.int32,
-            tf.float32,
-            tf.int32,
-            tf.float32,
-            tf.float32,
-            tf.float32,
-            tf.float32,
-            tf.float32,
-            tf.float32,
-        ),
+        output_types,
     )
+    if use_density:
+        (
+            mert_patches,
+            patch_mask,
+            decoder_input_ids,
+            decoder_target_ids,
+            decoder_mask,
+            target_patch_indices,
+            target_residual_sec,
+            target_times,
+            onset_step_mask,
+            gt_times,
+            gt_mask,
+            duration,
+            density_scalar,
+        ) = mapped
+    else:
+        (
+            mert_patches,
+            patch_mask,
+            decoder_input_ids,
+            decoder_target_ids,
+            decoder_mask,
+            target_patch_indices,
+            target_residual_sec,
+            target_times,
+            onset_step_mask,
+            gt_times,
+            gt_mask,
+            duration,
+        ) = mapped
     mert_patches.set_shape([max_patches, patch_dim])
     patch_mask.set_shape([max_patches])
     decoder_input_ids.set_shape([max_dec])
@@ -578,7 +636,7 @@ def _map_ar_sample_to_batch(
     gt_times.set_shape([max_gt])
     gt_mask.set_shape([max_gt])
     duration.set_shape([])
-    return {
+    batch = {
         "mert_patches": mert_patches,
         "patch_mask": patch_mask,
         "decoder_input_ids": decoder_input_ids,
@@ -592,6 +650,10 @@ def _map_ar_sample_to_batch(
         "gt_mask": gt_mask,
         "duration": duration,
     }
+    if use_density:
+        density_scalar.set_shape([])
+        batch["density_scalar"] = density_scalar
+    return batch
 
 
 def create_ar_tf_dataset_from_pairs(

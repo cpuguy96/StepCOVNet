@@ -193,6 +193,7 @@ scripts/*
 !scripts/investigate_bad_val_cases.py
 !scripts/build_training_index.py
 !scripts/build_training_index_subset.py
+!scripts/calibrate_density_presets.py
 !scripts/preprocess_dataset.py
 !scripts/sweep_val_onset_ckpts.py
 !scripts/sweep_val_threshold.py

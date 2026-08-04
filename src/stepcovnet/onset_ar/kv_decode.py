@@ -23,6 +23,7 @@ class ArOnsetKvDecoder:
     _decoder_input_ids: tf.Tensor | None = None
     _decoder_mask: tf.Tensor | None = None
     _memory: tf.Tensor | None = None
+    _density_scalar: tf.Tensor | None = None
 
     @classmethod
     def from_model(
@@ -51,6 +52,10 @@ class ArOnsetKvDecoder:
     def set_memory(self, memory: tf.Tensor) -> None:
         """Store encoder memory for the current sequence."""
         self._memory = memory
+
+    def set_density_scalar(self, density_scalar: tf.Tensor | None) -> None:
+        """Store per-sequence density conditioning for decoder steps."""
+        self._density_scalar = density_scalar
 
     def decode_step(
         self,
@@ -83,12 +88,7 @@ class ArOnsetKvDecoder:
         )
 
         outputs = self.decoder(
-            {
-                "encoder_memory": self._memory,
-                "patch_mask": patch_mask,
-                "decoder_input_ids": self._decoder_input_ids,
-                "decoder_mask": self._decoder_mask,
-            },
+            self._decoder_step_inputs(patch_mask),
             training=False,
         )
         return {
@@ -96,6 +96,24 @@ class ArOnsetKvDecoder:
             "pointer_logits": outputs["pointer_logits"][:, position : position + 1, :],
             "residual_sec": outputs["residual_sec"][:, position : position + 1],
         }
+
+    def _decoder_step_inputs(self, patch_mask: tf.Tensor) -> dict[str, tf.Tensor]:
+        """Build decoder inputs for one incremental decode step."""
+        if self._decoder_input_ids is None or self._decoder_mask is None:
+            msg = "Call reset_decode_state() before decode_step()."
+            raise RuntimeError(msg)
+        if self._memory is None:
+            msg = "Call set_memory() before decode_step()."
+            raise RuntimeError(msg)
+        inputs: dict[str, tf.Tensor] = {
+            "encoder_memory": self._memory,
+            "patch_mask": patch_mask,
+            "decoder_input_ids": self._decoder_input_ids,
+            "decoder_mask": self._decoder_mask,
+        }
+        if self._density_scalar is not None:
+            inputs["density_scalar"] = self._density_scalar
+        return inputs
 
 
 def decode_autoregressive_with_kv_cache_numpy(
@@ -111,6 +129,7 @@ def decode_autoregressive_with_kv_cache_numpy(
     eos_id: int,
     time_source: ar_inference.ArTimeSource = "pointer_residual",
     length_control: ar_inference.ArLengthControl | None = None,
+    density_scalar: np.ndarray | float | None = None,
 ) -> ar_inference.ArDecodeStats:
     """Free-run decode with cached encoder memory; returns times and decode stats.
 
@@ -158,6 +177,15 @@ def decode_autoregressive_with_kv_cache_numpy(
     patch_mask_tf = tf.constant(patch_mask, dtype=tf.float32)
     kv_decoder.reset_decode_state(batch_size=int(patch_mask.shape[0]))
     kv_decoder.set_memory(memory)
+    if config.density_conditioning_active(experiment_config.model):
+        if density_scalar is None:
+            density_scalar = np.asarray([0.0], dtype=np.float32)
+        density_arr = np.asarray(density_scalar, dtype=np.float32).reshape(-1)
+        if density_arr.size == 1:
+            density_arr = np.repeat(density_arr, int(patch_mask.shape[0]))
+        kv_decoder.set_density_scalar(
+            tf.constant(density_arr.reshape(-1, 1), dtype=tf.float32),
+        )
 
     patch_duration = float(patch_frames) * float(hop_sec)
     pointer_times: list[float] = []

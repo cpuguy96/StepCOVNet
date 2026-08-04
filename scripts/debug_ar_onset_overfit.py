@@ -54,7 +54,14 @@ import tensorflow as tf
 
 from stepcovnet import onset_metric_names as mn
 from stepcovnet import timing_match
-from stepcovnet.onset_ar import config, datasets, inference, targets, trainers
+from stepcovnet.onset_ar import (
+    config,
+    datasets,
+    density_presets,
+    inference,
+    targets,
+    trainers,
+)
 
 PARSER = argparse.ArgumentParser(
     description="Debug AR onset checkpoint (overfit or split)."
@@ -140,6 +147,45 @@ PARSER.add_argument(
     default=20,
     help="With --ar_decode --full-diagnostics, log first N decode steps.",
 )
+PARSER.add_argument(
+    "--difficulty-tier",
+    type=str,
+    default="",
+    help=(
+        "Customer difficulty for free-run decode (beginner, easy, medium, …). "
+        "Overrides oracle chart density with configs/ar/density_presets.json."
+    ),
+)
+PARSER.add_argument(
+    "--density-presets-path",
+    type=str,
+    default="",
+    help="Optional density_presets.json (default: configs/ar/density_presets.json).",
+)
+
+
+def _apply_customer_density_tier(
+    batch_np: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+    difficulty_tier: str,
+    density_presets_path: str,
+) -> float | None:
+    """Replace oracle ``density_scalar`` with a customer tier preset when requested."""
+    tier = str(difficulty_tier).strip()
+    if not tier or not config.density_conditioning_active(experiment_config.model):
+        return None
+    preset_path = density_presets_path or density_presets.DEFAULT_PRESETS_PATH
+    presets = density_presets.load_density_presets(preset_path)
+    duration = float(np.asarray(batch_np["duration"]).reshape(-1)[0])
+    scalar = density_presets.customer_density_scalar(
+        tier,
+        model_config=experiment_config.model,
+        presets=presets,
+        duration_sec=duration,
+    )
+    batch_np["density_scalar"] = np.asarray([scalar], dtype=np.float32)
+    return scalar
 
 
 def _log(message: str, *, quiet: bool) -> None:
@@ -598,13 +644,19 @@ def _resolve_model_path(
     return pathlib.Path(output_dir) / "ar_onset_model.keras"
 
 
-def _model_inputs(batch: dict[str, tf.Tensor]) -> dict[str, tf.Tensor]:
-    return {
+def _model_inputs(
+    batch: dict[str, tf.Tensor],
+    experiment_config: config.ArExperimentConfig,
+) -> dict[str, tf.Tensor]:
+    inputs = {
         "mert_patches": batch["mert_patches"],
         "patch_mask": batch["patch_mask"],
         "decoder_input_ids": batch["decoder_input_ids"],
         "decoder_mask": batch["decoder_mask"],
     }
+    if config.density_conditioning_active(experiment_config.model):
+        inputs["density_scalar"] = batch["density_scalar"]
+    return inputs
 
 
 def _diagnose_batch(
@@ -832,6 +884,8 @@ def _ar_decode_report(
         "hop_sec": experiment_config.dataset.hop_sec,
         "experiment_config": experiment_config,
     }
+    if config.density_conditioning_active(model_config):
+        decode_kwargs["density_scalar"] = batch_np["density_scalar"]
 
     incremental_stats = inference.decode_autoregressive_with_stats_numpy(
         model,
@@ -914,13 +968,16 @@ def _ar_decode_report(
     eos_at: int | None = None
     n_valid = int((gt_mask > 0.5).sum())
     for cur_len in range(1, min(n_valid + 2, token_trace_steps + 1)):
+        decoder_inputs = {
+            "encoder_memory": memory,
+            "patch_mask": pm_b,
+            "decoder_input_ids": dec_in,
+            "decoder_mask": dec_mask,
+        }
+        if config.density_conditioning_active(experiment_config.model):
+            decoder_inputs["density_scalar"] = batch_np["density_scalar"]
         outputs = decoder(
-            {
-                "encoder_memory": memory,
-                "patch_mask": pm_b,
-                "decoder_input_ids": dec_in,
-                "decoder_mask": dec_mask,
-            },
+            decoder_inputs,
             training=False,
         )
         pos = cur_len - 1
@@ -964,15 +1021,21 @@ def _ar_decode_gate_only_report(
     patch_mask = batch_np["patch_mask"]
     target_times, chart_times = _onset_reference_times(batch_np)
 
+    gate_kwargs = {
+        "max_decoder_len": experiment_config.max_decoder_len(),
+        "patch_frames": model_config.patch_frames,
+        "hop_sec": experiment_config.dataset.hop_sec,
+        "experiment_config": experiment_config,
+        "length_control": length_control,
+    }
+    if config.density_conditioning_active(model_config):
+        gate_kwargs["density_scalar"] = batch_np["density_scalar"]
+
     gate_stats = inference.decode_autoregressive_gate_with_stats_numpy(
         model,
         mert,
         patch_mask,
-        max_decoder_len=experiment_config.max_decoder_len(),
-        patch_frames=model_config.patch_frames,
-        hop_sec=experiment_config.dataset.hop_sec,
-        experiment_config=experiment_config,
-        length_control=length_control,
+        **gate_kwargs,
     )
     return _ar_decode_gate_metrics(
         gate_stats.times,
@@ -1078,7 +1141,7 @@ def _eval_one_batch(
     length_control: inference.ArLengthControl | None = None,
 ) -> dict[str, object]:
     batch_tf = {key: tf.constant(value) for key, value in batch_np.items()}
-    outputs = model(_model_inputs(batch_tf), training=False)
+    outputs = model(_model_inputs(batch_tf, experiment_config), training=False)
     report = _diagnose_batch(outputs, batch_np, experiment_config=experiment_config)
     report["worst_onsets"] = _worst_onsets(report, worst_k)
     if ar_decode:
@@ -1224,6 +1287,8 @@ def _eval_split(
     quiet: bool,
     worst_k: int,
     length_control: inference.ArLengthControl | None = None,
+    difficulty_tier: str = "",
+    density_presets_path: str = "",
 ) -> dict[str, object]:
     samples = _list_split_samples(experiment_config, split=split, limit=limit)
     if not samples:
@@ -1240,6 +1305,13 @@ def _eval_split(
             chart_path,
             chart_index,
         )
+        if difficulty_tier and ar_decode:
+            _apply_customer_density_tier(
+                batch_np,
+                experiment_config=experiment_config,
+                difficulty_tier=difficulty_tier,
+                density_presets_path=density_presets_path,
+            )
         song = _eval_one_batch(
             model,
             batch_np,
@@ -1315,6 +1387,21 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             f"min_onset_tokens={length_control.min_onset_tokens}",
             quiet=quiet,
         )
+    if args.difficulty_tier and not args.ar_decode:
+        print("--difficulty-tier requires --ar_decode", file=sys.stderr)
+        return 1
+    if args.ar_decode and args.difficulty_tier:
+        if not config.density_conditioning_active(experiment_config.model):
+            print(
+                "--difficulty-tier requires model.density_conditioning in config",
+                file=sys.stderr,
+            )
+            return 1
+        _log(
+            f"Customer density tier: {args.difficulty_tier!r} "
+            f"(presets={args.density_presets_path or density_presets.DEFAULT_PRESETS_PATH})",
+            quiet=quiet,
+        )
 
     if args.split == "overfit":
         _log("Running teacher-fed eval...", quiet=quiet)
@@ -1329,6 +1416,13 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             datasets.load_overfit_sample(experiment_config),
             experiment_config,
         )
+        if args.difficulty_tier and args.ar_decode:
+            _apply_customer_density_tier(
+                batch_np,
+                experiment_config=experiment_config,
+                difficulty_tier=args.difficulty_tier,
+                density_presets_path=args.density_presets_path,
+            )
         report = _eval_one_batch(
             model,
             batch_np,
@@ -1350,12 +1444,16 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             quiet=quiet,
             worst_k=args.worst_k,
             length_control=length_control,
+            difficulty_tier=args.difficulty_tier,
+            density_presets_path=args.density_presets_path,
         )
 
     elapsed_sec = time.perf_counter() - t0
     report["model_path"] = str(model_path)
     report["config"] = args.config
     report["split"] = args.split
+    if args.difficulty_tier:
+        report["difficulty_tier"] = args.difficulty_tier
     report["eval_elapsed_sec"] = round(elapsed_sec, 3)
     _attach_metrics_by_tier(report)
     _print_debug_summary(

@@ -6,6 +6,8 @@ import dataclasses
 import json
 import pathlib
 
+import numpy as np
+
 from stepcovnet import constants
 from stepcovnet.onset_ar import targets
 
@@ -83,6 +85,9 @@ class ArModelConfig(_DictSerializableMixin):
     num_heads: int = 4
     dropout_rate: float = 0.1
     legacy_inverted_attention_masks: bool = True
+    density_conditioning: str = "none"
+    density_meter_max: int = 32
+    density_onset_hz_norm: float = 15.0
 
 
 @dataclasses.dataclass
@@ -181,3 +186,97 @@ class ArExperimentConfig:
     def max_decoder_len(self) -> int:
         """Padded decoder sequence length including ``<EOS>``."""
         return int(self.model.max_decode_steps) + 1
+
+
+def density_conditioning_active(model_config: ArModelConfig) -> bool:
+    """Return whether the model expects a ``density_scalar`` input."""
+    mode = str(model_config.density_conditioning).strip().lower()
+    return mode not in ("", "none")
+
+
+def normalize_density_conditioning_mode(mode: str) -> str:
+    """Return the lowercase density mode token."""
+    return str(mode).strip().lower()
+
+
+def compute_density_scalar(
+    *,
+    n_onsets: int,
+    duration_sec: float,
+    mode: str,
+    meter: int = 0,
+    meter_max: int = 32,
+    onset_hz_norm: float = 15.0,
+) -> float:
+    """Map chart metadata to a unit density feature in ``[0, 1]``.
+
+    Modes (``model.density_conditioning``):
+
+    * ``onset_density`` (preferred) — ``clip(n_onsets / duration_sec / onset_hz_norm, 0, 1)``.
+      Uses only clipped GT onset count and audio duration; no simfile fields.
+    * ``meter`` — ``clip(meter, 0, meter_max) / meter_max`` from ``#METER``.
+    * ``none`` — ``0.0`` (input omitted from the model).
+
+    Args:
+        n_onsets: Ground-truth onset count after clipping to audio duration.
+        duration_sec: Audio duration in seconds.
+        mode: ``onset_density``, ``meter``, or ``none``.
+        meter: Raw ``#METER`` when ``mode`` is ``meter``.
+        meter_max: Denominator for meter normalization.
+        onset_hz_norm: Onsets-per-second that maps to feature ``1.0``.
+
+    Returns:
+        Deterministic density scalar for decoder conditioning.
+    """
+    normalized_mode = normalize_density_conditioning_mode(mode)
+    if normalized_mode in ("", "none"):
+        return 0.0
+    if normalized_mode == "meter":
+        denom = max(1, int(meter_max))
+        return float(np.clip(int(meter), 0, denom)) / float(denom)
+    if normalized_mode == "onset_density":
+        if duration_sec <= 0.0:
+            return 0.0
+        hz = float(n_onsets) / float(duration_sec)
+        return density_scalar_from_onsets_per_sec(hz, onset_hz_norm=onset_hz_norm)
+    raise ValueError(f"unsupported density_conditioning mode: {mode!r}")
+
+
+def density_scalar_from_onsets_per_sec(
+    onsets_per_sec: float,
+    *,
+    onset_hz_norm: float = 15.0,
+) -> float:
+    """Map a target onset rate to ``density_scalar``.
+
+    Args:
+        onsets_per_sec: Desired onsets per second.
+        onset_hz_norm: Rate that maps to feature ``1.0``.
+    """
+    norm = max(1e-9, float(onset_hz_norm))
+    return float(np.clip(float(onsets_per_sec) / norm, 0.0, 1.0))
+
+
+def target_density_scalar(
+    target_onsets: int,
+    duration_sec: float,
+    model_config: ArModelConfig,
+) -> float:
+    """Density feature for decode when conditioning on a requested onset count.
+
+    Args:
+        target_onsets: Desired number of onsets over ``duration_sec``.
+        duration_sec: Song duration in seconds.
+        model_config: Supplies ``density_conditioning`` and normalization knobs.
+
+    Returns:
+        ``density_scalar`` passed to the decoder at generation time.
+    """
+    return compute_density_scalar(
+        n_onsets=int(target_onsets),
+        duration_sec=float(duration_sec),
+        mode=model_config.density_conditioning,
+        meter=0,
+        meter_max=model_config.density_meter_max,
+        onset_hz_norm=model_config.density_onset_hz_norm,
+    )

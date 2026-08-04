@@ -14,6 +14,43 @@ from stepcovnet.onset_ar import models as ar_models
 ArTimeSource = Literal["pointer_residual", "tokens"]
 
 
+def _density_array_for_decoder(
+    density_scalar: np.ndarray | float | None,
+    *,
+    experiment_config: config.ArExperimentConfig,
+    batch_size: int = 1,
+) -> np.ndarray | None:
+    """Return a batched ``(N, 1)`` density feature when conditioning is enabled."""
+    if not config.density_conditioning_active(experiment_config.model):
+        return None
+    if density_scalar is None:
+        density_scalar = 0.0
+    arr = np.asarray(density_scalar, dtype=np.float32).reshape(-1)
+    if arr.size == 1 and batch_size > 1:
+        arr = np.repeat(arr, batch_size)
+    return arr.reshape(-1, 1)
+
+
+def _with_density_decoder_inputs(
+    inputs: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+    density_scalar: np.ndarray | float | None = None,
+    batch_size: int = 1,
+) -> dict[str, np.ndarray]:
+    """Attach ``density_scalar`` to decoder inputs when the model expects it."""
+    density = _density_array_for_decoder(
+        density_scalar,
+        experiment_config=experiment_config,
+        batch_size=batch_size,
+    )
+    if density is None:
+        return inputs
+    merged = dict(inputs)
+    merged["density_scalar"] = density
+    return merged
+
+
 @dataclasses.dataclass(frozen=True)
 class ArDecodeStats:
     """Free-running autoregressive decode summary.
@@ -227,6 +264,7 @@ def decode_parallel_pointer_times_numpy(
     experiment_config: config.ArExperimentConfig,
     encoder_memory: np.ndarray | None = None,
     patch_mask_batched: np.ndarray | None = None,
+    density_scalar: np.ndarray | float | None = None,
 ) -> np.ndarray:
     """One parallel decoder forward; pointer+residual times at each onset step."""
     tokens = np.asarray(onset_token_ids, dtype=np.int32).reshape(-1)
@@ -252,12 +290,17 @@ def decode_parallel_pointer_times_numpy(
         max_decoder_len=max_decoder_len,
     )
     outputs = decoder(
-        {
-            "encoder_memory": memory,
-            "patch_mask": patch_mask,
-            "decoder_input_ids": decoder_input_ids,
-            "decoder_mask": decoder_mask,
-        },
+        _with_density_decoder_inputs(
+            {
+                "encoder_memory": memory,
+                "patch_mask": patch_mask,
+                "decoder_input_ids": decoder_input_ids,
+                "decoder_mask": decoder_mask,
+            },
+            experiment_config=experiment_config,
+            density_scalar=density_scalar,
+            batch_size=int(np.asarray(patch_mask).shape[0]),
+        ),
         training=False,
     )
     pointer_logits = np.asarray(outputs["pointer_logits"][0], dtype=np.float32)
@@ -279,6 +322,7 @@ def decode_gt_incremental_pointer_times_numpy(
     experiment_config: config.ArExperimentConfig,
     bos_id: int = targets.BOS_ID,
     eos_id: int = targets.EOS_ID,
+    density_scalar: np.ndarray | float | None = None,
 ) -> np.ndarray:
     """GT tokens fed incrementally; pointer+residual at each onset step."""
     mert_patches, patch_mask = _batch_mert_patch_mask(mert_patches, patch_mask)
@@ -306,12 +350,16 @@ def decode_gt_incremental_pointer_times_numpy(
     cur_len = 1
     while cur_len < max_decoder_len:
         outputs = decoder(
-            {
-                "encoder_memory": memory,
-                "patch_mask": patch_mask,
-                "decoder_input_ids": dec_in,
-                "decoder_mask": dec_mask,
-            },
+            _with_density_decoder_inputs(
+                {
+                    "encoder_memory": memory,
+                    "patch_mask": patch_mask,
+                    "decoder_input_ids": dec_in,
+                    "decoder_mask": dec_mask,
+                },
+                experiment_config=experiment_config,
+                density_scalar=density_scalar,
+            ),
             training=False,
         )
         pos = cur_len - 1
@@ -347,6 +395,7 @@ def decode_autoregressive_two_pass_with_stats_numpy(
     use_kv_cache: bool = True,
     token_pass: ArDecodeStats | None = None,
     length_control: ArLengthControl | None = None,
+    density_scalar: np.ndarray | float | None = None,
 ) -> ArDecodeStats:
     """Parallel pointer+residual re-forward for free-run (or supplied) onset tokens."""
     if token_pass is None:
@@ -363,6 +412,7 @@ def decode_autoregressive_two_pass_with_stats_numpy(
             use_kv_cache=use_kv_cache,
             time_source="pointer_residual",
             length_control=length_control,
+            density_scalar=density_scalar,
         )
     if token_pass.onset_token_ids is None or token_pass.onset_token_ids.size == 0:
         return ArDecodeStats(
@@ -379,6 +429,7 @@ def decode_autoregressive_two_pass_with_stats_numpy(
         patch_mask,
         token_pass.onset_token_ids,
         experiment_config=experiment_config,
+        density_scalar=density_scalar,
     )
     return ArDecodeStats(
         times=parallel_times,
@@ -403,6 +454,7 @@ def decode_autoregressive_gate_with_stats_numpy(
     eos_id: int = targets.EOS_ID,
     use_kv_cache: bool = True,
     length_control: ArLengthControl | None = None,
+    density_scalar: np.ndarray | float | None = None,
 ) -> ArDecodeStats:
     """Offline gate decode: incremental tokens, parallel pointer+residual times."""
     return decode_autoregressive_two_pass_with_stats_numpy(
@@ -417,6 +469,7 @@ def decode_autoregressive_gate_with_stats_numpy(
         eos_id=eos_id,
         use_kv_cache=use_kv_cache,
         length_control=length_control,
+        density_scalar=density_scalar,
     )
 
 
@@ -589,6 +642,7 @@ def decode_autoregressive_with_stats_numpy(
     use_kv_cache: bool = True,
     time_source: ArTimeSource = "pointer_residual",
     length_control: ArLengthControl | None = None,
+    density_scalar: np.ndarray | float | None = None,
 ) -> ArDecodeStats:
     """Free-running decode until ``<EOS>`` or ``max_decoder_len``."""
     if experiment_config is not None and use_kv_cache:
@@ -604,6 +658,7 @@ def decode_autoregressive_with_stats_numpy(
             eos_id=eos_id,
             time_source=time_source,
             length_control=length_control,
+            density_scalar=density_scalar,
         )
 
     mert_patches = np.asarray(mert_patches, dtype=np.float32)
@@ -639,6 +694,12 @@ def decode_autoregressive_with_stats_numpy(
             "decoder_input_ids": decoder_input,
             "decoder_mask": decoder_mask_arr,
         }
+    if experiment_config is not None:
+        decoder_inputs = _with_density_decoder_inputs(
+            decoder_inputs,
+            experiment_config=experiment_config,
+            density_scalar=density_scalar,
+        )
 
     patch_duration = float(patch_frames) * float(hop_sec)
     return _decode_autoregressive_prefix_numpy(

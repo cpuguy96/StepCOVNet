@@ -284,5 +284,43 @@ class ArDatasetCacheTest(unittest.TestCase):
         )
 
 
+class DensityScalarTest(unittest.TestCase):
+    def test_onset_density_is_deterministic_from_count_and_duration(self) -> None:
+        value = config.compute_density_scalar(
+            n_onsets=300,
+            duration_sec=90.0,
+            mode="onset_density",
+            onset_hz_norm=15.0,
+        )
+        self.assertAlmostEqual(value, 300.0 / 90.0 / 15.0)
+
+    def test_onset_density_does_not_use_meter(self) -> None:
+        with_meter = config.compute_density_scalar(
+            n_onsets=300,
+            duration_sec=90.0,
+            mode="onset_density",
+            meter=12,
+        )
+        without_meter = config.compute_density_scalar(
+            n_onsets=300,
+            duration_sec=90.0,
+            mode="onset_density",
+            meter=0,
+        )
+        self.assertEqual(with_meter, without_meter)
+
+    def test_target_density_scalar_for_generation(self) -> None:
+        model_config = config.ArModelConfig(
+            density_conditioning="onset_density",
+            density_onset_hz_norm=15.0,
+        )
+        value = config.target_density_scalar(
+            target_onsets=450,
+            duration_sec=90.0,
+            model_config=model_config,
+        )
+        self.assertAlmostEqual(value, 450.0 / 90.0 / 15.0)
+
+
 if __name__ == "__main__":
     unittest.main()

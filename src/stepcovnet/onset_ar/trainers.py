@@ -363,12 +363,43 @@ class ArOnsetTrainingModel(keras.Model):
         return batch
 
     def _model_inputs(self, batch: dict[str, tf.Tensor]) -> dict[str, tf.Tensor]:
-        return {
+        inputs = {
             "mert_patches": batch["mert_patches"],
             "patch_mask": batch["patch_mask"],
             "decoder_input_ids": batch["decoder_input_ids"],
             "decoder_mask": batch["decoder_mask"],
         }
+        if config.density_conditioning_active(self.experiment_config.model):
+            density = batch["density_scalar"]
+            if density.shape.rank == 0:
+                density = tf.reshape(density, (1, 1))
+            elif density.shape.rank == 1:
+                density = tf.expand_dims(density, axis=-1)
+            inputs["density_scalar"] = density
+        return inputs
+
+    def _decoder_infer_inputs(
+        self,
+        batch: dict[str, tf.Tensor],
+        *,
+        memory: tf.Tensor,
+        decoder_input_ids: tf.Tensor,
+    ) -> dict[str, tf.Tensor]:
+        """Build inputs for the split inference decoder submodel."""
+        inputs = {
+            "encoder_memory": memory,
+            "patch_mask": batch["patch_mask"],
+            "decoder_input_ids": decoder_input_ids,
+            "decoder_mask": batch["decoder_mask"],
+        }
+        if config.density_conditioning_active(self.experiment_config.model):
+            density = batch["density_scalar"]
+            if density.shape.rank == 0:
+                density = tf.reshape(density, (1, 1))
+            elif density.shape.rank == 1:
+                density = tf.expand_dims(density, axis=-1)
+            inputs["density_scalar"] = density
+        return inputs
 
     def _ensure_infer_models(self) -> tuple[keras.Model, keras.Model]:
         if self._infer_encoder is None or self._infer_decoder is None:
@@ -401,12 +432,11 @@ class ArOnsetTrainingModel(keras.Model):
             else batch["decoder_input_ids"]
         )
         outputs = decoder(
-            {
-                "encoder_memory": memory,
-                "patch_mask": batch["patch_mask"],
-                "decoder_input_ids": dec_in,
-                "decoder_mask": batch["decoder_mask"],
-            },
+            self._decoder_infer_inputs(
+                batch,
+                memory=memory,
+                decoder_input_ids=dec_in,
+            ),
             training=training,
         )
         return memory, outputs
