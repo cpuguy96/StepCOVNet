@@ -37,7 +37,7 @@
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
     "epochs": 500,
-    "checkpoint_metric": "val_aux_f1_hungarian",
+    "checkpoint_metric": "val_timing_match_teacher",
     "early_stopping_patience": 50,
     "perfect_overfit_early_stop": false,
     "model_output_dir": "models_wsl/ar/ladder_10t_50v",

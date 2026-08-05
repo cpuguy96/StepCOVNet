@@ -202,6 +202,7 @@ scripts/*
 !scripts/train_onset_event.py
 !scripts/train_onset_ar.py
 !scripts/debug_ar_onset_overfit.py
+!scripts/audio_ablation_ar_onset.py
 !scripts/graduate_ar_tide_overfit.py
 !scripts/ar_tide_iter/
 !scripts/ar_tide_iter/**
