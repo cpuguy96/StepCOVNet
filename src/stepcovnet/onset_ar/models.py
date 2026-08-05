@@ -125,6 +125,22 @@ class DecoderSelfAttentionMask(keras.layers.Layer):
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
+class ContentPointerLogits(keras.layers.Layer):
+    """Scaled dot-product pointer scores of decoder queries against patch keys.
+
+    Logit ``k`` is a similarity against ``memory[k]``, so patch choice depends on
+    what the patch *contains* rather than on its absolute index. Replaces a
+    ``Dense(max_patches)`` head that could score well with no audio at all.
+    """
+
+    def call(self, inputs: tuple[tf.Tensor, tf.Tensor]) -> tf.Tensor:
+        query, keys = inputs
+        d_model = keras.ops.cast(keras.ops.shape(query)[-1], query.dtype)
+        scores = keras.ops.einsum("btd,bpd->btp", query, keys)
+        return scores / keras.ops.sqrt(d_model)
+
+
+@keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
 class MaskPointerLogits(keras.layers.Layer):
     """Mask padded patch logits before softmax."""
 
@@ -308,6 +324,7 @@ def _decode_from_memory(
     dropout_rate: float,
     patch_duration: float,
     keep_valid_attention_mask: bool,
+    content_pointer: bool,
     density_scalar: tf.Tensor | None = None,
     density_proj: keras.layers.Layer | None = None,
 ) -> dict[str, tf.Tensor]:
@@ -355,11 +372,26 @@ def _decode_from_memory(
         name="token_logits",
         dtype="float32",
     )(decoder)
-    pointer_logits = keras.layers.Dense(
-        max_patches,
-        name="pointer_logits",
-        dtype="float32",
-    )(decoder)
+    if content_pointer:
+        pointer_query = keras.layers.Dense(
+            d_model,
+            name="pointer_query",
+            dtype="float32",
+        )(decoder)
+        pointer_keys = keras.layers.Dense(
+            d_model,
+            name="pointer_key",
+            dtype="float32",
+        )(memory)
+        pointer_logits = ContentPointerLogits(name="pointer_logits_content")(
+            [pointer_query, pointer_keys],
+        )
+    else:
+        pointer_logits = keras.layers.Dense(
+            max_patches,
+            name="pointer_logits",
+            dtype="float32",
+        )(decoder)
     pointer_logits = MaskPointerLogits(name="mask_pointer_logits")(
         [pointer_logits, patch_mask],
     )
@@ -384,11 +416,21 @@ def _decode_from_memory(
     }
 
 
+def _has_layer(model: keras.Model, name: str) -> bool:
+    """Whether ``model`` contains a layer called ``name``."""
+    return any(layer.name == name for layer in model.layers)
+
+
 def build_ar_onset_inference_models(
     full_model: keras.Model,
     experiment_config: config.ArExperimentConfig,
 ) -> tuple[keras.Model, keras.Model]:
-    """Encoder + decoder submodels sharing weights with ``full_model``."""
+    """Encoder + decoder submodels sharing weights with ``full_model``.
+
+    Detects the pointer head from ``full_model`` rather than from
+    ``experiment_config`` so checkpoints trained with the legacy
+    ``Dense(max_patches)`` head still rebuild.
+    """
     model_config = experiment_config.model
     n_enc_layers = model_config.n_enc_layers
     n_dec_layers = model_config.n_dec_layers
@@ -472,7 +514,15 @@ def build_ar_onset_inference_models(
         decoder = full_model.get_layer(f"{prefix}_ffn_ln")(decoder + ffn(decoder))
 
     token_logits = full_model.get_layer("token_logits")(decoder)
-    pointer_logits = full_model.get_layer("pointer_logits")(decoder)
+    if _has_layer(full_model, "pointer_logits_content"):
+        pointer_logits = full_model.get_layer("pointer_logits_content")(
+            [
+                full_model.get_layer("pointer_query")(decoder),
+                full_model.get_layer("pointer_key")(memory),
+            ],
+        )
+    else:
+        pointer_logits = full_model.get_layer("pointer_logits")(decoder)
     pointer_logits = full_model.get_layer("mask_pointer_logits")(
         [pointer_logits, patch_mask],
     )
@@ -570,6 +620,7 @@ def build_ar_onset_model(
         dropout_rate=dropout_rate,
         patch_duration=patch_duration,
         keep_valid_attention_mask=keep_valid_attention_mask,
+        content_pointer=config.content_pointer_active(model_config),
         density_scalar=density_scalar,
         density_proj=density_proj,
     )

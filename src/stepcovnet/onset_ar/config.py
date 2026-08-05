@@ -84,6 +84,7 @@ class ArModelConfig(_DictSerializableMixin):
     n_first_abs_bins: int = targets.DEFAULT_N_FIRST_ABS_BINS
     num_heads: int = 4
     dropout_rate: float = 0.1
+    pointer_head: str = "content"
     legacy_inverted_attention_masks: bool = True
     density_conditioning: str = "none"
     density_meter_max: int = 32
@@ -192,6 +193,27 @@ def density_conditioning_active(model_config: ArModelConfig) -> bool:
     """Return whether the model expects a ``density_scalar`` input."""
     mode = str(model_config.density_conditioning).strip().lower()
     return mode not in ("", "none")
+
+
+POINTER_HEAD_CONTENT = "content"
+POINTER_HEAD_INDEX = "index"
+POINTER_HEADS = (POINTER_HEAD_CONTENT, POINTER_HEAD_INDEX)
+
+
+def content_pointer_active(model_config: ArModelConfig) -> bool:
+    """Whether patch logits score encoder content instead of absolute indices.
+
+    ``index`` reproduces the pre-2026-08-04 ``Dense(max_patches)`` head, which was
+    measured to ignore the audio entirely; it exists only to rebuild old runs.
+
+    Raises:
+        ValueError: If ``pointer_head`` is not a recognized mode.
+    """
+    mode = str(model_config.pointer_head).strip().lower()
+    if mode not in POINTER_HEADS:
+        msg = f"model.pointer_head must be one of {POINTER_HEADS}, got {mode!r}"
+        raise ValueError(msg)
+    return mode == POINTER_HEAD_CONTENT
 
 
 def normalize_density_conditioning_mode(mode: str) -> str:

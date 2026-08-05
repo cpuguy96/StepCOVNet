@@ -1,3 +1,4 @@
+import dataclasses
 import unittest
 
 import numpy as np
@@ -237,6 +238,52 @@ class TrainersTest(unittest.TestCase):
         self.assertIn(mn.AUX_F1_HUNGARIAN, metrics)
         self.assertNotIn("incremental_consistency_loss", metrics)
 
+    def test_ordered_timing_match_is_published_on_multi_song_runs(self) -> None:
+        """Hungarian F1 has a high chance floor, so the ordered metric must exist.
+
+        Regression: it used to be created only for ``overfit_one_song`` runs, which
+        left multi-song runs with no low-floor metric to select checkpoints on.
+        """
+        experiment_config = _tiny_experiment_config()
+        experiment_config.run.overfit_one_song = False
+        times = np.asarray([0.05, 0.12], dtype=np.float64)
+        token_seq = targets.encode_onset_times(
+            times,
+            duration_sec=1.0,
+            hop_sec=experiment_config.dataset.hop_sec,
+            patch_frames=experiment_config.model.patch_frames,
+            vocab=experiment_config.build_vocab(),
+            max_steps=16,
+        )
+        sample = datasets.ArSample(
+            mert_patches=np.random.randn(3, experiment_config.patch_input_dim()).astype(
+                np.float32,
+            ),
+            n_patches=3,
+            n_frames=10,
+            duration_sec=1.0,
+            token_seq=token_seq,
+            gt_times_sec=times.astype(np.float32),
+            audio_path="a.ogg",
+            chart_path="a.txt",
+        )
+        batch = datasets.sample_to_training_batch(sample, experiment_config)
+        tf_batch = {key: tf.constant(value) for key, value in batch.items()}
+
+        training_model = trainers.ArOnsetTrainingModel(
+            models.build_ar_onset_model(experiment_config),
+            experiment_config=experiment_config,
+        )
+        training_model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+        )
+        val_metrics = training_model.test_step((tf_batch,))
+        self.assertIn(mn.TIMING_MATCH_TEACHER, val_metrics)
+        self.assertIn(
+            mn.val_name(mn.TIMING_MATCH_TEACHER),
+            {mn.val_name(key) for key in val_metrics},
+        )
+
     def test_train_step_reports_incremental_consistency_loss(self) -> None:
         experiment_config = _tiny_experiment_config()
         experiment_config.run.lambda_incremental_consistency = 1.0
@@ -438,6 +485,150 @@ class TrainersTest(unittest.TestCase):
             expected_f1,
             places=5,
         )
+
+
+class PointerHeadTest(unittest.TestCase):
+    """The pointer must score encoder content, not absolute patch indices."""
+
+    def _inputs(
+        self,
+        experiment_config: config.ArExperimentConfig,
+        *,
+        n_patches: int,
+        n_steps: int,
+        seed: int = 0,
+    ) -> dict[str, np.ndarray]:
+        rng = np.random.default_rng(seed)
+        patch_dim = experiment_config.patch_input_dim()
+        return {
+            "mert_patches": rng.standard_normal(
+                (1, n_patches, patch_dim),
+            ).astype("float32"),
+            "patch_mask": np.ones((1, n_patches), dtype="float32"),
+            "decoder_input_ids": rng.integers(
+                0,
+                experiment_config.build_vocab().vocab_size,
+                (1, n_steps),
+            ).astype("int32"),
+            "decoder_mask": np.ones((1, n_steps), dtype="float32"),
+        }
+
+    def test_content_pointer_is_the_default(self) -> None:
+        self.assertEqual(config.ArModelConfig().pointer_head, "content")
+        self.assertTrue(config.content_pointer_active(config.ArModelConfig()))
+
+    def test_unknown_pointer_head_is_rejected(self) -> None:
+        model_config = config.ArModelConfig(pointer_head="dense")
+        with self.assertRaises(ValueError):
+            config.content_pointer_active(model_config)
+
+    def test_content_pointer_logits_track_patch_count(self) -> None:
+        """Logit count follows encoder length, so songs of any length work."""
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        for n_patches in (5, 11):
+            inputs = self._inputs(experiment_config, n_patches=n_patches, n_steps=4)
+            outputs = model(inputs, training=False)
+            self.assertEqual(
+                outputs["pointer_logits"].shape,
+                (1, 4, n_patches),
+            )
+
+    def test_content_pointer_depends_on_audio(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        inputs = self._inputs(experiment_config, n_patches=9, n_steps=5)
+        real = model(inputs, training=False)["pointer_logits"].numpy()
+        zeroed = model(
+            {**inputs, "mert_patches": np.zeros_like(inputs["mert_patches"])},
+            training=False,
+        )["pointer_logits"].numpy()
+        self.assertGreater(float(np.abs(real - zeroed).max()), 1e-3)
+
+    def test_legacy_index_pointer_still_builds(self) -> None:
+        base = _tiny_experiment_config()
+        experiment_config = config.ArExperimentConfig(
+            dataset=base.dataset,
+            model=dataclasses.replace(base.model, pointer_head="index"),
+            run=base.run,
+        )
+        self.assertFalse(config.content_pointer_active(experiment_config.model))
+        model = models.build_ar_onset_model(experiment_config)
+        layer_names = {layer.name for layer in model.layers}
+        self.assertIn("pointer_logits", layer_names)
+        self.assertNotIn("pointer_logits_content", layer_names)
+
+    def test_content_pointer_size_is_independent_of_max_patches(self) -> None:
+        """Index-head size grows with the padded patch axis; content-head does not.
+
+        This is what lets one model serve songs of any length, and why the head
+        stops costing ~1.4M params at production ``max_patches``.
+        """
+        base = _tiny_experiment_config()
+        counts: dict[tuple[str, float], int] = {}
+        for head in ("content", "index"):
+            for max_audio_seconds in (1.0, 8.0):
+                experiment_config = config.ArExperimentConfig(
+                    dataset=dataclasses.replace(
+                        base.dataset,
+                        max_audio_seconds=max_audio_seconds,
+                    ),
+                    model=dataclasses.replace(base.model, pointer_head=head),
+                    run=base.run,
+                )
+                counts[head, max_audio_seconds] = models.build_ar_onset_model(
+                    experiment_config,
+                ).count_params()
+        self.assertEqual(counts["content", 1.0], counts["content", 8.0])
+        self.assertLess(counts["index", 1.0], counts["index", 8.0])
+        self.assertLess(counts["content", 8.0], counts["index", 8.0])
+
+    def test_inference_rebuild_matches_full_model_for_both_heads(self) -> None:
+        """Old checkpoints keep rebuilding, and the new head rebuilds too."""
+        base = _tiny_experiment_config()
+        for head in ("content", "index"):
+            with self.subTest(head=head):
+                experiment_config = config.ArExperimentConfig(
+                    dataset=base.dataset,
+                    model=dataclasses.replace(base.model, pointer_head=head),
+                    run=base.run,
+                )
+                model = models.build_ar_onset_model(experiment_config)
+                encoder, decoder = models.build_ar_onset_inference_models(
+                    model,
+                    experiment_config,
+                )
+                inputs = self._inputs(experiment_config, n_patches=7, n_steps=4)
+                expected = model(inputs, training=False)["pointer_logits"].numpy()
+                memory = np.asarray(
+                    encoder(
+                        {
+                            "mert_patches": inputs["mert_patches"],
+                            "patch_mask": inputs["patch_mask"],
+                        },
+                    ),
+                )
+                actual = decoder(
+                    {
+                        "encoder_memory": memory,
+                        "patch_mask": inputs["patch_mask"],
+                        "decoder_input_ids": inputs["decoder_input_ids"],
+                        "decoder_mask": inputs["decoder_mask"],
+                    },
+                )["pointer_logits"].numpy()
+                np.testing.assert_allclose(actual, expected, atol=1e-5)
+
+    def test_content_pointer_masks_padded_patches(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        inputs = self._inputs(experiment_config, n_patches=8, n_steps=4)
+        inputs["patch_mask"] = np.asarray(
+            [[1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+            dtype="float32",
+        )
+        logits = model(inputs, training=False)["pointer_logits"].numpy()
+        self.assertTrue(bool(np.all(logits[0, :, 3:] < -1e8)))
+        self.assertTrue(bool(np.all(logits[0, :, :3] > -1e8)))
 
 
 if __name__ == "__main__":
