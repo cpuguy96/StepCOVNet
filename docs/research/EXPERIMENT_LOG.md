@@ -12,10 +12,14 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-04
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Next action:** **R3 + onset_density failed the free-run gate** ([EXP-20260804-01](#exp-20260804-01-r3--onset_density-lifts-teacher-but-free-run-still-collapses)): teacher **0.206** (≥ R3 **0.199**) but free-run **0.034** (pred/GT **0.16**); density helps vs bare R3 (**0.003**) but **not** vs R2+onset_density (**0.263**). **Do not scale to R4** on this recipe — stay at **R2 + onset_density** for generation or debug R3 termination before more rows.
+**Status:** **Ladder halted.** [EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke) shows every rung — teacher and free-run, bare and density — scores at or below an **audio-blind** baseline at matched onset count on the frozen val set. Rung deltas and the density ranking are not measurements of skill. There is no generation champion; **0.263** was a metronome-equivalent.
+**Root cause found — [EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer):** the pointer never reads the audio. Zeroing every feature moves R2 val F1 **0.1886 → 0.1885** and leaves the predicted patch unchanged on **99.96%** of steps; the tide champion holds **0.9984** with audio **reversed**. `pointer_logits = Dense(max_patches)(decoder)` scores absolute patch *indices*, not encoder content. This is not overfitting and not a scale problem.
+
+**Fix landed — [EXP-20260804-06](#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate):** `model.pointer_head: content` scores decoder queries against encoder patch keys. Tide passes at **0.9921** on real audio and **collapses to 0.18** under shuffled audio, where the old head held **0.9984**. Head cost drops **1,443,750 → 295,680** params and no longer depends on `max_patches`.
+
+**Next action:** (1) Re-run ladder **R2** on `pointer_head: content` and read **skill over null** — the first AR number that could be real. (2) Promote `_tmp/ladder_debug/audio_ablation.py` to `scripts/` as a **standing gate**: a run whose score survives `shuffle`/`zeros` does not count, at any scale. (3) Switch ladder configs to `checkpoint_metric: val_timing_match_teacher` (floor ≈ 0, now published on multi-song runs). (4) Ablate the **token** head the same way — only the pointer path has been checked.
 **Blockers:** None — GPU free.
-**Alternate track:** Ladder **R4** (300t) teacher-only with density, or Track A dense scoreboard vs **0.686**.
-**Defer:** R4–R5 as primary climb without density, `gate-val-vs-dense`, further sampling-schedule tuning.
+**Defer:** R4–R5, EOS/termination work, density variants, sampling-schedule tuning — all optimize a chance-dominated number. Track A dense scoreboard (**0.686** on `data/v2`) needs the same null floor computed before it is trusted.
 
 ### Dataset prep (PRE ingestion)
 
@@ -40,8 +44,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | **AR 200t/50v scale-up** | **Partial** — ES @ ep **65**, best `val_loss` **~12.7 @ ep 40**; offline val teacher F1 **0.120**, free-run F1 **0.036** (severe under-gen) ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) |
 | **AR corrected-mask regression gate** | **Partial** — run1 + run2 both teacher + free-run **633/634**; free-run tracks teacher; short of perfect bar ([EXP-20260716-02](#exp-20260716-02-ar-corrected-mask-tide-overfit-regression)) |
 | **AR free-run length diagnostics** | **Ready** — `eos_trace` + `--ar_decode_min_onset_tokens` / `--ar_decode_eos_logit_bias` land offline decode probes; healthy tide reference: EOS mean **0.0017**, single spike at step **634** ([EXP-20260724-03](#exp-20260724-03-ar-decode-length-control--eos-trace-diagnostics)) |
-| **AR next gate** | **R2 + onset_density** is the multi-song free-run champion (**0.263**); R3 + onset_density teacher **0.206** but free-run **0.034** ([EXP-20260804-01](#exp-20260804-01-r3--onset_density-lifts-teacher-but-free-run-still-collapses)) — scale-up still breaks free-run |
-| **AR density conditioning** | **Supported on R2** — **meter** breaks fixed-**252** stop ([EXP-20260803-02](#exp-20260803-02-meter-density-conditioning-on-r2-breaks-the-252-stop-and-lifts-free-run)); **onset_density** highest free-run F1 **0.263** ([EXP-20260803-03](#exp-20260803-03-onset_density-conditioning-on-r2-beats-meter-on-free-run)) |
+| **AR next gate** | **Chance floor, not EOS** — no rung clears an audio-blind baseline ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). Gate is now **positive skill over the strongest null** on `timing_match_teacher` and Hungarian F1 |
+| **AR density conditioning** | **Retracted as a win** — the free-run gains track `pred/GT` along the null curve (0.36→0.132, 0.82→0.234, 0.90→0.263 vs nulls 0.154/0.250/0.261). Conditioning fixes prediction *count*, not timing ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)) |
+| **AR chance floor** | **Measured** — dense charts (5.5 onsets/s) give Hungarian F1 @ 20 ms a floor of **0.225–0.336** at matched count; `timing_match` floor ≈ **0**. `stepcovnet.onset_null_baseline` computes it in-harness |
 | **AR scheduled sampling** | **Closed, negative** — the feature was compiled out of the traced `train_step` ([EXP-20260802-05](#exp-20260802-05-scheduled-sampling-on-r2-is-a-no-op--the-branch-is-compiled-out-of-train_step)); with `p` now a `tf.Variable` under `tf.cond`, a full rerun gives free-run **0.1313** vs the **0.132** bar and an unchanged fixed-**252** stop ([EXP-20260803-01](#exp-20260803-01-scheduled-sampling-now-actually-running-does-not-improve-free-run-on-r2)) |
 | **Local artifact gap** | July 16–24 AR checkpoints, subset indices, and logs are **absent from this clone**; a 50t/50v rebuild reached comparable `val_loss` but **10× worse** val F1 and the **opposite** free-run pathology ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)) — local rebuilds do **not** currently stand in for the logged runs |
 | **AR termination stability** | **Open** — same recipe gives early EOS at 200t ([EXP-20260724-02](#exp-20260724-02-ar-corrected-mask-200t50v-train--offline-val-decode)) and never-EOS at 50t ([EXP-20260724-04](#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)); termination is unstable, not one-directionally biased |
@@ -50,8 +55,10 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Recommended when resuming onset work:**
 
-- **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; compare to `data/v2` session best (0.686).
-- **Track B (AR scale-up):** R2 **onset_density** remains best free-run (**0.263**). R3 + onset_density improves teacher to **0.206** but free-run still **0.034** — termination unstable at 200t ([EXP-20260804-01](#exp-20260804-01-r3--onset_density-lifts-teacher-but-free-run-still-collapses)).
+- **First, for any track:** report the audio-blind floor beside every number ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). A Hungarian F1 on dense charts is unreadable without it.
+- **Second, for any track:** run the audio-corruption ablation before believing any score ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). A single-song overfit **cannot** detect an audio-blind model — the tide gate passes with the audio reversed.
+- **Track B (AR):** the pointer head is the bug, not the data. Replace `Dense(max_patches)` with a content-based pointer against encoder memory before adding rows or tuning anything else.
+- **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; recompute the **0.686** `data/v2` best against its own null floor before comparing.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -62,6 +69,11 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260804-06 | `model` + `train` | Does a content-based pointer restore audio grounding while still passing the tide gate? | **Supported** | Gate **0.9921** on real audio; collapses to F1 **0.18–0.19** / `timing_match` **0.0016** / `patch_wrong` **99.8%** under reverse+shuffle. Old head held **0.9984** on the same corruption |
+| EXP-20260804-05 | `model` + `metric` | Does the AR pointer use the audio at all? | **Root cause** | **No.** Zeroing all features leaves R2 F1 **0.1886 → 0.1885** and the predicted patch unchanged **99.96%** of steps; tide champion holds **0.9984** with reversed/shuffled/cross-song audio. Pointer head is `Dense(max_patches)` over decoder state — absolute-index classification, not content-based pointing |
+| EXP-20260804-04 | `metric` + `post` | Does the in-harness null floor reproduce the offline finding on a real checkpoint end-to-end? | **Supported** | R2 re-score: teacher F1 **0.1886** vs strongest null **0.2696** → skill **−0.1109**; free-run skill **−0.0150**; both gates **FAIL** |
+| EXP-20260804-03 | `metric` | What does an audio-blind predictor score on the frozen val set at matched onset count? | **Supported** | Null F1 **0.225–0.336** @ r=1.0 vs best teacher **0.227** / champion free-run **0.263**: **no rung clears chance**; `timing_match` floor ≈ **0** |
+| EXP-20260804-02 | `metric` + `post` | Is R3 free-run collapse early-EOS (recoverable by length force)? | **Supported** (superseded) | Bare R3 5-song: free **0.0007**@15 → **0.200** with `min_onset_tokens=200`; but **0.200 < 0.239** null at that count ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)) |
 | EXP-20260804-01 | `train` + `metric` | Does R3 (200t) + onset_density fix early-EOS@15 and beat R2 free-run? | **Not supported** | Teacher **0.206** (≥ R3 **0.199**); free-run **0.034** vs R3 **0.003** / R2+density **0.263**; pred/GT **0.16**; **50/50** EOS @ ~**115** preds/song avg |
 | EXP-20260803-03 | `model` + `train` + `metric` | Does `onset_density` beat meter density on R2 free-run? | **Supported** | Free-run **0.263** vs meter **0.234**; teacher **0.227**; **pred/GT 0.90**; all **50/50** EOS |
 | EXP-20260803-02 | `model` + `train` + `metric` | Does meter density conditioning on R2 break the fixed-252 stop and beat free-run 0.132? | **Supported** | Free-run **0.234** vs **0.132**; teacher **0.227**; **pred/GT 0.82**; **6** stop-length modes (**8/50** @ **252**) |
@@ -135,6 +147,87 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260804-06: Content-based pointer restores audio grounding and still passes the tide gate
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 20:58:12 |
+| **Track** | `model` + `train` (AR) |
+| **Question** | Does replacing the `Dense(max_patches)` pointer with a content-based pointer make the tide overfit **fail** under corrupted audio while still passing on real audio? A fix that passes both is not a fix. |
+| **Change** | `models.py`: `pointer_logits[k] = q(dec) · k(memory[k]) / √d` via new `ContentPointerLogits` + `pointer_query` / `pointer_key` projections, still masked by `MaskPointerLogits`. New `model.pointer_head` config: **`content`** (new default) or `index` (legacy, for rebuilding old runs). `build_ar_onset_inference_models` detects the head from the loaded model, so existing checkpoints still rebuild |
+| **Setup** | [`configs/ar/tide_overfit_content_pointer.json`](../../configs/ar/tide_overfit_content_pointer.json) — champion tide recipe, `pointer_head: content`, fresh `model_output_dir` so the champion is not overwritten. 400 ep WSL GPU, ~6.4 min. `logs/tide_content_pointer_train.log` |
+| **Real audio** | `val_overfit_gate` **0.9921**, `val_timing_match_teacher` **0.9921**, `token_accuracy` **1.0000**, `val_pointer_loss` **0.0018**. Offline: F1 **0.9858**, `timing_match` **0.9921**, `patch_wrong` **0.0000** |
+| **Corrupted audio (the gate that matters)** | reverse F1 **0.1924** / `timing_match` **0.0016** / `patch_wrong` **0.9984** / NLL **27.78**; shuffle **0.1814** / **0.0016** / **0.9984** / **27.68**; zeros **0.1025** / **0.0032** / **0.9968** / **9.88**. Argmax patch agrees with the real-audio run on only **0.16–0.32%** of steps |
+| **vs the old head** | Same corruption on the legacy champion left F1 at **0.9984** and `timing_match` at **1.0000** with `patch_wrong` **0.0000** ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). The head now **requires** the audio: corrupt it and the model falls to roughly the audio-blind chance floor, which is the expected floor, not a bug |
+| **Cost** | Head size is now independent of `max_patches`: **1,443,750 → 295,680** params at production dims (`max_patches` 3750, `d_model` 384), a net **−1,148,070**. Logit count follows actual encoder length, so the `[..., :n_patches]` slice is no longer load-bearing |
+| **Caveats** | Gate is **0.9921** vs the legacy champion's **0.9984** on real audio, at 400 ep with an untuned recipe carried over from the old head — the ~0.006 gap is not yet explained and may just be tuning. `cross_song` is degenerate on a single-song run (donor is the song itself) and is skipped rather than reported |
+| **Artifacts** | `models_wsl/ar/tide_overfit_content_pointer/ar_onset_model.keras` · `logs/tide_content_pointer_train.log` · `logs/ar_audio_ablation_tide_content.log` · `_tmp/ladder_debug/audio_ablation_tide_content.json` |
+| **Conclusion** | **Supported.** The pointer now reads the audio, and the tide gate is no longer passable blind. 95 AR tests pass, including new coverage that the content head length-generalizes, masks padding, rebuilds identically for inference, and that the legacy head still builds. Next: re-run a ladder rung (R2) on the new head and check **skill over null**, which is the first number in this project that could mean something |
+
+### EXP-20260804-05: The AR pointer never reads the audio — the head is absolute-index classification, not a pointer
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 20:32:40 |
+| **Track** | `model` + `metric` (AR) |
+| **Question** | [EXP-20260804-04](#exp-20260804-04-in-harness-null-floor-reproduces-the-finding-on-the-r2-checkpoint--both-gates-fail) leaves two stories that predict the same numbers: the pointer overfits, or the pointer ignores the encoder. Does corrupting **only** `mert_patches` — decoder prefix and all targets untouched — change teacher-forced output? |
+| **Setup** | `_tmp/ladder_debug/audio_ablation.py`, WSL GPU, no retrain. Variants replace the valid patch region: `cross_song` (next val song's real features, tiled/cropped to length), `reverse`, `shuffle` (permuted patch axis), `zeros`. Padding rows stay zero and `patch_mask` is never touched, so pointer geometry is identical across variants. `logs/ar_audio_ablation.log`, `logs/ar_audio_ablation_tide.log` |
+| **R2 on 12 val songs** | F1 **matched 0.1886** / cross_song **0.1883** / reverse **0.1881** / shuffle **0.1882** / **zeros 0.1885**. `timing_match` **0.0029** in all five. `patch_wrong` **0.9942** in all five. Pointer NLL **16.88** nats in all five (uniform **7.37**). Predicted patch identical to the matched run on **99.94–100.00%** of onset steps |
+| **Tide champion (the PASS gate)** | F1 **0.9984** for matched, cross_song, reverse **and** shuffle — bit-identical. `timing_match` **1.0000** for all four; `patch_wrong` **0.0000** for all five variants including zeros. All-zero features still give F1 **0.9558**, `timing_match` **0.9890** |
+| **Root cause** | `pointer_logits = Dense(max_patches)(decoder)` (`models.py:358`). Logit *k* is a learned output unit for **absolute patch index k**, not a score against `memory[k]`. Audio can only reach patch choice indirectly through cross-attention updating the decoder state, and measurably it does not. **1,443,750** params (`max_patches` **3750** × `d_model` **384**) spent on a head that cannot length-generalize and is not content-addressed |
+| **Why the gate never caught it** | Single-song overfit is fully determined by the teacher-forced prefix, so an audio-blind model scores **1.0**. The tide gate passes with the audio **reversed**. Every AR "PASS" to date is compatible with zero audio grounding |
+| **Consistency** | Explains [EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke) exactly: a model that does not read audio should land at the audio-blind floor, and every rung did. Also explains val `pointer_loss` **15.6–18.6** nats vs uniform **6.7** — a position prior fit to train songs is actively wrong on held-out ones |
+| **Artifacts** | `_tmp/ladder_debug/audio_ablation.py` · `audio_ablation.json` · `audio_ablation_tide.json` · `logs/ar_audio_ablation.log` · `logs/ar_audio_ablation_tide.log` |
+| **Conclusion** | **Root cause.** Not overfitting, not scale, not EOS, not the metric alone. Fix: replace the `Dense(max_patches)` head with a content-based pointer scoring decoder state against encoder memory (`logits[k] = q(dec) · k(memory[k]) / √d`), which is length-generalizing and forces audio into the patch decision. Add the audio-corruption ablation as a **standing gate** — any run whose score survives `shuffle` is not using audio |
+
+### EXP-20260804-04: In-harness null floor reproduces the finding on the R2 checkpoint — both gates fail
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 19:58:18 |
+| **Track** | `metric` + `post` (AR) |
+| **Question** | [EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke) measured the floor offline with a scratch script. Does the floor wired into `debug_ar_onset_overfit.py` reproduce it on a real checkpoint, on a real GPU decode, without hand-held bookkeeping? |
+| **Setup** | `debug_ar_onset_overfit.py --config configs/ar/ladder_200t_50v.json --split val --limit 12 --ar_decode` on WSL GPU. R2 is the highest-teacher-F1 rung ever trained. No retrain, no config change — only the new reporting path. 12 val songs, **8925** GT onsets. `logs/rescore_r2_null.log` |
+| **Teacher-fed** | Hungarian F1 **0.1886** (1683 TP / 7242 FP / 7242 FN). Null F1 at the same count: uniform **0.2257**, metronome **0.2696**, IOI-shuffle **0.2289**. **Skill over strongest null: F1 −0.1109, `timing_match` −0.0088** |
+| **Free-run** | Hungarian F1 **0.0009** (4 TP / 176 FP / 8921 FN), `n_pred` **180** vs `n_gt` **8925**. Nulls **0.0112 / 0.0156 / 0.0156**. **Skill: F1 −0.0150, `timing_match` −0.0027** |
+| **Order-aware** | `timing_match_teacher` **26/8925 = 0.0029**; `timing_match_ar_decode` **0/8925 = 0.0000**. Both **FAIL** against `target_times` and against the raw chart (**25/8925**) |
+| **Where the error is** | `n_patch_wrong` **8873/8925 = 99.4%** — the pointer picks the wrong patch almost every step. Conditional on the right patch, residuals are fine (p50 **20.0 ms**), but absolute error is p50 **3.65 s** / p90 **13.3 s** / max **120 s**. Only **26** onsets land inside tolerance |
+| **Reproducibility** | Free-run emits **15** onsets/song on the per-song path, matching the logged bare-R3 stop-length pathology; teacher F1 **0.1886** on 12 songs is consistent with **0.2266** on the full 50-row val. The offline scratch measurement and the in-harness one agree |
+| **Artifacts** | `logs/rescore_r2_null.log` · `models_wsl/ar/ladder_200t_50v/ar_onset_model.keras` · `src/stepcovnet/onset_null_baseline.py` |
+| **Conclusion** | **Supported.** The floor is now reported automatically beside every AR number and the gate fails on negative skill without a human noticing. R2 — the best rung — is **0.111 F1 below** a metronome that never hears the audio, and its pointer is wrong **99.4%** of the time under teacher forcing. Confirms the halt: fix encoder→pointer generalization, not scale |
+
+### EXP-20260804-03: Every ladder rung is at or below an audio-blind baseline — the metric, not the data, is what broke
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 20:05:45 |
+| **Track** | `metric` (AR) |
+| **Question** | Hungarian F1 @ 20 ms is the metric every rung is compared and checkpointed on. What does a predictor that never hears the audio score on the frozen val set at the same prediction count? |
+| **Setup** | CPU only, no retrain. Frozen ladder val (50 rows / 39 songs, **35439** GT onsets — matches the logged decodes exactly). GT via `charts.load_onset_times` + `clip_times_to_duration`, durations from `soundfile.info` capped at `max_audio_seconds=300`. Scored with the harness matcher (`onset_events.metrics.count_event_onset_errors_numpy`, tol **0.02 s**) and `timing_match`. Nulls snap to the 20 ms hop grid, as model predictions do. `_tmp/ladder_debug/null_baseline.py` |
+| **Why a floor exists** | Val charts average **5.52** onsets/sec (mean IOI **181 ms**). A ±20 ms match window covers ~22% of the timeline, so emitting the right *number* of onsets scores well above zero without any audio |
+| **Null F1 @ matched count** | r=**1.00**: uniform-over-duration **0.2250**, uniform-in-support **0.2370**, metronome grid **0.2745**, GT-IOI-shuffle **0.3359**, cross-song **0.3214**. r=**0.90**: 0.2171 / 0.2265 / 0.2605 / 0.3129 / 0.3113. r=**0.36**: 0.1284 / 0.1412 / 0.1544 / 0.1815 / 0.1784. r=**0.16**: 0.0717 / 0.0745 / 0.0789 / 0.0836 / 0.0927 |
+| **Null stability** | 20 seeds: uniform-in-support r=1.0 **0.2373 ± 0.0019**; metronome **0.2745 ± 0.0000**; IOI-shuffle **0.3370 ± 0.0087**. Gaps below are far outside seed noise |
+| **Every rung vs its own floor** | Teacher (r=1.0): R1 **0.178**, R2 **0.2266**, R3 **0.1991**, R3+density **0.2059** — all **below** even the weakest null (0.2250). Free-run: R2 bare **0.132** @ r=0.36 vs 0.128–0.182; R2+meter **0.234** @ r=0.82 vs 0.208–0.295; R2+onset_density (champion) **0.263** @ r=0.90 vs 0.217–0.313 — ties the metronome (0.2605), loses to IOI-shuffle; R3+density **0.034** @ r=0.16 vs 0.072–0.093 |
+| **The density "wins" were count-matching** | Free-run F1 tracks `pred/GT`, not timing: 0.36→**0.132**, 0.82→**0.234**, 0.90→**0.263**, against nulls 0.154, 0.250, 0.261 at the same ratios. [EXP-20260804-02](#exp-20260804-02-r3-early-eos-is-the-scaling-failure--length-force-recovers-free-run)'s `min_onset_tokens=200` recovery (**0.200** @ r≈1.05) is also **below** the r=1.05 floor (0.239–0.336) |
+| **Order-aware metric is discriminative** | Same nulls under `timing_match`: **0.000–0.029** (floor ≈ 0). Measured val `timing_match_teacher` is **0.0026** (12/2877 on the 5-song probe) — also at the floor. Independent of the chance argument: val `pointer_loss` **15.6–18.6** nats vs **ln(~810 patches) ≈ 6.7** for uniform guessing, and `n_patch_wrong` **0.99–1.00** on all 50 songs with teacher-forced median timing error **1.1–73 s** |
+| **Not underfitting** | Train vs val at each run's best epoch: R2 **0.746 / 0.227**, R3 **0.529 / 0.199**, R2+density **0.736 / 0.227**, R3+density **0.539 / 0.206**; train token accuracy **0.98** vs val **0.37**; train `pointer_loss` **0.01–0.04**. The model fits training songs and transfers nothing |
+| **Artifacts** | `_tmp/ladder_debug/null_baseline.py` · `null_baseline.json` · `per_song_audit.py` · `train_val_gap.py` · `logs/ladder_null_baseline.log` · `logs/ladder_train_val_gap.log` · `logs/ladder_null_wiring_probe.log` |
+| **Conclusion** | **Supported.** No AR rung has ever cleared an audio-blind baseline on the frozen val set, so rung-to-rung deltas (0.178 → 0.227 → 0.199) and the density ablation ranking are not measurements of skill. Scale was never the binding problem. Fixes landed: `stepcovnet.onset_null_baseline` (floor + `skill_over_null`) wired into `debug_ar_onset_overfit.py`, and `timing_match_teacher` now published on multi-song runs so checkpoints can be selected on a near-zero-floor metric. **Do not** run R4, further EOS work, or more density variants until a rung shows positive skill |
+
+### EXP-20260804-02: R3 early-EOS is the scaling failure — length force recovers free-run
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 12:25:23 |
+| **Track** | `metric` + `post` (AR) |
+| **Question** | Is the R3 free-run collapse caused by early `<EOS>` (recoverable by decode length control), rather than destroyed timing? |
+| **Setup** | Recompute from logged full-val decodes + existing bare-R3 probes in `_tmp/ladder_debug/r3_probe*.json` (5 songs; preds match bare R3 stop@**15**, not density). No new train. |
+| **Full-val compare** | R2+onset_density free **0.263**, pred/GT **0.90**, corr(pred,GT) **0.78**. R3+onset_density free **0.034**, pred/GT **0.16**, corr **−0.42**, **36/50** songs stop at **15** or **19**. Bare R3: free **0.003**, all **50** @ **15**. |
+| **Length-force probe** | none / `eos_logit_bias=+3`: free **0.0007**, stop@**15**. `min_onset_tokens=200`: free **0.1999**, all stop@**603**, pred/GT **1.05**. |
+| **Reading** | Forcing past early EOS recovers usable free-run on the probe set — timing content after step 15 exists. Density that works at 50t does not teach termination at 200t. Positive EOS logit bias is inert; hard min-length is the lever. |
+| **Artifacts** | `_tmp/ladder_debug/r3_probe*.json` · `_tmp/ladder_debug/r3_onset_density.json` · [NOTE-20260804-01](DISCUSSION_NOTES.md#note-20260804-01-scale-up-fails-on-eos-termination-timing-is-recoverable-once-length-is-forced) |
+| **Conclusion** | **Supported.** Next: full 50-val R3+onset_density with density-derived `min_onset_tokens`; then fix train-side EOS weighting ([NOTE-20260724-01](DISCUSSION_NOTES.md#note-20260724-01-eos_token_weight_scale-is-a-no-op-under-token_class_weight-none)). Do not R4. |
 
 ### EXP-20260804-01: R3 + onset_density lifts teacher but free-run still collapses
 

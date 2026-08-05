@@ -137,6 +137,35 @@ Free-run perfect-overfit also requires **`val_ar_decode_ordered_onset_match == 1
 
 **When not to use as primary:** single-song tide overfit — ordered timing match is the pass/fail bar ([NOTE-20260628-03](DISCUSSION_NOTES.md#note-20260628-03-tide-overfit-primary-metric--ordered-onset-match)).
 
+### Hungarian F1 has a high chance floor — always report it
+
+**Module:** `stepcovnet/onset_null_baseline.py` · **Tests:** `tests/onset_null_baseline_test.py`
+
+Hungarian matching is order-free, so a prediction set only has to land *near* some ground-truth onset. On dense charts that is easy by accident: the AR ladder val set averages **5.52** onsets/sec (mean inter-onset interval **181 ms**), so a ±20 ms window covers ~22% of the timeline. Measured floors on that set, at a prediction count matched to the model's:
+
+| Audio-blind predictor | F1 @ `pred/GT` = 1.0 | F1 @ 0.90 | Ordered `timing_match` |
+| --------------------- | -------------------- | --------- | ---------------------- |
+| Uniform over duration | 0.225 | 0.217 | 0.003 |
+| Metronome over GT support | 0.275 | 0.261 | 0.003 |
+| Shuffled GT intervals | 0.336 | 0.313 | 0.013 |
+
+None of these hear the audio. A raw Hungarian F1 below ~0.34 on a dense multi-song val set is therefore **not evidence of skill**, and a change that only moves the predicted onset *count* moves F1 along this curve for free — which is how the AR ladder produced a year of unreadable numbers ([EXP-20260804-03](EXPERIMENT_LOG.md#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)).
+
+Ordered `timing_match` has a floor of ≈ 0 because it also requires the *k*-th prediction to align with the *k*-th reference, which is why it is the primary metric.
+
+```python
+from stepcovnet import onset_null_baseline
+
+counts = onset_null_baseline.null_counts_for_song(
+    gt_times, duration_sec=duration, n_pred=n_pred_model, tolerance_sec=0.02,
+)
+floors = onset_null_baseline.aggregate_null_counts([counts])
+kind, floor = onset_null_baseline.strongest_null(floors)
+skill = onset_null_baseline.skill_over_null(model_f1, floor)  # <= 0 means no skill
+```
+
+`scripts/debug_ar_onset_overfit.py` computes this automatically for teacher and free-run blocks: stderr shows `Null F1 @ matched count` and `Skill over strongest null`, and the JSON carries `null_baseline`.
+
 ---
 
 ## Choosing a metric for an experiment
@@ -147,6 +176,8 @@ Free-run perfect-overfit also requires **`val_ar_decode_ordered_onset_match == 1
 | AR `gate-ar-decode`                     | Free-run `timing_match` vs **`target_times`** | Teacher `timing_match`, chart aux, decode length, EOS |
 | Multi-song dense val                    | `micro_timing_match` @ **fixed** threshold | `micro_event_f1`, TP/FP/FN                       |
 | Event K-slot research (plateau ~30% F1) | `event_onset_f1` (still training default)  | `timing_match` in diagnostics when debugging     |
+
+**Null floor caveat:** never report a Hungarian F1 on a dense multi-song val set without its audio-blind floor at the same prediction count — see § *Hungarian F1 has a high chance floor*. For multi-song AR, select checkpoints on `val_timing_match_teacher`, not `val_aux_f1_hungarian`.
 
 **Val model selection caveat:** `timing_match` on dense/event depends on POST (threshold, min-gap). Compare checkpoints only under the **same** export policy, or sweep threshold once and hold it fixed across runs.
 
@@ -177,6 +208,7 @@ ref = timing_match.reference_times_from_mask(gt_times[0], gt_mask[0])
 
 | Date       | Change                                                                                                                                                                      |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-04 | Added `onset_null_baseline`: Hungarian F1 @ 20 ms has a **0.225–0.336** chance floor on dense charts, so every reported F1 now carries its audio-blind floor and skill ([EXP-20260804-03](EXPERIMENT_LOG.md#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). `timing_match_teacher` now published on multi-song AR runs |
 | 2026-06-30 | Free-run primary ordered match vs **`target_times`**; raw chart as **`chart_ordered_onset_match`** aux ([NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times)) |
 | 2026-06-28 | Primary tide metric switched from Hungarian F1 to ordered match ([NOTE-20260628-03](DISCUSSION_NOTES.md#note-20260628-03-tide-overfit-primary-metric--ordered-onset-match)) |
 | 2026-06-28 | Unified `timing_match.py` across AR / dense / event; rate denominator `max(n_pred, n_ref)` penalizes extra predictions                                                      |

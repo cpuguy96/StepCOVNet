@@ -4,6 +4,133 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-04 — what ladder scaling breaks
+
+### NOTE-20260804-03: The pointer head is absolute-index classification, so the model never had to hear the audio
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 20:32:40 |
+| **Topic** | Root cause behind the chance-floor result, and why every gate missed it |
+
+**Verdict.** The AR onset model does not use the audio. Corrupting **only** `mert_patches` — leaving the decoder prefix and every target untouched — changes essentially nothing: R2 val F1 goes **0.1886 → 0.1885** with all features zeroed, and the argmax patch is unchanged on **99.96%** of onset steps. Numbers: [EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer).
+
+**The bug.** `models.py:358` builds the pointer as
+
+```python
+pointer_logits = keras.layers.Dense(max_patches, name="pointer_logits")(decoder)
+```
+
+Logit *k* is a learned output unit standing for **absolute patch index k**. It is never scored against `memory[k]`. Three consequences follow directly:
+
+- **Not content-addressed.** Nothing in the head's structure ties logit *k* to what patch *k* sounds like. Audio can only reach the decision indirectly, by cross-attention shifting the decoder state, and measurably it does not.
+- **Cannot length-generalize.** Index 1523 means a different absolute time in every song. A 90-second song and a 200-second song share no output units in any meaningful way, so nothing transfers across songs of different length.
+- **Wasteful and sparsely trained.** **1,443,750** parameters (`max_patches` 3750 × `d_model` 384), where each output unit only receives gradient when an onset happens to land at that exact index.
+
+**Why every gate missed it.** A single-song overfit is fully determined by the teacher-forced prefix, so an audio-blind model can score a perfect 1.0. The tide champion — the **PASS** that gated the whole AR stack — scores an identical **0.9984** with the audio **reversed**, **shuffled**, or **swapped for another song**, and `patch_wrong` is **0.0000** in all of them including all-zero input. The overfit gate cannot distinguish a model that hears from one that does not, so it never did.
+
+**How this closes the loop.** [NOTE-20260804-02](#note-20260804-02-the-ladder-was-climbing-a-chance-floor--scale-was-never-the-binding-problem) established that no rung beat an audio-blind baseline. This says why: the model *is* an audio-blind baseline. The two findings are the same fact measured from opposite ends, which is the strongest confirmation available without a retrain.
+
+**Fix — landed 2026-08-04.** `model.pointer_head: content` computes `logits[k] = q(dec_state) · k(memory[k]) / √d` over encoder memory, still masked by `patch_mask`. Tide now scores **0.9921** on real audio and **0.18** under shuffled audio — the gate is no longer passable blind ([EXP-20260804-06](EXPERIMENT_LOG.md#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate)). Head cost falls **1,443,750 → 295,680** params and stops scaling with `max_patches`. `pointer_head: index` still exists to rebuild old runs, and the inference builder detects the head from the loaded model rather than the config, so existing checkpoints keep working.
+
+**Still to do.** Promote the corruption ablation to a standing gate in `scripts/`; ablate the **token** head, which has not been checked; and re-run a ladder rung to get the first AR number with real skill over its null.
+
+**What this retires.** Every open AR item framed as data, termination, or regularization — EOS weighting, scheduled sampling, density variants, R4–R5, dropout/capacity tuning — was downstream of a model that ignores its input. None of them can be evaluated until the head is fixed.
+
+### NOTE-20260804-02: The ladder was climbing a chance floor — scale was never the binding problem
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 20:05:45 |
+| **Topic** | Why "more data does not help" was the wrong reading, and what to fix instead |
+
+**Verdict.** Hungarian F1 @ 20 ms on dense charts has a chance floor of **0.225–0.336**, and **no AR rung has ever cleared it**. Every conclusion drawn from rung-to-rung F1 deltas — the plateau, the non-monotonicity, the density ranking, the EOS diagnosis, the choice of a "generation champion" — was drawn from noise above a floor nobody had measured. Full numbers: [EXP-20260804-03](EXPERIMENT_LOG.md#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke).
+
+**Why the floor is high.** The frozen val set averages **5.52** onsets/sec (mean inter-onset interval **181 ms**). A ±20 ms match window therefore covers ~22% of the timeline, so a predictor that emits the right *number* of onsets and ignores the audio entirely already scores ~0.23, and one that reuses the song's own inter-onset-interval distribution scores ~0.34.
+
+**Model vs its own floor, at matched prediction count:**
+
+| Variant | pred/GT | Reported F1 | Uniform | Metronome | IOI-shuffle | Verdict |
+| ------- | ------- | ----------- | ------- | --------- | ----------- | ------- |
+| Teacher, any rung | 1.00 | 0.178–0.227 | 0.225 | 0.275 | 0.336 | below all |
+| R2 bare free-run | 0.36 | 0.132 | 0.128 | 0.154 | 0.182 | below all |
+| R2+meter free-run | 0.82 | 0.234 | 0.208 | 0.250 | 0.295 | beats uniform only |
+| R2+onset_density free-run | 0.90 | **0.263** | 0.217 | 0.261 | 0.313 | ties metronome |
+| R3+density free-run | 0.16 | 0.034 | 0.072 | 0.079 | 0.084 | below all |
+| R3 `min_onset_tokens=200` | 1.05 | 0.200 | 0.228 | 0.282 | 0.336 | below all |
+
+**What the density work actually did.** Free-run F1 moves with `pred/GT` along the null curve and nowhere else. Conditioning taught the decoder *how many* onsets to emit, which is worth real F1 on a count-sensitive metric, and taught it nothing about *when*. [NOTE-20260804-01](#note-20260804-01-scale-up-fails-on-eos-termination-timing-is-recoverable-once-length-is-forced)'s "timing content after step 15 exists" reads the same way: forcing length past early EOS moved `pred/GT` from 0.02 to 1.05, and the resulting **0.200** is below the **0.239** floor at that count.
+
+**Three independent confirmations that do not depend on the chance argument:**
+
+1. Ordered `timing_match` (floor ≈ **0**, nulls 0.000–0.029) measures **0.0026** on val — the model is at the floor of the discriminative metric too.
+2. Val `pointer_loss` is **15.6–18.6** nats where uniform guessing over ~810 patches costs **ln(810) ≈ 6.7**. The pointer is *confidently wrong* on held-out audio, not merely uninformed.
+3. `n_patch_wrong` is **0.99–1.00** on all 50 val songs, with teacher-forced median timing error **1.1–73 s** against a 20 ms tolerance.
+
+**The real failure is generalization, not scale.** At each run's best epoch, train/val Hungarian F1 is **0.746/0.227** (R2), **0.529/0.199** (R3), **0.736/0.227** (R2+density), **0.539/0.206** (R3+density); train token accuracy **0.98** vs val **0.37**; train `pointer_loss` **0.01–0.04** vs val **~16**. The model memorizes training songs and transfers nothing. Adding rows to a recipe with zero transfer cannot produce a trend, which is exactly what the ladder observed.
+
+**Fixes landed this session:**
+
+| Fix | What |
+| --- | ---- |
+| Floor is now measured in-harness | `stepcovnet.onset_null_baseline` — audio-blind baselines at matched prediction count + `skill_over_null`; wired into `debug_ar_onset_overfit.py`, which now prints `Null F1 @ matched count` and `Skill over strongest null` for both teacher and free-run blocks, and emits `null_baseline` in the JSON |
+| A low-floor metric exists on multi-song runs | `timing_match_teacher` was created only when `overfit_one_song` was true, so multi-song runs had **no** near-zero-floor metric to select on. Now always published; `checkpoint_metric: val_timing_match_teacher` already resolves |
+
+**Action order:**
+
+1. **Re-score, do not retrain.** Run the four existing checkpoints through the updated harness for skill-over-null and `timing_match`.
+2. **Change selection.** Ladder configs move to `checkpoint_metric: val_timing_match_teacher`; `val_aux_f1_hungarian` never exceeded its own floor, so it was selecting on noise.
+3. **Change the promotion rule.** A rung counts only if val skill over the strongest null is positive — beating the previous rung is not sufficient.
+4. **Then attack generalization** (regularization, capacity, augmentation, held-out-song curriculum) — the 0.75/0.23 train/val split, not row count.
+5. **Hold** R4–R5, EOS weighting, and further density variants.
+
+**Related:** [EXP-20260804-03](EXPERIMENT_LOG.md#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke) · [NOTE-20260804-01](#note-20260804-01-scale-up-fails-on-eos-termination-timing-is-recoverable-once-length-is-forced) · [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md) · [ONSET_METRICS.md](ONSET_METRICS.md)
+
+### NOTE-20260804-01: Scale-up fails on EOS termination; timing is recoverable once length is forced
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 12:25:23 |
+| **Topic** | Why R3 (200t) does not climb over R2 on free-run, and what to fix next |
+
+**Superseded by [NOTE-20260804-02](#note-20260804-02-the-ladder-was-climbing-a-chance-floor--scale-was-never-the-binding-problem).** Every F1 below sits at or under an audio-blind floor at its own prediction count, so the termination story reads a count effect as a timing effect. The length-force "recovery" (**0.200**) is below the **0.239** null at that count. The table stays for the record; do not act on it.
+
+**Verdict.** The ladder is not failing because more data destroys timing skill. It fails because free-run **termination** collapses at 200t, and density conditioning that fixed R2 does not transfer.
+
+**Proof (recomputed from logged decodes + existing 5-song probes):**
+
+| Variant | Teacher F1 | Free-run F1 | pred/GT | Length signature |
+| ------- | ---------- | ----------- | ------- | ---------------- |
+| R2 bare | 0.227 | 0.132 | 0.356 | **252×50**, corr(pred,GT)=0 |
+| R3 bare | 0.199 | 0.003 | 0.021 | **15×50**, corr=0 |
+| R2+onset_density | 0.227 | **0.263** | 0.900 | 9 modes, corr=**0.78** |
+| R3+onset_density | 0.206 | **0.034** | 0.159 | **15×21 + 19×15** (36/50 early), corr=**−0.42** |
+
+Bare R3 length-control probe (`_tmp/ladder_debug/r3_probe*.json`, 5 songs matching bare stop@15):
+
+| Control | Free-run F1 | Stop |
+| ------- | ----------- | ---- |
+| none | 0.0007 | 15×5 |
+| `eos_logit_bias=+3` | 0.0007 | 15×5 |
+| `min_onset_tokens=200` | **0.200** | 603×5 |
+
+Forcing past early EOS recovers ~teacher-scale free-run on that subset. Content after step 15 is usable; the model just refuses to emit it.
+
+**Secondary contributors (not the binding ceiling at current F1):**
+
+- Multi-chart conflict rows: **4%** (R2) → **15.5%** (R3), spreads up to **659** steps — candidate poison for EOS, still open ([NOTE-20260803-01](#note-20260803-01-difficulty-is-unconditioned-and-unfiltered-but-it-is-not-what-caps-the-ladder)).
+- `eos_token_weight_scale` under `token_class_weight: none` is still a no-op ([NOTE-20260724-01](#note-20260724-01-eos_token_weight_scale-is-a-no-op-under-token_class_weight-none)) — cannot down-weight EOS in CE today.
+- Teacher F1 is also non-monotonic (R3 **0.199** &lt; R2 **0.227**), so scale-up is imperfect even under teacher forcing, but free-run is the gate that actually breaks usability.
+
+**Action order:**
+
+1. **P0 (no retrain):** full-val R3+onset_density decode with density-derived `min_onset_tokens` — extend the proven 5-song probe.
+2. **P1:** make EOS scale work under `scheme=none`, retrain R3+onset_density with `eos_token_weight_scale &lt; 1`.
+3. **P2:** one-chart-per-audio R3′ ablation to test conflict poisoning.
+4. **Hold:** no R4; generation champion stays R2+onset_density (**0.263**).
+
+**Related:** [EXP-20260804-01](EXPERIMENT_LOG.md#exp-20260804-01-r3--onset_density-lifts-teacher-but-free-run-still-collapses) · [EXP-20260804-02](EXPERIMENT_LOG.md#exp-20260804-02-r3-early-eos-is-the-scaling-failure--length-force-recovers-free-run) · [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
+
 ## Session 2026-08-03 — ladder difficulty composition and the audio-only ceiling
 
 ### NOTE-20260803-01: Difficulty is unconditioned and unfiltered, but it is not what caps the ladder
