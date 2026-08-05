@@ -289,14 +289,13 @@ class ArOnsetTrainingModel(keras.Model):
             tolerance_sec=run_config.tolerance_sec,
             name=mn.AUX_F1_HUNGARIAN,
         )
-        self.ordered_match_metric: ArOrderedOnsetMatchMetric | None
-        if self.use_ordered_onset_gate:
-            self.ordered_match_metric = ArOrderedOnsetMatchMetric(
-                tolerance_sec=run_config.tolerance_sec,
-                name=mn.TIMING_MATCH_TEACHER,
-            )
-        else:
-            self.ordered_match_metric = None
+        # Published on every run, not just single-song overfit: Hungarian F1 has a
+        # high chance floor on dense charts, so multi-song runs need the ordered
+        # metric available for checkpoint selection and early stopping.
+        self.ordered_match_metric = ArOrderedOnsetMatchMetric(
+            tolerance_sec=run_config.tolerance_sec,
+            name=mn.TIMING_MATCH_TEACHER,
+        )
 
     @property
     def metrics(self):
@@ -320,8 +319,7 @@ class ArOnsetTrainingModel(keras.Model):
                 self.event_f1_metric,
             ],
         )
-        if self.ordered_match_metric is not None:
-            tracked.append(self.ordered_match_metric)
+        tracked.append(self.ordered_match_metric)
         return tracked
 
     def _metric_results(
@@ -568,8 +566,6 @@ class ArOnsetTrainingModel(keras.Model):
             batch["gt_times"],
             batch["gt_mask"],
         )
-        if self.ordered_match_metric is None:
-            return
         n_matched, n_gt, n_pred = tf.numpy_function(
             timing_match.timing_match_teacher_wrapper,
             [

@@ -38,6 +38,7 @@ on **stdout** (pipe-friendly).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import pathlib
 import sys
@@ -53,7 +54,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import onset_metric_names as mn
-from stepcovnet import timing_match
+from stepcovnet import onset_null_baseline, timing_match
 from stepcovnet.onset_ar import (
     config,
     datasets,
@@ -270,6 +271,72 @@ def _onset_reference_times(
     target = batch_np["target_times"][0][step_indices]
     chart = batch_np["gt_times"][0][batch_np["gt_mask"][0] > 0.5]
     return target, chart
+
+
+def _null_baseline_block(
+    batch_np: dict[str, np.ndarray],
+    *,
+    n_pred: int,
+    tolerance_sec: float,
+    hop_sec: float,
+) -> list[dict[str, object]]:
+    """Score audio-blind baselines for one song at the model's prediction count.
+
+    Args:
+        batch_np: Single-song batch arrays (supplies GT times and duration).
+        n_pred: Onsets the model emitted for this song.
+        tolerance_sec: Match tolerance in seconds.
+        hop_sec: Prediction grid the baselines snap to.
+
+    Returns:
+        JSON-friendly per-kind match counts.
+    """
+    _, chart_times = _onset_reference_times(batch_np)
+    duration = float(np.asarray(batch_np["duration"]).reshape(-1)[0])
+    counts = onset_null_baseline.null_counts_for_song(
+        chart_times,
+        duration_sec=duration,
+        n_pred=int(n_pred),
+        tolerance_sec=tolerance_sec,
+        hop_sec=hop_sec,
+    )
+    return [dataclasses.asdict(row) for row in counts]
+
+
+def _aggregate_null_baselines(
+    rows: list[list[dict[str, object]]],
+    *,
+    model_event_f1: float,
+    model_timing_match: float,
+) -> dict[str, object]:
+    """Micro-average baseline counts and score the model against the hardest one.
+
+    Args:
+        rows: Per-song lists produced by :func:`_null_baseline_block`.
+        model_event_f1: Split-level Hungarian F1 the model achieved.
+        model_timing_match: Split-level ordered timing-match rate.
+    """
+    parsed = [
+        [onset_null_baseline.NullCounts(**entry) for entry in row]  # type: ignore[arg-type]
+        for row in rows
+    ]
+    aggregated = onset_null_baseline.aggregate_null_counts(parsed)
+    kind, floor = onset_null_baseline.strongest_null(aggregated, metric="event_f1")
+    tm_kind, tm_floor = onset_null_baseline.strongest_null(
+        aggregated,
+        metric="timing_match",
+    )
+    return {
+        "by_kind": aggregated,
+        "strongest": {"event_f1": kind, "timing_match": tm_kind},
+        "event_f1_floor": floor,
+        "timing_match_floor": tm_floor,
+        "skill_event_f1": onset_null_baseline.skill_over_null(model_event_f1, floor),
+        "skill_timing_match": onset_null_baseline.skill_over_null(
+            model_timing_match,
+            tm_floor,
+        ),
+    }
 
 
 def _eos_trace_stats(eos_prob_trace: np.ndarray | None) -> dict[str, object] | None:
@@ -490,6 +557,30 @@ def _print_teacher_summary(
     )
 
 
+def _log_null_baseline(block: object, *, quiet: bool) -> None:
+    """Log the audio-blind chance floor and the model's skill over it.
+
+    Args:
+        block: ``null_baseline`` aggregate, or ``None`` when not computed.
+        quiet: Suppress stderr logging.
+    """
+    if not isinstance(block, dict):
+        return
+    by_kind = block.get("by_kind")
+    if isinstance(by_kind, dict):
+        parts = " | ".join(
+            f"{kind} {float(vals['event_f1']):.4f}" for kind, vals in by_kind.items()
+        )
+        _log(f"  Null F1 @ matched count: {parts}", quiet=quiet)
+    _log(
+        f"  Skill over strongest null ({block.get('strongest', {}).get('event_f1', '')}"
+        f" {float(block.get('event_f1_floor', 0.0)):.4f}): "
+        f"F1 {float(block.get('skill_event_f1', 0.0)):+.4f} | "
+        f"timing_match {float(block.get('skill_timing_match', 0.0)):+.4f}",
+        quiet=quiet,
+    )
+
+
 def _print_ar_decode_summary(
     ar_decode: dict[str, object],
     *,
@@ -541,6 +632,7 @@ def _print_ar_decode_summary(
     _log("", quiet=quiet)
     _log("--- Aux ---", quiet=quiet)
     _log(f"  Hungarian F1: {_event_f1_line(ar_decode)}", quiet=quiet)
+    _log_null_baseline(ar_decode.get("null_baseline"), quiet=quiet)
 
     inc = diagnostics.get("incremental_pointer_residual")
     if isinstance(inc, dict):
@@ -618,6 +710,7 @@ def _print_debug_summary(
         quiet=quiet,
     )
     _print_teacher_summary(report, tolerance_sec=tolerance_sec, quiet=quiet)
+    _log_null_baseline(report.get("null_baseline"), quiet=quiet)
     if ar_decode:
         ar_block = report.get("ar_decode")
         if isinstance(ar_block, dict):
@@ -1162,6 +1255,24 @@ def _eval_one_batch(
                 experiment_config=experiment_config,
                 length_control=length_control,
             )
+    hop_sec = experiment_config.dataset.hop_sec
+    tolerance_sec = experiment_config.run.tolerance_sec
+    teacher_ordered = report.get("ordered_onset_match")
+    if isinstance(teacher_ordered, dict):
+        report["null_baseline_counts"] = _null_baseline_block(
+            batch_np,
+            n_pred=int(teacher_ordered["n_pred"]),
+            tolerance_sec=tolerance_sec,
+            hop_sec=hop_sec,
+        )
+    ar_block = report.get("ar_decode")
+    if isinstance(ar_block, dict):
+        ar_block["null_baseline_counts"] = _null_baseline_block(
+            batch_np,
+            n_pred=int(ar_block.get("n_pred_onsets", 0)),
+            tolerance_sec=tolerance_sec,
+            hop_sec=hop_sec,
+        )
     abs_err = report.get("_abs_err_ms")
     residual_err = report.get("_residual_err_ms")
     for key in list(report):
@@ -1235,6 +1346,17 @@ def _aggregate_split_reports(
         "residual_error_ms": _percentile_stats(residual_all),
         "songs": public_songs,
     }
+    teacher_nulls = [
+        r["null_baseline_counts"]
+        for r in public_songs
+        if isinstance(r.get("null_baseline_counts"), list)
+    ]
+    if teacher_nulls:
+        report["null_baseline"] = _aggregate_null_baselines(
+            teacher_nulls,  # type: ignore[arg-type]
+            model_event_f1=float(teacher_f1["event_f1"]),
+            model_timing_match=float(teacher_ordered["rate"]),
+        )
     if ar_decode:
         ar_rows = [
             r["ar_decode"] for r in public_songs if isinstance(r.get("ar_decode"), dict)
@@ -1273,6 +1395,17 @@ def _aggregate_split_reports(
         )
         if control is not None:
             ar_block["length_control"] = control
+        ar_nulls = [
+            r["null_baseline_counts"]
+            for r in ar_rows
+            if isinstance(r.get("null_baseline_counts"), list)
+        ]
+        if ar_nulls:
+            ar_block["null_baseline"] = _aggregate_null_baselines(
+                ar_nulls,  # type: ignore[arg-type]
+                model_event_f1=float(ar_f1["event_f1"]),
+                model_timing_match=float(ar_ordered["rate"]),
+            )
         report["ar_decode"] = ar_block
     return report
 
