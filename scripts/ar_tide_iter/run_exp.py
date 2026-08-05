@@ -44,7 +44,7 @@ from training_log import (  # noqa: E402
 ITER_DIR = REPO / "logs" / "ar_tide_iter"
 LOG_MD = ITER_DIR / "ITER_LOG.md"
 RESULTS_JSONL = ITER_DIR / "results.jsonl"
-DEBUG = REPO / "scripts" / "debug_ar_onset_overfit.py"
+DEBUG = REPO / "scripts" / "eval_ar_onset_offline.py"
 TRAIN = REPO / "scripts" / "train_onset_ar.py"
 PY = REPO / "venv" / "Scripts" / "python.exe"
 DOC_LOG = REPO / "docs" / "research" / "AR_TIDE_OVERFIT_ITER_LOG.md"
@@ -423,7 +423,9 @@ def main() -> int:
                 return 1
 
         print(f"[{args.id}] eval teacher-fed")
-        teacher_report = _eval(config, model_path, ar_decode=False, gpu_lock_held=lock_held)
+        teacher_report = _eval(
+            config, model_path, ar_decode=False, gpu_lock_held=lock_held
+        )
         teacher = teacher_report.get("ordered_onset_match", {})
         t_str = f"{teacher.get('n_matched')}/{teacher.get('n_denom')} ({teacher.get('rate'):.4f})"
         event_f1 = float(teacher_report.get("event_f1", 0.0))

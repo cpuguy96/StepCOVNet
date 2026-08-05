@@ -10,9 +10,9 @@
 
 | Situation | Run |
 | --------- | --- |
-| AR tide overfit finished (or mid-run spot check) | `debug_ar_onset_overfit.py --ar_decode` |
-| AR multi-song val (or train) offline | `debug_ar_onset_overfit.py --split val --ar_decode` |
-| AR teacher-fed only (fast) | `debug_ar_onset_overfit.py` (no `--ar_decode`) |
+| AR tide overfit finished (or mid-run spot check) | `eval_ar_onset_offline.py --ar_decode` |
+| AR multi-song val (or train) offline | `eval_ar_onset_offline.py --split val --ar_decode` |
+| AR teacher-fed only (fast) | `eval_ar_onset_offline.py` (no `--ar_decode`) |
 | Dense model on val manifest | `eval_dense_onset.py` |
 | Event model smoke | `eval_onset_event_f1.py` |
 | Spectral-flux baseline | `eval_spectral_flux_onset.py` |
@@ -42,10 +42,10 @@ Also report `micro_event_f1` for detection-style comparison.
 
 ---
 
-## AR onset — `debug_ar_onset_overfit.py`
+## AR onset — `eval_ar_onset_offline.py`
 
 ```text
-venv\Scripts\python.exe scripts/debug_ar_onset_overfit.py \
+venv\Scripts\python.exe scripts/eval_ar_onset_offline.py \
   --config configs/ar/tide_overfit.json \
   --model_path models_wsl/ar/tide_overfit/ar_onset_model.keras \
   --ar_decode
@@ -181,7 +181,7 @@ Canonical implementation: [`src/stepcovnet/timing_match.py`](../../src/stepcovne
 ```mermaid
 flowchart TD
   T[Training finishes] --> C[Checkpoint saved on val_overfit_gate]
-  C --> D[debug_ar_onset_overfit.py --ar_decode]
+  C --> D[eval_ar_onset_offline.py --ar_decode]
   D --> G{Free-run timing_match == 1.0?}
   G -->|yes| P[PASS — tide overfit]
   G -->|no| F[FAIL — inspect worst_onsets, EOS, chart aux]

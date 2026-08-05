@@ -16,7 +16,7 @@ _SCRIPTS = REPO / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import debug_ar_onset_overfit as debug  # noqa: E402
+import eval_ar_onset_offline as debug  # noqa: E402
 
 
 class ArDecodeGateMetricsTest(unittest.TestCase):
@@ -54,6 +54,60 @@ class ArDecodeGateMetricsTest(unittest.TestCase):
         target, chart = debug._onset_reference_times(batch)
         np.testing.assert_allclose(target, [0.1, 0.2, 0.4])
         np.testing.assert_allclose(chart, [0.11, 0.21, 0.31])
+
+
+class TeacherPreflightGateTest(unittest.TestCase):
+    def test_overfit_requires_perfect_teacher(self) -> None:
+        report = {
+            "ordered_onset_match": {
+                "n_matched": 633,
+                "n_denom": 634,
+                "rate": 633 / 634,
+            },
+        }
+        passed, reason = debug._teacher_gate_passes(report, split="overfit")
+        self.assertFalse(passed)
+        self.assertIn("not perfect", reason)
+
+        report["ordered_onset_match"] = {
+            "n_matched": 634,
+            "n_denom": 634,
+            "rate": 1.0,
+        }
+        passed, _ = debug._teacher_gate_passes(report, split="overfit")
+        self.assertTrue(passed)
+
+    def test_val_skips_when_timing_and_null_skill_are_bad(self) -> None:
+        report = {
+            "ordered_onset_match": {
+                "n_matched": 0,
+                "n_denom": 380,
+                "rate": 0.0,
+            },
+            "null_baseline": {
+                "skill_timing_match": -0.11,
+                "skill_event_f1": -0.08,
+            },
+        }
+        passed, reason = debug._teacher_gate_passes(report, split="val")
+        self.assertFalse(passed)
+        self.assertIn("below min", reason)
+
+    def test_val_passes_on_positive_null_skill(self) -> None:
+        report = {
+            "ordered_onset_match": {
+                "n_matched": 1,
+                "n_denom": 380,
+                "rate": 1 / 380,
+            },
+            "null_baseline": {
+                "skill_timing_match": 0.02,
+                "skill_event_f1": -0.08,
+            },
+        }
+        passed, reason = debug._teacher_gate_passes(report, split="val")
+        self.assertTrue(passed)
+        self.assertEqual(reason, "")
 
 
 if __name__ == "__main__":

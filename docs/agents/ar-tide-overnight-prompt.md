@@ -66,7 +66,7 @@ Same as champion — **offline AR decode only** (~0.5s val/epoch during training
 - **No in-loop free-run decode** during training (removed `ArDecodeValidationCallback`)
 - **Checkpoint on teacher:** `checkpoint_metric: val_overfit_gate`
 - **Early stop on teacher:** `perfect_overfit_early_stop: true`, `perfect_overfit_min_score: 0.999`, `patience: 5`
-- **Offline eval** (`debug_ar_onset_overfit.py --ar_decode`) after every run; on session bests before graduate/declare pass
+- **Offline eval** (`eval_ar_onset_offline.py --ar_decode`) after every run; on session bests before graduate/declare pass
 
 ### Experiment budget
 
@@ -162,7 +162,7 @@ Run `run_exp.py` in the **foreground** terminal if you want live epoch lines; ba
 **Offline confirmation:**
 
 ```text
-venv\Scripts\python.exe scripts/debug_ar_onset_overfit.py ^
+venv\Scripts\python.exe scripts/eval_ar_onset_offline.py ^
     --config logs/ar_tide_iter/configs/iter31.json ^
     --model_path models_wsl/ar/tide_overfit_iter/iter31/ar_onset_model.keras ^
     --ar_decode --json-only

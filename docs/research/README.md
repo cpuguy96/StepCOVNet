@@ -11,7 +11,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 | [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md)                       | **Target pipeline** — PRE → MODEL → POST → METRICS → feedback |
 | [ONSET_METRICS.md](ONSET_METRICS.md)                                       | **Onset metrics** — `timing_match` (primary), Hungarian F1 (aux), gates |
 | [ONSET_METRICS_TRAINING.md](ONSET_METRICS_TRAINING.md)                     | **Training logs** — what `fit()` prints each epoch (AR / event / dense) |
-| [ONSET_METRICS_EVALUATION.md](ONSET_METRICS_EVALUATION.md)               | **Offline eval** — `debug_ar_onset_overfit.py`, `eval_dense_onset.py`, pass bars |
+| [ONSET_METRICS_EVALUATION.md](ONSET_METRICS_EVALUATION.md)               | **Offline eval** — `eval_ar_onset_offline.py`, `eval_dense_onset.py`, pass bars |
 | [ONSET_METRICS_NAMING.md](ONSET_METRICS_NAMING.md)                         | **Naming convention** — `gate_*`, `timing_match_*`, `aux_*`, legacy aliases |
 | [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md)                             | **Recreate `final_data`** — SMO download links → prep → manifest → MERT |
 | [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md)                       | **Raw simfile → `final_data`** — prep phases P0–P9 (complete) |

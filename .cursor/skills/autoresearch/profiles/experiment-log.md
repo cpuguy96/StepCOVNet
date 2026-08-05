@@ -37,7 +37,7 @@ User goal or standard script from [project layout](../../../../docs/agents/proje
 | --------------- | ----------------------------------------------- |
 | AR train        | `scripts/train_onset_ar.py` + WSL               |
 | Dense ablations | [tide-ablations](../../tide-ablations/SKILL.md) |
-| AR debug eval   | `scripts/debug_ar_onset_overfit.py`             |
+| AR debug eval   | `scripts/eval_ar_onset_offline.py`             |
 
 ## Log
 

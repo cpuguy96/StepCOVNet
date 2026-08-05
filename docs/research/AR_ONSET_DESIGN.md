@@ -450,7 +450,7 @@ python scripts/train_onset_ar.py --config configs/ar/tide_overfit.json --verify-
 Diagnose a saved checkpoint (dispatches to WSL when needed):
 
 ```bash
-python scripts/debug_ar_onset_overfit.py \
+python scripts/eval_ar_onset_offline.py \
   --config configs/ar/tide_overfit.json \
   --model_path models_wsl/ar/tide_overfit/ar_onset_model.keras
 ```
@@ -503,7 +503,7 @@ python scripts/debug_ar_onset_overfit.py \
 
 **Status:** **PASS** ([EXP-20260627-04](EXPERIMENT_LOG.md#exp-20260627-04-ar-gate-tide-overfit-pass-wsl-300ep)). Teacher-fed `val_event_onset_f1` **1.0** on tide (634/634 within 20 ms). Checkpoint: `models_wsl/ar/gate_tide_overfit/ar_onset_model.keras` (informal alias **`gate_v5`**); log `logs/ar_tide_overfit_gate_v5.log`.
 
-**Tide batch:** 634 onsets, 1607 encoder patches, vocab **339**, decoder length **635**. Tests: `tests/onset_ar/`; diagnose: `scripts/debug_ar_onset_overfit.py`.
+**Tide batch:** 634 onsets, 1607 encoder patches, vocab **339**, decoder length **635**. Tests: `tests/onset_ar/`; diagnose: `scripts/eval_ar_onset_offline.py`.
 
 #### Failure history (EXP-20260627-02)
 
@@ -546,7 +546,7 @@ Intermediate: `gate_v4` reached F1 **~0.83** with ramp only — debug showed **0
 **Offline AR decode (2026-06-28):** Set `ar_decode_val_every_n_epochs: 0` to skip `ArDecodeValidationCallback` during training (~0.5s val/epoch). Run free-run gate check after training:
 
 ```text
-python scripts/debug_ar_onset_overfit.py --config configs/ar/decode/v2.json --model_path models_wsl/.../ar_onset_model.keras --ar_decode
+python scripts/eval_ar_onset_offline.py --config configs/ar/decode/v2.json --model_path models_wsl/.../ar_onset_model.keras --ar_decode
 ```
 
 Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
@@ -565,7 +565,7 @@ Or `scripts/benchmark_ar_kv_decode.py` for timing-only comparison.
 
 | Metric | In-training | Offline gate | Role |
 | ------ | ----------- | ------------ | ---- |
-| `val_ordered_onset_match` | yes | `debug_ar_onset_overfit.py` teacher block | **Primary** — per-step `@ 20 ms` vs **`target_times`** |
+| `val_ordered_onset_match` | yes | `eval_ar_onset_offline.py` teacher block | **Primary** — per-step `@ 20 ms` vs **`target_times`** |
 | `val_ar_decode_ordered_onset_match` | optional (slow) | `--ar_decode` top-level `ordered_onset_match` | **Primary** free-run vs **`target_times`** |
 | `chart_ordered_onset_match` | — | `--ar_decode` aux block | **Aux** — vs raw chart `gt_times` |
 | `val_overfit_gate` | `min(token_acc, ordered_match)` | — | Checkpoint on perfect-overfit configs |

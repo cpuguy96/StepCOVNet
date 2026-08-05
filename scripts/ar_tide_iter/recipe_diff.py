@@ -26,7 +26,7 @@ FIXED_EVAL_METRICS = {
         "teacher-fed ordered_onset_match @ 1.0 before --ar_decode"
     ),
     "training_checkpoint_metric": "val_overfit_gate",
-    "offline_eval_script": "scripts/debug_ar_onset_overfit.py --ar_decode --json-only",
+    "offline_eval_script": "scripts/eval_ar_onset_offline.py --ar_decode --json-only",
     "reported_training_val_keys": [
         "val_overfit_gate",
         "val_ordered_onset_match",

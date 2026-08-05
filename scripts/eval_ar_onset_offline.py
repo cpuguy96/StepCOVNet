@@ -1,16 +1,20 @@
-"""Diagnose AR onset checkpoints (per-onset timing errors).
+"""Offline evaluation for AR onset checkpoints (teacher-fed and optional free-run).
+
+Scores saved models on a single overfit song or a train/val manifest split:
+ordered timing match (primary), Hungarian F1 (aux), null-baseline skill, and
+optional two-pass free-run decode with EOS trace.
 
 Usage:
-    python scripts/debug_ar_onset_overfit.py --config configs/ar/tide_overfit.json
-    python scripts/debug_ar_onset_overfit.py \\
+    python scripts/eval_ar_onset_offline.py --config configs/ar/tide_overfit.json
+    python scripts/eval_ar_onset_offline.py \\
         --config configs/ar/tide_overfit.json --ar_decode
-    python scripts/debug_ar_onset_overfit.py \\
-        --config configs/ar/scale_200t_50v.json --split val --ar_decode
-    python scripts/debug_ar_onset_overfit.py \\
+    python scripts/eval_ar_onset_offline.py \\
+        --config configs/ar/ladder_50t_50v.json --split val --ar_decode
+    python scripts/eval_ar_onset_offline.py \\
         --config configs/ar/versions/tide_overfit/v3.json \\
         --model_path models_wsl/ar/perfect_overfit/run2/ar_onset_model.keras \\
         --ar_decode
-    python scripts/debug_ar_onset_overfit.py \\
+    python scripts/eval_ar_onset_offline.py \\
         --config configs/ar/tide_overfit.json --ar_decode --full-diagnostics
 
 With ``--ar_decode``, top-level ``ar_decode.ordered_onset_match`` uses **two-pass**
@@ -23,13 +27,17 @@ probability summary). ``--ar_decode_eos_logit_bias`` and
 ``--ar_decode_min_onset_tokens`` constrain when the decoder may stop, so an
 under-generating checkpoint can be probed without retraining:
 
-    python scripts/debug_ar_onset_overfit.py \\
+    python scripts/eval_ar_onset_offline.py \\
         --config configs/ar/scale_200t_50v.json --split val --ar_decode \\
         --ar_decode_min_onset_tokens 400
 
-``--split train|val`` evaluates every valid sample in that manifest split and
-reports micro-averaged ``ordered_onset_match`` / Hungarian F1 (plus optional
-free-run). ``--split overfit`` (default) keeps the single-song overfit path.
+``--split train|val`` micro-averages metrics over the manifest split.
+``--split overfit`` (default) evaluates the config's single overfit song.
+
+With ``--ar_decode`` on multi-song splits, teacher-fed metrics are computed
+first; free-run is **skipped** when the teacher gate fails (near-zero timing
+match and no positive null skill). Use ``--force-ar-decode`` to run free-run
+anyway. Overfit runs require a perfect teacher gate (same bar as tide iter).
 
 Human-readable progress and a completion summary go to **stderr**; full JSON stays
 on **stdout** (pipe-friendly).
@@ -46,7 +54,7 @@ import time
 
 from stepcovnet import wsl_gpu
 
-SCRIPT_REL = "scripts/debug_ar_onset_overfit.py"
+SCRIPT_REL = "scripts/eval_ar_onset_offline.py"
 
 wsl_gpu.bootstrap_gpu_script(SCRIPT_REL)
 
@@ -64,8 +72,11 @@ from stepcovnet.onset_ar import (
     trainers,
 )
 
+TEACHER_PERFECT_EPS = 1e-9
+DEFAULT_MIN_TEACHER_RATE = 0.01
+
 PARSER = argparse.ArgumentParser(
-    description="Debug AR onset checkpoint (overfit or split)."
+    description="Offline AR onset checkpoint eval (teacher-fed and optional free-run)."
 )
 PARSER.add_argument(
     "--config",
@@ -135,6 +146,24 @@ PARSER.add_argument(
     help=(
         "Suppress <EOS> during free-run decode until this many onset tokens "
         "have been emitted (with --ar_decode)."
+    ),
+)
+PARSER.add_argument(
+    "--force-ar-decode",
+    action="store_true",
+    help=(
+        "With --ar_decode, run free-run even when the teacher-fed preflight gate "
+        "fails (overfit: not perfect; val/train: low timing_match / negative null skill)."
+    ),
+)
+PARSER.add_argument(
+    "--min-teacher-rate",
+    type=float,
+    default=0.01,
+    help=(
+        "With --split val|train and --ar_decode, minimum micro-averaged teacher "
+        "timing_match rate before free-run (default 0.01). Ignored when null skill "
+        "is positive."
     ),
 )
 PARSER.add_argument(
@@ -260,6 +289,65 @@ def _ordered_onset_report(
         "n_denom": int(report["n_denom"]),
         "rate": float(report["rate"]),
     }
+
+
+def _teacher_ordered_block(report: dict[str, object]) -> dict[str, object] | None:
+    block = report.get(mn.TIMING_MATCH_TEACHER, report.get("ordered_onset_match"))
+    return block if isinstance(block, dict) else None
+
+
+def _teacher_gate_passes(
+    report: dict[str, object],
+    *,
+    split: str,
+    min_teacher_rate: float = DEFAULT_MIN_TEACHER_RATE,
+) -> tuple[bool, str]:
+    """Return whether teacher-fed metrics justify an expensive free-run decode."""
+    ordered = _teacher_ordered_block(report)
+    if ordered is None:
+        return False, "missing teacher ordered_onset_match"
+
+    n_matched = int(ordered.get("n_matched", 0))
+    n_denom = int(ordered.get("n_denom", 0))
+    rate = float(ordered.get("rate", 0.0))
+    summary = f"{n_matched}/{n_denom} ({rate:.4f})"
+
+    if split == "overfit":
+        if n_denom > 0 and n_matched == n_denom and rate >= 1.0 - TEACHER_PERFECT_EPS:
+            return True, ""
+        return False, f"teacher ordered gate not perfect ({summary})"
+
+    null_block = report.get("null_baseline")
+    if isinstance(null_block, dict):
+        for key in ("skill_timing_match", "skill_event_f1"):
+            skill = null_block.get(key)
+            if skill is not None and float(skill) > 0.0:
+                return True, ""
+
+    if n_denom > 0 and rate >= min_teacher_rate:
+        return True, ""
+
+    skill_tm = (
+        null_block.get("skill_timing_match") if isinstance(null_block, dict) else None
+    )
+    skill_f1 = (
+        null_block.get("skill_event_f1") if isinstance(null_block, dict) else None
+    )
+    return False, (
+        f"teacher timing_match {summary} below min {min_teacher_rate:.4f} "
+        f"and null skill not positive "
+        f"(skill_timing_match={skill_tm}, skill_event_f1={skill_f1})"
+    )
+
+
+def _mark_ar_decode_skipped(
+    report: dict[str, object],
+    *,
+    reason: str,
+) -> None:
+    report["teacher_gate_failed"] = True
+    report["ar_decode_skipped"] = True
+    report["teacher_gate_reason"] = reason
 
 
 def _onset_reference_times(
@@ -711,7 +799,10 @@ def _print_debug_summary(
     )
     _print_teacher_summary(report, tolerance_sec=tolerance_sec, quiet=quiet)
     _log_null_baseline(report.get("null_baseline"), quiet=quiet)
-    if ar_decode:
+    if report.get("ar_decode_skipped"):
+        reason = report.get("teacher_gate_reason", "teacher gate failed")
+        _log(f"Free-run skipped: {reason}", quiet=quiet)
+    elif ar_decode:
         ar_block = report.get("ar_decode")
         if isinstance(ar_block, dict):
             _print_ar_decode_summary(
@@ -1238,23 +1329,16 @@ def _eval_one_batch(
     report = _diagnose_batch(outputs, batch_np, experiment_config=experiment_config)
     report["worst_onsets"] = _worst_onsets(report, worst_k)
     if ar_decode:
-        if full_diagnostics:
-            report["ar_decode"] = _ar_decode_report(
-                model,
-                batch_np,
-                experiment_config=experiment_config,
-                token_trace_steps=token_trace_steps,
-                time_source=ar_decode_time_source,
-                compare_time_sources=True,
-                length_control=length_control,
-            )
-        else:
-            report["ar_decode"] = _ar_decode_gate_only_report(
-                model,
-                batch_np,
-                experiment_config=experiment_config,
-                length_control=length_control,
-            )
+        _attach_ar_decode_to_report(
+            report,
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            full_diagnostics=full_diagnostics,
+            token_trace_steps=token_trace_steps,
+            ar_decode_time_source=ar_decode_time_source,
+            length_control=length_control,
+        )
     hop_sec = experiment_config.dataset.hop_sec
     tolerance_sec = experiment_config.run.tolerance_sec
     teacher_ordered = report.get("ordered_onset_match")
@@ -1287,6 +1371,46 @@ def _eval_one_batch(
                 dtype=np.float64,
             ).tolist()
     return report
+
+
+def _attach_ar_decode_to_report(
+    report: dict[str, object],
+    model: tf.keras.Model,
+    batch_np: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+    full_diagnostics: bool,
+    token_trace_steps: int,
+    ar_decode_time_source: str,
+    length_control: inference.ArLengthControl | None = None,
+) -> None:
+    if full_diagnostics:
+        report["ar_decode"] = _ar_decode_report(
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            token_trace_steps=token_trace_steps,
+            time_source=ar_decode_time_source,
+            compare_time_sources=True,
+            length_control=length_control,
+        )
+    else:
+        report["ar_decode"] = _ar_decode_gate_only_report(
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            length_control=length_control,
+        )
+    hop_sec = experiment_config.dataset.hop_sec
+    tolerance_sec = experiment_config.run.tolerance_sec
+    ar_block = report.get("ar_decode")
+    if isinstance(ar_block, dict):
+        ar_block["null_baseline_counts"] = _null_baseline_block(
+            batch_np,
+            n_pred=int(ar_block.get("n_pred_onsets", 0)),
+            tolerance_sec=tolerance_sec,
+            hop_sec=hop_sec,
+        )
 
 
 def _aggregate_split_reports(
@@ -1417,6 +1541,8 @@ def _eval_split(
     split: str,
     limit: int,
     ar_decode: bool,
+    force_ar_decode: bool,
+    min_teacher_rate: float,
     quiet: bool,
     worst_k: int,
     length_control: inference.ArLengthControl | None = None,
@@ -1426,8 +1552,10 @@ def _eval_split(
     samples = _list_split_samples(experiment_config, split=split, limit=limit)
     if not samples:
         raise ValueError(f"No valid AR samples for split={split!r}")
-    mode = "teacher+free-run" if ar_decode else "teacher-fed"
-    _log(f"Evaluating {len(samples)} {split} songs ({mode})...", quiet=quiet)
+    _log(
+        f"Evaluating {len(samples)} {split} songs (teacher-fed)...",
+        quiet=quiet,
+    )
     song_reports: list[dict[str, object]] = []
     for i, (audio_path, chart_path, chart_index) in enumerate(samples, start=1):
         label = f"{pathlib.Path(chart_path).name}#{chart_index}"
@@ -1438,18 +1566,11 @@ def _eval_split(
             chart_path,
             chart_index,
         )
-        if difficulty_tier and ar_decode:
-            _apply_customer_density_tier(
-                batch_np,
-                experiment_config=experiment_config,
-                difficulty_tier=difficulty_tier,
-                density_presets_path=density_presets_path,
-            )
         song = _eval_one_batch(
             model,
             batch_np,
             experiment_config=experiment_config,
-            ar_decode=ar_decode,
+            ar_decode=False,
             full_diagnostics=False,
             token_trace_steps=0,
             ar_decode_time_source="pointer_residual",
@@ -1457,10 +1578,6 @@ def _eval_split(
             keep_error_arrays=True,
             length_control=length_control,
         )
-        song["audio_path"] = audio_path
-        song["chart_path"] = chart_path
-        song["chart_index"] = chart_index
-        song["label"] = label
         teacher = song.get("ordered_onset_match", {})
         assert isinstance(teacher, dict)
         _log(
@@ -1469,20 +1586,78 @@ def _eval_split(
             f"rate={float(teacher.get('rate', 0.0)):.4f}",
             quiet=quiet,
         )
-        if ar_decode:
-            ar_block = song.get("ar_decode")
-            if isinstance(ar_block, dict):
-                ordered = ar_block.get("ordered_onset_match", {})
-                assert isinstance(ordered, dict)
-                _log(
-                    f"       free-run ordered "
-                    f"{int(ordered.get('n_matched', 0))}/"
-                    f"{int(ordered.get('n_denom', 0))} "
-                    f"rate={float(ordered.get('rate', 0.0)):.4f}",
-                    quiet=quiet,
-                )
+        song["audio_path"] = audio_path
+        song["chart_path"] = chart_path
+        song["chart_index"] = chart_index
+        song["label"] = label
         song_reports.append(song)
-    return _aggregate_split_reports(song_reports, ar_decode=ar_decode)
+
+    report = _aggregate_split_reports(song_reports, ar_decode=False)
+    if not ar_decode:
+        return report
+
+    passed, reason = _teacher_gate_passes(
+        report,
+        split=split,
+        min_teacher_rate=min_teacher_rate,
+    )
+    if not passed and not force_ar_decode:
+        _mark_ar_decode_skipped(report, reason=reason)
+        _log(f"Skipping free-run: {reason}", quiet=quiet)
+        return report
+
+    if passed:
+        _log("Teacher gate passed; running free-run...", quiet=quiet)
+    else:
+        _log(
+            f"Teacher gate failed ({reason}); running free-run anyway "
+            f"(--force-ar-decode)",
+            quiet=quiet,
+        )
+    report["teacher_gate_passed"] = passed
+
+    for i, ((audio_path, chart_path, chart_index), song) in enumerate(
+        zip(samples, song_reports, strict=True),
+        start=1,
+    ):
+        label = f"{pathlib.Path(chart_path).name}#{chart_index}"
+        _log(f"  [{i}/{len(samples)}] {label} (free-run)", quiet=quiet)
+        batch_np = _load_split_batch(
+            experiment_config,
+            audio_path,
+            chart_path,
+            chart_index,
+        )
+        if difficulty_tier:
+            _apply_customer_density_tier(
+                batch_np,
+                experiment_config=experiment_config,
+                difficulty_tier=difficulty_tier,
+                density_presets_path=density_presets_path,
+            )
+        _attach_ar_decode_to_report(
+            song,
+            model,
+            batch_np,
+            experiment_config=experiment_config,
+            full_diagnostics=False,
+            token_trace_steps=0,
+            ar_decode_time_source="pointer_residual",
+            length_control=length_control,
+        )
+        ar_block = song.get("ar_decode")
+        if isinstance(ar_block, dict):
+            ordered = ar_block.get("ordered_onset_match", {})
+            assert isinstance(ordered, dict)
+            _log(
+                f"       free-run ordered "
+                f"{int(ordered.get('n_matched', 0))}/"
+                f"{int(ordered.get('n_denom', 0))} "
+                f"rate={float(ordered.get('rate', 0.0)):.4f}",
+                quiet=quiet,
+            )
+
+    return _aggregate_split_reports(song_reports, ar_decode=True)
 
 
 def main() -> int:
@@ -1538,13 +1713,6 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
 
     if args.split == "overfit":
         _log("Running teacher-fed eval...", quiet=quiet)
-        if args.ar_decode and args.full_diagnostics:
-            _log(
-                "Running free-run AR decode (two-pass, full diagnostics)...",
-                quiet=quiet,
-            )
-        elif args.ar_decode:
-            _log("Running free-run AR gate (two-pass)...", quiet=quiet)
         batch_np = datasets.sample_to_training_batch(
             datasets.load_overfit_sample(experiment_config),
             experiment_config,
@@ -1560,13 +1728,45 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             model,
             batch_np,
             experiment_config=experiment_config,
-            ar_decode=args.ar_decode,
-            full_diagnostics=args.full_diagnostics,
+            ar_decode=False,
+            full_diagnostics=False,
             token_trace_steps=args.token_trace_steps,
             ar_decode_time_source=args.ar_decode_time_source,
             worst_k=args.worst_k,
             length_control=length_control,
         )
+        if args.ar_decode:
+            passed, reason = _teacher_gate_passes(report, split="overfit")
+            if not passed and not args.force_ar_decode:
+                _mark_ar_decode_skipped(report, reason=reason)
+                _log(f"Skipping free-run: {reason}", quiet=quiet)
+            else:
+                if passed:
+                    _log("Teacher gate passed; running free-run...", quiet=quiet)
+                else:
+                    _log(
+                        f"Teacher gate failed ({reason}); running free-run anyway "
+                        f"(--force-ar-decode)",
+                        quiet=quiet,
+                    )
+                if args.full_diagnostics:
+                    _log(
+                        "Running free-run AR decode (two-pass, full diagnostics)...",
+                        quiet=quiet,
+                    )
+                else:
+                    _log("Running free-run AR gate (two-pass)...", quiet=quiet)
+                _attach_ar_decode_to_report(
+                    report,
+                    model,
+                    batch_np,
+                    experiment_config=experiment_config,
+                    full_diagnostics=args.full_diagnostics,
+                    token_trace_steps=args.token_trace_steps,
+                    ar_decode_time_source=args.ar_decode_time_source,
+                    length_control=length_control,
+                )
+                report["teacher_gate_passed"] = passed
     else:
         report = _eval_split(
             model,
@@ -1574,6 +1774,8 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             split=args.split,
             limit=args.limit,
             ar_decode=args.ar_decode,
+            force_ar_decode=args.force_ar_decode,
+            min_teacher_rate=args.min_teacher_rate,
             quiet=quiet,
             worst_k=args.worst_k,
             length_control=length_control,
@@ -1602,6 +1804,8 @@ def _run_main(args: argparse.Namespace, *, quiet: bool) -> int:
             _log(f"Songs evaluated: {n_songs}", quiet=False)
         _log(f"Eval wall time: {elapsed_sec:.2f} s", quiet=False)
     print(json.dumps(report, indent=2))
+    if args.ar_decode and report.get("teacher_gate_failed"):
+        return 1
     return 0
 
 

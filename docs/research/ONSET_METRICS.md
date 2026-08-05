@@ -96,7 +96,7 @@ Order is **enforced at eval** by sorting both sides. AR decode is chronological 
 
 | Track           | Canonical name | Training / val log name             | Offline script                                       |
 | --------------- | -------------- | ----------------------------------- | ---------------------------------------------------- |
-| **AR**          | `timing_match` | `val_ordered_onset_match` (teacher) | `scripts/debug_ar_onset_overfit.py`                  |
+| **AR**          | `timing_match` | `val_ordered_onset_match` (teacher) | `scripts/eval_ar_onset_offline.py`                  |
 | **AR free-run** | `timing_match` | `val_ar_decode_ordered_onset_match` | same + `--ar_decode` (gate default; `--full-diagnostics` for slow extras) |
 | **Dense**       | `timing_match` | `val_timing_match` (callback)       | `scripts/eval_dense_onset.py` → `micro_timing_match` |
 | **Event**       | `timing_match` | _(diagnostics only today)_          | `scripts/debug_onset_overfit.py`                     |
@@ -164,7 +164,7 @@ kind, floor = onset_null_baseline.strongest_null(floors)
 skill = onset_null_baseline.skill_over_null(model_f1, floor)  # <= 0 means no skill
 ```
 
-`scripts/debug_ar_onset_overfit.py` computes this automatically for teacher and free-run blocks: stderr shows `Null F1 @ matched count` and `Skill over strongest null`, and the JSON carries `null_baseline`.
+`scripts/eval_ar_onset_offline.py` computes this automatically for teacher and free-run blocks: stderr shows `Null F1 @ matched count` and `Skill over strongest null`, and the JSON carries `null_baseline`.
 
 ---
 

@@ -21,7 +21,7 @@ CHAMPION_CONFIG = REPO_ROOT / "configs/ar/tide_overfit.json"
 CHAMPION_MANIFEST = REPO_ROOT / "configs/ar/tide_overfit.manifest.json"
 CHAMPION_MODEL_DIR = REPO_ROOT / "models_wsl/ar/tide_overfit"
 CHAMPION_MODEL = CHAMPION_MODEL_DIR / "ar_onset_model.keras"
-DEBUG_SCRIPT = REPO_ROOT / "scripts/debug_ar_onset_overfit.py"
+DEBUG_SCRIPT = REPO_ROOT / "scripts/eval_ar_onset_offline.py"
 
 
 def _parse_args() -> argparse.Namespace:

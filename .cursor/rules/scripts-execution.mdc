@@ -26,10 +26,10 @@ if ($code -ne 0) { exit $code }
 `1> logs/out.json 2>&1 | Tee-Object ...` or `> logs/out.log 2>&1 | Tee-Object ...`.
 Stdout is bound to the file **before** the pipeline, so Tee (and the Cursor terminal) receive nothing — progress vanishes into the file only. That violates visible-console even if a log path looks correct.
 
-For scripts that split **JSON on stdout** / **progress on stderr** (e.g. `debug_ar_onset_overfit.py`):
+For scripts that split **JSON on stdout** / **progress on stderr** (e.g. `eval_ar_onset_offline.py`):
 
 ```powershell
-& venv\Scripts\python.exe scripts/debug_ar_onset_overfit.py <args> `
+& venv\Scripts\python.exe scripts/eval_ar_onset_offline.py <args> `
   2>&1 | Tee-Object -FilePath logs/<topic>_<run>.log
 ```
 

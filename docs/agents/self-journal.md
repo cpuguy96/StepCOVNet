@@ -117,7 +117,7 @@ Insert **at the top** of [Entries](#entries) (below this section):
 | ---------------- | ----- |
 | **Timestamp**    | 2026-07-25 22:34:00 |
 | **Category**     | mistake |
-| **Summary**      | While force re-checking out `*.sh` to fix CRLF, I also clobbered uncommitted edits to `scripts/debug_ar_onset_overfit.py` and had to reapply the whole change from memory. `git checkout --` gives no prompt and no recovery. |
+| **Summary**      | While force re-checking out `*.sh` to fix CRLF, I also clobbered uncommitted edits to `scripts/eval_ar_onset_offline.py` and had to reapply the whole change from memory. `git checkout --` gives no prompt and no recovery. |
 | **Artifact**     | alwaysApply rule `.cursor/rules/state-and-paths.mdc` § Git on Windows (PowerShell) → **Destructive checkout** |
 | **Action taken** | Check `git status` and commit or stash before any `git checkout --` or renormalization pass |
 | **Related**      | JRN-20260725-02 |

@@ -50,7 +50,7 @@ venv\Scripts\python.exe scripts/ar_tide_iter/run_exp.py --build-all
 
 Primary metric: `ar_decode.ordered_onset_match` @ 20 ms tolerance (634 onsets).
 
-**Champion / iteration policy** (`configs/ar/tide_overfit.json`): offline AR decode only; `checkpoint_metric: val_overfit_gate`. Free-run gate via `debug_ar_onset_overfit.py --ar_decode` after each run. **Code changes require tests + pytest before GPU training.**
+**Champion / iteration policy** (`configs/ar/tide_overfit.json`): offline AR decode only; `checkpoint_metric: val_overfit_gate`. Free-run gate via `eval_ar_onset_offline.py --ar_decode` after each run. **Code changes require tests + pytest before GPU training.**
 
 ## Adding experiments
 

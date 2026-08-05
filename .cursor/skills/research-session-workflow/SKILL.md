@@ -23,7 +23,7 @@ Plan docs with JSON/schemas: [design-doc-fields.mdc](../../rules/design-doc-fiel
 
 ## Log experiment (`EXP-YYYYMMDD-NN`)
 
-**Same turn, no ask:** After any measurable run or offline eval (`debug_ar_onset_overfit.py`, `eval_dense_onset.py`, threshold sweep, training finish), prepend or update [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) in the **same session** — do not offer to log or wait for user confirmation.
+**Same turn, no ask:** After any measurable run or offline eval (`eval_ar_onset_offline.py`, `eval_dense_onset.py`, threshold sweep, training finish), prepend or update [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) in the **same session** — do not offer to log or wait for user confirmation.
 
 **Complete the series:** When a thread has multiple runs (run1, run2, v3, v4, offline `--ar_decode` logs under `logs/`), append **every** run’s key numbers to the same `EXP-…` entry in the session you discover them — not only the latest run and not vague “local v4” hand-waves.
 

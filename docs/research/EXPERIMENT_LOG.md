@@ -187,8 +187,8 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | ----- | ----- |
 | **Timestamp** | 2026-08-04 19:58:18 |
 | **Track** | `metric` + `post` (AR) |
-| **Question** | [EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke) measured the floor offline with a scratch script. Does the floor wired into `debug_ar_onset_overfit.py` reproduce it on a real checkpoint, on a real GPU decode, without hand-held bookkeeping? |
-| **Setup** | `debug_ar_onset_overfit.py --config configs/ar/ladder_200t_50v.json --split val --limit 12 --ar_decode` on WSL GPU. R2 is the highest-teacher-F1 rung ever trained. No retrain, no config change — only the new reporting path. 12 val songs, **8925** GT onsets. `logs/rescore_r2_null.log` |
+| **Question** | [EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke) measured the floor offline with a scratch script. Does the floor wired into `eval_ar_onset_offline.py` reproduce it on a real checkpoint, on a real GPU decode, without hand-held bookkeeping? |
+| **Setup** | `eval_ar_onset_offline.py --config configs/ar/ladder_200t_50v.json --split val --limit 12 --ar_decode` on WSL GPU. R2 is the highest-teacher-F1 rung ever trained. No retrain, no config change — only the new reporting path. 12 val songs, **8925** GT onsets. `logs/rescore_r2_null.log` |
 | **Teacher-fed** | Hungarian F1 **0.1886** (1683 TP / 7242 FP / 7242 FN). Null F1 at the same count: uniform **0.2257**, metronome **0.2696**, IOI-shuffle **0.2289**. **Skill over strongest null: F1 −0.1109, `timing_match` −0.0088** |
 | **Free-run** | Hungarian F1 **0.0009** (4 TP / 176 FP / 8921 FN), `n_pred` **180** vs `n_gt` **8925**. Nulls **0.0112 / 0.0156 / 0.0156**. **Skill: F1 −0.0150, `timing_match` −0.0027** |
 | **Order-aware** | `timing_match_teacher` **26/8925 = 0.0029**; `timing_match_ar_decode` **0/8925 = 0.0000**. Both **FAIL** against `target_times` and against the raw chart (**25/8925**) |
@@ -213,7 +213,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Order-aware metric is discriminative** | Same nulls under `timing_match`: **0.000–0.029** (floor ≈ 0). Measured val `timing_match_teacher` is **0.0026** (12/2877 on the 5-song probe) — also at the floor. Independent of the chance argument: val `pointer_loss` **15.6–18.6** nats vs **ln(~810 patches) ≈ 6.7** for uniform guessing, and `n_patch_wrong` **0.99–1.00** on all 50 songs with teacher-forced median timing error **1.1–73 s** |
 | **Not underfitting** | Train vs val at each run's best epoch: R2 **0.746 / 0.227**, R3 **0.529 / 0.199**, R2+density **0.736 / 0.227**, R3+density **0.539 / 0.206**; train token accuracy **0.98** vs val **0.37**; train `pointer_loss` **0.01–0.04**. The model fits training songs and transfers nothing |
 | **Artifacts** | `_tmp/ladder_debug/null_baseline.py` · `null_baseline.json` · `per_song_audit.py` · `train_val_gap.py` · `logs/ladder_null_baseline.log` · `logs/ladder_train_val_gap.log` · `logs/ladder_null_wiring_probe.log` |
-| **Conclusion** | **Supported.** No AR rung has ever cleared an audio-blind baseline on the frozen val set, so rung-to-rung deltas (0.178 → 0.227 → 0.199) and the density ablation ranking are not measurements of skill. Scale was never the binding problem. Fixes landed: `stepcovnet.onset_null_baseline` (floor + `skill_over_null`) wired into `debug_ar_onset_overfit.py`, and `timing_match_teacher` now published on multi-song runs so checkpoints can be selected on a near-zero-floor metric. **Do not** run R4, further EOS work, or more density variants until a rung shows positive skill |
+| **Conclusion** | **Supported.** No AR rung has ever cleared an audio-blind baseline on the frozen val set, so rung-to-rung deltas (0.178 → 0.227 → 0.199) and the density ablation ranking are not measurements of skill. Scale was never the binding problem. Fixes landed: `stepcovnet.onset_null_baseline` (floor + `skill_over_null`) wired into `eval_ar_onset_offline.py`, and `timing_match_teacher` now published on multi-song runs so checkpoints can be selected on a near-zero-floor metric. **Do not** run R4, further EOS work, or more density variants until a rung shows positive skill |
 
 ### EXP-20260804-02: R3 early-EOS is the scaling failure — length force recovers free-run
 
@@ -316,7 +316,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Timestamp** | 2026-08-02 13:07:26 |
 | **Track** | `metric` (AR) |
 | **Question** | On the same frozen 50-row val set, how do R2 (50t) and R3 (200t) free-run + `eos_trace` compare? |
-| **Setup** | Same decode recipe: `debug_ar_onset_overfit.py --split val --ar_decode`. R2: [EXP-20260802-03](#exp-20260802-03-ladder-r2-offline-val-free-run--eos_trace). R3: `configs/ar/ladder_200t_50v.json` · `models_wsl/ar/ladder_200t_50v/ar_onset_model.keras` · ~**3.4** min wall |
+| **Setup** | Same decode recipe: `eval_ar_onset_offline.py --split val --ar_decode`. R2: [EXP-20260802-03](#exp-20260802-03-ladder-r2-offline-val-free-run--eos_trace). R3: `configs/ar/ladder_200t_50v.json` · `models_wsl/ar/ladder_200t_50v/ar_onset_model.keras` · ~**3.4** min wall |
 | **Compare** | Same frozen val (50 songs). Teacher F1 **0.227** (R2) vs **0.199** (R3). Free-run F1 **0.132** vs **0.003**. Pred/GT **0.36** (12600/35439) vs **0.021** (750/35439). EOS: **50/50** stop @ **252** onsets (R2) vs @ **15** onsets / `len=17` (R3). `eos_trace` final ~**1.0** both; ge_half @ **252** vs **15** |
 | **Process exit** | Shell exit **1** from PowerShell stderr→NativeCommandError under `2>&1 \| Tee`; JSON completed |
 | **Artifacts** | `logs/ladder_r3_val_decode.log` · `logs/ladder_r3_val_decode_clean.json` · R2: `logs/ladder_r2_val_decode_clean.json` |
@@ -329,7 +329,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Timestamp** | 2026-08-02 12:59:54 |
 | **Track** | `metric` (AR) |
 | **Question** | On best ladder teacher (**R2**), does offline free-run hold on the frozen 50-row val set, and what does `eos_trace` look like? |
-| **Setup** | [`configs/ar/ladder_50t_50v.json`](../../configs/ar/ladder_50t_50v.json) · `models_wsl/ar/ladder_50t_50v/ar_onset_model.keras` · `debug_ar_onset_overfit.py --split val --ar_decode` · WSL GPU · ~**22.7** min wall |
+| **Setup** | [`configs/ar/ladder_50t_50v.json`](../../configs/ar/ladder_50t_50v.json) · `models_wsl/ar/ladder_50t_50v/ar_onset_model.keras` · `eval_ar_onset_offline.py --split val --ar_decode` · WSL GPU · ~**22.7** min wall |
 | **Teacher** | Hungarian F1 **0.2267** (matches train best **0.2266**). Ordered @ 20 ms vs `target_times`: **53/35439** (**0.0015**) — harsh gate still near-zero |
 | **Free-run** | Hungarian F1 **0.1319**; ordered **7/35962** (**0.00019**); **12600** pred / **35439** GT onsets (**pred/GT = 0.36**); TP/FP/FN **3167 / 9433 / 32272** |
 | **eos_trace** | **50/50** songs `stopped_on_eos`. Aggregate: first_mean **~4.9e-6**, final_mean **~1.0**, max_mean **~1.0**, `n_songs_ge_half` **50**. Every song: decode length **254**, **252** onset tokens, `first_step_ge_half` **252** — fixed-length stop, not song-adaptive (GT onsets range **69–1300**, mean **~709**; only **5/50** songs have GT ≤ 252) |
@@ -433,7 +433,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Timestamp** | 2026-07-24 23:02:12 |
 | **Track** | `post` + `metric` (AR) |
 | **Question** | Can free-run under-generation be probed offline without retraining, and what does `<EOS>` behavior look like on a checkpoint that does **not** collapse? |
-| **Tooling** | `inference.ArLengthControl` (`eos_logit_bias`, `min_onset_tokens`) threaded through both free-run paths (prefix loop and KV decode); `ArDecodeStats.eos_prob_trace` records per-step `<EOS>` probability **before** control is applied; `debug_ar_onset_overfit.py` gains `--ar_decode_eos_logit_bias` / `--ar_decode_min_onset_tokens` and an `ar_decode.eos_trace` report block (per song and split-aggregated) |
+| **Tooling** | `inference.ArLengthControl` (`eos_logit_bias`, `min_onset_tokens`) threaded through both free-run paths (prefix loop and KV decode); `ArDecodeStats.eos_prob_trace` records per-step `<EOS>` probability **before** control is applied; `eval_ar_onset_offline.py` gains `--ar_decode_eos_logit_bias` / `--ar_decode_min_onset_tokens` and an `ar_decode.eos_trace` report block (per song and split-aggregated) |
 | **Checkpoint** | `models_wsl/ar/tide_overfit/ar_onset_model.keras` (local 2026-07-02 retrain; **not** the graduated EXP-20260630-01 artifact — see caveat) |
 | **Baseline (no control)** | Teacher ordered **627/634** (0.9890) @ 20 ms vs `target_times`; free-run two-pass **622/634** (0.9811); chart aux **617/634**; Hungarian F1 **0.9795**. Decode length **636**, stopped on EOS. |
 | **EOS trace (baseline)** | first step **0.0001**, mean **0.0017** over 635 steps, max **0.9778**, first crosses 0.5 at step **634** — i.e. `<EOS>` stays near zero for the whole song and spikes exactly at the true end |
@@ -454,7 +454,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Question** | With early stopping on a 200-train / 50-val corrected-mask run, does best-`val_loss` transfer to offline teacher + free-run on the val split? |
 | **Config** | [`configs/ar/scale_200t_50v.json`](../../configs/ar/scale_200t_50v.json) — index `data/final_data/training_index_200t_50v.json`; `cache_in_memory` + `cache_max_samples: 250`; `epochs: 500`, `early_stopping_patience: 25`; `checkpoint_metric: val_loss`; `λ_inc=0`; corrected masks |
 | **Train** | WSL GPU **200/50** steps/ep; early stop **ep 65**, restored best **ep 40**. Best `val_loss` **~12.73**; at best: `val_aux_f1_hungarian` **~0.120**, `val_token_accuracy` **~0.50**. Steady ~**50–55 s**/ep with cache. |
-| **Offline eval** | `debug_ar_onset_overfit.py --split val --ar_decode` on `models_wsl/ar/scale_200t_50v_corrected_masks/ar_onset_model.keras` (**50** songs, ~**524 s**). Teacher: ordered **105/36860** @ 20 ms (`rate` **0.0028**); Hungarian F1 **0.1199** (matches train val). Free-run: ordered **1/36860**; Hungarian F1 **0.0360**; **3400** preds vs **36860** GT (`ar_decode_length_sum` **3500**; all **50** songs stopped on EOS). |
+| **Offline eval** | `eval_ar_onset_offline.py --split val --ar_decode` on `models_wsl/ar/scale_200t_50v_corrected_masks/ar_onset_model.keras` (**50** songs, ~**524 s**). Teacher: ordered **105/36860** @ 20 ms (`rate` **0.0028**); Hungarian F1 **0.1199** (matches train val). Free-run: ordered **1/36860**; Hungarian F1 **0.0360**; **3400** preds vs **36860** GT (`ar_decode_length_sum` **3500**; all **50** songs stopped on EOS). |
 | **Artifacts** | Model: `models_wsl/ar/scale_200t_50v_corrected_masks/ar_onset_model.keras`. Train log: `logs/ar_scale_200t_50v_corrected_masks.log`. Decode: `logs/ar_scale_200t_50v_val_decode_clean.json` (+ mixed `logs/ar_scale_200t_50v_val_decode.json`). |
 | **Conclusion** | **Partial.** Scaling train rows + ES improves `val_loss` vs 50t (**~20.9 → ~12.7**) and holds teacher Hungarian F1 ~**0.12**, but **free-run collapses** via early EOS / severe under-generation. Ordered `timing_match` remains near-zero (pointer-dominated). Blocker for **`gate-val-vs-dense`** is multi-song free-run length/quality, not more train songs alone. |
 
@@ -603,7 +603,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Log (run2)** | `logs/ar_tide_overfit_perfect_run2.log` — **14 ep** early stop (`perfect_overfit_early_stop`, gate **1.0** ep 12–14) |
 | **Model (run2)** | `models_wsl/ar_tide_overfit_perfect_v2/ar_onset_model.keras` |
 | **Run2 training** | Ep 2 dip (`val_overfit_gate` **~0.64**); recovered ep 12+: `val_token_accuracy` **1.0**, `val_event_onset_f1` **1.0**, `val_overfit_gate` **1.0** |
-| **Run2 offline (teacher)** | `debug_ar_onset_overfit.py` — event F1 **~1.0** (634/634 TP); **632/634** within 20 ms; mean abs err **5.09 ms**, max **23.67 ms** |
+| **Run2 offline (teacher)** | `eval_ar_onset_offline.py` — event F1 **~1.0** (634/634 TP); **632/634** within 20 ms; mean abs err **5.09 ms**, max **23.67 ms** |
 | **Run2 offline (`--ar_decode`)** | Two-pass AR F1 **0.978** (620 TP / 14 FP / 14 FN); decode length **636**, EOS OK; incremental pointer+residual F1 **0.957** |
 | **Config (run3)** | `configs/onset_ar_tide_overfit_perfect_run3.json` — warm-start v2; `lambda_residual: 10`, LR **5e-5**, **200 ep**, no perfect early stop |
 | **Log (run3)** | `logs/ar_tide_overfit_perfect_run3.log` — 200 ep |
@@ -646,7 +646,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Config** | `configs/onset_ar_tide.json`; `lambda_time=1.0`, `lambda_time_ramp_epochs=100`, `lambda_residual=5.0`, `token_class_weight=inverse_freq`, `dropout_rate=0`, argmax decode |
 | **Log** | `logs/ar_tide_overfit_gate_v5.log` |
 | **Model** | `models_wsl/ar_tide_overfit_gate_v5/ar_onset_model.keras` |
-| **Outcome** | Best/final `val_event_onset_f1` **1.0** (from ep ~180); `debug_ar_onset_overfit`: **634/634** within 20 ms, 0 patch errors |
+| **Outcome** | Best/final `val_event_onset_f1` **1.0** (from ep ~180); `eval_ar_onset_offline`: **634/634** within 20 ms, 0 patch errors |
 | **Conclusion** | Residual MSE (`lambda_residual=5`) required after pointer-only + λ ramp reached F1 ~0.83. Proceed to **`gate-ar-decode`**. |
 
 ### EXP-20260627-03: AR tide overfit training fixes (λ ramp ablation)

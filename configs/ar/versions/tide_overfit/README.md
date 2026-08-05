@@ -8,7 +8,7 @@ Frozen experiment recipes. **Do not edit** after a version ships; add `vN+1.json
 
 Whenever a version **beats the champion** on the primary metric, graduate it **in the same session**:
 
-1. Offline eval: `debug_ar_onset_overfit.py --config <candidate> --model_path <ckpt> --ar_decode`
+1. Offline eval: `eval_ar_onset_offline.py --config <candidate> --model_path <ckpt> --ar_decode`
 2. Compare **`ar_decode.ordered_onset_match.rate`** to [`tide_overfit.manifest.json`](../../tide_overfit.manifest.json) (higher wins; tie-break `n_matched`, then `n_denom` closer to 634).
 3. Run: `python scripts/graduate_ar_tide_overfit.py --config <candidate> --model-path <ckpt> --version-ref versions/tide_overfit/vN.json`
 4. Log EXP + add a row below if the version file is new.

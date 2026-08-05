@@ -73,7 +73,7 @@ Logit *k* is a learned output unit standing for **absolute patch index k**. It i
 
 | Fix | What |
 | --- | ---- |
-| Floor is now measured in-harness | `stepcovnet.onset_null_baseline` — audio-blind baselines at matched prediction count + `skill_over_null`; wired into `debug_ar_onset_overfit.py`, which now prints `Null F1 @ matched count` and `Skill over strongest null` for both teacher and free-run blocks, and emits `null_baseline` in the JSON |
+| Floor is now measured in-harness | `stepcovnet.onset_null_baseline` — audio-blind baselines at matched prediction count + `skill_over_null`; wired into `eval_ar_onset_offline.py`, which now prints `Null F1 @ matched count` and `Skill over strongest null` for both teacher and free-run blocks, and emits `null_baseline` in the JSON |
 | A low-floor metric exists on multi-song runs | `timing_match_teacher` was created only when `overfit_one_song` was true, so multi-song runs had **no** near-zero-floor metric to select on. Now always published; `checkpoint_metric: val_timing_match_teacher` already resolves |
 
 **Action order:**
@@ -378,7 +378,7 @@ Normalized was marginally faster early but **plateaued below perfect**; raw reac
 
 **Context:** iter175 scratch teacher **634/634** and free-run **634/634 tokens**, but free-run ordered scored vs raw `gt_times` read **633/634** while teacher ordered (vs `target_times`) read **634/634**. At onset index 318 the model predicts the same time in teacher and free-run; residual is ~19 ms vs `target_times` and ~26 ms vs raw chart (~7 ms hop-quantization gap). Overnight decode sweeps could not beat 633/634 vs raw chart.
 
-**Decision:** On tide overfit, **primary** ordered match for **both** teacher-fed and free-run uses **`target_times`** (training patch+residual decode). **Aux:** `chart_ordered_onset_match` vs raw `gt_times`, Hungarian `event_f1` vs chart. Implementation: `scripts/debug_ar_onset_overfit.py`, `run_exp.py` pass gate.
+**Decision:** On tide overfit, **primary** ordered match for **both** teacher-fed and free-run uses **`target_times`** (training patch+residual decode). **Aux:** `chart_ordered_onset_match` vs raw `gt_times`, Hungarian `event_f1` vs chart. Implementation: `scripts/eval_ar_onset_offline.py`, `run_exp.py` pass gate.
 
 **Related:** [ONSET_METRICS.md](ONSET_METRICS.md), [NOTE-20260628-03](#note-20260628-03-tide-overfit-primary-metric--ordered-onset-match)
 
@@ -414,7 +414,7 @@ Normalized was marginally faster early but **plateaued below perfect**; raw reac
 
 **Decision:** On tide overfit, **primary** metrics are **`ordered_onset_match`** / **`timing_match`** (teacher) and **`ar_decode_ordered_onset_match`** (free-run, two-pass): ordered pairs with `|pred[i] − ref[i]| ≤ 20 ms` where **`ref` = `target_times`** (training labels); rate = **`n_matched / max(n_pred, n_ref)`**. Pass only at **rate 1.0** (634/634 when counts match). Hungarian `event_f1` vs raw chart remains **aux**. `val_overfit_gate` = `min(val_token_accuracy, val_ordered_onset_match)`. Free-run reference clarified in [NOTE-20260630-01](DISCUSSION_NOTES.md#note-20260630-01-ar-free-run-primary-vs-target_times). Full spec: [ONSET_METRICS.md](ONSET_METRICS.md).
 
-**Related:** `src/stepcovnet/timing_match.py`, `src/stepcovnet/onset_ar/trainers.py` (`ArOrderedOnsetMatchMetric`), `scripts/debug_ar_onset_overfit.py`
+**Related:** `src/stepcovnet/timing_match.py`, `src/stepcovnet/onset_ar/trainers.py` (`ArOrderedOnsetMatchMetric`), `scripts/eval_ar_onset_offline.py`
 
 ---
 
@@ -461,7 +461,7 @@ Normalized was marginally faster early but **plateaued below perfect**; raw reac
 
 **Locked tide config:** champion [`configs/ar/tide_overfit.json`](../../configs/ar/tide_overfit.json); history [`configs/ar/versions/tide_overfit/`](../../configs/ar/versions/tide_overfit/).
 
-**Diagnostics:** `scripts/debug_ar_onset_overfit.py` — per-onset patch vs residual error split.
+**Diagnostics:** `scripts/eval_ar_onset_offline.py` — per-onset patch vs residual error split.
 
 **Next:** **`gate-ar-decode`** — scheduled sampling; free-running decode F1 **1.0** on tide (see [NOTE-20260628-02](DISCUSSION_NOTES.md#note-20260628-02-tide-overfit-free-run-bar-10)).
 

@@ -32,7 +32,7 @@ Trainer: `ArOnsetTrainingModel` in `onset_ar/trainers.py`.
 | **`val_timing_match_teacher`** | Teacher-fed **`timing_match`** vs `target_times` | Primary timing (legacy: `val_ordered_onset_match`) |
 | **`val_token_accuracy`** | Fraction of decoder tokens correct (teacher-fed) | Component of `val_overfit_gate`. Catches token collapse (e.g. majority-token plateau ~0.48). |
 
-**Not logged during training (champion recipe):** free-run `timing_match`. Tide config sets `ar_decode_val_every_n_epochs: 0`. Run [offline eval](ONSET_METRICS_EVALUATION.md#ar-onset-debug_ar_onset_overfitpy) after training for the true pass bar.
+**Not logged during training (champion recipe):** free-run `timing_match`. Tide config sets `ar_decode_val_every_n_epochs: 0`. Run [offline eval](ONSET_METRICS_EVALUATION.md#ar-onset-eval_ar_onset_offlinepy) after training for the true pass bar.
 
 **Tide pass during training:** `val_overfit_gate → 1.0` is **necessary, not sufficient**. Final PASS still requires free-run `timing_match == 1.0` offline.
 

@@ -7,7 +7,7 @@
 | **Config** | [`tide_overfit.json`](tide_overfit.json) |
 | **Metrics** | [`tide_overfit.manifest.json`](tide_overfit.manifest.json) |
 | **Train** | `python scripts/train_onset_ar.py --config configs/ar/tide_overfit.json` |
-| **Verify** | `python scripts/debug_ar_onset_overfit.py --config configs/ar/tide_overfit.json --ar_decode` |
+| **Verify** | `python scripts/eval_ar_onset_offline.py --config configs/ar/tide_overfit.json --ar_decode` |
 | **Promote** | `python scripts/graduate_ar_tide_overfit.py --config … --model-path … --version-ref …` |
 | **Artifacts** | `models_wsl/ar/tide_overfit/`, `callbacks/ar/tide_overfit/` |
 
