@@ -12,14 +12,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-04
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** **Ladder halted.** [EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke) shows every rung — teacher and free-run, bare and density — scores at or below an **audio-blind** baseline at matched onset count on the frozen val set. Rung deltas and the density ranking are not measurements of skill. There is no generation champion; **0.263** was a metronome-equivalent.
-**Root cause found — [EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer):** the pointer never reads the audio. Zeroing every feature moves R2 val F1 **0.1886 → 0.1885** and leaves the predicted patch unchanged on **99.96%** of steps; the tide champion holds **0.9984** with audio **reversed**. `pointer_logits = Dense(max_patches)(decoder)` scores absolute patch *indices*, not encoder content. This is not overfitting and not a scale problem.
+**Status:** **Ladder halted.** Content pointer fixes **tide** audio grounding ([EXP-20260804-06](#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate)) but the first **R2 content-pointer** rerun still has **zero val skill** ([EXP-20260804-07](#exp-20260804-07-r2-content-pointer-rerun--zero-val-skill-audio-gate-fails-on-val)). Old index-head rungs remain void; their numbers are not comparable without retrain.
 
-**Fix landed — [EXP-20260804-06](#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate):** `model.pointer_head: content` scores decoder queries against encoder patch keys. Tide passes at **0.9921** on real audio and **collapses to 0.18** under shuffled audio, where the old head held **0.9984**. Head cost drops **1,443,750 → 295,680** params and no longer depends on `max_patches`.
+**Infra (done 2026-08-04):** null floor in `eval_ar_onset_offline.py`; standing gate `scripts/audio_ablation_ar_onset.py --gate`; ladder configs on `checkpoint_metric: val_timing_match_teacher`; teacher preflight skips `--ar_decode` when teacher/null skill fail.
 
-**Next action:** (1) Re-run ladder **R2** on `pointer_head: content` and read **skill over null** — the first AR number that could be real. (2) Promote `_tmp/ladder_debug/audio_ablation.py` to `scripts/` as a **standing gate**: a run whose score survives `shuffle`/`zeros` does not count, at any scale. (3) Switch ladder configs to `checkpoint_metric: val_timing_match_teacher` (floor ≈ 0, now published on multi-song runs). (4) Ablate the **token** head the same way — only the pointer path has been checked.
+**Next action:** **Regularization / training-recipe probe** on content-pointer R2 — no-ES to 120 ep confirmed val `timing_match_teacher` **never beats ep 16** ([EXP-20260804-09](#exp-20260804-09-no-es-120ep--val-timing-never-improves-after-ep-16)); ES was not the bottleneck. Candidates: higher `dropout_rate`, weight decay, lower LR, or checkpoint on `val_aux_f1_hungarian` instead of timing (timing peaks at noise floor). **Do not** SS or scale.
 **Blockers:** None — GPU free.
-**Defer:** R4–R5, EOS/termination work, density variants, sampling-schedule tuning — all optimize a chance-dominated number. Track A dense scoreboard (**0.686** on `data/v2`) needs the same null floor computed before it is trusted.
+**Defer:** R2+SS; R4–R5; density variants; EOS-only tuning until val shows **positive skill over null** and train-split ablation separates matched from shuffle on held-out songs.
 
 ### Dataset prep (PRE ingestion)
 
@@ -69,6 +68,9 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260804-09 | `train` + `metric` | Was early stopping @ ep 16 hiding val improvement? Does training to 120 ep without ES beat the ep-16 val timing peak? | **Not supported** | Best val timing still @ ep **16** (**0.0022**); ep **120** val **0.0015** / train **0.511**; exported checkpoint **bit-identical** offline to ES run — val never learned past noise |
+| EXP-20260804-08 | `metric` + `post` | Is R2 content-pointer val failure a wiring bug or generalization? Does audio ablation differ on train vs val? | **Supported** | Train timing mean **0.024** vs val **0.002**; train ablation matched **0.036** → shuffle **0.001** (pointer gate **PASS**); val ablation all ~**0.001** (gate **FAIL** at floor); ES restore @ ep **16** is correct — no epoch checkpoints beyond `best.keras` |
+| EXP-20260804-07 | `train` + `metric` | Does R2 on `pointer_head: content` show positive skill over null on the frozen val set? | **Not supported** | Teacher **78/35439** (`timing_match` **0.0022**); F1 **0.0598**; skill **−0.36** vs null; ablation gate **FAIL** on val (shuffle ≈ matched); free-run preflight would skip |
 | EXP-20260804-06 | `model` + `train` | Does a content-based pointer restore audio grounding while still passing the tide gate? | **Supported** | Gate **0.9921** on real audio; collapses to F1 **0.18–0.19** / `timing_match` **0.0016** / `patch_wrong` **99.8%** under reverse+shuffle. Old head held **0.9984** on the same corruption |
 | EXP-20260804-05 | `model` + `metric` | Does the AR pointer use the audio at all? | **Root cause** | **No.** Zeroing all features leaves R2 F1 **0.1886 → 0.1885** and the predicted patch unchanged **99.96%** of steps; tide champion holds **0.9984** with reversed/shuffled/cross-song audio. Pointer head is `Dense(max_patches)` over decoder state — absolute-index classification, not content-based pointing |
 | EXP-20260804-04 | `metric` + `post` | Does the in-harness null floor reproduce the offline finding on a real checkpoint end-to-end? | **Supported** | R2 re-score: teacher F1 **0.1886** vs strongest null **0.2696** → skill **−0.1109**; free-run skill **−0.0150**; both gates **FAIL** |
@@ -148,6 +150,52 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
 
+### EXP-20260804-07: R2 content-pointer rerun — zero val skill, audio gate fails on val
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 22:00:00 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | [EXP-20260804-06](#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate) fixed the pointer on tide. Does the same head on **R2** (50 train / 50 val) produce **positive skill over null** — the first ladder number that could be real? |
+| **Setup** | [`configs/ar/ladder_50t_50v_content_pointer.json`](../../configs/ar/ladder_50t_50v_content_pointer.json) — R2 ladder manifest, `pointer_head: content`, `checkpoint_metric: val_timing_match_teacher`, random init. WSL GPU ~**26** min; ES @ ep **66**, restored weights from ep **16** (only epoch where val `timing_match_teacher` peaked). `logs/ladder_r2_content_pointer_train.log` |
+| **Train @ stop (ep 66)** | Train `timing_match_teacher` **0.4207**, val **0.0016**; train token acc **0.648**, val **0.415**; val Hungarian F1 **0.194**; val `pointer_loss` **14.99** nats |
+| **Teacher-fed val (50 songs)** | `eval_ar_onset_offline.py --split val` — ordered **78/35439 = 0.0022**; Hungarian F1 **0.0598** (2121 TP / 33318 FP / 33318 FN). Null F1 @ matched count: ioi_shuffle **0.3088**. **Skill: F1 −0.3602, `timing_match` −0.0063**. `n_patch_wrong` **35310/35439 = 99.6%**; p50 abs err **14.1 s**. ~**130** s wall. `logs/r2_content_pointer_teacher_val.log` |
+| **Audio ablation (5 val songs)** | `audio_ablation_ar_onset.py --split val --limit 5 --gate` — matched `timing_match` **0.0010**, shuffle **0.0003**, zeros **0.0000**; token acc **0.322** under matched/shuffle/zeros. **`audio_grounding_gate: FAIL`** (shuffle/zeros ≈ matched — val checkpoint is audio-blind in practice). `logs/r2_content_pointer_ablation_gate.json` |
+| **Free-run** | Not run to completion — `eval_ar_onset_offline.py --ar_decode` teacher preflight fails (0% teacher timing on probe songs); would hit **2048** cap if forced ([never-EOS pathology](EXPERIMENT_LOG.md#exp-20260724-04-ar-50t50v-local-rebuild--free-run-fails-in-the-opposite-direction)). `logs/teacher_preflight_test_r2.log` |
+| **vs index-head R2** | Old R2 ([EXP-20260802-01](#exp-20260802-01-ladder-r2-rerun-does-50-train-rows-beat-r1s-178-on-the-frozen-val-set)): val Hungarian F1 **0.2266**, teacher `timing_match` **~0.0029**. Content-pointer R2 is **worse** on F1 and no better on ordered timing — fixing audio grounding on tide did **not** transfer to 50-song val |
+| **Artifacts** | `models_wsl/ar/ladder_50t_50v_content_pointer/ar_onset_model.keras` · `logs/ladder_r2_content_pointer_train.log` · `logs/r2_content_pointer_teacher_val.log` · `logs/r2_content_pointer_ablation_gate.json` |
+| **Conclusion** | **Not supported.** The pointer architecture fix is necessary but not sufficient: val still has **negative null skill**, the standing audio gate **fails** on held-out songs, and train/val gap remains extreme (train timing **0.42** vs val **0.002**). **Do not** scale to R3/R4 on this recipe. Val-transfer diagnosis: [EXP-20260804-08](#exp-20260804-08-r2-content-pointer-val-transfer-diagnosis--generalization-not-wiring) |
+
+### EXP-20260804-08: R2 content-pointer val-transfer diagnosis — generalization, not wiring
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 22:15:00 |
+| **Track** | `metric` + `post` (AR) |
+| **Question** | [EXP-20260804-07](#exp-20260804-07-r2-content-pointer-rerun--zero-val-skill-audio-gate-fails-on-val) failed the val audio gate. Is that a **multi-song wiring bug** (pointer still audio-blind at scale), a **bad checkpoint** (ES restored ep **16** while train metrics at ep **66** were **0.42**), or **pure generalization failure**? |
+| **Setup** | Saved checkpoint `models_wsl/ar/ladder_50t_50v_content_pointer/ar_onset_model.keras` (ES restore @ ep **16**; `callbacks/ar/ladder/models/.../best.keras` only other copy). `eval_ar_onset_offline.py --split train\|val --limit 50` (teacher only); `audio_ablation_ar_onset.py --split train --limit 10` vs existing val ablation (5 songs); train-log epoch curve parsed. `logs/r2_content_pointer_val_transfer_diagnosis.json` |
+| **Train log curve** | Best val `timing_match_teacher` @ ep **16**: val **0.0022**, train **0.0137**. @ ep **66** (stop): val **0.0016**, train **0.4207**. Val never beat ep-16 peak; late epochs are extreme overfit |
+| **Per-song teacher (50 each)** | **Train** micro mean timing **0.0245** (median **0.019**, max **0.111** on `1267_07_watch_me_medium`; **1/50** songs ≥ **0.10**). **Val** mean **0.0020** (max **0.007**; **0/50** ≥ **0.10**). Patch wrong **95.5%** train vs **99.7%** val |
+| **Audio ablation — train (10 songs)** | Matched timing **0.0364**, shuffle **0.0008**, zeros **0.0002**; ptr NLL **4.72** → **10.09** under shuffle; **same_ptr** shuffle **0.001**. **Pointer gate PASS** — corruption collapses timing |
+| **Audio ablation — val (5 songs)** | Matched **0.0010**, shuffle **0.0003**, zeros **0.0000**; all variants at timing floor. **Gate FAIL** — not because pointer ignores audio on val, but because matched performance is already ~zero |
+| **Checkpoint compare** | No per-epoch `.keras` beyond `best.keras` (ep **16**). Final `ar_onset_model.keras` matches ES restore; comparing ep **66** weights is **not possible** without retrain |
+| **Artifacts** | `logs/r2_content_pointer_teacher_train.json` · `logs/r2_content_pointer_teacher_val.json` · `logs/r2_content_pointer_ablation_train.json` · `logs/r2_content_pointer_val_transfer_diagnosis.json` |
+| **Conclusion** | **Supported (generalization failure, not wiring).** Content pointer **does** read audio on **train** songs under teacher forcing; val never learned transferable timing (peaked @ ep **16** at noise level). The val ablation gate is **misleading** when timing is already at floor — use train-split ablation or per-song val probes alongside it. **Do not** treat SS or scale as the next lever until val timing and ablation separate matched from shuffle. No-ES rerun: [EXP-20260804-09](#exp-20260804-09-no-es-120ep--val-timing-never-improves-after-ep-16) |
+
+### EXP-20260804-09: No-ES 120ep — val timing never improves after ep 16
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 23:00:00 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | [EXP-20260804-08](#exp-20260804-08-r2-content-pointer-val-transfer-diagnosis--generalization-not-wiring) showed ES restored ep **16** while train timing at stop was **0.42**. Was early stopping hiding later val improvement? |
+| **Setup** | [`configs/ar/ladder_50t_50v_content_pointer_no_es_120ep.json`](../../configs/ar/ladder_50t_50v_content_pointer_no_es_120ep.json) — same R2 recipe as [EXP-20260804-07](#exp-20260804-07-r2-content-pointer-rerun--zero-val-skill-audio-gate-fails-on-val) but `early_stopping_patience: 0`, `epochs: 120`, fresh output dir. WSL GPU ~**43** min. `logs/ladder_r2_content_pointer_no_es_train.log` |
+| **Val timing curve** | Best val `timing_match_teacher` @ ep **16**: **0.0022** (train **0.0137**) — **same epoch and value** as ES run. Never higher through ep **120**; @ ep **120**: val **0.0015**, train **0.5114** |
+| **Offline eval (best checkpoint)** | Teacher val (50 songs): timing mean **0.00196** — **identical** to [EXP-20260804-07](#exp-20260804-07-r2-content-pointer-rerun--zero-val-skill-audio-gate-fails-on-val). Train mean **0.0245**. `logs/r2_no_es_teacher_val.json` |
+| **Audio ablation** | Train (10): matched **0.0364** → shuffle **0.0008** (pointer **PASS**). Val (10): matched **0.0017**, shuffle **0.0007** (gate **FAIL** at floor). `logs/r2_no_es_ablation_train.json` · `logs/r2_no_es_ablation_val.json` |
+| **Artifacts** | `models_wsl/ar/ladder_50t_50v_content_pointer_no_es_120ep/ar_onset_model.keras` · `callbacks/ar/ladder/models/20260804-221933-AR_ONSET-r2_50t_content_no_es-.../best.keras` |
+| **Conclusion** | **Not supported.** ES was **not** the bottleneck: val timing peaked @ ep **16** and never improved through **104** additional epochs while train overfit to **51%**. Change the **training recipe** (regularization, LR, checkpoint metric), not epoch budget or SS |
+
 ### EXP-20260804-06: Content-based pointer restores audio grounding and still passes the tide gate
 
 | Field | Value |
@@ -163,7 +211,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Cost** | Head size is now independent of `max_patches`: **1,443,750 → 295,680** params at production dims (`max_patches` 3750, `d_model` 384), a net **−1,148,070**. Logit count follows actual encoder length, so the `[..., :n_patches]` slice is no longer load-bearing |
 | **Caveats** | Gate is **0.9921** vs the legacy champion's **0.9984** on real audio, at 400 ep with an untuned recipe carried over from the old head — the ~0.006 gap is not yet explained and may just be tuning. `cross_song` is degenerate on a single-song run (donor is the song itself) and is skipped rather than reported |
 | **Artifacts** | `models_wsl/ar/tide_overfit_content_pointer/ar_onset_model.keras` · `logs/tide_content_pointer_train.log` · `logs/ar_audio_ablation_tide_content.log` · `_tmp/ladder_debug/audio_ablation_tide_content.json` |
-| **Conclusion** | **Supported.** The pointer now reads the audio, and the tide gate is no longer passable blind. 95 AR tests pass, including new coverage that the content head length-generalizes, masks padding, rebuilds identically for inference, and that the legacy head still builds. Next: re-run a ladder rung (R2) on the new head and check **skill over null**, which is the first number in this project that could mean something |
+| **Conclusion** | **Supported.** The pointer now reads the audio, and the tide gate is no longer passable blind. 95 AR tests pass, including new coverage that the content head length-generalizes, masks padding, rebuilds identically for inference, and that the legacy head still builds. R2 content-pointer rerun: [EXP-20260804-07](#exp-20260804-07-r2-content-pointer-rerun--zero-val-skill-audio-gate-fails-on-val) |
 
 ### EXP-20260804-05: The AR pointer never reads the audio — the head is absolute-index classification, not a pointer
 

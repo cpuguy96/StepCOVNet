@@ -6,6 +6,30 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-04 — what ladder scaling breaks
 
+### NOTE-20260804-05: No-ES 120ep confirms val timing is stuck at ep 16 — not an early-stop artifact
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 23:00:00 |
+| **Topic** | Ruling out early stopping as the cause of ep-16 checkpoint selection |
+
+**Verdict.** Disabling early stopping and training content-pointer R2 to **120** epochs changed nothing on val: best `timing_match_teacher` remains **0.0022 @ ep 16**; offline val timing mean is **bit-identical** to the ES run ([EXP-20260804-09](EXPERIMENT_LOG.md#exp-20260804-09-no-es-120ep--val-timing-never-improves-after-ep-16)). Train timing climbs to **51%** by ep 120 while val falls to **0.15%**.
+
+**Next.** ES patience and epoch budget are ruled out. Change the recipe: dropout, LR schedule, weight decay, or checkpoint on `val_aux_f1_hungarian` (timing metric peaks at noise floor).
+
+### NOTE-20260804-04: R2 content-pointer fails on val by generalization, not wiring — and the val ablation gate lies at the timing floor
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-04 22:15:00 |
+| **Topic** | Why tide-fixed pointer still has zero val skill; how to read the ablation gate on a broken checkpoint |
+
+**Verdict.** The content pointer is **not** still audio-blind at multi-song scale. On **train** songs, corrupting `mert_patches` collapses teacher timing from **3.6%** to **0.08%** under shuffle ([EXP-20260804-08](EXPERIMENT_LOG.md#exp-20260804-08-r2-content-pointer-val-transfer-diagnosis--generalization-not-wiring)). On **val**, matched timing is already **0.10%**, so shuffle at **0.03%** fails the gate trivially — the model is broken, not blind.
+
+**Train/val gap.** Offline per-song eval on the ep-**16** checkpoint: train timing mean **2.5%** (best song **11%**), val mean **0.2%** (best **0.7%**). Training log: val `timing_match_teacher` peaked @ ep **16** (**0.22%**) and never improved while train climbed to **42%** by ep **66**. ES restore is correct; there is no saved ep-**66** weight to compare.
+
+**Implication.** Scheduled sampling and scale were **downstream** of a model that never transferred pointer learning to val. Next lever is **training dynamics** (early val peak, overfit, regularization) — not SS by default. Run train-split ablation (or per-song val probes) whenever val timing is near zero; do not treat val gate FAIL alone as proof of audio-blindness.
+
 ### NOTE-20260804-03: The pointer head is absolute-index classification, so the model never had to hear the audio
 
 | Field | Value |
