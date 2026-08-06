@@ -240,6 +240,7 @@ class ArOnsetTrainingModel(keras.Model):
         )
         self.length_normalize_ce = run_config.length_normalize_ce
         self.use_soft_pointer_time = run_config.use_soft_pointer_time
+        self.monotonic_pointer = bool(model_config.monotonic_pointer)
         self.lambda_residual = run_config.lambda_residual
         self.lambda_incremental_consistency = run_config.lambda_incremental_consistency
         self.incremental_consistency_max_steps = (
@@ -382,6 +383,7 @@ class ArOnsetTrainingModel(keras.Model):
         *,
         memory: tf.Tensor,
         decoder_input_ids: tf.Tensor,
+        pointer_key_input: tf.Tensor | None = None,
     ) -> dict[str, tf.Tensor]:
         """Build inputs for the split inference decoder submodel."""
         inputs = {
@@ -390,6 +392,10 @@ class ArOnsetTrainingModel(keras.Model):
             "decoder_input_ids": decoder_input_ids,
             "decoder_mask": batch["decoder_mask"],
         }
+        if config.content_pointer_active(self.experiment_config.model):
+            inputs["pointer_key_input"] = (
+                memory if pointer_key_input is None else pointer_key_input
+            )
         if config.density_conditioning_active(self.experiment_config.model):
             density = batch["density_scalar"]
             if density.shape.rank == 0:
@@ -417,13 +423,14 @@ class ArOnsetTrainingModel(keras.Model):
         decoder_input_ids: tf.Tensor | None = None,
     ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         encoder, decoder = self._ensure_infer_models()
-        memory = encoder(
+        enc_out = encoder(
             {
                 "mert_patches": batch["mert_patches"],
                 "patch_mask": batch["patch_mask"],
             },
             training=training,
         )
+        memory, pointer_key_input = models.unpack_encoder_outputs(enc_out)
         dec_in = (
             decoder_input_ids
             if decoder_input_ids is not None
@@ -434,10 +441,11 @@ class ArOnsetTrainingModel(keras.Model):
                 batch,
                 memory=memory,
                 decoder_input_ids=dec_in,
+                pointer_key_input=pointer_key_input,
             ),
             training=training,
         )
-        return memory, outputs
+        return memory, pointer_key_input, outputs
 
     def _incremental_consistency_term(
         self,
@@ -445,6 +453,7 @@ class ArOnsetTrainingModel(keras.Model):
         batch: dict[str, tf.Tensor],
         *,
         encoder_memory: tf.Tensor,
+        pointer_key_input: tf.Tensor | None = None,
     ) -> tf.Tensor:
         _, decoder = self._ensure_infer_models()
         parallel_times = losses.predicted_times_from_outputs(
@@ -470,6 +479,7 @@ class ArOnsetTrainingModel(keras.Model):
             hop_sec=self.hop_sec,
             use_soft_pointer_time=self.use_soft_pointer_time,
             n_samples=n_samples,
+            pointer_key_input=pointer_key_input,
         )
 
     def _update_incremental_consistency_metric(
@@ -482,7 +492,7 @@ class ArOnsetTrainingModel(keras.Model):
         tracker = self.incremental_consistency_loss_tracker
         if tracker is None:
             return
-        memory, parallel_outputs = self._forward_parallel_infer(
+        memory, key_input, parallel_outputs = self._forward_parallel_infer(
             batch,
             training=training,
         )
@@ -490,6 +500,7 @@ class ArOnsetTrainingModel(keras.Model):
             parallel_outputs,
             batch,
             encoder_memory=memory,
+            pointer_key_input=key_input,
         )
         tracker.update_state(inc_loss)
 
@@ -503,8 +514,9 @@ class ArOnsetTrainingModel(keras.Model):
         # Incremental consistency needs split encoder/decoder only while training.
         # Validation and offline debug use the full ``base_model`` forward path.
         use_incremental = self.lambda_incremental_consistency > 0.0 and training
+        key_input = None
         if use_incremental:
-            memory, outputs = self._forward_parallel_infer(
+            memory, key_input, outputs = self._forward_parallel_infer(
                 batch,
                 training=training,
                 decoder_input_ids=decoder_input_ids,
@@ -529,6 +541,7 @@ class ArOnsetTrainingModel(keras.Model):
             length_normalize_ce=self.length_normalize_ce,
             token_class_weights=self.token_class_weights,
             use_soft_pointer_time=self.use_soft_pointer_time,
+            monotonic_pointer=self.monotonic_pointer,
         )
         if use_incremental:
             assert memory is not None
@@ -536,6 +549,7 @@ class ArOnsetTrainingModel(keras.Model):
                 outputs,
                 batch,
                 encoder_memory=memory,
+                pointer_key_input=key_input,
             )
             total_loss = (
                 total_loss
@@ -559,6 +573,7 @@ class ArOnsetTrainingModel(keras.Model):
             patch_frames=self.patch_frames,
             hop_sec=self.hop_sec,
             use_soft_expected=self.use_soft_pointer_time,
+            monotonic_pointer=self.monotonic_pointer,
         )
         self.event_f1_metric.update_state(
             pred_times,

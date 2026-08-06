@@ -64,23 +64,116 @@ def test_audio_grounding_gate_passes_when_corruption_collapses() -> None:
             "timing_match": 0.95,
             "same_pred_as_matched": 1.0,
             "token_accuracy": 0.90,
+            "query_cosine_vs_matched": 1.0,
         },
         "shuffle": {
             "timing_match": 0.05,
             "same_pred_as_matched": 0.10,
             "token_accuracy": 0.20,
+            "query_cosine_vs_matched": 0.40,
         },
         "zeros": {
             "timing_match": 0.02,
             "same_pred_as_matched": 0.05,
             "token_accuracy": 0.15,
+            "query_cosine_vs_matched": 0.30,
         },
     }
     gate = audio_ablation.audio_grounding_gate(rows)
     assert gate.passed
     assert gate.pointer_passed
     assert gate.token_passed
+    assert gate.query_passed
     assert gate.failures == ()
+
+
+def test_audio_grounding_gate_fails_keys_only_query_blind() -> None:
+    """Pointer collapses but query cosine stays ~1 — classic false positive."""
+    rows = {
+        "matched": {
+            "timing_match": 0.95,
+            "same_pred_as_matched": 1.0,
+            "token_accuracy": 0.90,
+            "query_cosine_vs_matched": 1.0,
+        },
+        "shuffle": {
+            "timing_match": 0.05,
+            "same_pred_as_matched": 0.10,
+            "token_accuracy": 0.89,
+            "query_cosine_vs_matched": 0.999,
+        },
+        "zeros": {
+            "timing_match": 0.02,
+            "same_pred_as_matched": 0.05,
+            "token_accuracy": 0.88,
+            "query_cosine_vs_matched": 0.998,
+        },
+    }
+    gate = audio_ablation.audio_grounding_gate(rows)
+    assert not gate.passed
+    assert gate.pointer_passed
+    assert not gate.token_passed
+    assert not gate.query_passed
+    assert any("keys-only" in failure for failure in gate.failures)
+
+
+def test_audio_grounding_gate_passes_on_query_even_if_tokens_blind() -> None:
+    rows = {
+        "matched": {
+            "timing_match": 0.95,
+            "same_pred_as_matched": 1.0,
+            "token_accuracy": 0.90,
+            "query_cosine_vs_matched": 1.0,
+        },
+        "shuffle": {
+            "timing_match": 0.05,
+            "same_pred_as_matched": 0.10,
+            "token_accuracy": 0.89,
+            "query_cosine_vs_matched": 0.40,
+        },
+        "zeros": {
+            "timing_match": 0.02,
+            "same_pred_as_matched": 0.05,
+            "token_accuracy": 0.88,
+            "query_cosine_vs_matched": 0.35,
+        },
+    }
+    gate = audio_ablation.audio_grounding_gate(rows)
+    assert gate.passed
+    assert gate.pointer_passed
+    assert not gate.token_passed
+    assert gate.query_passed
+
+
+def test_audio_grounding_gate_passes_when_zeros_grounds_shuffle_invariant_query() -> (
+    None
+):
+    """Shuffle-invariant attention pooling is OK if zeros moves the query."""
+    rows = {
+        "matched": {
+            "timing_match": 0.95,
+            "same_pred_as_matched": 1.0,
+            "token_accuracy": 1.0,
+            "query_cosine_vs_matched": 1.0,
+        },
+        "shuffle": {
+            "timing_match": 0.0,
+            "same_pred_as_matched": 0.0,
+            "token_accuracy": 1.0,
+            "query_cosine_vs_matched": 1.0,
+        },
+        "zeros": {
+            "timing_match": 0.0,
+            "same_pred_as_matched": 0.0,
+            "token_accuracy": 0.12,
+            "query_cosine_vs_matched": 0.42,
+        },
+    }
+    gate = audio_ablation.audio_grounding_gate(rows)
+    assert gate.passed
+    assert gate.pointer_passed
+    assert gate.token_passed
+    assert gate.query_passed
 
 
 def test_audio_grounding_gate_fails_when_shuffle_reproduces_matched() -> None:
@@ -89,21 +182,22 @@ def test_audio_grounding_gate_fails_when_shuffle_reproduces_matched() -> None:
             "timing_match": 0.95,
             "same_pred_as_matched": 1.0,
             "token_accuracy": 0.90,
+            "query_cosine_vs_matched": 1.0,
         },
         "shuffle": {
             "timing_match": 0.94,
             "same_pred_as_matched": 0.99,
             "token_accuracy": 0.89,
+            "query_cosine_vs_matched": 0.99,
         },
         "zeros": {
             "timing_match": 0.02,
             "same_pred_as_matched": 0.05,
             "token_accuracy": 0.15,
+            "query_cosine_vs_matched": 0.30,
         },
     }
     gate = audio_ablation.audio_grounding_gate(rows)
     assert not gate.passed
     assert not gate.pointer_passed
-    assert not gate.token_passed
     assert any("pointer/shuffle" in failure for failure in gate.failures)
-    assert any("token/shuffle" in failure for failure in gate.failures)

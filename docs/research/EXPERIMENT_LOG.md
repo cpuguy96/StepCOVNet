@@ -10,15 +10,15 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-04
+**Updated:** 2026-08-05
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** **Ladder halted.** Content pointer fixes **tide** audio grounding ([EXP-20260804-06](#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate)) but the first **R2 content-pointer** rerun still has **zero val skill** ([EXP-20260804-07](#exp-20260804-07-r2-content-pointer-rerun--zero-val-skill-audio-gate-fails-on-val)). Old index-head rungs remain void; their numbers are not comparable without retrain.
+**Status:** **Tide decoder-audio fix holds; R2 still at timing floor.** Wiring/gate package is good on single-song ([EXP-20260805-02](#exp-20260805-02-decoder-audio-fix--tide-content-pointer-passes-queryzeros-gate)). Fixed-stack R2 retrain ([EXP-20260805-03](#exp-20260805-03-fixed-stack-r2-content-pointer-still-at-timing-floor)) ES-restores ep **4** with best `val_timing_match_teacher` **0.0014** — no multi-song timing skill. Train tokens overfit (~0.42) while train/val timing both stay ~**10⁻³**.
 
 **Infra (done 2026-08-04):** null floor in `eval_ar_onset_offline.py`; standing gate `scripts/audio_ablation_ar_onset.py --gate`; ladder configs on `checkpoint_metric: val_timing_match_teacher`; teacher preflight skips `--ar_decode` when teacher/null skill fail.
 
-**Next action:** **Regularization / training-recipe probe** on content-pointer R2 — no-ES to 120 ep confirmed val `timing_match_teacher` **never beats ep 16** ([EXP-20260804-09](#exp-20260804-09-no-es-120ep--val-timing-never-improves-after-ep-16)); ES was not the bottleneck. Candidates: higher `dropout_rate`, weight decay, lower LR, or checkpoint on `val_aux_f1_hungarian` instead of timing (timing peaks at noise floor). **Do not** SS or scale.
-**Blockers:** None — GPU free.
-**Defer:** R2+SS; R4–R5; density variants; EOS-only tuning until val shows **positive skill over null** and train-split ablation separates matched from shuffle on held-out songs.
+**Next action:** After committing the wiring/gate package: diagnose **why multi-song timing never leaves the floor** under the fixed stack (train-split gate + teacher offline on a few songs; check whether pe-free/monotonic/soft-time recipe needs a tide-parity or curriculum change). Do **not** scale to R3+ or treat regularization as the first lever until train timing itself rises above noise.
+**Blockers:** None — GPU free; R2 result logged.
+**Defer:** R2+SS; R3–R5; density variants; EOS-only tuning; “more dropout” without a train-timing signal.
 
 ### Dataset prep (PRE ingestion)
 
@@ -68,6 +68,9 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260805-03 | `train` + `metric` | Does the fixed decoder-audio stack give R2 content-pointer val timing above the noise floor? | **Not supported** | ES @ ep **54**, restore ep **4**; best `val_timing_match_teacher` **0.0014**; train timing also ~**10⁻³** at best/final — tokens overfit, timing does not |
+| EXP-20260805-02 | `model` + `train` + `metric` | Do the three decoder-audio fixes (mask default, query/zeros gate, PE-free cross + monotonic + soft time) make tide content-pointer pass a non-keys-only gate? | **Supported** | Tide timing **0.94**; zeros `query_cosine` **0.42** / tok **0.12** (was ~**1.0** / unchanged); gate **PASS** (pointer+token+query). Shuffle query can stay ~1 — zeros is the decoder probe |
+| EXP-20260805-01 | `model` + `metric` | Is content-pointer “audio grounding” coming from the decoder, or only from `pointer_key(memory)`? | **Root cause** | Decoder/`pointer_query` cosine ≈ **1.0** under shuffle (R2 + tide); pointer collapse is **keys-only**. Tide content-pointer used **inverted** attention masks (`legacy_inverted_attention_masks` default True). Prior train pointer-gate PASS was a false positive for decoder grounding |
 | EXP-20260804-09 | `train` + `metric` | Was early stopping @ ep 16 hiding val improvement? Does training to 120 ep without ES beat the ep-16 val timing peak? | **Not supported** | Best val timing still @ ep **16** (**0.0022**); ep **120** val **0.0015** / train **0.511**; exported checkpoint **bit-identical** offline to ES run — val never learned past noise |
 | EXP-20260804-08 | `metric` + `post` | Is R2 content-pointer val failure a wiring bug or generalization? Does audio ablation differ on train vs val? | **Supported** | Train timing mean **0.024** vs val **0.002**; train ablation matched **0.036** → shuffle **0.001** (pointer gate **PASS**); val ablation all ~**0.001** (gate **FAIL** at floor); ES restore @ ep **16** is correct — no epoch checkpoints beyond `best.keras` |
 | EXP-20260804-07 | `train` + `metric` | Does R2 on `pointer_head: content` show positive skill over null on the frozen val set? | **Not supported** | Teacher **78/35439** (`timing_match` **0.0022**); F1 **0.0598**; skill **−0.36** vs null; ablation gate **FAIL** on val (shuffle ≈ matched); free-run preflight would skip |
@@ -150,6 +153,51 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
 
+### EXP-20260805-03: Fixed-stack R2 content-pointer still at timing floor
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 21:16:11 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | After [EXP-20260805-02](#exp-20260805-02-decoder-audio-fix--tide-content-pointer-passes-queryzeros-gate) fixed decoder audio on tide, does the same stack on R2 produce `val_timing_match_teacher` above the ~0 floor? |
+| **Setup** | [`configs/ar/ladder_50t_50v_content_pointer.json`](../../configs/ar/ladder_50t_50v_content_pointer.json) — fixed masks, pe-free keys, pointer/decoder cross on `patch_embed` mix, monotonic pointer, soft pointer time, `checkpoint_metric: val_timing_match_teacher`, ES patience **50**, 500 ep budget. WSL GPU ~**21** min. `logs/ladder_r2_content_pointer_train.log` |
+| **Stop** | ES restored **best epoch 4**; training stopped @ ep **54** |
+| **Best (ep 4)** | `val_timing_match_teacher` **0.0014**, train timing **0.0009**; val tok **0.125** / train tok **0.178**; val F1 **0.039** / train F1 **0.076** |
+| **Final (ep 54, pre-restore)** | val timing **0.00065**, train timing **0.00098**; val tok **0.173** / train tok **0.424**; val F1 **0.080** / train F1 **0.173** |
+| **Contrast vs pre-fix R2** | Old keys-only R2 climbed train timing to **~0.42** while val stayed at floor ([EXP-20260804-08](#exp-20260804-08-r2-content-pointer-val-transfer-diagnosis--generalization-not-wiring)). Fixed stack **does not** buy train timing either — both splits stay at noise |
+| **Train ablation (5 songs, ep-4 ckpt)** | Matched timing **0.0078** (already floor); shuffle **0.0017** / zeros **0.0**. Zeros `query_cosine` **0.40**, tok **0.12** (decoder hears silence). Gate **FAIL** on **pointer** (matched≈corrupt within eps — no skill to collapse), token/query **PASS**. `logs/r2_content_pointer_fix_ablation_train.json` |
+| **Artifacts** | `models_wsl/ar/ladder_50t_50v_content_pointer/ar_onset_model.keras` · `logs/ladder_r2_content_pointer_train.log` · TensorBoard `callbacks/ar/ladder/logs` run `20260805-203515…` |
+| **Conclusion** | **Not supported.** Decoder-audio wiring was necessary and tide-validated, but **not sufficient** for multi-song timing. Next lever is multi-song learning dynamics / recipe (why pointer timing never trains), not another identical R2 retrain |
+
+### EXP-20260805-02: Decoder-audio fix — tide content-pointer passes query/zeros gate
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 20:18:58 |
+| **Track** | `model` + `train` + `metric` (AR) |
+| **Question** | Do the three fixes from [EXP-20260805-01](#exp-20260805-01-content-pointer-audio-signal-is-keys-only--decoder-is-audio-blind) / [NOTE-20260805-01](DISCUSSION_NOTES.md#note-20260805-01-pointer-gate-pass-was-keys-only--the-decoder-never-read-the-audio) restore real decoder audio grounding on tide? |
+| **Changes** | (1) `legacy_inverted_attention_masks` default **False**; tide + ladder content-pointer configs set explicitly. (2) Audio gate requires zeros **token or query** collapse (keys-only must not pass). (3) PE-free pointer keys; dedicated `pointer_cross_attn` on `patch_embed`; decoder cross-attn = `patch_embed + Dense(memory)`; monotonic pointer mask; `use_soft_pointer_time: true`. |
+| **Setup** | Retrain [`configs/ar/tide_overfit_content_pointer.json`](../../configs/ar/tide_overfit_content_pointer.json) 400 ep WSL GPU (~5 min). Ablation `--gate`. Logs: `logs/tide_content_pointer_fix_train.log`, `logs/tide_content_pointer_fix_ablation_gate.json`, `logs/tide_content_pointer_fix_probe.json` |
+| **Before (EXP-01 tide)** | `query_cosine` under shuffle/zeros ≈ **1.0**; tokens unchanged; pointer collapsed via keys only; tide masks inverted (`valid_region_true_frac=0`) |
+| **After — train** | Final `val_timing_match_teacher` / `val_overfit_gate` **0.9148**; token acc **1.0** |
+| **After — ablation** | Matched timing **0.9416**, tok **1.0**. Shuffle: timing **0**, same_ptr **0**, query cos **1.0**, tok **1.0**. Zeros: timing **0.0016**, tok **0.118**, **query cos 0.418**. Gate **PASS** (pointer+token+query) |
+| **Probe detail** | Post-encoder `memory` still nearly shuffle-invariant (cos **0.99**); `patch_embed` / `cross_memory` move (cos **0.18** / **0.14**). Pointer cross on PE-free stream: zeros moves query; shuffle query stays ~1 (pooling invariance) — gate keys off **zeros** for decoder proof |
+| **Conclusion** | **Supported.** Keys-only false positive is closed on tide: silence moves `pointer_query` and tokens. **Next:** retrain R2 with the same stack and re-check val skill + gate |
+
+### EXP-20260805-01: Content-pointer audio signal is keys-only — decoder is audio-blind
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 19:49:17 |
+| **Track** | `model` + `metric` (AR) |
+| **Question** | User rejected the regularization next-step: is the R2 content-pointer val floor a **bug**? Specifically: does “pointer gate PASS on train” mean the **decoder** reads audio, or only that `pointer_key(memory)` changes under corruption? |
+| **Setup** | Offline probe on saved checkpoints (no retrain). Extract `pointer_query`, `pointer_key`, decoder state, token logits under matched vs shuffled `mert_patches`. Swap query/key combos. Also reconstruct `CrossAttentionMask` polarity from config. Scripts: `_tmp/pointer_query_key_probe/probe_audio_blind_query.py`, `probe_tide_and_attn.py`. Logs: `logs/r2_pointer_query_key_probe.json`, `logs/r2_tide_query_attn_probe.json` |
+| **R2 content-pointer (ep-16 ckpt, 5 train songs)** | Mean `cos_query` **0.99997**, `cos_decoder` **0.99997**, `cos_token_logits` **1.00000** under shuffle; `cos_key` **0.365**. Patch acc: `q_matched×k_matched` **0.095** = `q_shuffle×k_matched` **0.095**; `q_matched×k_shuffle` **0.003**. `same_ptr_pred` **0.0** — pointer argmax flips **only** because keys change |
+| **Tide content-pointer** | Same pattern: `cos_query` / `cos_decoder` / `cos_token_logits` ≈ **1.0**; `cos_key` **0.089**; `same_ptr_pred` **0.0**. Config omits `legacy_inverted_attention_masks` → default **True** → `keep_valid=False` → cross-attn `valid_region_true_frac` **0.0** (all real query/key pairs masked out; pad pairs kept) |
+| **R2 mask polarity** | Explicit `legacy_inverted_attention_masks: false` → `valid_region_true_frac` **1.0** (correct). Decoder still audio-blind — correct masks are not sufficient; training never routes audio through cross-attn |
+| **Re-read of prior ablations** | Train ablation token gate already **failed**: `same_token_as_matched` under shuffle **0.996** ([`logs/r2_content_pointer_ablation_train.json`](../../logs/r2_content_pointer_ablation_train.json)). Pointer-only PASS was misread as decoder grounding |
+| **Conclusion** | **Root cause.** Content pointer attaches audio to **keys only**. Queries are a function of the teacher-forced token prefix (chart memory), so train can look “grounded” when keys match memorized queries and val cannot transfer. [EXP-20260804-08](#exp-20260804-08-r2-content-pointer-val-transfer-diagnosis--generalization-not-wiring)’s “generalization, not wiring” is **superseded**: the wiring/architecture allows skipping decoder audio. Tide EXP-06 gate also did not prove decoder grounding. **Next:** fix mask default + force decoder audio sensitivity; do not regularize |
+
 ### EXP-20260804-07: R2 content-pointer rerun — zero val skill, audio gate fails on val
 
 | Field | Value |
@@ -180,7 +228,7 @@ Full write-ups below; prepend new entries here after each measurable run. Per-ru
 | **Audio ablation — val (5 songs)** | Matched **0.0010**, shuffle **0.0003**, zeros **0.0000**; all variants at timing floor. **Gate FAIL** — not because pointer ignores audio on val, but because matched performance is already ~zero |
 | **Checkpoint compare** | No per-epoch `.keras` beyond `best.keras` (ep **16**). Final `ar_onset_model.keras` matches ES restore; comparing ep **66** weights is **not possible** without retrain |
 | **Artifacts** | `logs/r2_content_pointer_teacher_train.json` · `logs/r2_content_pointer_teacher_val.json` · `logs/r2_content_pointer_ablation_train.json` · `logs/r2_content_pointer_val_transfer_diagnosis.json` |
-| **Conclusion** | **Supported (generalization failure, not wiring).** Content pointer **does** read audio on **train** songs under teacher forcing; val never learned transferable timing (peaked @ ep **16** at noise level). The val ablation gate is **misleading** when timing is already at floor — use train-split ablation or per-song val probes alongside it. **Do not** treat SS or scale as the next lever until val timing and ablation separate matched from shuffle. No-ES rerun: [EXP-20260804-09](#exp-20260804-09-no-es-120ep--val-timing-never-improves-after-ep-16) |
+| **Conclusion** | **Superseded by [EXP-20260805-01](#exp-20260805-01-content-pointer-audio-signal-is-keys-only--decoder-is-audio-blind).** Originally read as generalization: train pointer ablation PASS, val at floor. The PASS was **keys-only** — decoder/`pointer_query` cosine ≈ 1 under shuffle — so “train reads audio” was overstated. No-ES rerun still useful as a negative: [EXP-20260804-09](#exp-20260804-09-no-es-120ep--val-timing-never-improves-after-ep-16) |
 
 ### EXP-20260804-09: No-ES 120ep — val timing never improves after ep 16
 

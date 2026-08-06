@@ -98,6 +98,7 @@ def main() -> int:
         matched_pred: np.ndarray | None = None
         matched_token_preds: np.ndarray | None = None
         matched_token_targets: np.ndarray | None = None
+        matched_query: np.ndarray | None = None
         for variant in VARIANTS:
             batch["mert_patches"] = audio_ablation.corrupt_patches(
                 base_patches,
@@ -116,6 +117,7 @@ def main() -> int:
                 matched_pred = row["_pred_patches"]
                 matched_token_preds = row["_token_preds"]
                 matched_token_targets = row["_token_targets"]
+                matched_query = row.get("_pointer_query")
             audio_ablation.accumulate_variant_row(
                 totals,
                 variant,
@@ -123,6 +125,9 @@ def main() -> int:
                 matched_pred_patches=matched_pred,
                 matched_token_preds=matched_token_preds,
                 matched_token_targets=matched_token_targets,
+                matched_pointer_query=matched_query
+                if isinstance(matched_query, np.ndarray)
+                else None,
             )
         batch["mert_patches"] = base_patches
         label = "overfit" if sample is None else pathlib.Path(sample[0]).stem
@@ -159,7 +164,8 @@ def main() -> int:
     print(
         f"audio_grounding_gate: {status} "
         f"(pointer={'PASS' if gate.pointer_passed else 'FAIL'}, "
-        f"token={'PASS' if gate.token_passed else 'FAIL'})",
+        f"token={'PASS' if gate.token_passed else 'FAIL'}, "
+        f"query={'PASS' if gate.query_passed else 'FAIL'})",
     )
     for failure in gate.failures:
         print(f"  - {failure}")
@@ -173,6 +179,7 @@ def main() -> int:
             "passed": gate.passed,
             "pointer_passed": gate.pointer_passed,
             "token_passed": gate.token_passed,
+            "query_passed": gate.query_passed,
             "failures": list(gate.failures),
         },
     }

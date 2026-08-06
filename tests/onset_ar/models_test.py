@@ -6,7 +6,14 @@ import tensorflow as tf
 
 from stepcovnet import onset_metric_names as mn
 from stepcovnet import timing_match
-from stepcovnet.onset_ar import config, datasets, losses, models, targets, trainers
+from stepcovnet.onset_ar import (
+    config,
+    datasets,
+    inference,
+    models,
+    targets,
+    trainers,
+)
 
 
 def _tiny_experiment_config() -> config.ArExperimentConfig:
@@ -443,12 +450,13 @@ class TrainersTest(unittest.TestCase):
 
         model_inputs = training_model._model_inputs(tf_batch)  # noqa: SLF001
         outputs = base_model(model_inputs, training=False)
-        pred_times = losses.predicted_times_from_outputs(
-            outputs["pointer_logits"],
-            outputs["residual_sec"],
+        pred_times, _ = inference.decode_teacher_fed_times_tf(
+            outputs,
+            tf_batch,
             patch_frames=experiment_config.model.patch_frames,
             hop_sec=experiment_config.dataset.hop_sec,
             use_soft_expected=False,
+            monotonic_pointer=True,
         )
         pred_np = pred_times.numpy()[0]
         mask = batch["onset_step_mask"][0] > 0.5
@@ -516,6 +524,19 @@ class PointerHeadTest(unittest.TestCase):
     def test_content_pointer_is_the_default(self) -> None:
         self.assertEqual(config.ArModelConfig().pointer_head, "content")
         self.assertTrue(config.content_pointer_active(config.ArModelConfig()))
+        self.assertFalse(config.ArModelConfig().legacy_inverted_attention_masks)
+        self.assertTrue(config.ArModelConfig().pointer_keys_pe_free)
+        self.assertTrue(config.ArModelConfig().pointer_query_from_cross_attn)
+        self.assertTrue(config.ArModelConfig().monotonic_pointer)
+
+    def test_content_pointer_builds_cross_attn_query_and_pe_free_key(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        names = {layer.name for layer in model.layers}
+        self.assertIn("pointer_cross_attn", names)
+        self.assertIn("pointer_query", names)
+        self.assertIn("pointer_key", names)
+        self.assertIn("patch_embed", names)
 
     def test_unknown_pointer_head_is_rejected(self) -> None:
         model_config = config.ArModelConfig(pointer_head="dense")
@@ -544,6 +565,26 @@ class PointerHeadTest(unittest.TestCase):
             training=False,
         )["pointer_logits"].numpy()
         self.assertGreater(float(np.abs(real - zeroed).max()), 1e-3)
+
+    def test_pointer_query_reads_pe_free_patch_embed_at_init(self) -> None:
+        """Pointer queries must depend on ``patch_embed``, not PE-only memory.
+
+        Shuffle is a weak init probe (near-uniform attention is permutation
+        invariant). Zeroing patches must move ``pointer_query``.
+        """
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        inputs = self._inputs(experiment_config, n_patches=12, n_steps=6)
+        extractor = tf.keras.Model(
+            inputs=model.input,
+            outputs=model.get_layer("pointer_query").output,
+        )
+        q_matched = extractor(inputs, training=False).numpy()
+        q_zero = extractor(
+            {**inputs, "mert_patches": np.zeros_like(inputs["mert_patches"])},
+            training=False,
+        ).numpy()
+        self.assertGreater(float(np.linalg.norm(q_matched - q_zero)), 1e-3)
 
     def test_legacy_index_pointer_still_builds(self) -> None:
         base = _tiny_experiment_config()
@@ -581,7 +622,11 @@ class PointerHeadTest(unittest.TestCase):
                 ).count_params()
         self.assertEqual(counts["content", 1.0], counts["content", 8.0])
         self.assertLess(counts["index", 1.0], counts["index", 8.0])
-        self.assertLess(counts["content", 8.0], counts["index", 8.0])
+        # Index head grows with the padded patch axis; content head does not.
+        self.assertGreater(
+            counts["index", 8.0] - counts["index", 1.0],
+            counts["content", 8.0] - counts["content", 1.0],
+        )
 
     def test_inference_rebuild_matches_full_model_for_both_heads(self) -> None:
         """Old checkpoints keep rebuilding, and the new head rebuilds too."""
@@ -600,22 +645,22 @@ class PointerHeadTest(unittest.TestCase):
                 )
                 inputs = self._inputs(experiment_config, n_patches=7, n_steps=4)
                 expected = model(inputs, training=False)["pointer_logits"].numpy()
-                memory = np.asarray(
-                    encoder(
-                        {
-                            "mert_patches": inputs["mert_patches"],
-                            "patch_mask": inputs["patch_mask"],
-                        },
-                    ),
-                )
-                actual = decoder(
+                enc_out = encoder(
                     {
-                        "encoder_memory": memory,
+                        "mert_patches": inputs["mert_patches"],
                         "patch_mask": inputs["patch_mask"],
-                        "decoder_input_ids": inputs["decoder_input_ids"],
-                        "decoder_mask": inputs["decoder_mask"],
                     },
-                )["pointer_logits"].numpy()
+                )
+                memory, key_input = models.unpack_encoder_outputs(enc_out)
+                decoder_inputs = {
+                    "encoder_memory": np.asarray(memory),
+                    "patch_mask": inputs["patch_mask"],
+                    "decoder_input_ids": inputs["decoder_input_ids"],
+                    "decoder_mask": inputs["decoder_mask"],
+                }
+                if head == "content":
+                    decoder_inputs["pointer_key_input"] = np.asarray(key_input)
+                actual = decoder(decoder_inputs)["pointer_logits"].numpy()
                 np.testing.assert_allclose(actual, expected, atol=1e-5)
 
     def test_content_pointer_masks_padded_patches(self) -> None:

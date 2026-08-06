@@ -85,8 +85,16 @@ class ArModelConfig(_DictSerializableMixin):
     num_heads: int = 4
     dropout_rate: float = 0.1
     pointer_head: str = "content"
-    legacy_inverted_attention_masks: bool = True
+    # False = Keras keep-valid masks. True only for rebuilding pre-2026-07-16
+    # checkpoints that were trained with inverted mask polarity.
+    legacy_inverted_attention_masks: bool = False
     density_conditioning: str = "none"
+    # Content-pointer: keys from pre-position patch embeddings (not PE-laden memory).
+    pointer_keys_pe_free: bool = True
+    # Content-pointer: force queries through a dedicated cross-attn over memory.
+    pointer_query_from_cross_attn: bool = True
+    # Mask pointer logits so patch_idx >= previous onset patch (train + decode).
+    monotonic_pointer: bool = True
     density_meter_max: int = 32
     density_onset_hz_norm: float = 15.0
 

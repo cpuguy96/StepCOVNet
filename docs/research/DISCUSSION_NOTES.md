@@ -4,6 +4,65 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-05 — content-pointer decoder is audio-blind
+
+### NOTE-20260805-03: Fixed-stack R2 still has no timing signal — even on train
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 21:16:11 |
+| **Topic** | Post-wiring R2 retrain vs tide |
+
+**Verdict.** The decoder-audio package is tide-validated ([EXP-20260805-02](EXPERIMENT_LOG.md#exp-20260805-02-decoder-audio-fix--tide-content-pointer-passes-queryzeros-gate)) but R2 under the same recipe never leaves the timing floor ([EXP-20260805-03](EXPERIMENT_LOG.md#exp-20260805-03-fixed-stack-r2-content-pointer-still-at-timing-floor)): best val timing **0.0014 @ ep 4**, and **train timing also stays ~10⁻³** while tokens overfit to ~0.42. That differs from the pre-fix R2, where train timing climbed to ~0.42 via keys-only lookup.
+
+**Implication.** Do not re-litigate mask polarity or “is the gate wrong?” for this failure. Ask why the pointer time/CE path does not train across 50 songs (recipe, capacity, monotonic+soft interaction, data). Commit the wiring/tests/docs first; then diagnose with train-split probes.
+
+**Related:** [EXP-20260805-03](EXPERIMENT_LOG.md#exp-20260805-03-fixed-stack-r2-content-pointer-still-at-timing-floor)
+
+### NOTE-20260805-02: Decoder-audio fixes land — zeros (not shuffle) is the query probe
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 20:18:58 |
+| **Topic** | Shipping the three fixes from [NOTE-20260805-01](#note-20260805-01-pointer-gate-pass-was-keys-only--the-decoder-never-read-the-audio) and what “fixed” means |
+
+**Verdict.** Tide content-pointer retrained with corrected masks, PE-free pointer/decoder cross-attn on `patch_embed`, monotonic pointer, soft time, and a gate that demands zeros query/token sensitivity now **PASSes** with matched timing **0.94** and zeros `query_cosine` **0.42** ([EXP-20260805-02](EXPERIMENT_LOG.md#exp-20260805-02-decoder-audio-fix--tide-content-pointer-passes-queryzeros-gate)). Pre-fix tide had query cos ≈ **1.0** under zeros too.
+
+**Gotcha that almost fooled us.** First retrain still pointed `pointer_cross_attn` at post-encoder `memory`, which stays shuffle-invariant (cos **~0.99**) because PE dominates — so queries stayed fixed while pe-free **keys** flipped the pointer. Fix: cross-attn values/keys for the pointer (and a `patch_embed + Dense(memory)` mix for the decoder) must read the PE-free stream.
+
+**Gate calibration.** Requiring shuffle `query_cosine` ≪ 1 rejects legitimate attention-pooled models (near-uniform / decoder-dominated attention is permutation-invariant). The keys-only bug fails **zeros**; the standing gate now keys decoder pass/fail off zeros token **or** zeros query, while shuffle still must collapse the **pointer**.
+
+**Next.** R2 retrain with the fixed config — prior ladder content-pointer checkpoints are invalid for transfer claims.
+
+**Related:** [EXP-20260805-02](EXPERIMENT_LOG.md#exp-20260805-02-decoder-audio-fix--tide-content-pointer-passes-queryzeros-gate) · [EXP-20260805-01](EXPERIMENT_LOG.md#exp-20260805-01-content-pointer-audio-signal-is-keys-only--decoder-is-audio-blind)
+
+### NOTE-20260805-01: “Pointer gate PASS” was keys-only — the decoder never read the audio
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 19:49:17 |
+| **Topic** | Why content-pointer R2 has zero val skill: architecture/wiring, not regularization |
+
+**Verdict.** The content-pointer head can fail the audio ablation on **pointer scores** while the **decoder is completely audio-blind**. On the R2 ep-16 checkpoint, shuffling `mert_patches` leaves `pointer_query` / decoder / token logits at cosine ≈ **1.0**; only `pointer_key(memory)` moves. Swapping shuffled queries onto matched keys does not change patch accuracy; swapping shuffled keys onto matched queries collapses it. So train “grounding” is **chart-conditioned queries × audio keys**, not cross-attentional listening. Val cannot transfer that lookup. Numbers: [EXP-20260805-01](EXPERIMENT_LOG.md#exp-20260805-01-content-pointer-audio-signal-is-keys-only--decoder-is-audio-blind).
+
+**Second defect.** `ArModelConfig.legacy_inverted_attention_masks` defaults to **`True`**. [`configs/ar/tide_overfit_content_pointer.json`](../../configs/ar/tide_overfit_content_pointer.json) never sets it false, so the tide content-pointer run that “proved” the head ([EXP-20260804-06](EXPERIMENT_LOG.md#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate)) trained with **inverted** cross/self-attn masks (`valid_region_true_frac = 0`). Residual patch embeddings still reach `pointer_key`, which is why the pointer ablation could pass with a deaf decoder. R2 configs correctly set the flag false — and the decoder is *still* deaf — so mask polarity alone does not fix multi-song transfer; it does invalidate the tide proof as decoder grounding.
+
+**Why prior notes misled.** [NOTE-20260804-04](#note-20260804-04-r2-content-pointer-fails-on-val-by-generalization-not-wiring--and-the-val-ablation-gate-lies-at-the-timing-floor) treated train pointer PASS as evidence the model reads audio. The standing gate’s token criterion already failed on that same train ablation (`same_token_as_matched` ≈ **0.996** under shuffle) and was under-weighted. Regularization ([NOTE-20260804-05](#note-20260804-05-no-es-120ep-confirms-val-timing-is-stuck-at-ep-16--not-an-early-stop-artifact)) is the wrong next lever.
+
+**Coupled gaps (code inspection + same ablations).**
+1. **PE still in “content” keys** — `pointer_key` projects post-`enc_pos` encoder memory, so absolute patch index remains in the key space; the content head is an incomplete fix for index-head blindness.
+2. **Monotonic pointer never implemented** — [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md) §7 specifies `patch_idx ≥ patch_idx_prev`; repo has no monotonic mask in train/decode (free `argmax` over all patches).
+3. **Hard-argmax time loss** — with `use_soft_pointer_time: false`, `lambda_time` does not train the pointer (only residual); pointer learns from sparse CE alone.
+4. Ruled out as root cause of this failure: val metric mismatch, wrong ES epoch, poisoned val MERT/`chart_index`, train/val loader fork.
+
+**Next.**
+1. Default `legacy_inverted_attention_masks` to **false** for new models; fix tide content-pointer config; re-verify tide with a **query/decoder** sensitivity gate.
+2. Extend `audio_ablation_ar_onset.py --gate` so pointer PASS also requires `cos_query` (or token/`same_token`) to collapse under shuffle — keys-only collapse must not pass.
+3. Force decoder audio + PE-free (or pre-`enc_pos`) pointer keys; add monotonic pointer mask per design; consider soft/local pointer loss.
+4. Hygiene: ladder export via `_latest_best_checkpoint_path` over shared `callbacks/ar/ladder` can pick the wrong run’s `best.keras` — not the cause of EXP-07/08, but fix when touching export.
+
+**Related:** [EXP-20260805-01](EXPERIMENT_LOG.md#exp-20260805-01-content-pointer-audio-signal-is-keys-only--decoder-is-audio-blind) · [EXP-20260804-06](EXPERIMENT_LOG.md#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate) · [EXP-20260804-08](EXPERIMENT_LOG.md#exp-20260804-08-r2-content-pointer-val-transfer-diagnosis--generalization-not-wiring) · [NOTE-20260716-01](#note-20260716-01-ar-attention-mask-semantics-were-inverted)
+
 ## Session 2026-08-04 — what ladder scaling breaks
 
 ### NOTE-20260804-05: No-ES 120ep confirms val timing is stuck at ep 16 — not an early-stop artifact

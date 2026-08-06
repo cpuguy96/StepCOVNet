@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_ar import targets
+from stepcovnet.onset_ar import pointer_mask, targets
 
 
 def build_token_class_weights_numpy(
@@ -163,6 +163,7 @@ def sampled_incremental_consistency_loss_tf(
     hop_sec: float,
     use_soft_pointer_time: bool = False,
     n_samples: int,
+    pointer_key_input: tf.Tensor | None = None,
 ) -> tf.Tensor:
     """L_inc at one random onset position per step (GPU-safe on tide).
 
@@ -172,6 +173,11 @@ def sampled_incremental_consistency_loss_tf(
     del n_samples
     parallel_times = tf.stop_gradient(parallel_times)
     encoder_memory = tf.stop_gradient(encoder_memory)
+    key_input = (
+        encoder_memory
+        if pointer_key_input is None
+        else tf.stop_gradient(pointer_key_input)
+    )
     onset_positions = tf.reshape(
         tf.where(onset_step_mask[0] > 0.5)[:, 0],
         (-1,),
@@ -186,13 +192,20 @@ def sampled_incremental_consistency_loss_tf(
         cur_len_f = tf.cast(pos + 1, tf.float32)
         positions = tf.cast(tf.range(max_decoder_len), tf.float32)[tf.newaxis, :]
         prefix_mask = tf.cast(positions < cur_len_f, tf.float32) * decoder_mask
+        decoder_inputs = {
+            "encoder_memory": encoder_memory,
+            "patch_mask": patch_mask,
+            "decoder_input_ids": decoder_input_ids,
+            "decoder_mask": prefix_mask,
+        }
+        decoder_input_map = getattr(decoder, "input", None)
+        if (
+            isinstance(decoder_input_map, dict)
+            and "pointer_key_input" in decoder_input_map
+        ):
+            decoder_inputs["pointer_key_input"] = key_input
         outputs = decoder(
-            {
-                "encoder_memory": encoder_memory,
-                "patch_mask": patch_mask,
-                "decoder_input_ids": decoder_input_ids,
-                "decoder_mask": prefix_mask,
-            },
+            decoder_inputs,
             training=True,
         )
         inc_time = predicted_time_at_decoder_position(
@@ -233,6 +246,7 @@ def compute_ar_onset_loss(
     length_normalize_ce: bool,
     token_class_weights: tf.Tensor | None = None,
     use_soft_pointer_time: bool = False,
+    monotonic_pointer: bool = False,
 ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
     """Combined teacher-forcing loss for ``gate-tide-overfit``."""
     token_logits = tf.cast(outputs["token_logits"], tf.float32)
@@ -245,6 +259,15 @@ def compute_ar_onset_loss(
     target_patch_indices = tf.cast(batch["target_patch_indices"], tf.int32)
     target_times = tf.cast(batch["target_times"], tf.float32)
     target_residual_sec = tf.cast(batch["target_residual_sec"], tf.float32)
+
+    if monotonic_pointer:
+        prev_patches = pointer_mask.teacher_forced_prev_patch_indices(
+            target_patch_indices,
+        )
+        pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
+            pointer_logits,
+            prev_patches,
+        )
 
     token_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
         labels=decoder_target_ids,

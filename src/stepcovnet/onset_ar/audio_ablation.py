@@ -15,13 +15,16 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import timing_match
-from stepcovnet.onset_ar import config, inference, trainers
+from stepcovnet.onset_ar import config, inference, pointer_mask, trainers
 
 VARIANTS = ("matched", "cross_song", "reverse", "shuffle", "zeros")
 CORRUPTED_VARIANTS = ("shuffle", "zeros")
 GATE_TIMING_MATCH_EPS = 0.02
 GATE_SAME_PRED_MAX = 0.85
 GATE_TOKEN_ACC_EPS = 0.02
+# Keys-only grounding leaves query cosine ≈ 1.0; require a real drop.
+GATE_QUERY_COSINE_MAX = 0.95
+_QUERY_EXTRACTOR_ATTR = "_ar_onset_pointer_query_extractor"
 
 
 def corrupt_patches(
@@ -96,6 +99,35 @@ def f1_from_counts(tp: int, fp: int, fn: int) -> float:
     return float(2.0 * precision * recall / (precision + recall + 1e-9))
 
 
+def _pointer_query_numpy(
+    model: tf.keras.Model,
+    batch: dict[str, np.ndarray],
+    experiment_config: config.ArExperimentConfig,
+) -> np.ndarray | None:
+    """Return ``pointer_query`` activations when the layer exists."""
+    try:
+        model.get_layer("pointer_query")
+    except ValueError:
+        return None
+    extractor = getattr(model, _QUERY_EXTRACTOR_ATTR, None)
+    if extractor is None:
+        extractor = tf.keras.Model(
+            inputs=model.input,
+            outputs=model.get_layer("pointer_query").output,
+            name="pointer_query_extractor",
+        )
+        setattr(model, _QUERY_EXTRACTOR_ATTR, extractor)
+    query = extractor(model_inputs(batch, experiment_config), training=False)
+    return np.asarray(query.numpy()[0], dtype=np.float32)
+
+
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    a = a.reshape(-1).astype(np.float64)
+    b = b.reshape(-1).astype(np.float64)
+    denom = (np.linalg.norm(a) * np.linalg.norm(b)) + 1e-12
+    return float(np.dot(a, b) / denom)
+
+
 def score_batch(
     model: tf.keras.Model,
     batch: dict[str, np.ndarray],
@@ -107,6 +139,7 @@ def score_batch(
     pointer_logits = outputs["pointer_logits"].numpy()[0]
     token_logits = outputs["token_logits"].numpy()[0]
     residual_sec = outputs["residual_sec"].numpy()[0]
+    query = _pointer_query_numpy(model, batch, experiment_config)
 
     onset_step_mask = batch["onset_step_mask"][0]
     step_indices = np.flatnonzero(onset_step_mask > 0.5)
@@ -115,6 +148,7 @@ def score_batch(
     gt_times = batch["gt_times"][0][batch["gt_mask"][0] > 0.5]
     decoder_target_ids = batch["decoder_target_ids"][0]
     decoder_mask = batch["decoder_mask"][0]
+    monotonic = bool(experiment_config.model.monotonic_pointer)
 
     pred_times = inference.decode_teacher_fed_times_numpy(
         pointer_logits,
@@ -122,8 +156,26 @@ def score_batch(
         onset_step_mask,
         patch_frames=experiment_config.model.patch_frames,
         hop_sec=experiment_config.dataset.hop_sec,
+        target_patch_indices=batch["target_patch_indices"][0],
+        monotonic=monotonic,
     )
-    pred_patches = np.argmax(pointer_logits, axis=-1)[step_indices]
+    if monotonic:
+        prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
+            batch["target_patch_indices"][0],
+        )
+        pred_patches = np.asarray(
+            [
+                inference._argmax_pointer_patch(  # noqa: SLF001
+                    pointer_logits[i],
+                    prev_patch=int(prev[i]),
+                    monotonic=True,
+                )
+                for i in step_indices
+            ],
+            dtype=np.int32,
+        )
+    else:
+        pred_patches = np.argmax(pointer_logits, axis=-1)[step_indices]
     tolerance_sec = experiment_config.run.tolerance_sec
 
     tp, fp, fn = trainers._ar_event_onset_counts_numpy(  # noqa: SLF001
@@ -163,6 +215,7 @@ def score_batch(
         "_pred_patches": pred_patches,
         "_token_preds": token_preds[valid],
         "_token_targets": decoder_target_ids[valid],
+        "_pointer_query": None if query is None else query[step_indices],
     }
 
 
@@ -182,6 +235,8 @@ def empty_variant_totals() -> dict[str, dict[str, float]]:
             "token_correct": 0,
             "token_total": 0,
             "token_agree": 0,
+            "query_cosine_sum": 0.0,
+            "query_cosine_count": 0.0,
         }
         for variant in VARIANTS
     }
@@ -195,10 +250,12 @@ def accumulate_variant_row(
     matched_pred_patches: np.ndarray | None,
     matched_token_preds: np.ndarray | None,
     matched_token_targets: np.ndarray | None,
+    matched_pointer_query: np.ndarray | None = None,
 ) -> None:
     pred_patches = row.pop("_pred_patches")
     token_preds = row.pop("_token_preds")
     row.pop("_token_targets")
+    query = row.pop("_pointer_query", None)
     acc = totals[variant]
     for key in ("tp", "fp", "fn", "n_matched", "n_denom", "n_steps"):
         acc[key] += row[key]
@@ -215,6 +272,16 @@ def accumulate_variant_row(
         and token_preds.shape == matched_token_preds.shape
     ):
         acc["token_agree"] += int(np.sum(token_preds == matched_token_preds))
+    if (
+        matched_pointer_query is not None
+        and isinstance(query, np.ndarray)
+        and query.shape == matched_pointer_query.shape
+    ):
+        acc["query_cosine_sum"] = acc.get("query_cosine_sum", 0.0) + _cosine(
+            matched_pointer_query,
+            query,
+        )
+        acc["query_cosine_count"] = acc.get("query_cosine_count", 0.0) + 1.0
 
 
 def summarize_variants(
@@ -229,6 +296,12 @@ def summarize_variants(
         acc = totals[variant]
         steps = max(acc["n_steps"], 1)
         token_total = max(acc["token_total"], 1)
+        query_count = float(acc.get("query_cosine_count", 0.0))
+        query_cosine = (
+            float(acc.get("query_cosine_sum", 0.0)) / query_count
+            if query_count > 0
+            else 1.0
+        )
         rows[variant] = {
             "f1_hungarian": f1_from_counts(
                 int(acc["tp"]),
@@ -244,6 +317,7 @@ def summarize_variants(
             "token_wrong_rate": (acc["token_total"] - acc["token_correct"])
             / token_total,
             "same_token_as_matched": acc["token_agree"] / token_total,
+            "query_cosine_vs_matched": query_cosine,
             "n_steps": int(acc["n_steps"]),
             "n_token_positions": int(acc["token_total"]),
         }
@@ -256,6 +330,7 @@ class AudioGroundingGateResult:
     failures: tuple[str, ...]
     pointer_passed: bool
     token_passed: bool
+    query_passed: bool
 
 
 def audio_grounding_gate(
@@ -264,8 +339,18 @@ def audio_grounding_gate(
     timing_match_eps: float = GATE_TIMING_MATCH_EPS,
     same_pred_max: float = GATE_SAME_PRED_MAX,
     token_acc_eps: float = GATE_TOKEN_ACC_EPS,
+    query_cosine_max: float = GATE_QUERY_COSINE_MAX,
 ) -> AudioGroundingGateResult:
-    """Fail when shuffle/zeros reproduce matched pointer or token scores."""
+    """Fail when corruption reproduces matched scores without decoder grounding.
+
+    Pointer timing collapse alone is not enough: keys-only content pointers can
+    flip argmax when keys move while ``pointer_query`` stays fixed. The decisive
+    decoder check is **zeros** — silence must move tokens and/or
+    ``pointer_query``. Shuffle query/token cosine is a weak probe on its own:
+    attention pooling can be nearly permutation-invariant while zeros still
+    prove the query path reads audio (and pe-free keys still collapse the
+    pointer under shuffle).
+    """
     matched = variant_rows.get("matched")
     if matched is None:
         return AudioGroundingGateResult(
@@ -273,6 +358,7 @@ def audio_grounding_gate(
             failures=("missing matched variant",),
             pointer_passed=False,
             token_passed=False,
+            query_passed=False,
         )
 
     failures: list[str] = []
@@ -280,13 +366,13 @@ def audio_grounding_gate(
     matched_token = float(matched.get("token_accuracy", 0.0))
 
     pointer_ok = True
-    token_ok = True
+    zeros_token_ok = False
+    zeros_query_ok = False
     for variant in CORRUPTED_VARIANTS:
         row = variant_rows.get(variant)
         if row is None:
             failures.append(f"{variant}: missing")
             pointer_ok = False
-            token_ok = False
             continue
 
         timing = float(row["timing_match"])
@@ -305,16 +391,35 @@ def audio_grounding_gate(
             pointer_ok = False
 
         token_acc = float(row.get("token_accuracy", 0.0))
-        if token_acc >= matched_token - token_acc_eps:
-            failures.append(
-                f"token/{variant}: token_accuracy {token_acc:.4f} "
-                f"≈ matched {matched_token:.4f}",
-            )
-            token_ok = False
+        token_collapsed = token_acc < matched_token - token_acc_eps
+        query_cos = float(row.get("query_cosine_vs_matched", 1.0))
+        query_collapsed = query_cos < query_cosine_max
+
+        if variant == "zeros":
+            zeros_token_ok = token_collapsed
+            zeros_query_ok = query_collapsed
+            if not token_collapsed:
+                failures.append(
+                    f"token/zeros: token_accuracy {token_acc:.4f} "
+                    f"≈ matched {matched_token:.4f}",
+                )
+            if not query_collapsed:
+                failures.append(
+                    f"query/zeros: query_cosine_vs_matched {query_cos:.4f} "
+                    f">= {query_cosine_max:.2f}",
+                )
+
+    decoder_ok = zeros_token_ok or zeros_query_ok
+    if not decoder_ok:
+        failures.append(
+            "decoder: zeros left token accuracy and pointer_query unchanged "
+            "(keys-only false positive)",
+        )
 
     return AudioGroundingGateResult(
-        passed=pointer_ok and token_ok,
+        passed=pointer_ok and decoder_ok,
         failures=tuple(failures),
         pointer_passed=pointer_ok,
-        token_passed=token_ok,
+        token_passed=zeros_token_ok,
+        query_passed=zeros_query_ok,
     )

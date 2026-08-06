@@ -8,8 +8,25 @@ from typing import Literal
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_ar import config, kv_decode, losses, targets
+from stepcovnet.onset_ar import config, kv_decode, losses, pointer_mask, targets
 from stepcovnet.onset_ar import models as ar_models
+
+
+def _argmax_pointer_patch(
+    pointer_logits: np.ndarray,
+    *,
+    prev_patch: int,
+    monotonic: bool,
+) -> int:
+    """Argmax patch index, optionally enforcing monotonicity."""
+    logits = pointer_logits
+    if monotonic:
+        logits = pointer_mask.apply_monotonic_pointer_mask_numpy(
+            logits,
+            prev_patch,
+        )
+    return int(np.argmax(logits))
+
 
 ArTimeSource = Literal["pointer_residual", "tokens"]
 
@@ -135,6 +152,7 @@ class _EncoderMemoryCache:
 
     fingerprint: tuple[int | float, ...]
     memory: np.ndarray
+    pointer_key_input: np.ndarray
     patch_mask: np.ndarray
 
 
@@ -177,8 +195,12 @@ def get_encoder_memory_numpy(
     experiment_config: config.ArExperimentConfig,
     *,
     use_cache: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Run encoder once per unique MERT input; reuse cached memory when possible."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Run encoder once per unique MERT input; reuse cached memory when possible.
+
+    Returns:
+        ``(memory, pointer_key_input, patch_mask)``.
+    """
     mert_patches, patch_mask = _batch_mert_patch_mask(mert_patches, patch_mask)
     fingerprint = _mert_input_fingerprint(mert_patches, patch_mask)
     if use_cache:
@@ -187,19 +209,26 @@ def get_encoder_memory_numpy(
             isinstance(cached, _EncoderMemoryCache)
             and cached.fingerprint == fingerprint
         ):
-            return cached.memory, cached.patch_mask
+            return cached.memory, cached.pointer_key_input, cached.patch_mask
     encoder, _ = _infer_encoder_decoder(model, experiment_config)
-    memory = encoder(
+    enc_out = encoder(
         {"mert_patches": mert_patches, "patch_mask": patch_mask},
         training=False,
-    ).numpy()
+    )
+    memory, pointer_key_input = ar_models.unpack_encoder_outputs(enc_out)
+    memory_np = np.asarray(memory.numpy() if hasattr(memory, "numpy") else memory)
+    key_np = np.asarray(
+        pointer_key_input.numpy()
+        if hasattr(pointer_key_input, "numpy")
+        else pointer_key_input,
+    )
     if use_cache:
         setattr(
             model,
             _ENCODER_MEMORY_CACHE_ATTR,
-            _EncoderMemoryCache(fingerprint, memory, patch_mask),
+            _EncoderMemoryCache(fingerprint, memory_np, key_np, patch_mask),
         )
-    return memory, patch_mask
+    return memory_np, key_np, patch_mask
 
 
 def get_inference_encoder_decoder(
@@ -273,8 +302,9 @@ def decode_parallel_pointer_times_numpy(
     hop_sec = experiment_config.dataset.hop_sec
     patch_duration = float(patch_frames) * float(hop_sec)
 
+    pointer_key_input: np.ndarray | None = None
     if encoder_memory is None or patch_mask_batched is None:
-        memory, patch_mask = get_encoder_memory_numpy(
+        memory, pointer_key_input, patch_mask = get_encoder_memory_numpy(
             model,
             mert_patches,
             patch_mask,
@@ -283,20 +313,24 @@ def decode_parallel_pointer_times_numpy(
     else:
         memory = encoder_memory
         patch_mask = patch_mask_batched
+        pointer_key_input = memory
 
     _, decoder = _infer_encoder_decoder(model, experiment_config)
     decoder_input_ids, decoder_mask = build_decoder_inputs_for_onset_tokens(
         tokens,
         max_decoder_len=max_decoder_len,
     )
+    decoder_feed: dict[str, np.ndarray] = {
+        "encoder_memory": memory,
+        "patch_mask": patch_mask,
+        "decoder_input_ids": decoder_input_ids,
+        "decoder_mask": decoder_mask,
+    }
+    if config.content_pointer_active(experiment_config.model):
+        decoder_feed["pointer_key_input"] = pointer_key_input
     outputs = decoder(
         _with_density_decoder_inputs(
-            {
-                "encoder_memory": memory,
-                "patch_mask": patch_mask,
-                "decoder_input_ids": decoder_input_ids,
-                "decoder_mask": decoder_mask,
-            },
+            decoder_feed,
             experiment_config=experiment_config,
             density_scalar=density_scalar,
             batch_size=int(np.asarray(patch_mask).shape[0]),
@@ -306,8 +340,16 @@ def decode_parallel_pointer_times_numpy(
     pointer_logits = np.asarray(outputs["pointer_logits"][0], dtype=np.float32)
     residual_sec = np.asarray(outputs["residual_sec"][0], dtype=np.float32)
     times: list[float] = []
+    prev_patch = 0
+    monotonic = bool(experiment_config.model.monotonic_pointer)
     for pos in range(int(tokens.size)):
-        patch_idx = int(np.argmax(pointer_logits[pos]))
+        patch_idx = _argmax_pointer_patch(
+            pointer_logits[pos],
+            prev_patch=prev_patch,
+            monotonic=monotonic,
+        )
+        if monotonic:
+            prev_patch = patch_idx
         times.append(float(patch_idx) * patch_duration + float(residual_sec[pos]))
     return np.asarray(times, dtype=np.float32)
 
@@ -333,7 +375,7 @@ def decode_gt_incremental_pointer_times_numpy(
     hop_sec = experiment_config.dataset.hop_sec
     patch_duration = float(patch_frames) * float(hop_sec)
 
-    memory, patch_mask = get_encoder_memory_numpy(
+    memory, pointer_key_input, patch_mask = get_encoder_memory_numpy(
         model,
         mert_patches,
         patch_mask,
@@ -347,16 +389,21 @@ def decode_gt_incremental_pointer_times_numpy(
     dec_mask[0, 0] = 1.0
 
     times: list[float] = []
+    prev_patch = 0
+    monotonic = bool(experiment_config.model.monotonic_pointer)
     cur_len = 1
     while cur_len < max_decoder_len:
+        decoder_feed = {
+            "encoder_memory": memory,
+            "patch_mask": patch_mask,
+            "decoder_input_ids": dec_in,
+            "decoder_mask": dec_mask,
+        }
+        if config.content_pointer_active(experiment_config.model):
+            decoder_feed["pointer_key_input"] = pointer_key_input
         outputs = decoder(
             _with_density_decoder_inputs(
-                {
-                    "encoder_memory": memory,
-                    "patch_mask": patch_mask,
-                    "decoder_input_ids": dec_in,
-                    "decoder_mask": dec_mask,
-                },
+                decoder_feed,
                 experiment_config=experiment_config,
                 density_scalar=density_scalar,
             ),
@@ -368,7 +415,13 @@ def decode_gt_incremental_pointer_times_numpy(
                 outputs["pointer_logits"][0, pos], dtype=np.float32
             )
             residual_sec = float(outputs["residual_sec"][0, pos].numpy())
-            patch_idx = int(np.argmax(pointer_logits))
+            patch_idx = _argmax_pointer_patch(
+                pointer_logits,
+                prev_patch=prev_patch,
+                monotonic=monotonic,
+            )
+            if monotonic:
+                prev_patch = patch_idx
             times.append(float(patch_idx) * patch_duration + residual_sec)
         next_token = int(decoder_input_ids[cur_len])
         if next_token == eos_id:
@@ -581,6 +634,10 @@ def _decode_autoregressive_prefix_numpy(
     pointer_times: list[float] = []
     onset_token_ids: list[int] = []
     eos_probs: list[float] = []
+    prev_patch = 0
+    monotonic = bool(
+        experiment_config is not None and experiment_config.model.monotonic_pointer,
+    )
     cur_len = 1
     n_forward_steps = 0
     stopped_on_eos = False
@@ -602,7 +659,13 @@ def _decode_autoregressive_prefix_numpy(
             stopped_on_eos = True
             break
         onset_token_ids.append(next_token)
-        patch_idx = int(np.argmax(pointer_logits))
+        patch_idx = _argmax_pointer_patch(
+            pointer_logits,
+            prev_patch=prev_patch,
+            monotonic=monotonic,
+        )
+        if monotonic:
+            prev_patch = patch_idx
         pointer_times.append(float(patch_idx) * patch_duration + residual_sec)
         if cur_len >= max_decoder_len - 1:
             break
@@ -673,7 +736,7 @@ def decode_autoregressive_with_stats_numpy(
     decoder_mask_arr[0, 0] = 1.0
 
     if experiment_config is not None:
-        memory_np, patch_mask = get_encoder_memory_numpy(
+        memory_np, key_np, patch_mask = get_encoder_memory_numpy(
             model,
             mert_patches,
             patch_mask,
@@ -686,6 +749,8 @@ def decode_autoregressive_with_stats_numpy(
             "decoder_input_ids": decoder_input,
             "decoder_mask": decoder_mask_arr,
         }
+        if config.content_pointer_active(experiment_config.model):
+            decoder_inputs["pointer_key_input"] = key_np
     else:
         decoder = model
         decoder_inputs = {
@@ -751,6 +816,8 @@ def decode_teacher_fed_times_numpy(
     *,
     patch_frames: int,
     hop_sec: float,
+    target_patch_indices: np.ndarray | None = None,
+    monotonic: bool = False,
 ) -> np.ndarray:
     """Extract sorted onset times from teacher-fed decoder outputs."""
     pointer_logits = np.asarray(pointer_logits, dtype=np.float32)
@@ -761,13 +828,27 @@ def decode_teacher_fed_times_numpy(
         residual_sec = residual_sec[0]
     if onset_step_mask.ndim > 1:
         onset_step_mask = onset_step_mask[0]
+    if target_patch_indices is not None:
+        target_patch_indices = np.asarray(target_patch_indices, dtype=np.int32)
+        if target_patch_indices.ndim > 1:
+            target_patch_indices = target_patch_indices[0]
+        prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
+            target_patch_indices,
+        )
+    else:
+        prev_patches = None
 
     patch_duration = float(patch_frames) * float(hop_sec)
     times: list[float] = []
     for step_idx, active in enumerate(onset_step_mask):
         if active <= 0.5:
             continue
-        patch_idx = int(np.argmax(pointer_logits[step_idx]))
+        prev = int(prev_patches[step_idx]) if prev_patches is not None else 0
+        patch_idx = _argmax_pointer_patch(
+            pointer_logits[step_idx],
+            prev_patch=prev,
+            monotonic=monotonic and prev_patches is not None,
+        )
         times.append(float(patch_idx) * patch_duration + float(residual_sec[step_idx]))
     return np.asarray(times, dtype=np.float32)
 
@@ -779,10 +860,20 @@ def decode_teacher_fed_times_tf(
     patch_frames: int,
     hop_sec: float,
     use_soft_expected: bool = False,
+    monotonic_pointer: bool = False,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Tensor wrapper returning padded predicted times and a validity mask."""
+    pointer_logits = outputs["pointer_logits"]
+    if monotonic_pointer:
+        prev = pointer_mask.teacher_forced_prev_patch_indices(
+            batch["target_patch_indices"],
+        )
+        pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
+            pointer_logits,
+            prev,
+        )
     pred_times = losses.predicted_times_from_outputs(
-        outputs["pointer_logits"],
+        pointer_logits,
         outputs["residual_sec"],
         patch_frames=patch_frames,
         hop_sec=hop_sec,

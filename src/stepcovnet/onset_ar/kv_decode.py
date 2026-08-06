@@ -23,6 +23,7 @@ class ArOnsetKvDecoder:
     _decoder_input_ids: tf.Tensor | None = None
     _decoder_mask: tf.Tensor | None = None
     _memory: tf.Tensor | None = None
+    _pointer_key_input: tf.Tensor | None = None
     _density_scalar: tf.Tensor | None = None
 
     @classmethod
@@ -52,6 +53,12 @@ class ArOnsetKvDecoder:
     def set_memory(self, memory: tf.Tensor) -> None:
         """Store encoder memory for the current sequence."""
         self._memory = memory
+        if self._pointer_key_input is None:
+            self._pointer_key_input = memory
+
+    def set_pointer_key_input(self, pointer_key_input: tf.Tensor) -> None:
+        """Store PE-free (or memory) key source for the content pointer."""
+        self._pointer_key_input = pointer_key_input
 
     def set_density_scalar(self, density_scalar: tf.Tensor | None) -> None:
         """Store per-sequence density conditioning for decoder steps."""
@@ -111,6 +118,13 @@ class ArOnsetKvDecoder:
             "decoder_input_ids": self._decoder_input_ids,
             "decoder_mask": self._decoder_mask,
         }
+        if config.content_pointer_active(self.experiment_config.model):
+            key_input = (
+                self._memory
+                if self._pointer_key_input is None
+                else self._pointer_key_input
+            )
+            inputs["pointer_key_input"] = key_input
         if self._density_scalar is not None:
             inputs["density_scalar"] = self._density_scalar
         return inputs
@@ -167,16 +181,18 @@ def decode_autoregressive_with_kv_cache_numpy(
         kv_decoder = ArOnsetKvDecoder.from_model(model, experiment_config, decoder)
         setattr(model, cache_key, kv_decoder)
 
-    memory_np, patch_mask = ar_inference.get_encoder_memory_numpy(
+    memory_np, key_np, patch_mask = ar_inference.get_encoder_memory_numpy(
         model,
         mert_patches,
         patch_mask,
         experiment_config,
     )
     memory = tf.constant(memory_np, dtype=tf.float32)
+    key_input = tf.constant(key_np, dtype=tf.float32)
     patch_mask_tf = tf.constant(patch_mask, dtype=tf.float32)
     kv_decoder.reset_decode_state(batch_size=int(patch_mask.shape[0]))
     kv_decoder.set_memory(memory)
+    kv_decoder.set_pointer_key_input(key_input)
     if config.density_conditioning_active(experiment_config.model):
         if density_scalar is None:
             density_scalar = np.asarray([0.0], dtype=np.float32)
@@ -191,6 +207,8 @@ def decode_autoregressive_with_kv_cache_numpy(
     pointer_times: list[float] = []
     onset_token_ids: list[int] = []
     eos_probs: list[float] = []
+    prev_patch = 0
+    monotonic = bool(experiment_config.model.monotonic_pointer)
     n_forward_steps = 0
     stopped_on_eos = False
     cur_len = 1
@@ -217,7 +235,13 @@ def decode_autoregressive_with_kv_cache_numpy(
             stopped_on_eos = True
             break
         onset_token_ids.append(next_token)
-        patch_idx = int(np.argmax(pointer_logits))
+        patch_idx = ar_inference._argmax_pointer_patch(  # noqa: SLF001
+            pointer_logits,
+            prev_patch=prev_patch,
+            monotonic=monotonic,
+        )
+        if monotonic:
+            prev_patch = patch_idx
         pointer_times.append(float(patch_idx) * patch_duration + residual_sec)
         if cur_len >= max_decoder_len - 1:
             break

@@ -1136,7 +1136,7 @@ def _ar_decode_report(
     if token_trace_steps <= 0:
         return report
 
-    memory, pm_b = inference.get_encoder_memory_numpy(
+    memory, key_input, pm_b = inference.get_encoder_memory_numpy(
         model,
         mert,
         patch_mask,
@@ -1158,6 +1158,8 @@ def _ar_decode_report(
             "decoder_input_ids": dec_in,
             "decoder_mask": dec_mask,
         }
+        if config.content_pointer_active(experiment_config.model):
+            decoder_inputs["pointer_key_input"] = key_input
         if config.density_conditioning_active(experiment_config.model):
             decoder_inputs["density_scalar"] = batch_np["density_scalar"]
         outputs = decoder(

@@ -255,13 +255,13 @@ class InferenceDecodeTest(unittest.TestCase):
         model = models.build_ar_onset_model(experiment_config)
         batch = _synthetic_batch(experiment_config)
         inference.clear_encoder_memory_cache(model)
-        memory_a, _ = inference.get_encoder_memory_numpy(
+        memory_a, _, _ = inference.get_encoder_memory_numpy(
             model,
             batch["mert_patches"],
             batch["patch_mask"],
             experiment_config,
         )
-        memory_b, _ = inference.get_encoder_memory_numpy(
+        memory_b, _, _ = inference.get_encoder_memory_numpy(
             model,
             batch["mert_patches"],
             batch["patch_mask"],
