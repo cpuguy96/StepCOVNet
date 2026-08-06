@@ -7,12 +7,7 @@
     "max_audio_seconds": 300,
     "max_steps_per_chart": 2048,
     "dynamic_padding": true,
-    "length_bucket_boundaries": [
-      512,
-      768,
-      1024,
-      1536
-    ],
+    "length_bucket_boundaries": [512, 768, 1024, 1536],
     "cache_in_memory": true,
     "cache_max_samples": 128
   },
@@ -29,7 +24,7 @@
     "pointer_head": "content",
     "pointer_keys_pe_free": true,
     "pointer_query_from_cross_attn": true,
-    "monotonic_pointer": true
+    "monotonic_pointer": false
   },
   "run": {
     "overfit_one_song": false,
@@ -41,16 +36,16 @@
     "token_class_weight": "none",
     "eos_token_weight_scale": 1.0,
     "scheduled_sampling_max_p": 0.0,
-    "use_soft_pointer_time": false,
+    "use_soft_pointer_time": true,
     "learning_rate": 0.0001,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
-    "epochs": 500,
+    "epochs": 50,
     "checkpoint_metric": "val_timing_match_teacher",
-    "early_stopping_patience": 50,
+    "early_stopping_patience": 10,
     "perfect_overfit_early_stop": false,
-    "model_output_dir": "models_wsl/ar/ladder_50t_50v_content_pointer",
+    "model_output_dir": "models_wsl/ar/ladder_r2_no_monotonic_probe",
     "callback_root_dir": "callbacks/ar/ladder",
-    "run_label": "r2_50t_content"
+    "run_label": "r2_no_mono_probe"
   }
 }

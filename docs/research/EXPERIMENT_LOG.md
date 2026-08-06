@@ -10,14 +10,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-05
+**Updated:** 2026-08-06
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** **Tide decoder-audio fix holds; R2 still at timing floor.** Wiring/gate package is good on single-song ([EXP-20260805-02](#exp-20260805-02-decoder-audio-fix--tide-content-pointer-passes-queryzeros-gate)). Fixed-stack R2 retrain ([EXP-20260805-03](#exp-20260805-03-fixed-stack-r2-content-pointer-still-at-timing-floor)) ES-restores ep **4** with best `val_timing_match_teacher` **0.0014** — no multi-song timing skill. Train tokens overfit (~0.42) while train/val timing both stay ~**10⁻³**.
+**Status:** **Hard-time R2 still best in-train; tide λ_residual parity does not beat it.** Full hard-time R2 peaks val timing **0.0085 @ ep 96**; lam30 short probe **0.0065 @ ep 16** ([EXP-20260805-07](#exp-20260805-07-hard-time--tide-lambda_residual30--no-beat-over-lam5-r2)). Offline val on full run still at floor (timing **0.00079**, skill **−0.42**) — [EXP-20260805-06](#exp-20260805-06-full-r2-hard-pointer-time--timing-rises-still-below-skill).
 
-**Infra (done 2026-08-04):** null floor in `eval_ar_onset_offline.py`; standing gate `scripts/audio_ablation_ar_onset.py --gate`; ladder configs on `checkpoint_metric: val_timing_match_teacher`; teacher preflight skips `--ar_decode` when teacher/null skill fail.
-
-**Next action:** After committing the wiring/gate package: diagnose **why multi-song timing never leaves the floor** under the fixed stack (train-split gate + teacher offline on a few songs; check whether pe-free/monotonic/soft-time recipe needs a tide-parity or curriculum change). Do **not** scale to R3+ or treat regularization as the first lever until train timing itself rises above noise.
-**Blockers:** None — GPU free; R2 result logged.
+**Next action:** New recipe axis — e.g. tide **`lambda_time_ramp_epochs`**, **`dropout_rate: 0`**, or offline eval on lam30 ckpt to confirm train/offline gap. Keep **`use_soft_pointer_time: false`**, **`lambda_residual: 5`** as ladder default. Do **not** scale to R3+.
+**Blockers:** None — GPU free.
 **Defer:** R2+SS; R3–R5; density variants; EOS-only tuning; “more dropout” without a train-timing signal.
 
 ### Dataset prep (PRE ingestion)
@@ -68,6 +66,10 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260805-07 | `train` + `metric` | Does tide `lambda_residual: 30` + hard time beat lam5 hard-time R2 on val timing? | **Not supported** | 50 ep probe: ES @ ep **26**, restore ep **16**; best val timing **0.0065** (lam5 hard probe **0.005**, full lam5 R2 **0.0085**) — modest vs short probe, below full R2 |
+| EXP-20260805-06 | `train` + `metric` | Does full R2 with hard pointer time beat soft-time R2 on val timing? | **Partial** | ES @ ep **146**, restore ep **96**; best val timing **0.0085** (soft R2 **0.0014**); train timing **0.054** @ best — still below null skill |
+| EXP-20260805-05 | `train` + `metric` | Does hard-argmax pointer time (`use_soft_pointer_time: false`) train multi-song timing where soft time fails? | **Partial** | 50 ep probe: best val timing **0.005 @ ep 7** vs soft/no-mono **~0.0005** (~**10×**); still at null floor — first recipe axis with measurable movement |
+| EXP-20260805-04 | `train` + `metric` | Is monotonic pointer blocking multi-song timing learning? | **Not supported** | 50 ep probe `monotonic_pointer: false`; ES @ ep **17**, restore ep **7**; best val timing **0.00054** — same floor as monotonic R2 |
 | EXP-20260805-03 | `train` + `metric` | Does the fixed decoder-audio stack give R2 content-pointer val timing above the noise floor? | **Not supported** | ES @ ep **54**, restore ep **4**; best `val_timing_match_teacher` **0.0014**; train timing also ~**10⁻³** at best/final — tokens overfit, timing does not |
 | EXP-20260805-02 | `model` + `train` + `metric` | Do the three decoder-audio fixes (mask default, query/zeros gate, PE-free cross + monotonic + soft time) make tide content-pointer pass a non-keys-only gate? | **Supported** | Tide timing **0.94**; zeros `query_cosine` **0.42** / tok **0.12** (was ~**1.0** / unchanged); gate **PASS** (pointer+token+query). Shuffle query can stay ~1 — zeros is the decoder probe |
 | EXP-20260805-01 | `model` + `metric` | Is content-pointer “audio grounding” coming from the decoder, or only from `pointer_key(memory)`? | **Root cause** | Decoder/`pointer_query` cosine ≈ **1.0** under shuffle (R2 + tide); pointer collapse is **keys-only**. Tide content-pointer used **inverted** attention masks (`legacy_inverted_attention_masks` default True). Prior train pointer-gate PASS was a false positive for decoder grounding |
@@ -152,6 +154,61 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260805-07: Hard time + tide `lambda_residual: 30` — no beat over lam5 R2
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 00:53:53 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Tide champion uses `lambda_residual: 30` vs ladder **5**. Does tide parity + hard pointer time raise multi-song timing beyond the lam5 hard-time R2? |
+| **Setup** | [`configs/ar/ladder_r2_hard_time_lam30_probe.json`](../../configs/ar/ladder_r2_hard_time_lam30_probe.json) — fixed stack, `use_soft_pointer_time: false`, `lambda_residual: 30`, 50 ep / ES **10**. WSL GPU ~**13** min. `logs/r2_hard_time_lam30_probe_train.log` |
+| **Stop** | ES @ ep **26**, restore ep **16** |
+| **Best (ep 16)** | val timing **0.0065**, train timing **0.0106** |
+| **Compare** | Lam5 hard probe **0.005 @ ep 7**; full lam5 hard R2 **0.0085 @ ep 96** — lam30 ~**1.3×** short probe, **below** full R2 |
+| **Conclusion** | **Not supported.** Higher residual weight does not beat the best hard-time ladder run. Keep **`lambda_residual: 5`** for R2; next recipe axis is not λ_residual alone |
+
+### EXP-20260805-06: Full R2 hard pointer time — timing rises, still below skill
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 22:40:53 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Does a full 500 ep R2 run with `use_soft_pointer_time: false` leave the ~10⁻³ floor? |
+| **Setup** | [`configs/ar/ladder_50t_50v_content_pointer.json`](../../configs/ar/ladder_50t_50v_content_pointer.json) — hard time, fixed decoder-audio stack. WSL GPU ~**48** min. `logs/ladder_r2_content_pointer_train.log` |
+| **Stop** | ES @ ep **146**, restore ep **96** |
+| **Best (ep 96)** | val timing **0.0085**, train timing **0.054** |
+| **Final (ep 146)** | val timing **0.0074**, train timing **0.222** |
+| **Compare** | Soft-time R2 best val **0.0014 @ ep 4**; 50 ep hard probe **0.005 @ ep 7** — full hard run ~**6×** soft / ~**1.7×** probe on in-train val |
+| **Offline val (50 songs, teacher)** | Timing **28/35439 = 0.00079**; F1 **0.0212**; skill vs null **−0.42**; `patch_wrong` **99.8%**. `logs/r2_hard_time_teacher_val.log` |
+| **Val ablation (12 songs, `--gate`)** | Matched timing **0.0071**; gate **FAIL** on pointer (matched≈floor); zeros query **0.18**, tok **0.24** → decoder grounding OK. `logs/r2_hard_time_ablation_gate.json` |
+| **Conclusion** | **Partial on train curve only.** Hard time moves in-train val timing to **0.0085** but offline val still at floor with negative null skill — not ready for R3+. Next: hard time + tide `lambda_residual: 30` |
+
+### EXP-20260805-05: Hard pointer time probe raises timing ~10× but still at floor
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 21:51:02 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With soft pointer time, `time_loss` dominates nats but timing stays at ~10⁻³. Does **hard-argmax** time (`use_soft_pointer_time: false`) backprop into the pointer and raise timing? |
+| **Setup** | [`configs/ar/ladder_r2_hard_time_probe.json`](../../configs/ar/ladder_r2_hard_time_probe.json) — fixed stack, `use_soft_pointer_time: false`, monotonic **true**, 50 ep / ES **10**. WSL GPU ~**10** min. `logs/r2_hard_time_probe_train.log` |
+| **Stop** | ES @ ep **17**, restore ep **7** |
+| **Best (ep 7)** | val timing **0.0050**, train timing **0.0046**; val pointer loss **7.21** nats, val time loss **22.6** (hard CE on argmax patch) |
+| **Compare** | No-monotonic soft probe best val **0.00054**; fixed soft R2 best **0.0014** — hard time ~**10×** / ~**3.5×** respectively, but still ≪ 1% and below any null skill bar |
+| **Conclusion** | **Partial.** Soft expected time was likely starving pointer CE on multi-song batches. Next: **full R2** with hard time (500 ep) or hard time + tide `lambda_residual: 30` short probe |
+
+### EXP-20260805-04: R2 no-monotonic probe still at timing floor
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 21:39:29 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Does `monotonic_pointer: true` (design §7) prevent multi-song pointer timing from training? |
+| **Setup** | [`configs/ar/ladder_r2_no_monotonic_probe.json`](../../configs/ar/ladder_r2_no_monotonic_probe.json) — same 50t/50v ladder as fixed R2 but `monotonic_pointer: false`, 50 ep / ES patience **10**. WSL GPU ~**10** min. `logs/r2_no_monotonic_probe_train.log` |
+| **Teacher offline (5 train songs, fixed R2 ckpt)** | Micro timing **1/1796 = 0.00056**; F1 **0.0006**; skill vs null **−0.60**; `n_patch_wrong` **1793/1796**. `logs/r2_fix_teacher_train5.log` |
+| **Probe stop** | ES @ ep **17**, restore ep **7** |
+| **Best (ep 7)** | val timing **0.00054**, train timing **0.00025** |
+| **Conclusion** | **Not supported.** Monotonic mask is not the binding constraint. `time_loss` ~**33–37** nats vs pointer ~**24** — recipe/loss balance or pointer CE path still suspect. Next: hard pointer time or tide-parity λ |
 
 ### EXP-20260805-03: Fixed-stack R2 content-pointer still at timing floor
 

@@ -6,6 +6,37 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-05 — content-pointer decoder is audio-blind
 
+### NOTE-20260805-06: Tide `lambda_residual: 30` does not beat lam5 hard-time R2
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 00:53:53 |
+| **Topic** | Recipe probe after full hard-time R2 still at offline floor |
+
+**Verdict.** Hard time + `lambda_residual: 30` on 50t/50v peaks in-train val timing **0.0065 @ ep 16** ([EXP-20260805-07](EXPERIMENT_LOG.md#exp-20260805-07-hard-time--tide-lambda_residual30--no-beat-over-lam5-r2)). That is ~**1.3×** the lam5 hard short probe (**0.005 @ ep 7**) but **below** the full lam5 hard R2 (**0.0085 @ ep 96**). Tide residual weight alone is not the missing multi-song ingredient.
+
+**Next.** Other tide-vs-ladder diffs: `lambda_time_ramp_epochs`, `dropout_rate: 0`, incremental consistency — or offline eval on this ckpt to see whether the train/offline val gap persists.
+
+### NOTE-20260805-05: Hard pointer time moves timing ~10× — soft time was starving the pointer
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 21:51:02 |
+| **Topic** | Recipe probe after monotonic ruled out |
+
+**Verdict.** `use_soft_pointer_time: false` on 50t/50v peaks val timing **0.005 @ ep 7** vs **0.00054** with soft time + no monotonic ([EXP-20260805-05](EXPERIMENT_LOG.md#exp-20260805-05-hard-pointer-time-probe-raises-timing-10-but-still-at-floor)). Still at the null floor, but the first axis that measurably moves the needle. Soft expected time likely decouples `lambda_time` from sparse pointer CE on multi-song charts.
+
+**Next.** Full R2 with hard time, or hard time + tide `lambda_residual: 30`.
+
+### NOTE-20260805-04: Monotonic pointer is not why R2 timing stays at zero
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-05 21:39:29 |
+| **Topic** | First recipe probe after wiring fix |
+
+**Verdict.** Offline teacher on 5 train songs with the fixed R2 ckpt: **1/1796** timing matches, **1793** patch wrong, F1 skill **−0.60** vs null ([EXP-20260805-04](EXPERIMENT_LOG.md#exp-20260805-04-r2-no-monotonic-probe-still-at-timing-floor)). Short retrain with `monotonic_pointer: false` peaks val timing **0.00054 @ ep 7** — same floor. Monotonic is ruled out; probe logs show `time_loss` ≫ pointer CE in nats but timing still does not move — investigate hard-argmax time vs soft, and tide λ_residual/dropout parity.
+
 ### NOTE-20260805-03: Fixed-stack R2 still has no timing signal — even on train
 
 | Field | Value |

@@ -7,12 +7,7 @@
     "max_audio_seconds": 300,
     "max_steps_per_chart": 2048,
     "dynamic_padding": true,
-    "length_bucket_boundaries": [
-      512,
-      768,
-      1024,
-      1536
-    ],
+    "length_bucket_boundaries": [512, 768, 1024, 1536],
     "cache_in_memory": true,
     "cache_max_samples": 128
   },
@@ -35,7 +30,7 @@
     "overfit_one_song": false,
     "lambda_time": 1.0,
     "lambda_time_ramp_epochs": 0,
-    "lambda_residual": 5.0,
+    "lambda_residual": 30.0,
     "lambda_incremental_consistency": 0.0,
     "incremental_consistency_max_steps": 0,
     "token_class_weight": "none",
@@ -45,12 +40,12 @@
     "learning_rate": 0.0001,
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
-    "epochs": 500,
+    "epochs": 50,
     "checkpoint_metric": "val_timing_match_teacher",
-    "early_stopping_patience": 50,
+    "early_stopping_patience": 10,
     "perfect_overfit_early_stop": false,
-    "model_output_dir": "models_wsl/ar/ladder_50t_50v_content_pointer",
+    "model_output_dir": "models_wsl/ar/ladder_r2_hard_time_lam30_probe",
     "callback_root_dir": "callbacks/ar/ladder",
-    "run_label": "r2_50t_content"
+    "run_label": "r2_hard_lam30_probe"
   }
 }
