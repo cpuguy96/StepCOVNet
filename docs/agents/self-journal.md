@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260807-02: Do not recommend ladder scale-up unless asked
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 10:19:30 |
+| **Category** | convention |
+| **Summary** | User declined R3/scale-up after gap diagnosis pointed at more data. Agents must not put ladder scale-up in what's-next **Now** / **do it** unless explicitly requested. |
+| **Artifact** | `.cursor/skills/whats-next/SKILL.md` (§ No ladder scale-up unless asked); Current phase + NOTE-20260807-02 retracted R3 as next |
+| **Action taken** | Skill forbids R3+ in Now/do-it; scale only under Alternate when evidence supports and user may switch; research docs defer scale-up |
+| **Related** | NOTE-20260807-02 · EXP-20260807-03 · JRN-20260807-01 |
+
 ### JRN-20260807-01: Evidence before suggesting the next train
 
 | Field            | Value |

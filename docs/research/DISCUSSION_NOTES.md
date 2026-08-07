@@ -4,6 +4,124 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
+
+### NOTE-20260807-04: Prev-relative local CE works — but hard-mask CE needs OOD skip
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 11:47:29 |
+| **Topic** | Decode-consistent `[prev, prev+R]` CE + traps that poison sparse CE |
+
+**Context.** Target-centered local CE failed ([EXP-20260807-05](EXPERIMENT_LOG.md#exp-20260807-05-clean-local-ce-r32--no-beat--88-preds-outside-window)). Prev-relative probe hit two CE poison modes before a fair train.
+
+**Traps.**
+
+1. **First onset (`prev=0`)** — ~38% of val songs start after patch 32. Upper-bound `[0, R]` masks the label → mean CE ~1e6. Fix: no upper bound when `prev==0`.
+2. **Section gaps `>R`** — rare (val **0.13%**, max gap **134** patches) but enough to keep mean CE ~**1e6** after (1). Fix: drop those steps from pointer CE; keep decode at fixed R.
+
+**Result.** [EXP-20260807-06](EXPERIMENT_LOG.md#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2): offline timing **0.0228** vs ptrloss **0.0035**; timing skill **+0.0145**. F1 skill still **−0.40**.
+
+**Implication.** Binding failure is no longer “800-way soup”; it is **in-window miss** (~5.5% patch-acc). Next measurement: where inside `[prev, prev+32]` mass lands (at_prev / near-target / edge).
+
+**Related.** `_tmp/r2_qk_ln_gap/prev_local_gaps.json` · `pointer_mask.prev_relative_ce_step_mask` · configs `ladder_r2_prev_local_ce_probe.json` (v3)
+
+### NOTE-20260807-03: Far_ahead at ep2 is diffuse mono-suffix mass, not confident wrong peaks
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 10:34:45 |
+| **Topic** | Entropy / top-k of mono-masked pointer softmax — ep2 vs ep31 |
+
+**Context.** [NOTE-20260807-02](#note-20260807-02-at-selected-weights-both-splits-are-weak--late-train-localization-is-memorization) left open whether ~97% far_ahead is near-uniform over the allowed suffix vs peaked wrong. Scale-up declined.
+
+**Discovery** (`_tmp/r2_qk_ln_gap/far_ahead_entropy.json`, 8 train / 12 val; mono-masked softmax).
+
+| Ckpt / split | far_ahead frac | mean n_allowed | H / H_uniform | mean top-1 | mean top-5 | target rank p50 |
+| ------------ | -------------- | -------------- | ------------- | ---------- | ---------- | --------------- |
+| **ep2 val** | 0.974 | **809** | **0.921** | **0.016** | 0.062 | **153** |
+| ep2 train | 0.942 | 759 | 0.909 | 0.020 | 0.077 | 66 |
+| ep31 val | 0.956 | 809 | 0.584 | **0.202** | 0.419 | 94 |
+| ep31 train | 0.742 | 746 | 0.643 | 0.100 | 0.310 | 11 |
+
+**Implication.**
+
+1. At the **selected** ep2 weights, far_ahead is **diffuse**: entropy ≈ uniform over ~**800** allowed patches; top-1 mass **~1.6%**. Not “confident wrong peaks.”
+2. Late ep31 **does** peak (val top-1 **~20%**) but on the **wrong** patches (target still rank ~**94**) — memorized wrong modes, matching worse-than-uniform NLL.
+3. Binding failure at the fair operating point: the model never concentrates mass near the target early; CE fights a ~800-way mono-suffix soup.
+
+**Evidence-backed next (fixed R2, no scale).** Clean **local pointer CE** short probe (`pointer_local_ce_radius` > 0, hard time, **no** STE, ckpt `val_pointer_loss`). → **Done** [EXP-20260807-05](EXPERIMENT_LOG.md#exp-20260807-05-clean-local-ce-r32--no-beat--88-preds-outside-window): **not supported**; **88%** of val preds outside ±32 — train/infer mismatch.
+
+**Follow-up.** Decode-consistent prev-relative CE → **Done** [EXP-20260807-06](EXPERIMENT_LOG.md#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2) / [NOTE-20260807-04](#note-20260807-04-prev-relative-local-ce-works--but-hard-mask-ce-needs-ood-skip).
+
+**Open.** In-window error modes; best R; soft outside-window penalty.
+
+**Related.** [EXP-20260807-04](EXPERIMENT_LOG.md#exp-20260807-04-far_ahead-entropy--ep2-diffuse-ep31-peaked-wrong) · [EXP-20260807-05](EXPERIMENT_LOG.md#exp-20260807-05-clean-local-ce-r32--no-beat--88-preds-outside-window) · [EXP-20260807-06](EXPERIMENT_LOG.md#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2) · `_tmp/r2_qk_ln_gap/diagnose_far_ahead_entropy.py` · JRN-20260807-02
+
+### NOTE-20260807-02: At selected weights both splits are weak — late train localization is memorization
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 10:16:09 |
+| **Topic** | Train/val gap at the fair `val_pointer_loss` ckpt (ep2) vs the late patch-acc ckpt (ep31) |
+
+**Context.** After [EXP-20260807-02](EXPERIMENT_LOG.md#exp-20260807-02-val_pointer_loss-selection-picks-ep2--timing-worse-than-patch-acc-ckpt), Current phase still said “attack transfer with reg/data,” but which knob was unmeasured. Prior error-modes ([NOTE-20260807-01](#note-20260807-01-train-localizes-val-does-not--gap-is-the-binding-failure)) were on the **ep31** export.
+
+**Discovery.**
+
+| Source | Finding |
+| ------ | ------- |
+| Epoch curves (`_tmp/r2_qk_ln_gap/epoch_curves.json`) | Best val NLL @ **ep2**: train patch-acc **0.0138** ≈ val **0.0137**. Late epochs: train climbs to **~0.08+** while val stays **~0.015–0.019** and val NLL drifts to/above uniform |
+| Offline teacher, ptrloss ep2 | Train (8): timing **13/3361 = 0.0039**; val (50): **124/35439 = 0.0035** — same floor. `logs/r2_qk_ln_ptrloss_teacher_train.log` |
+| Error-modes ptrloss ep2 | Train patch-acc **2.7%**, NLL **5.57** (−1.7 vs uniform), median \|Δ\| **107**, far_ahead **97%**. Val **1.2%**, NLL **6.12** (−1.2), median **157**, far_ahead **98%**. `_tmp/r2_qk_ln_ptrloss_diag/error_modes.json` |
+| Contrast ep31 (old) | Train **11.5%** / NLL **3.64** / median **12** vs val **1.7%** / NLL **7.65** (worse than uniform) — the “train localizes” story is **late memorization**, not the selected operating point |
+
+**Implication.**
+
+1. At the **exported** weights there is **no large train≫val gap** — both splits are weak. Dropout/reg aimed at “stop late overfit” does not create early transferable skill.
+2. Late train localization (11% patch-acc) is real but **anti-correlated** with val NLL; it is not a transfer success waiting for a better monitor.
+3. Binding failure reframed: **50-song R2 never learns a generalizable pointer early**; it only later memorizes train. Architecture grounding (ablation PASS on late train) is necessary but not sufficient for transferable skill.
+
+**Evidence-backed next (no scale-up).** Stay on fixed R2. First close the open from [NOTE-20260807-01](#note-20260807-01-train-localizes-val-does-not--gap-is-the-binding-failure): is **far_ahead** diffuse mass over the mono-allowed suffix vs confident wrong peaks (entropy / top-1–top-k mass on ep2 vs ep31)? → **Done** [NOTE-20260807-03](#note-20260807-03-far_ahead-at-ep2-is-diffuse-mono-suffix-mass-not-confident-wrong-peaks): ep2 diffuse (H/Huni **0.92**); next = clean local CE probe.
+
+**Open.** Closed for entropy; see NOTE-03 for local-CE radius.
+
+**Related.** [EXP-20260807-02](EXPERIMENT_LOG.md#exp-20260807-02-val_pointer_loss-selection-picks-ep2--timing-worse-than-patch-acc-ckpt) · [EXP-20260807-03](EXPERIMENT_LOG.md#exp-20260807-03-gap-diagnosis--selected-ep2-both-splits-weak) · `_tmp/r2_qk_ln_gap/` · JRN-20260807-01 · JRN-20260807-02
+
+### NOTE-20260807-01: Train localizes; val does not — gap is the binding failure
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 00:26:58 |
+| **Topic** | Error-mode diagnosis on [`ladder_r2_qk_ln_probe`](../../configs/ar/ladder_r2_qk_ln_probe.json) ckpt before proposing another loss |
+
+**Context.** After the defect sweep ([NOTE-20260806-03](#note-20260806-03-remaining-defect-inventory-after-encode-then-pe)), R2 still sits at ~**1.7%** val patch-acc / timing **~0.007**. Speculative attn-mass was deferred until measurements justified a lever.
+
+**Discovery (existing logs + new diag).**
+
+| Source | Finding |
+| ------ | ------- |
+| Train log (34 ep) | Best **val** patch-acc **0.0185 @ ep 31** with `val_pointer_loss` **7.39 ≈ uniform (~7.37)**. Best **val NLL** was earlier (**5.97 @ ep 2**) with lower patch-acc. Train ends ~**6.9%** patch-acc / pointer CE **~4.2** |
+| Offline val (50 songs) | Timing **0.0070**, `patch_wrong` **34828/35439**, F1 skill **−0.43** |
+| Ablation (12 val) | Pointer **PASS** (shuffle same_pred **0**); zeros query moves; tokens barely move |
+| New diag (`_tmp/r2_qk_ln_diag/error_modes.json`, 8 train / 12 val) | **Train:** patch-acc **0.115**, NLL **3.64** vs uniform **7.31** (−**3.68** nats), median \|Δpatch\| **12**. **Val:** patch-acc **0.017**, NLL **7.65** vs uniform **7.37** (**+0.28**, *worse* than uniform), median \|Δpatch\| **127**. Signed Δ strongly positive (pred ahead). **96.6%** of val preds are `far_ahead` of `prev+1` |
+
+**Implication.**
+
+1. The pointer **can** learn on train songs — this is not “CE cannot localize.” Attn-mass / more CE strength is the wrong next bet.
+2. Binding failure is **train→val transfer** (and/or selection): val is anti-calibrated vs uniform while train is strongly peaked.
+3. `val_pointer_patch_accuracy` alone picked an epoch whose val NLL is ~uniform; early NLL-better epochs were discarded — selection is part of the problem.
+
+**Evidence-backed next (in order).**
+
+1. **Train-split ablation** on the same ckpt — confirm train pointer grounding (expect PASS, not keys-only). → **Done** [EXP-20260807-01](EXPERIMENT_LOG.md#exp-20260807-01-qk-ln-train-ablation-pass--ckpt-on-val_pointer_loss): full gate PASS; matched timing **0.043**, NLL **3.64**.
+2. **Selection fix:** early-stop / checkpoint with a metric that prefers NLL under uniform (e.g. `val_pointer_loss` min) — justified by ep2 vs ep31 numbers above. → **Done** in ladder content-pointer configs (`val_pointer_loss`); retrain still required to export a new best.
+3. Only after (1)–(2): attack the **generalization gap** (reg / data / recipe), not another pointer-head aux — start with the `val_pointer_loss` retrain so selection is not still confounding the gap. → **Done** [EXP-20260807-02](EXPERIMENT_LOG.md#exp-20260807-02-val_pointer_loss-selection-picks-ep2--timing-worse-than-patch-acc-ckpt): ep2 selected; offline timing **worse** than ep31. Gap remains.
+
+**Open.** Whether val “far ahead” is mostly near-uniform mass over the mono-allowed suffix (geometric bias) vs confident wrong peaks — NLL at/above uniform on val favors the latter or diffuse high-entropy wrong mass.
+
+**Related.** [EXP-20260806-07](EXPERIMENT_LOG.md#exp-20260806-07-pointer-qk-layernorm--tide-pass-r2-patch-acc-visible-timing-flat) · [EXP-20260807-01](EXPERIMENT_LOG.md#exp-20260807-01-qk-ln-train-ablation-pass--ckpt-on-val_pointer_loss) · `logs/r2_qk_ln_error_modes.log` · JRN-20260807-01
+
 ## Session 2026-08-06 — pointer time objective is broken (not a recipe miss)
 
 ### NOTE-20260806-03: Remaining defect inventory after encode-then-PE

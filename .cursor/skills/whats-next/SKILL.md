@@ -45,6 +45,10 @@ If evidence is thin: **Now** = the measurement that would raise confidence; put 
 
 Copying Current phase **Next action** verbatim is wrong when that line is an unproven hypothesis — treat it as a candidate, then verify or demote it.
 
+### No ladder scale-up unless asked
+
+Do **not** put R3+ / more train songs / “scale the ladder” in **Now** or **If you say "do it"** unless the user **explicitly** asks to scale. Prefer fixed-R2 diagnostics, architecture, or objective changes. Scale may appear only under **Alternate** (and only if evidence supports it).
+
 ## Answer template
 
 ```markdown

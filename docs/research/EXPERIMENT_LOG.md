@@ -12,11 +12,11 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** **Defect sweep landed** ([NOTE-20260806-03](DISCUSSION_NOTES.md#note-20260806-03-remaining-defect-inventory-after-encode-then-pe)). Encode-then-PE + pointer QK LayerNorm; ablation floor lie fixed (R2 pointer gate now informative); patch-acc metric + mono-aware NLL; PE-key footguns closed. Content-only decoder cross **ruled out** (tide peak **0.67**). QK-LN R2 short probe offline timing **0.0070** ≈ encode-then-PE **0.0069**; patch top-1 ~**1.7%**; still ≪ null skill.
+**Status:** Prev-relative local CE (`[prev, prev+32]`, decode-consistent) **beats** ptrloss ep2 on val timing ([EXP-20260807-06](#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2)). Offline **809/35439 = 0.0228** vs **0.0035**; first **positive** timing skill vs null (**+0.0145**). F1 still deep-negative vs null (**−0.40**).
 
-**Next action:** Before another train: cheap evidence on the QK-LN R2 ckpt (train/val patch-acc trajectory, pointer NLL vs uniform, error modes). Only then pick a localization lever the numbers support. Do **not** scale to R3+ yet.
+**Next action:** Cheap in-window error modes on the v3 ckpt (at_prev / near-miss / edge-of-window) before another train — do **not** scale to R3+.
 **Blockers:** None — GPU free.
-**Defer:** speculative attn-mass / STE recipe variants until measurements justify them; content-only decoder cross as default; R3–R5.
+**Defer:** ladder scale-up (R3+) unless user asks; attn-mass; STE+local re-spam; target-centered local CE; dropout-as-primary.
 
 ### Dataset prep (PRE ingestion)
 
@@ -66,6 +66,12 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-06 | `train` + `metric` | Does decode-consistent prev-relative local CE (r=32) beat ptrloss ep2? | **Supported** | Offline timing **0.0228** vs **0.0035**; patch-acc **~5.5%**; timing skill **+0.0145** (F1 skill still **−0.40**) |
+| EXP-20260807-05 | `train` + `metric` | Does clean local CE (r=32, no STE) beat ptrloss ep2 on val timing / patch-acc? | **Not supported** | Offline **0.0025** &lt; ep2 **0.0035**; **88%** preds outside ±32 window — train/infer mismatch |
+| EXP-20260807-04 | `metric` | Is far_ahead diffuse mono-suffix mass or confident wrong peaks? | **Supported** | Ep2 val: H/Huni **0.92**, top-1 **0.016**, n_allowed ~**800** — diffuse; ep31 val top-1 **0.20** peaked wrong → local CE next |
+| EXP-20260807-03 | `metric` | At the selected ep2 weights, is the failure train≫val or both-weak? | **Supported** | Both weak (train timing **0.0039** ≈ val **0.0035**); late 11% train patch-acc is memorization — scale-up declined; next is fixed-R2 far_ahead entropy |
+| EXP-20260807-02 | `train` + `metric` | Does ckpt on `val_pointer_loss` beat the patch-acc-selected QK-LN ep31 on val timing / NLL? | **Partial** | Picks ep **2** (NLL **5.97**); offline timing **0.0035** **worse** than ep31 **0.0070** — selection fixed, transfer not |
+| EXP-20260807-01 | `metric` + `train` | Does QK-LN train-split ablation pass, and does switching ckpt to `val_pointer_loss` close the selection defect? | **Supported** (ablation + selection) | Train gate **PASS** (timing **0.043→0.001** shuffle; NLL **3.64**); configs now `val_pointer_loss`; retrain still needed to judge transfer |
 | EXP-20260806-07 | `model` + `train` + `metric` | Does pointer QK LayerNorm raise R2 patch-acc / beat encode-then-PE short probe? | **Partial** | Tide gate **PASS** (timing **0.99**). R2: val patch-acc **0.0185**, offline timing **0.0070** ≈ ctx-pefree **0.0069**; ablation pointer **PASS** after floor-fix |
 | EXP-20260806-06 | `model` | Does content-only decoder cross (no PE residual) help without breaking tide? | **Not supported** | Tide peak timing **0.67** vs mix **~0.94**; default stays **False** |
 | EXP-20260806-05 | `train` + `metric` | Does full 500-ep R2 with encode-then-PE beat prior full hard R2 **0.0085**? | **Supported** | Best val **0.00945 @ ep 144**; offline **334/35439 = 0.0094**; F1 **0.046** (was **0.021**) |
@@ -161,6 +167,85 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-06: Prev-relative local CE beats ptrloss ep2
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 11:47:29 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | After target-centered local CE failed ([EXP-20260807-05](#exp-20260807-05-clean-local-ce-r32--no-beat--88-preds-outside-window)), does **decode-consistent** prev-relative CE `[prev, prev+R]` (R=32) raise val timing / patch-acc vs ptrloss ep2? |
+| **Setup** | [`configs/ar/ladder_r2_prev_local_ce_probe.json`](../../configs/ar/ladder_r2_prev_local_ce_probe.json) — QK-LN + hard time + `pointer_local_ce_anchor: prev`, r=32, no STE, ckpt `val_pointer_loss`. Run label `r2_prev_local_ce_v3`. Plumbing: skip upper bound when `prev==0`; drop teacher gaps `>R` from pointer CE (rare section gaps otherwise poison mean CE ~1e6). `logs/r2_prev_local_ce_v3_train.log` |
+| **Gap poison (pre-fix)** | Val later-onset gap `>32`: **45/35389 (0.13%)** → approx mean CE **~1.3e6**; train **~0.45e6**. Max gap **134** patches (~10.7 s). `_tmp/r2_qk_ln_gap/prev_local_gaps.json` |
+| **In-train** | ES @ ep **22**, restore ep **12**. Best `val_pointer_loss` **3.275**; val patch-acc **0.061**; val timing **0.0228** |
+| **Offline val (50 songs)** | **809/35439 = 0.0228**; F1 **0.0315**; `patch_wrong` **33479** (patch-acc **~5.53%**); `patch_ok_timing_wrong` **1256**. Skill vs strongest null: timing **+0.0145**, F1 **−0.401**. `logs/r2_prev_local_ce_v3_teacher_val.log` |
+| **vs baselines** | ptrloss ep2 **0.0035**; QK-LN ep31 **0.0070**; target local CE **0.0025** — **~6.5×** timing vs ep2, **~3×** vs ep31 |
+| **Conclusion** | **Supported.** Decode-aligned locality is the first clear timing beat on fixed R2 since the plumbing fixes. Binding failure moves from “diffuse 800-way soup” to **in-window miss** (~5% patch-acc; F1 still below null). Next: in-window error modes before another loss train — no R3+ |
+
+### EXP-20260807-05: Clean local CE r=32 — no beat; 88% preds outside window
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 10:50:35 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | After [NOTE-20260807-03](DISCUSSION_NOTES.md#note-20260807-03-far_ahead-at-ep2-is-diffuse-mono-suffix-mass-not-confident-wrong-peaks) (diffuse ~800-way CE), does **target-centered** local pointer CE alone (radius **32**, hard time, **no** STE, ckpt `val_pointer_loss`) beat ptrloss ep2? |
+| **Setup** | [`configs/ar/ladder_r2_local_ce_probe.json`](../../configs/ar/ladder_r2_local_ce_probe.json) — QK-LN + encode-then-PE + local CE r=32. ES @ ep **20**, restore ep **10**. `logs/r2_local_ce_probe_train.log` |
+| **In-train (best ep 10)** | `val_pointer_loss` **3.36** (local support — **not** comparable to full CE ~6); val patch-acc **0.0092**; val timing **0.0025** |
+| **Offline val (50 songs)** | **89/35439 = 0.0025**; F1 **0.0017**; `patch_wrong` **35138**; skill F1 **−0.44**. `logs/r2_local_ce_probe_teacher_val.log` |
+| **vs ptrloss ep2** | Timing **0.0025** vs **0.0035**; patch-acc **0.009** vs **0.014** — worse |
+| **Outside-window check (12 val)** | Correct **0.9%**; wrong-inside-±32 **11%**; **outside ±32: 88%**. `_tmp/r2_qk_ln_gap/local_ce_outside_radius.json` |
+| **Conclusion** | **Not supported.** Local CE shrinks the *loss* support but inference still argmaxes the full mono suffix; unconstrained outside-window logits win. Next must be **decode-consistent** locality (e.g. prev-relative `[prev, prev+R]`), not another target-centered radius |
+
+### EXP-20260807-04: Far_ahead entropy — ep2 diffuse, ep31 peaked-wrong
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 10:34:45 |
+| **Track** | `metric` (AR) |
+| **Question** | At selected ep2 (and contrast ep31), is far_ahead near-uniform over the mono-allowed suffix or confident wrong peaks? |
+| **Setup** | `_tmp/r2_qk_ln_gap/diagnose_far_ahead_entropy.py` — mono-masked softmax entropy, top-1/5/10, target rank; 8 train / 12 val. Models: ptrloss ep2 + probe ep31. `logs/r2_qk_ln_far_ahead_entropy.log` · `_tmp/r2_qk_ln_gap/far_ahead_entropy.json` |
+| **Ep2 val (far_ahead 97%)** | n_allowed ~**809**; H/H_uniform **0.921**; top-1 **0.016**; top-5 **0.062**; target rank p50 **153** |
+| **Ep31 val (far_ahead 96%)** | Same n_allowed; H/H_uniform **0.584**; top-1 **0.202**; top-5 **0.419**; target rank p50 **94** |
+| **Conclusion** | **Supported.** Selected operating point is **diffuse** (~800-way soup), not peaked-wrong. Late peaking is wrong-mode memorization. Fixed-R2 next: isolate **local pointer CE** (no STE) — [NOTE-20260807-03](DISCUSSION_NOTES.md#note-20260807-03-far_ahead-at-ep2-is-diffuse-mono-suffix-mass-not-confident-wrong-peaks) |
+
+### EXP-20260807-03: Gap diagnosis — selected ep2 both splits weak
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 10:16:09 |
+| **Track** | `metric` (AR) |
+| **Question** | Is the binding failure a train≫val gap at the exported `val_pointer_loss` weights, or are both splits weak (with late train localization as memorization)? |
+| **Setup** | Ptrloss ckpt `models_wsl/ar/ladder_r2_qk_ln_ptrloss/`; contrast ep31 `ladder_r2_qk_ln_probe/`. Offline train `--limit 8`; error-modes 8/12; epoch curves from both train logs. Artifacts: `_tmp/r2_qk_ln_gap/`, `_tmp/r2_qk_ln_ptrloss_diag/error_modes.json`, `logs/r2_qk_ln_ptrloss_teacher_train.log`, `logs/r2_qk_ln_ptrloss_error_modes.log` |
+| **Curves** | Ep2: train patch-acc **0.0138** ≈ val **0.0137**. Late: train → **~0.08+**, val flat **~0.016**, val NLL → uniform+ |
+| **Offline (ptrloss ep2)** | Train timing **0.0039**; val **0.0035** ([EXP-20260807-02](#exp-20260807-02-val_pointer_loss-selection-picks-ep2--timing-worse-than-patch-acc-ckpt)) |
+| **Error-modes (ptrloss ep2)** | Train **2.7%** / NLL **5.57** / median \|Δ\| **107**; val **1.2%** / NLL **6.12** / median **157**; both ~**97%** far_ahead |
+| **Contrast (ep31)** | Train **11.5%** / NLL **3.64** / median **12** vs val **1.7%** / NLL **7.65** |
+| **Conclusion** | **Supported.** Selected operating point is **both-weak**, not train-ahead-of-val. Dropout-first lacks a gap to close. Scale-up (R3) was a candidate but **user declined** — stay fixed-R2; next measure far_ahead entropy ([NOTE-20260807-02](DISCUSSION_NOTES.md#note-20260807-02-at-selected-weights-both-splits-are-weak--late-train-localization-is-memorization)) |
+
+### EXP-20260807-02: `val_pointer_loss` selection picks ep2 — timing worse than patch-acc ckpt
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 01:27:17 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | After [EXP-20260807-01](#exp-20260807-01-qk-ln-train-ablation-pass--ckpt-on-val_pointer_loss), does retraining QK-LN R2 with `checkpoint_metric: val_pointer_loss` export a better val checkpoint than patch-acc ep **31**? |
+| **Setup** | [`configs/ar/ladder_r2_qk_ln_probe.json`](../../configs/ar/ladder_r2_qk_ln_probe.json) — `run_label: r2_qk_ln_ptrloss`, `model_output_dir: models_wsl/ar/ladder_r2_qk_ln_ptrloss`, 50 ep / ES **10**. `logs/r2_qk_ln_ptrloss_train.log` |
+| **Stop** | ES @ ep **12**, restore ep **2** (best `val_pointer_loss` **5.9728**; patch-acc **0.0137**; timing **0.0035**) |
+| **Offline val (50 songs)** | **124/35439 = 0.0035**; F1 **0.0035**; `patch_wrong` **34997**; skill F1 **−0.44**. `logs/r2_qk_ln_ptrloss_teacher_val.log` |
+| **Compare (patch-acc ckpt)** | Prior QK-LN export (ep **31**): offline timing **0.0070**, F1 **0.0094**, `patch_wrong` **34828**, val NLL ~uniform **~7.39** |
+| **Conclusion** | **Partial.** Monitor swap **correctly** prefers NLL≪uniform (ep2). Absolute val skill does **not** improve — best-NLL weights are weaker on timing than the mis-selected late epoch. Selection was a real bug but not the binding failure; train→val gap remains |
+
+### EXP-20260807-01: QK-LN train ablation PASS + ckpt on `val_pointer_loss`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 00:38:19 |
+| **Track** | `metric` + `train` (AR) |
+| **Question** | After [NOTE-20260807-01](DISCUSSION_NOTES.md#note-20260807-01-train-localizes-val-does-not--gap-is-the-binding-failure), does train-split audio ablation on the QK-LN R2 ckpt confirm pointer grounding, and does switching checkpoint/ES to `val_pointer_loss` address the ep31≈uniform selection bug? |
+| **Setup** | Same ckpt `models_wsl/ar/ladder_r2_qk_ln_probe/ar_onset_model.keras`; `audio_ablation_ar_onset.py --split train --limit 8 --gate`. Configs flipped: [`ladder_r2_qk_ln_probe.json`](../../configs/ar/ladder_r2_qk_ln_probe.json), [`ladder_50t_50v_content_pointer.json`](../../configs/ar/ladder_50t_50v_content_pointer.json), [`ladder_r2_ctx_pefree_full.json`](../../configs/ar/ladder_r2_ctx_pefree_full.json), [`ladder_r2_content_cross_probe.json`](../../configs/ar/ladder_r2_content_cross_probe.json) → `checkpoint_metric: val_pointer_loss` |
+| **Train ablation (8 songs)** | Gate **PASS** (pointer+token+query). Matched timing **0.0428** / F1 **0.0417** / ptr NLL **3.64** (uniform **7.31**); shuffle timing **0.0012** / same_pred **0.0003**; zeros query cos **0.90**. `logs/r2_qk_ln_ablation_train.json` |
+| **Val ablation (prior, 12 songs)** | Matched timing **0.0057** / ptr NLL **7.65**; pointer gate PASS at floor; tokens barely move. `logs/r2_qk_ln_ablation_gate.json` |
+| **Conclusion** | **Supported** for “train is grounded / selection was wrong monitor.” Does **not** yet prove val transfer under the new monitor — need a retrain that actually selects on min `val_pointer_loss` |
 
 ### EXP-20260806-07: Pointer QK LayerNorm — tide PASS; R2 patch-acc visible, timing flat
 
