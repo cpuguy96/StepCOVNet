@@ -12,10 +12,10 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Soft distance prior α=0.5 raises open-suffix timing to **0.105** / F1 **0.279** without hard starve ([EXP-20260807-13](#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent)). Removing α at eval still **collapses** (timing **0.0001**) — prior-dependent, but long gaps stay reachable when α is on.
+**Status:** Gap (Δ) Phase 3 tide gate **FAIL** ([EXP-20260807-14](#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind)): teacher **632/634**, ablation identical under reverse/shuffle/zeros. `Dense(gap_vocab)` is the same absolute-classifier failure as [EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer).
 
-**Next action:** Prefer levers that keep skill **without** a decode prior (relative gap head, or anneal α→0). Soft prior is a better crutch than hard-R, not the endgame. Do **not** stack hard-R.
-**Blockers:** None — GPU free.
+**Next action:** Content-based gap head (score Δ via `q · k(memory[prev+Δ])`, not `Dense(gap_vocab)`), then re-run tide gate + ablation. Do **not** proceed to R2 until ablation moves the gap head.
+**Blockers:** Gap head audio-blind by construction.
 **Defer:** hard-R / force-advance as product path; ladder scale-up unless asked; attn-mass; STE spam.
 
 ### Dataset prep (PRE ingestion)
@@ -66,6 +66,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-14 | `train` + `metric` | Does Dense gap+residual pass tide timing ≈1 **and** audio grounding? | **Not supported** | Teacher **632/634**; ablation same_pred **1.0** under zeros — audio-blind |
 | EXP-20260807-13 | `train` + `metric` | Does soft distance-from-prev prior (no hard cutoff) beat full CE without starving long gaps? | **Partial** | α=0.5 timing **0.105** / F1 **0.279** vs ptrloss **0.0035**; α=0 eval still collapses |
 | EXP-20260807-12 | `metric` | Do R=4 weights keep skill if the hard window is removed at eval? | **Supported** (collapse) | Unmasked timing **0.0016** vs masked **0.156**; patch-acc **0.25%** — crutch-dependent |
 | EXP-20260807-11 | `metric` | At R=4, is leftover error mid-window soup, residual, or stickiness? | **Supported** | Val **31%** at_prev + **30%** near_miss≤2; H/Huni **0.89**; resid secondary; **R=2 starves 20%** gaps |
@@ -174,6 +175,19 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-14: Tide gap_residual overfit — timing near-1, audio-blind
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 15:35:57 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Does `alignment: gap_residual` (`Dense(gap_vocab)` + residual, no α / hard R) pass the tide gate: teacher timing ≈1 **and** audio ablation must move the gap head? |
+| **Setup** | [`configs/ar/tide_gap_residual.json`](../../configs/ar/tide_gap_residual.json); 400 ep; ckpt `models_wsl/ar/tide_gap_residual/`. Train `logs/tide_gap_residual_train.log`; decode `logs/tide_gap_residual_decode.log`; ablation `logs/tide_gap_residual_ablation.log` / `logs/audio_ablation_tide_gap_residual.json`. Offline diagnose fixed for gap-only models (`pointer_logits` → `gap_logits`). |
+| **In-train** | Peak `val_overfit_gate` **0.9968** (~ep 382); late epochs destabilized |
+| **Offline teacher** | Ordered @ 20 ms **632/634 (0.9968)** vs `target_times`; patch errors **0**; patch-ok timing-wrong **2**. Free-run skipped (gate not perfect) |
+| **Audio ablation** | matched / reverse / shuffle / zeros all timing **0.9968**, `same_pred_as_matched` **1.0**, token acc **1.0**. Gate **FAIL** (pointer+token+query). `query_cosine` defaults to **1.0** when no `pointer_query` layer — decisive signal is same_pred / timing under zeros |
+| **Conclusion** | **Not supported.** Relative Δ CE memorizes the gap sequence from the teacher prefix without reading audio — same failure class as absolute `Dense(max_patches)` ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). Content pointer fixed that for absolute indices ([EXP-20260804-06](#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate)); gap needs the same: score Δ against `memory[prev+Δ]`, not a closed Dense classifier. Do not run R2 on this head |
 
 ### EXP-20260807-13: Soft distance prior beats full CE; still prior-dependent
 

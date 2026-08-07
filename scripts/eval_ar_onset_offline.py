@@ -856,47 +856,78 @@ def _diagnose_batch(
     patch_frames = model_config.patch_frames
     tolerance_sec = run_config.tolerance_sec
 
-    pointer_logits = outputs["pointer_logits"].numpy()[0]
     residual_sec = outputs["residual_sec"].numpy()[0]
     onset_mask = batch["onset_step_mask"][0] > 0.5
     target_patches = batch["target_patch_indices"][0]
     target_residual = batch["target_residual_sec"][0]
     target_times = batch["target_times"][0]
     gt_times = batch["gt_times"][0][batch["gt_mask"][0] > 0.5]
+    gap_alignment = config.gap_alignment_active(model_config)
+    max_patch = max(int(np.asarray(batch["patch_mask"][0]).sum()) - 1, 0)
 
-    monotonic = bool(model_config.monotonic_pointer)
-    max_ahead = config.pointer_decode_max_ahead(run_config)
-    soft_alpha = config.pointer_soft_distance_alpha(run_config)
-    pred_times = inference.decode_teacher_fed_times_numpy(
-        pointer_logits,
-        residual_sec,
-        batch["onset_step_mask"][0],
-        patch_frames=patch_frames,
-        hop_sec=hop_sec,
-        target_patch_indices=target_patches,
-        monotonic=monotonic,
-        max_ahead=max_ahead,
-        soft_distance_alpha=soft_alpha,
-    )
-    if monotonic:
+    if gap_alignment:
+        gap_logits = outputs["gap_logits"].numpy()[0]
+        gap_vocab = experiment_config.build_gap_vocab()
+        pred_times = inference.decode_teacher_fed_gap_times_numpy(
+            gap_logits,
+            residual_sec,
+            batch["onset_step_mask"][0],
+            target_patches,
+            gap_vocab=gap_vocab,
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+            max_patch=max_patch,
+        )
         prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
             np.asarray(target_patches, dtype=np.int32),
         )
         pred_patch = np.asarray(
             [
-                inference._argmax_pointer_patch(  # noqa: SLF001
-                    pointer_logits[i],
+                inference._argmax_gap_patch(  # noqa: SLF001
+                    gap_logits[i],
                     prev_patch=int(prev_patches[i]),
-                    monotonic=True,
-                    max_ahead=max_ahead,
-                    soft_distance_alpha=soft_alpha,
+                    gap_vocab=gap_vocab,
+                    max_patch=max_patch,
                 )
-                for i in range(pointer_logits.shape[0])
+                for i in range(gap_logits.shape[0])
             ],
             dtype=np.int32,
         )
     else:
-        pred_patch = np.argmax(pointer_logits, axis=-1)
+        pointer_logits = outputs["pointer_logits"].numpy()[0]
+        monotonic = bool(model_config.monotonic_pointer)
+        max_ahead = config.pointer_decode_max_ahead(run_config)
+        soft_alpha = config.pointer_soft_distance_alpha(run_config)
+        pred_times = inference.decode_teacher_fed_times_numpy(
+            pointer_logits,
+            residual_sec,
+            batch["onset_step_mask"][0],
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+            target_patch_indices=target_patches,
+            monotonic=monotonic,
+            max_ahead=max_ahead,
+            soft_distance_alpha=soft_alpha,
+        )
+        if monotonic:
+            prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
+                np.asarray(target_patches, dtype=np.int32),
+            )
+            pred_patch = np.asarray(
+                [
+                    inference._argmax_pointer_patch(  # noqa: SLF001
+                        pointer_logits[i],
+                        prev_patch=int(prev_patches[i]),
+                        monotonic=True,
+                        max_ahead=max_ahead,
+                        soft_distance_alpha=soft_alpha,
+                    )
+                    for i in range(pointer_logits.shape[0])
+                ],
+                dtype=np.int32,
+            )
+        else:
+            pred_patch = np.argmax(pointer_logits, axis=-1)
 
     step_indices = np.flatnonzero(onset_mask)
     abs_err_sec = np.abs(pred_times - target_times[step_indices])

@@ -6,6 +6,92 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
 
+### NOTE-20260807-09: Dense gap head is audio-blind (Phase 3 FAIL)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 15:35:57 |
+| **Topic** | Tide gate result for `gap_residual` v1 |
+
+**Verdict.** [EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind): teacher **632/634**, ablation **identical** under reverse/shuffle/zeros (`same_pred` **1.0**). Relative Δ CE alone does not force audio use when the head is `Dense(gap_vocab)` over decoder state — same class as absolute index classification ([EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)).
+
+**Implication.** Before R2: replace Dense gap with a **content-based** gap (logits for Δ from `q · k(memory[prev+Δ])`, dense ids exact; log buckets as needed). Re-run tide + ablation; only then Phase 4.
+
+**Related.** [NOTE-20260807-07](#note-20260807-07-relative-gap-δ-alignment-head--v1-spec) · [NOTE-20260807-08](#note-20260807-08-gap-alignment-phase-2--model--loss-landed) · [EXP-20260804-06](EXPERIMENT_LOG.md#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate)
+
+### NOTE-20260807-08: Gap alignment Phase 2 — model + loss landed
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 15:24:59 |
+| **Topic** | Gap head + CE wiring (no long GPU train) |
+
+**Context.** [NOTE-20260807-07](#note-20260807-07-relative-gap-δ-alignment-head--v1-spec) Phase 0–1 shipped targets. Phase 2 wires the head and objective.
+
+**Landed.**
+
+| Piece | Detail |
+| ----- | ------ |
+| Config | `alignment: gap_residual` · `keep_absolute_pointer_head` · `patch_delta_*` · `gap_loss_weight` · helpers `gap_alignment_active` / `absolute_pointer_head_active` |
+| Model | `gap_logits` Dense over `PatchGapVocab`; absolute pointer optional for A/B |
+| Loss | Gap CE on `target_gap_ids` (teacher-forced prev); times = resolved `prev+Δ` + residual; **no** soft α / hard R on gap path |
+| Decode / ablation | Teacher-fed + free-run + KV + audio ablation resolve via Δ |
+| Tide config | [`configs/ar/tide_gap_residual.json`](../../configs/ar/tide_gap_residual.json) |
+
+**Tests.** 80+ unit tests green across losses/models/targets/datasets/ablation; inference/kv/trainers also green. Log: `logs/gap_phase2_unit_test.log`.
+
+**Phase 3.** Ran — **FAIL** on audio grounding ([EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind), [NOTE-20260807-09](#note-20260807-09-dense-gap-head-is-audio-blind-phase-3-fail)).
+
+**Next.** Content-based gap head, then re-gate tide. Hold R2 / design default.
+
+**Related.** [NOTE-20260807-07](#note-20260807-07-relative-gap-δ-alignment-head--v1-spec) · `src/stepcovnet/onset_ar/{models,losses,trainers,inference}.py`
+
+### NOTE-20260807-07: Relative gap (Δ) alignment head — v1 spec
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 14:53:53 |
+| **Topic** | Spec for replacing absolute `patch_idx` CE with a relative gap head |
+
+**Context.** Absolute pointer + full CE collapses on open-set localization (ptrloss ep2 timing **~0.0035**). Hard prev-local R=4 and soft distance α=0.5 raise timing but skill **vanishes** when the prior/mask is removed ([EXP-20260807-12](EXPERIMENT_LOG.md#exp-20260807-12-r4-weights-collapse-without-hard-window), [EXP-20260807-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent)). Token LM already uses `delta_bucketed`; the alignment head is still absolute. Hard-R / force-advance stay diagnostic-only ([NOTE-20260807-06](#note-20260807-06-hard-r-is-diagnostic-not-the-holistic-system)).
+
+**Representation (v1).**
+
+| Step | Target | Decode |
+| ---- | ------ | ------ |
+| First onset | Absolute patch as Δ from virtual `prev=0` | `patch = clamp(Δ, 0…T′−1)` |
+| Later | `Δpatch = patch − prev` (≥0; same-patch allowed) | `patch = clamp(prev + Δ, 0…T′−1)` |
+| All | `residual_sec` in landed patch | `t = patch·P·hop + residual` |
+
+Content gather uses the **resolved** absolute index after choosing Δ. Train/decode must not require soft α or hard R.
+
+**Vocab edges (fit: `_tmp/r2_qk_ln_gap/`, R2 50t/50v).**
+
+| Stat | Train | Val |
+| ---- | ----- | --- |
+| Later Δ p50 / p95 / p99 / max | 2 / 4 / 7 / 82 | 2 / 5 / 12 / 134 |
+| First-abs p50 / p95 / max | 19.5 / 109 / 141 | 22 / 137 / 187 |
+| Later Δ=0 fraction | ~2.0% | ~1.5% |
+
+Defaults in `PatchGapVocab`: **`delta_max_dense=256`** (exact ids `0…256`), **`n_log_buckets=16`** for overflow. On R2 every later gap and first-abs is dense-exact (max 187 &lt; 256). Vocab size = **273**.
+
+**Overflow.** `Δ > 256` → last log bucket (encode clamps); decode uses bin center. Rare on R2; acceptable lossy path for OOD long pauses/intros. No separate OVERFLOW id in v1.
+
+**Mask.** `onset_step_mask` gates gap CE (same as pointer); pad/EOS steps ignored. Batch fields: `target_delta_patches` (raw Δ), `target_gap_ids` (vocab), keep `target_patch_indices` for residual/A/B.
+
+**Success criteria (phased).**
+
+1. **Unit:** dense Δ round-trip exact; gap-id → patch → time matches pointer+residual on tide/synthetic.
+2. **Tide gate:** no soft α / hard R; teacher timing ≈1; audio ablation must move the **gap** head.
+3. **R2 probe:** beat ptrloss baseline (**timing ~0.0035**) **without** decode prior; log EXP.
+4. **Cleanup:** default alignment = gap+residual; soft α / hard R diagnostic-only in design doc.
+
+**Out of scope for v1.** Anneal-α on absolute pointer; ladder R3+; hard-R stacking.
+
+**Implementation status.** Phase 0–2 done ([NOTE-20260807-08](#note-20260807-08-gap-alignment-phase-2--model--loss-landed)). Phase 3 Dense gap **FAIL** ([EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind) / [NOTE-20260807-09](#note-20260807-09-dense-gap-head-is-audio-blind-phase-3-fail)). Next: content-based gap, then re-gate.
+
+**Related.** [NOTE-20260807-06](#note-20260807-06-hard-r-is-diagnostic-not-the-holistic-system) · [NOTE-20260807-08](#note-20260807-08-gap-alignment-phase-2--model--loss-landed) · [EXP-20260807-12](EXPERIMENT_LOG.md#exp-20260807-12-r4-weights-collapse-without-hard-window) · [EXP-20260807-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent) · `src/stepcovnet/onset_ar/targets.py` · JRN-20260807-03
+
 ### NOTE-20260807-06: Hard R is diagnostic, not the holistic system
 
 | Field | Value |

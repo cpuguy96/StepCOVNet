@@ -44,6 +44,7 @@ def _load_batch(
         dataset_config=experiment_config.dataset,
         model_config=experiment_config.model,
         vocab=experiment_config.build_vocab(),
+        gap_vocab=experiment_config.build_gap_vocab(),
         chart_index=chart_index,
     )
     return datasets.sample_to_training_batch(loaded, experiment_config)
