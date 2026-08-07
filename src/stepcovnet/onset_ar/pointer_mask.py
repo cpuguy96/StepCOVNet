@@ -40,6 +40,81 @@ def apply_monotonic_pointer_mask_numpy(
     return logits
 
 
+def apply_prev_relative_window_tf(
+    pointer_logits: tf.Tensor,
+    prev_patch_indices: tf.Tensor,
+    *,
+    max_ahead: int,
+) -> tf.Tensor:
+    """Mask patches strictly after ``prev + max_ahead`` (decode-consistent local).
+
+    Combined with :func:`apply_monotonic_pointer_mask_tf`, this yields the
+    allowed set ``[prev, prev + max_ahead]`` when ``prev > 0``. When
+    ``prev == 0`` (first onset), no upper bound is applied — songs often start
+    well after patch ``max_ahead``, and masking those targets poisons CE.
+    ``max_ahead <= 0`` is a no-op.
+
+    Rare teacher gaps larger than ``max_ahead`` can still leave the *label*
+    masked; callers should zero those steps via
+    :func:`prev_relative_ce_step_mask`.
+    """
+    if max_ahead <= 0:
+        return pointer_logits
+    pointer_logits = tf.cast(pointer_logits, tf.float32)
+    n_patches = tf.shape(pointer_logits)[-1]
+    patch_ids = tf.range(n_patches, dtype=tf.int32)
+    patch_ids = tf.reshape(patch_ids, (1, 1, n_patches))
+    prev = tf.expand_dims(tf.cast(prev_patch_indices, tf.int32), axis=-1)
+    hi = prev + int(max_ahead)
+    apply_upper = prev > 0
+    invalid = tf.cast(
+        tf.logical_and(patch_ids > hi, apply_upper),
+        pointer_logits.dtype,
+    )
+    return pointer_logits + invalid * (-1e9)
+
+
+def prev_relative_ce_step_mask(
+    target_patch_indices: tf.Tensor,
+    prev_patch_indices: tf.Tensor,
+    *,
+    max_ahead: int,
+    onset_step_mask: tf.Tensor,
+) -> tf.Tensor:
+    """Onset-step mask that drops targets outside ``[prev, prev+max_ahead]``.
+
+    First-onset steps (``prev == 0``) stay active — matching the unrestricted
+    upper bound in :func:`apply_prev_relative_window_tf`. Used so sparse CE
+    never sees a label sitting on a ``-1e9`` logit (section gaps > R).
+    """
+    onset = tf.cast(onset_step_mask, tf.float32)
+    if max_ahead <= 0:
+        return onset
+    target = tf.cast(target_patch_indices, tf.int32)
+    prev = tf.cast(prev_patch_indices, tf.int32)
+    in_window = tf.logical_or(
+        prev <= 0,
+        target <= prev + int(max_ahead),
+    )
+    return onset * tf.cast(in_window, tf.float32)
+
+
+def apply_prev_relative_window_numpy(
+    pointer_logits: np.ndarray,
+    prev_patch: int,
+    *,
+    max_ahead: int,
+) -> np.ndarray:
+    """Numpy version of :func:`apply_prev_relative_window_tf` for one step."""
+    if max_ahead <= 0 or int(prev_patch) <= 0:
+        return pointer_logits
+    logits = np.asarray(pointer_logits, dtype=np.float32).copy()
+    hi = int(prev_patch) + int(max_ahead)
+    if hi + 1 < logits.shape[-1]:
+        logits[..., hi + 1 :] = -1e9
+    return logits
+
+
 def teacher_forced_prev_patch_indices_numpy(
     target_patch_indices: np.ndarray,
 ) -> np.ndarray:

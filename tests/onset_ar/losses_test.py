@@ -145,6 +145,49 @@ class LossesTest(unittest.TestCase):
         self.assertLess(float(masked[0, 0, 5]), -1e8)
         self.assertLess(float(masked[0, 0, 11]), -1e8)
 
+    def test_prev_relative_window_masks_beyond_max_ahead(self) -> None:
+        from stepcovnet.onset_ar import pointer_mask
+
+        logits = tf.zeros((1, 1, 16), dtype=tf.float32)
+        prev = tf.constant([[4]], dtype=tf.int32)
+        masked = pointer_mask.apply_prev_relative_window_tf(
+            logits,
+            prev,
+            max_ahead=3,
+        )
+        self.assertAlmostEqual(float(masked[0, 0, 4]), 0.0, places=5)
+        self.assertAlmostEqual(float(masked[0, 0, 7]), 0.0, places=5)
+        self.assertLess(float(masked[0, 0, 8]), -1e8)
+
+    def test_prev_relative_window_skips_upper_bound_when_prev_zero(self) -> None:
+        from stepcovnet.onset_ar import pointer_mask
+
+        logits = tf.zeros((1, 1, 16), dtype=tf.float32)
+        prev = tf.constant([[0]], dtype=tf.int32)
+        masked = pointer_mask.apply_prev_relative_window_tf(
+            logits,
+            prev,
+            max_ahead=3,
+        )
+        # First onset may land far past max_ahead; do not mask it.
+        self.assertAlmostEqual(float(masked[0, 0, 15]), 0.0, places=5)
+
+    def test_prev_relative_ce_step_mask_drops_gap_beyond_max_ahead(self) -> None:
+        from stepcovnet.onset_ar import pointer_mask
+
+        # Step0: first onset (prev=0) kept. Step1: gap 5 > max_ahead 3 dropped.
+        targets = tf.constant([[10, 15]], dtype=tf.int32)
+        prev = tf.constant([[0, 10]], dtype=tf.int32)
+        onset = tf.constant([[1.0, 1.0]], dtype=tf.float32)
+        mask = pointer_mask.prev_relative_ce_step_mask(
+            targets,
+            prev,
+            max_ahead=3,
+            onset_step_mask=onset,
+        )
+        self.assertAlmostEqual(float(mask[0, 0]), 1.0, places=5)
+        self.assertAlmostEqual(float(mask[0, 1]), 0.0, places=5)
+
     def test_time_loss_correct_patch_only_ignores_wrong_patches(self) -> None:
         # Argmax prefers patch 0; target is patch 3 → time term must be zero.
         pointer_logits = tf.constant(

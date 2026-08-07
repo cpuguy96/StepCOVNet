@@ -150,6 +150,7 @@ def score_batch(
     decoder_mask = batch["decoder_mask"][0]
     monotonic = bool(experiment_config.model.monotonic_pointer)
 
+    max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
     pred_times = inference.decode_teacher_fed_times_numpy(
         pointer_logits,
         residual_sec,
@@ -158,24 +159,30 @@ def score_batch(
         hop_sec=experiment_config.dataset.hop_sec,
         target_patch_indices=batch["target_patch_indices"][0],
         monotonic=monotonic,
+        max_ahead=max_ahead,
     )
     if monotonic:
         prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
             batch["target_patch_indices"][0],
         )
-        # Per-step mono mask so NLL matches train pointer CE (not raw logits).
+        # Per-step mono (+ optional prev+R) so NLL matches train pointer CE.
         logits_for_nll = pointer_logits.astype(np.float32).copy()
         n_patches = logits_for_nll.shape[-1]
         for i in range(logits_for_nll.shape[0]):
             p = int(prev[i])
             if p > 0:
                 logits_for_nll[i, : min(p, n_patches)] = -1e9
+            if max_ahead > 0:
+                hi = p + max_ahead
+                if hi + 1 < n_patches:
+                    logits_for_nll[i, hi + 1 :] = -1e9
         pred_patches = np.asarray(
             [
                 inference._argmax_pointer_patch(  # noqa: SLF001
                     pointer_logits[i],
                     prev_patch=int(prev[i]),
                     monotonic=True,
+                    max_ahead=max_ahead,
                 )
                 for i in step_indices
             ],

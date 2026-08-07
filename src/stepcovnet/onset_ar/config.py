@@ -122,8 +122,11 @@ class ArRunConfig(_DictSerializableMixin):
     use_ste_pointer_time: bool = False
     # Apply λ_time only on steps where hard pointer matches the target patch.
     time_loss_correct_patch_only: bool = False
-    # Restrict pointer CE to [target - r, target + r]; 0 = full patch axis.
+    # Restrict pointer CE to a local window; 0 = full patch axis.
     pointer_local_ce_radius: int = 0
+    # "target": [target - r, target + r] CE-only (decode unrestricted — footgun).
+    # "prev": [prev, prev + r] for CE + decode/metrics (decode-consistent).
+    pointer_local_ce_anchor: str = "target"
     scheduled_sampling_max_p: float = 0.0
     scheduled_sampling_ramp_epochs: int = 0
     scheduled_sampling_warmup_epochs: int = 0
@@ -145,6 +148,15 @@ class ArRunConfig(_DictSerializableMixin):
     learning_rate: float = 2e-3
     mixed_precision: bool = False
     enable_xla: bool = False
+
+
+def pointer_decode_max_ahead(run: ArRunConfig) -> int:
+    """Max patches ahead of ``prev`` at decode when local CE is prev-anchored."""
+    if int(run.pointer_local_ce_radius) <= 0:
+        return 0
+    if str(run.pointer_local_ce_anchor or "target").lower() != "prev":
+        return 0
+    return int(run.pointer_local_ce_radius)
 
 
 @dataclasses.dataclass

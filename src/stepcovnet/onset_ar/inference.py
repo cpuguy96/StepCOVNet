@@ -17,13 +17,20 @@ def _argmax_pointer_patch(
     *,
     prev_patch: int,
     monotonic: bool,
+    max_ahead: int = 0,
 ) -> int:
-    """Argmax patch index, optionally enforcing monotonicity."""
+    """Argmax patch index, optionally enforcing monotonicity / prev+R window."""
     logits = pointer_logits
     if monotonic:
         logits = pointer_mask.apply_monotonic_pointer_mask_numpy(
             logits,
             prev_patch,
+        )
+    if max_ahead > 0:
+        logits = pointer_mask.apply_prev_relative_window_numpy(
+            logits,
+            prev_patch,
+            max_ahead=max_ahead,
         )
     return int(np.argmax(logits))
 
@@ -356,11 +363,13 @@ def decode_parallel_pointer_times_numpy(
     times: list[float] = []
     prev_patch = 0
     monotonic = bool(experiment_config.model.monotonic_pointer)
+    max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
     for pos in range(int(tokens.size)):
         patch_idx = _argmax_pointer_patch(
             pointer_logits[pos],
             prev_patch=prev_patch,
             monotonic=monotonic,
+            max_ahead=max_ahead,
         )
         if monotonic:
             prev_patch = patch_idx
@@ -405,6 +414,7 @@ def decode_gt_incremental_pointer_times_numpy(
     times: list[float] = []
     prev_patch = 0
     monotonic = bool(experiment_config.model.monotonic_pointer)
+    max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
     cur_len = 1
     while cur_len < max_decoder_len:
         decoder_feed = {
@@ -433,6 +443,7 @@ def decode_gt_incremental_pointer_times_numpy(
                 pointer_logits,
                 prev_patch=prev_patch,
                 monotonic=monotonic,
+                max_ahead=max_ahead,
             )
             if monotonic:
                 prev_patch = patch_idx
@@ -652,6 +663,11 @@ def _decode_autoregressive_prefix_numpy(
     monotonic = bool(
         experiment_config is not None and experiment_config.model.monotonic_pointer,
     )
+    max_ahead = (
+        config.pointer_decode_max_ahead(experiment_config.run)
+        if experiment_config is not None
+        else 0
+    )
     cur_len = 1
     n_forward_steps = 0
     stopped_on_eos = False
@@ -677,6 +693,7 @@ def _decode_autoregressive_prefix_numpy(
             pointer_logits,
             prev_patch=prev_patch,
             monotonic=monotonic,
+            max_ahead=max_ahead,
         )
         if monotonic:
             prev_patch = patch_idx
@@ -832,6 +849,7 @@ def decode_teacher_fed_times_numpy(
     hop_sec: float,
     target_patch_indices: np.ndarray | None = None,
     monotonic: bool = False,
+    max_ahead: int = 0,
 ) -> np.ndarray:
     """Extract sorted onset times from teacher-fed decoder outputs."""
     pointer_logits = np.asarray(pointer_logits, dtype=np.float32)
@@ -862,6 +880,7 @@ def decode_teacher_fed_times_numpy(
             pointer_logits[step_idx],
             prev_patch=prev,
             monotonic=monotonic and prev_patches is not None,
+            max_ahead=max_ahead if prev_patches is not None else 0,
         )
         times.append(float(patch_idx) * patch_duration + float(residual_sec[step_idx]))
     return np.asarray(times, dtype=np.float32)
@@ -875,16 +894,23 @@ def decode_teacher_fed_times_tf(
     hop_sec: float,
     use_soft_expected: bool = False,
     monotonic_pointer: bool = False,
+    max_ahead: int = 0,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Tensor wrapper returning padded predicted times and a validity mask."""
     pointer_logits = outputs["pointer_logits"]
+    prev = pointer_mask.teacher_forced_prev_patch_indices(
+        batch["target_patch_indices"],
+    )
     if monotonic_pointer:
-        prev = pointer_mask.teacher_forced_prev_patch_indices(
-            batch["target_patch_indices"],
-        )
         pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
             pointer_logits,
             prev,
+        )
+    if max_ahead > 0:
+        pointer_logits = pointer_mask.apply_prev_relative_window_tf(
+            pointer_logits,
+            prev,
+            max_ahead=max_ahead,
         )
     pred_times = losses.predicted_times_from_outputs(
         pointer_logits,

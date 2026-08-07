@@ -252,6 +252,9 @@ class ArOnsetTrainingModel(keras.Model):
             run_config.time_loss_correct_patch_only,
         )
         self.pointer_local_ce_radius = int(run_config.pointer_local_ce_radius)
+        self.pointer_local_ce_anchor = str(
+            getattr(run_config, "pointer_local_ce_anchor", "target") or "target",
+        ).lower()
         self.monotonic_pointer = bool(model_config.monotonic_pointer)
         self.lambda_residual = run_config.lambda_residual
         self.lambda_incremental_consistency = run_config.lambda_incremental_consistency
@@ -440,14 +443,20 @@ class ArOnsetTrainingModel(keras.Model):
         outputs: dict[str, tf.Tensor],
         batch: dict[str, tf.Tensor],
     ) -> tf.Tensor:
-        """Pointer logits with the same teacher mono mask used by pointer CE."""
+        """Pointer logits with the same teacher masks used by pointer CE."""
         logits = tf.cast(outputs["pointer_logits"], tf.float32)
-        if not self.monotonic_pointer:
-            return logits
         prev = pointer_mask.teacher_forced_prev_patch_indices(
             batch["target_patch_indices"],
         )
-        return pointer_mask.apply_monotonic_pointer_mask_tf(logits, prev)
+        if self.monotonic_pointer:
+            logits = pointer_mask.apply_monotonic_pointer_mask_tf(logits, prev)
+        if self.pointer_local_ce_radius > 0 and self.pointer_local_ce_anchor == "prev":
+            logits = pointer_mask.apply_prev_relative_window_tf(
+                logits,
+                prev,
+                max_ahead=self.pointer_local_ce_radius,
+            )
+        return logits
 
     def _forward_parallel_infer(
         self,
@@ -578,6 +587,7 @@ class ArOnsetTrainingModel(keras.Model):
             use_ste_pointer_time=self.use_ste_pointer_time,
             time_loss_correct_patch_only=self.time_loss_correct_patch_only,
             pointer_local_ce_radius=self.pointer_local_ce_radius,
+            pointer_local_ce_anchor=self.pointer_local_ce_anchor,
             monotonic_pointer=self.monotonic_pointer,
         )
         if use_incremental:
@@ -614,6 +624,7 @@ class ArOnsetTrainingModel(keras.Model):
                 self.use_soft_pointer_time and not self.use_ste_pointer_time
             ),
             monotonic_pointer=self.monotonic_pointer,
+            max_ahead=config.pointer_decode_max_ahead(self.experiment_config.run),
         )
         self.event_f1_metric.update_state(
             pred_times,

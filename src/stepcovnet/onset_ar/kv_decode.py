@@ -216,6 +216,7 @@ def decode_autoregressive_with_kv_cache_numpy(
     eos_probs: list[float] = []
     prev_patch = 0
     monotonic = bool(experiment_config.model.monotonic_pointer)
+    max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
     n_forward_steps = 0
     stopped_on_eos = False
     cur_len = 1
@@ -246,6 +247,7 @@ def decode_autoregressive_with_kv_cache_numpy(
             pointer_logits,
             prev_patch=prev_patch,
             monotonic=monotonic,
+            max_ahead=max_ahead,
         )
         if monotonic:
             prev_patch = patch_idx

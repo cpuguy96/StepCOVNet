@@ -304,6 +304,7 @@ def compute_ar_onset_loss(
     use_ste_pointer_time: bool = False,
     time_loss_correct_patch_only: bool = False,
     pointer_local_ce_radius: int = 0,
+    pointer_local_ce_anchor: str = "target",
     monotonic_pointer: bool = False,
 ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
     """Combined teacher-forcing loss for ``gate-tide-overfit``.
@@ -323,7 +324,10 @@ def compute_ar_onset_loss(
         time_loss_correct_patch_only: Apply ``λ_time`` only where hard argmax
             matches the target patch (avoids residual fighting wrong patches).
         pointer_local_ce_radius: If ``> 0``, restrict pointer CE to a window
-            around each target patch.
+            (see ``pointer_local_ce_anchor``).
+        pointer_local_ce_anchor: ``\"target\"`` → ``[target±r]`` CE-only;
+            ``\"prev\"`` → ``[prev, prev+r]`` (also applied to time-head logits);
+            teacher gaps ``> r`` are dropped from pointer CE (not poisoned).
         monotonic_pointer: Apply teacher-forced monotonic mask before losses.
     """
     token_logits = tf.cast(outputs["token_logits"], tf.float32)
@@ -337,10 +341,10 @@ def compute_ar_onset_loss(
     target_times = tf.cast(batch["target_times"], tf.float32)
     target_residual_sec = tf.cast(batch["target_residual_sec"], tf.float32)
 
+    prev_patches = pointer_mask.teacher_forced_prev_patch_indices(
+        target_patch_indices,
+    )
     if monotonic_pointer:
-        prev_patches = pointer_mask.teacher_forced_prev_patch_indices(
-            target_patch_indices,
-        )
         pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
             pointer_logits,
             prev_patches,
@@ -360,18 +364,36 @@ def compute_ar_onset_loss(
     else:
         token_loss = tf.reduce_sum(token_losses)
 
-    pointer_logits_for_ce = apply_local_pointer_ce_mask(
-        pointer_logits,
-        target_patch_indices,
-        radius=int(pointer_local_ce_radius),
-    )
+    anchor = str(pointer_local_ce_anchor or "target").lower()
+    radius = int(pointer_local_ce_radius)
+    pointer_ce_mask = onset_step_mask
+    if radius > 0 and anchor == "prev":
+        pointer_logits = pointer_mask.apply_prev_relative_window_tf(
+            pointer_logits,
+            prev_patches,
+            max_ahead=radius,
+        )
+        pointer_logits_for_ce = pointer_logits
+        pointer_ce_mask = pointer_mask.prev_relative_ce_step_mask(
+            target_patch_indices,
+            prev_patches,
+            max_ahead=radius,
+            onset_step_mask=onset_step_mask,
+        )
+    else:
+        pointer_logits_for_ce = apply_local_pointer_ce_mask(
+            pointer_logits,
+            target_patch_indices,
+            radius=radius,
+        )
     pointer_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
         labels=target_patch_indices,
         logits=pointer_logits_for_ce,
     )
-    pointer_losses = pointer_losses * onset_step_mask
-    pointer_count = tf.reduce_sum(onset_step_mask) + 1e-9
-    pointer_loss = tf.reduce_sum(pointer_losses) / pointer_count
+    pointer_losses = pointer_losses * pointer_ce_mask
+    pointer_ce_count = tf.reduce_sum(pointer_ce_mask) + 1e-9
+    pointer_loss = tf.reduce_sum(pointer_losses) / pointer_ce_count
+    onset_count = tf.reduce_sum(onset_step_mask) + 1e-9
 
     pred_times = predicted_times_from_outputs(
         pointer_logits,
@@ -394,7 +416,7 @@ def compute_ar_onset_loss(
     time_loss = tf.reduce_sum(time_errors) / time_denom
 
     residual_sq = tf.square(residual_sec - target_residual_sec) * onset_step_mask
-    residual_loss = tf.reduce_sum(residual_sq) / pointer_count
+    residual_loss = tf.reduce_sum(residual_sq) / onset_count
 
     pointer_term = tf.cast(pointer_loss_weight, tf.float32) * pointer_loss
     total_loss = (
