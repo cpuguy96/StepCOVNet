@@ -51,10 +51,12 @@ class ArOnsetKvDecoder:
         )
 
     def set_memory(self, memory: tf.Tensor) -> None:
-        """Store encoder memory for the current sequence."""
+        """Store encoder memory for the current sequence.
+
+        Does not set pointer keys — call :meth:`set_pointer_key_input` for
+        pe-free content pointers so PE-laden memory is never used as keys.
+        """
         self._memory = memory
-        if self._pointer_key_input is None:
-            self._pointer_key_input = memory
 
     def set_pointer_key_input(self, pointer_key_input: tf.Tensor) -> None:
         """Store PE-free (or memory) key source for the content pointer."""
@@ -119,11 +121,16 @@ class ArOnsetKvDecoder:
             "decoder_mask": self._decoder_mask,
         }
         if config.content_pointer_active(self.experiment_config.model):
-            key_input = (
-                self._memory
-                if self._pointer_key_input is None
-                else self._pointer_key_input
-            )
+            if self._pointer_key_input is None:
+                if self.experiment_config.model.pointer_keys_pe_free:
+                    msg = (
+                        "Call set_pointer_key_input() before decode when "
+                        "pointer_keys_pe_free is enabled (do not reuse PE memory)."
+                    )
+                    raise RuntimeError(msg)
+                key_input = self._memory
+            else:
+                key_input = self._pointer_key_input
             inputs["pointer_key_input"] = key_input
         if self._density_scalar is not None:
             inputs["density_scalar"] = self._density_scalar

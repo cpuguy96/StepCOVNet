@@ -528,6 +528,50 @@ class PointerHeadTest(unittest.TestCase):
         self.assertTrue(config.ArModelConfig().pointer_keys_pe_free)
         self.assertTrue(config.ArModelConfig().pointer_query_from_cross_attn)
         self.assertTrue(config.ArModelConfig().monotonic_pointer)
+        self.assertFalse(config.ArModelConfig().decoder_cross_content_only)
+        self.assertTrue(config.ArModelConfig().pointer_qk_layernorm)
+
+    def test_decoder_cross_content_only_keeps_enc_pos_and_rebuilds(self) -> None:
+        """Content-only cross must not prune enc_pos (inference needs memory)."""
+        base = _tiny_experiment_config()
+        experiment_config = config.ArExperimentConfig(
+            dataset=base.dataset,
+            model=dataclasses.replace(
+                base.model,
+                decoder_cross_content_only=True,
+            ),
+            run=base.run,
+        )
+        self.assertTrue(experiment_config.model.decoder_cross_content_only)
+        model = models.build_ar_onset_model(experiment_config)
+        names = {layer.name for layer in model.layers}
+        self.assertIn("enc_pos", names)
+        self.assertIn("cross_memory", names)
+        self.assertNotIn("cross_memory_proj", names)
+        encoder, decoder = models.build_ar_onset_inference_models(
+            model,
+            experiment_config,
+        )
+        inputs = self._inputs(experiment_config, n_patches=8, n_steps=3)
+        enc_out = encoder(
+            {
+                "mert_patches": inputs["mert_patches"],
+                "patch_mask": inputs["patch_mask"],
+            },
+            training=False,
+        )
+        memory, key_input = models.unpack_encoder_outputs(enc_out)
+        out = decoder(
+            {
+                "encoder_memory": np.asarray(memory.numpy()),
+                "pointer_key_input": np.asarray(key_input.numpy()),
+                "patch_mask": inputs["patch_mask"],
+                "decoder_input_ids": inputs["decoder_input_ids"],
+                "decoder_mask": inputs["decoder_mask"],
+            },
+            training=False,
+        )
+        self.assertEqual(out["pointer_logits"].shape[-1], 8)
 
     def test_content_pointer_builds_cross_attn_query_and_pe_free_key(self) -> None:
         experiment_config = _tiny_experiment_config()
@@ -536,6 +580,8 @@ class PointerHeadTest(unittest.TestCase):
         self.assertIn("pointer_cross_attn", names)
         self.assertIn("pointer_query", names)
         self.assertIn("pointer_key", names)
+        self.assertIn("pointer_query_ln", names)
+        self.assertIn("pointer_key_ln", names)
         self.assertIn("patch_embed", names)
 
     def test_unknown_pointer_head_is_rejected(self) -> None:
@@ -585,6 +631,39 @@ class PointerHeadTest(unittest.TestCase):
             training=False,
         ).numpy()
         self.assertGreater(float(np.linalg.norm(q_matched - q_zero)), 1e-3)
+
+    def test_pe_free_pointer_keys_are_contextualized(self) -> None:
+        """Pe-free keys must be encoder outputs, not raw ``Dense(MERT)``.
+
+        Encoding with absolute PE first made ``memory`` shuffle-invariant; the
+        pe-free workaround keyed on ``patch_embed`` and skipped the encoder.
+        Encode-then-PE keeps keys contextualized and PE-free.
+        """
+        experiment_config = _tiny_experiment_config()
+        model = models.build_ar_onset_model(experiment_config)
+        inputs = self._inputs(experiment_config, n_patches=12, n_steps=4)
+        n_enc = experiment_config.model.n_enc_layers
+        extractor = tf.keras.Model(
+            inputs=model.input,
+            outputs={
+                "raw": model.get_layer("patch_embed").output,
+                "content": model.get_layer(f"enc_{n_enc - 1}_ln2").output,
+                "memory": model.get_layer("enc_pos").output,
+                "keys": model.get_layer("pointer_key").output,
+            },
+        )
+        out = extractor(inputs, training=False)
+        raw = out["raw"].numpy()
+        content = out["content"].numpy()
+        memory = out["memory"].numpy()
+        keys = out["keys"].numpy()
+        self.assertGreater(float(np.linalg.norm(content - raw)), 1e-3)
+        self.assertGreater(float(np.linalg.norm(memory - content)), 1e-3)
+        # Pointer keys are a projection of contextualized content, not raw embed.
+        self.assertGreater(
+            float(np.linalg.norm(keys - raw[:, : keys.shape[1], : keys.shape[2]])),
+            1e-3,
+        )
 
     def test_legacy_index_pointer_still_builds(self) -> None:
         base = _tiny_experiment_config()

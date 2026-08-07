@@ -125,6 +125,19 @@ class DecoderSelfAttentionMask(keras.layers.Layer):
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
+class ContentOnlyCrossMemory(keras.layers.Layer):
+    """Decoder cross stream = content + 0 * PE memory (keeps enc_pos in-graph).
+
+    A plain ``Lambda`` cannot reload under Keras safe_mode; this named layer is
+    the serializable equivalent.
+    """
+
+    def call(self, inputs: list[tf.Tensor] | tuple[tf.Tensor, tf.Tensor]) -> tf.Tensor:
+        content, pe_memory = inputs
+        return content + (0.0 * pe_memory)
+
+
+@keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
 class ContentPointerLogits(keras.layers.Layer):
     """Scaled dot-product pointer scores of decoder queries against patch keys.
 
@@ -298,28 +311,36 @@ def _encode_patches(
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Run the patch encoder stack.
 
+    Absolute PE is applied **after** the encoder so pointer keys can use
+    contextualized, PE-free features. Encoding with PE first made post-encoder
+    ``memory`` nearly shuffle-invariant (PE-dominated), and the previous
+    pe-free workaround keyed the pointer on raw ``Dense(MERT)`` — skipping the
+    encoder entirely (NOTE-20260806-02).
+
     Returns:
-        Tuple ``(memory, patch_embed)`` where ``patch_embed`` is the pre-position
-        projection (PE-free content for pointer keys).
+        Tuple ``(memory, content_memory)`` where ``content_memory`` is the
+        PE-free encoder output (pointer keys / pe-free cross stream) and
+        ``memory`` is ``content_memory`` plus absolute position encodings.
     """
     patch_embed = keras.layers.Dense(d_model, name="patch_embed")(mert_patches)
-    memory = SinusoidalPositionEncoding(max_patches, d_model, name="enc_pos")(
-        patch_embed,
-    )
     enc_mask = PairwiseValidMask(
         keep_valid=keep_valid_attention_mask,
         name="enc_mask",
     )(patch_mask)
+    content_memory = patch_embed
     for layer_idx in range(n_enc_layers):
-        memory = _transformer_encoder_block(
-            memory,
+        content_memory = _transformer_encoder_block(
+            content_memory,
             attention_mask=enc_mask,
             d_model=d_model,
             num_heads=num_heads,
             dropout_rate=dropout_rate,
             name=f"enc_{layer_idx}",
         )
-    return memory, patch_embed
+    memory = SinusoidalPositionEncoding(max_patches, d_model, name="enc_pos")(
+        content_memory,
+    )
+    return memory, content_memory
 
 
 def _apply_density_conditioning(
@@ -346,13 +367,13 @@ def _content_pointer_logits(
     dropout_rate: float,
     pe_free_keys: bool,
     query_from_cross_attn: bool,
+    qk_layernorm: bool = True,
 ) -> tf.Tensor:
     """Build content-pointer logits with optional PE-free keys and forced cross-attn queries.
 
     When ``pe_free_keys`` is set, both pointer keys and the dedicated pointer
-    cross-attn read ``patch_embed`` (pre-``enc_pos``). Post-encoder ``memory`` is
-    often nearly shuffle-invariant (PE-dominated), so attending to it does not
-    ground queries in audio content.
+    cross-attn read ``content_memory`` (encoder output before absolute PE).
+    Absolute-PE ``memory`` remains available for positional decoder pathways.
     """
     key_source = patch_embed if pe_free_keys else memory
     if query_from_cross_attn:
@@ -371,6 +392,13 @@ def _content_pointer_logits(
         query_source = pointer_cross
     else:
         query_source = decoder
+    if qk_layernorm:
+        query_source = keras.layers.LayerNormalization(
+            name="pointer_query_ln",
+        )(query_source)
+        key_source = keras.layers.LayerNormalization(
+            name="pointer_key_ln",
+        )(key_source)
     pointer_query = keras.layers.Dense(
         d_model,
         name="pointer_query",
@@ -405,6 +433,8 @@ def _decode_from_memory(
     content_pointer: bool,
     pe_free_keys: bool,
     query_from_cross_attn: bool,
+    decoder_cross_content_only: bool = False,
+    qk_layernorm: bool = True,
     density_scalar: tf.Tensor | None = None,
     density_proj: keras.layers.Layer | None = None,
 ) -> dict[str, tf.Tensor]:
@@ -435,11 +465,16 @@ def _decode_from_memory(
         keep_valid=keep_valid_attention_mask,
         name="cross_mask",
     )([decoder_mask, patch_mask])
-    # When pe-free pointer keys are on, decoder cross-attn must still see
-    # ``patch_embed`` (post-encoder memory is often PE-dominated / shuffle-
-    # invariant). Keep ``memory`` in the graph via a residual projection so the
-    # encoder is not pruned from the Functional model.
-    if content_pointer and pe_free_keys:
+    # Pe-free + content-only: decoder cross-attn reads contextualized content.
+    # The prior content + Dense(PE memory) mix re-injected absolute PE and kept
+    # queries shuffle-invariant (NOTE-20260806-02 follow-up).
+    # Keep ``memory`` (enc_pos) in the graph via a zero add so Keras does not
+    # prune it — inference rebuild still needs ``encoder_memory``.
+    if content_pointer and pe_free_keys and decoder_cross_content_only:
+        cross_memory = ContentOnlyCrossMemory(name="cross_memory")(
+            [patch_embed, memory],
+        )
+    elif content_pointer and pe_free_keys:
         memory_proj = keras.layers.Dense(
             d_model,
             name="cross_memory_proj",
@@ -477,6 +512,7 @@ def _decode_from_memory(
             dropout_rate=dropout_rate,
             pe_free_keys=pe_free_keys,
             query_from_cross_attn=query_from_cross_attn,
+            qk_layernorm=qk_layernorm,
         )
     else:
         pointer_logits = keras.layers.Dense(
@@ -541,7 +577,11 @@ def build_ar_onset_inference_models(
     use_density = config.density_conditioning_active(model_config)
     density_proj = full_model.get_layer("density_proj") if use_density else None
     content_pointer = _has_layer(full_model, "pointer_logits_content")
-    pe_free_keys = content_pointer and bool(model_config.pointer_keys_pe_free)
+    # Prefer graph topology over config so a drifted JSON cannot feed PE keys.
+    pe_free_keys = content_pointer and (
+        _has_layer(full_model, "cross_memory")
+        or bool(model_config.pointer_keys_pe_free)
+    )
     query_from_cross = (
         content_pointer
         and bool(
@@ -550,8 +590,13 @@ def build_ar_onset_inference_models(
         and _has_layer(full_model, "pointer_cross_attn")
     )
 
-    memory_tensor = full_model.get_layer(f"enc_{n_enc_layers - 1}_ln2").output
-    patch_embed_tensor = full_model.get_layer("patch_embed").output
+    # Encoder runs before absolute PE; ``enc_*_ln2`` is contextualized content.
+    content_tensor = full_model.get_layer(f"enc_{n_enc_layers - 1}_ln2").output
+    memory_tensor = (
+        full_model.get_layer("enc_pos").output
+        if _has_layer(full_model, "enc_pos")
+        else content_tensor
+    )
     encoder = keras.Model(
         inputs={
             "mert_patches": full_model.input["mert_patches"],
@@ -559,9 +604,7 @@ def build_ar_onset_inference_models(
         },
         outputs={
             "memory": memory_tensor,
-            "pointer_key_input": (
-                patch_embed_tensor if pe_free_keys else memory_tensor
-            ),
+            "pointer_key_input": (content_tensor if pe_free_keys else memory_tensor),
         },
         name="ar_onset_encoder_infer",
     )
@@ -619,10 +662,16 @@ def build_ar_onset_inference_models(
     dec_self_mask = full_model.get_layer("dec_self_mask")(decoder_mask)
     cross_mask = full_model.get_layer("cross_mask")([decoder_mask, patch_mask])
     if pe_free_keys and _has_layer(full_model, "cross_memory"):
-        memory_proj = full_model.get_layer("cross_memory_proj")(memory)
-        cross_memory = full_model.get_layer("cross_memory")(
-            [pointer_key_input, memory_proj],
-        )
+        if _has_layer(full_model, "cross_memory_proj"):
+            memory_proj = full_model.get_layer("cross_memory_proj")(memory)
+            cross_memory = full_model.get_layer("cross_memory")(
+                [pointer_key_input, memory_proj],
+            )
+        else:
+            # Content-only: Lambda(content + 0 * PE memory).
+            cross_memory = full_model.get_layer("cross_memory")(
+                [pointer_key_input, memory],
+            )
     else:
         cross_memory = memory
     # Pointer cross-attn / keys stay on the pe-free stream when enabled.
@@ -659,10 +708,15 @@ def build_ar_onset_inference_models(
             )
         else:
             query_source = decoder
+        key_source = pointer_key_input
+        if _has_layer(full_model, "pointer_query_ln"):
+            query_source = full_model.get_layer("pointer_query_ln")(query_source)
+        if _has_layer(full_model, "pointer_key_ln"):
+            key_source = full_model.get_layer("pointer_key_ln")(key_source)
         pointer_logits = full_model.get_layer("pointer_logits_content")(
             [
                 full_model.get_layer("pointer_query")(query_source),
-                full_model.get_layer("pointer_key")(pointer_key_input),
+                full_model.get_layer("pointer_key")(key_source),
             ],
         )
     else:
@@ -769,6 +823,8 @@ def build_ar_onset_model(
         content_pointer=content_pointer,
         pe_free_keys=bool(model_config.pointer_keys_pe_free),
         query_from_cross_attn=bool(model_config.pointer_query_from_cross_attn),
+        decoder_cross_content_only=bool(model_config.decoder_cross_content_only),
+        qk_layernorm=bool(model_config.pointer_qk_layernorm),
         density_scalar=density_scalar,
         density_proj=density_proj,
     )

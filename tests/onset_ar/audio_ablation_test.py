@@ -176,6 +176,35 @@ def test_audio_grounding_gate_passes_when_zeros_grounds_shuffle_invariant_query(
     assert gate.query_passed
 
 
+def test_audio_grounding_gate_skips_timing_clause_at_floor() -> None:
+    """Matched timing below eps must not auto-fail every non-negative score."""
+    rows = {
+        "matched": {
+            "timing_match": 0.009,
+            "same_pred_as_matched": 1.0,
+            "token_accuracy": 0.20,
+            "query_cosine_vs_matched": 1.0,
+        },
+        "shuffle": {
+            "timing_match": 0.008,
+            "same_pred_as_matched": 0.10,
+            "token_accuracy": 0.18,
+            "query_cosine_vs_matched": 0.99,
+        },
+        "zeros": {
+            "timing_match": 0.007,
+            "same_pred_as_matched": 0.05,
+            "token_accuracy": 0.10,
+            "query_cosine_vs_matched": 0.40,
+        },
+    }
+    gate = audio_ablation.audio_grounding_gate(rows)
+    assert gate.pointer_passed
+    assert gate.query_passed
+    assert gate.passed
+    assert not any("timing_match" in failure for failure in gate.failures)
+
+
 def test_audio_grounding_gate_fails_when_shuffle_reproduces_matched() -> None:
     rows = {
         "matched": {

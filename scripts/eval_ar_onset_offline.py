@@ -68,6 +68,7 @@ from stepcovnet.onset_ar import (
     datasets,
     density_presets,
     inference,
+    pointer_mask,
     targets,
     trainers,
 )
@@ -863,14 +864,33 @@ def _diagnose_batch(
     target_times = batch["target_times"][0]
     gt_times = batch["gt_times"][0][batch["gt_mask"][0] > 0.5]
 
+    monotonic = bool(model_config.monotonic_pointer)
     pred_times = inference.decode_teacher_fed_times_numpy(
         pointer_logits,
         residual_sec,
         batch["onset_step_mask"][0],
         patch_frames=patch_frames,
         hop_sec=hop_sec,
+        target_patch_indices=target_patches,
+        monotonic=monotonic,
     )
-    pred_patch = np.argmax(pointer_logits, axis=-1)
+    if monotonic:
+        prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
+            np.asarray(target_patches, dtype=np.int32),
+        )
+        pred_patch = np.asarray(
+            [
+                inference._argmax_pointer_patch(  # noqa: SLF001
+                    pointer_logits[i],
+                    prev_patch=int(prev_patches[i]),
+                    monotonic=True,
+                )
+                for i in range(pointer_logits.shape[0])
+            ],
+            dtype=np.int32,
+        )
+    else:
+        pred_patch = np.argmax(pointer_logits, axis=-1)
 
     step_indices = np.flatnonzero(onset_mask)
     abs_err_sec = np.abs(pred_times - target_times[step_indices])

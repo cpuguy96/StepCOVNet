@@ -313,7 +313,21 @@ def decode_parallel_pointer_times_numpy(
     else:
         memory = encoder_memory
         patch_mask = patch_mask_batched
-        pointer_key_input = memory
+        # Never silently reuse PE ``memory`` as pe-free pointer keys.
+        if (
+            config.content_pointer_active(
+                experiment_config.model,
+            )
+            and experiment_config.model.pointer_keys_pe_free
+        ):
+            _, pointer_key_input, _ = get_encoder_memory_numpy(
+                model,
+                mert_patches,
+                patch_mask,
+                experiment_config,
+            )
+        else:
+            pointer_key_input = memory
 
     _, decoder = _infer_encoder_decoder(model, experiment_config)
     decoder_input_ids, decoder_mask = build_decoder_inputs_for_onset_tokens(

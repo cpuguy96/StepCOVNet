@@ -95,6 +95,12 @@ class ArModelConfig(_DictSerializableMixin):
     pointer_query_from_cross_attn: bool = True
     # Mask pointer logits so patch_idx >= previous onset patch (train + decode).
     monotonic_pointer: bool = True
+    # When pe-free keys are on, decoder cross-attn reads content only (no PE
+    # residual). Default False: content-only regresses tide overfit (~0.67 vs
+    # ~0.94); keep as an R2 A/B probe via config.
+    decoder_cross_content_only: bool = False
+    # LayerNorm on pointer query/key streams before the Dense projections.
+    pointer_qk_layernorm: bool = True
     density_meter_max: int = 32
     density_onset_hz_norm: float = 15.0
 
@@ -112,6 +118,12 @@ class ArRunConfig(_DictSerializableMixin):
     incremental_consistency_max_steps: int = 0
     token_class_weight: str = "none"
     use_soft_pointer_time: bool = False
+    # Hard argmax forward + soft expected backward for λ_time (NOTE-20260806-01).
+    use_ste_pointer_time: bool = False
+    # Apply λ_time only on steps where hard pointer matches the target patch.
+    time_loss_correct_patch_only: bool = False
+    # Restrict pointer CE to [target - r, target + r]; 0 = full patch axis.
+    pointer_local_ce_radius: int = 0
     scheduled_sampling_max_p: float = 0.0
     scheduled_sampling_ramp_epochs: int = 0
     scheduled_sampling_warmup_epochs: int = 0

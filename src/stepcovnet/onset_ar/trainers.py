@@ -13,7 +13,14 @@ import tensorflow as tf
 
 from stepcovnet import onset_metric_names as mn
 from stepcovnet import reproducibility, timing_match, wsl_gpu
-from stepcovnet.onset_ar import config, datasets, inference, losses, models
+from stepcovnet.onset_ar import (
+    config,
+    datasets,
+    inference,
+    losses,
+    models,
+    pointer_mask,
+)
 from stepcovnet.onset_events import matching
 from stepcovnet.onset_events import trainers as event_trainers
 
@@ -240,6 +247,11 @@ class ArOnsetTrainingModel(keras.Model):
         )
         self.length_normalize_ce = run_config.length_normalize_ce
         self.use_soft_pointer_time = run_config.use_soft_pointer_time
+        self.use_ste_pointer_time = bool(run_config.use_ste_pointer_time)
+        self.time_loss_correct_patch_only = bool(
+            run_config.time_loss_correct_patch_only,
+        )
+        self.pointer_local_ce_radius = int(run_config.pointer_local_ce_radius)
         self.monotonic_pointer = bool(model_config.monotonic_pointer)
         self.lambda_residual = run_config.lambda_residual
         self.lambda_incremental_consistency = run_config.lambda_incremental_consistency
@@ -285,6 +297,7 @@ class ArOnsetTrainingModel(keras.Model):
         else:
             self.incremental_consistency_loss_tracker = None
         self.token_accuracy = keras.metrics.Mean(name="token_accuracy")
+        self.pointer_patch_accuracy = keras.metrics.Mean(name="pointer_patch_accuracy")
         self.use_ordered_onset_gate = run_config.overfit_one_song
         self.event_f1_metric = ArEventOnsetF1Metric(
             tolerance_sec=run_config.tolerance_sec,
@@ -317,6 +330,7 @@ class ArOnsetTrainingModel(keras.Model):
         tracked.extend(
             [
                 self.token_accuracy,
+                self.pointer_patch_accuracy,
                 self.event_f1_metric,
             ],
         )
@@ -393,9 +407,15 @@ class ArOnsetTrainingModel(keras.Model):
             "decoder_mask": batch["decoder_mask"],
         }
         if config.content_pointer_active(self.experiment_config.model):
-            inputs["pointer_key_input"] = (
-                memory if pointer_key_input is None else pointer_key_input
-            )
+            if pointer_key_input is None:
+                if self.experiment_config.model.pointer_keys_pe_free:
+                    msg = (
+                        "pointer_key_input required when pointer_keys_pe_free "
+                        "is enabled (refusing PE memory as keys)."
+                    )
+                    raise ValueError(msg)
+                pointer_key_input = memory
+            inputs["pointer_key_input"] = pointer_key_input
         if config.density_conditioning_active(self.experiment_config.model):
             density = batch["density_scalar"]
             if density.shape.rank == 0:
@@ -414,6 +434,20 @@ class ArOnsetTrainingModel(keras.Model):
             self._infer_encoder = encoder
             self._infer_decoder = decoder
         return self._infer_encoder, self._infer_decoder
+
+    def _pointer_logits_for_metrics(
+        self,
+        outputs: dict[str, tf.Tensor],
+        batch: dict[str, tf.Tensor],
+    ) -> tf.Tensor:
+        """Pointer logits with the same teacher mono mask used by pointer CE."""
+        logits = tf.cast(outputs["pointer_logits"], tf.float32)
+        if not self.monotonic_pointer:
+            return logits
+        prev = pointer_mask.teacher_forced_prev_patch_indices(
+            batch["target_patch_indices"],
+        )
+        return pointer_mask.apply_monotonic_pointer_mask_tf(logits, prev)
 
     def _forward_parallel_infer(
         self,
@@ -541,6 +575,9 @@ class ArOnsetTrainingModel(keras.Model):
             length_normalize_ce=self.length_normalize_ce,
             token_class_weights=self.token_class_weights,
             use_soft_pointer_time=self.use_soft_pointer_time,
+            use_ste_pointer_time=self.use_ste_pointer_time,
+            time_loss_correct_patch_only=self.time_loss_correct_patch_only,
+            pointer_local_ce_radius=self.pointer_local_ce_radius,
             monotonic_pointer=self.monotonic_pointer,
         )
         if use_incremental:
@@ -567,12 +604,15 @@ class ArOnsetTrainingModel(keras.Model):
         outputs: dict[str, tf.Tensor],
         batch: dict[str, tf.Tensor],
     ) -> None:
+        # STE uses hard metrics; soft expected remains only for legacy soft loss.
         pred_times, pred_mask = inference.decode_teacher_fed_times_tf(
             outputs,
             batch,
             patch_frames=self.patch_frames,
             hop_sec=self.hop_sec,
-            use_soft_expected=self.use_soft_pointer_time,
+            use_soft_expected=(
+                self.use_soft_pointer_time and not self.use_ste_pointer_time
+            ),
             monotonic_pointer=self.monotonic_pointer,
         )
         self.event_f1_metric.update_state(
@@ -664,6 +704,13 @@ class ArOnsetTrainingModel(keras.Model):
                 batch["decoder_mask"],
             ),
         )
+        self.pointer_patch_accuracy.update_state(
+            losses.masked_pointer_patch_accuracy(
+                self._pointer_logits_for_metrics(outputs, batch),
+                batch["target_patch_indices"],
+                batch["onset_step_mask"],
+            ),
+        )
         self._update_teacher_fed_f1(outputs, batch)
         return self._metric_results(self._batch_metrics())
 
@@ -686,6 +733,13 @@ class ArOnsetTrainingModel(keras.Model):
                 outputs["token_logits"],
                 batch["decoder_target_ids"],
                 batch["decoder_mask"],
+            ),
+        )
+        self.pointer_patch_accuracy.update_state(
+            losses.masked_pointer_patch_accuracy(
+                self._pointer_logits_for_metrics(outputs, batch),
+                batch["target_patch_indices"],
+                batch["onset_step_mask"],
             ),
         )
         self._update_teacher_fed_f1(outputs, batch)

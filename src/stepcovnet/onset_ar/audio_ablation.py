@@ -163,6 +163,13 @@ def score_batch(
         prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
             batch["target_patch_indices"][0],
         )
+        # Per-step mono mask so NLL matches train pointer CE (not raw logits).
+        logits_for_nll = pointer_logits.astype(np.float32).copy()
+        n_patches = logits_for_nll.shape[-1]
+        for i in range(logits_for_nll.shape[0]):
+            p = int(prev[i])
+            if p > 0:
+                logits_for_nll[i, : min(p, n_patches)] = -1e9
         pred_patches = np.asarray(
             [
                 inference._argmax_pointer_patch(  # noqa: SLF001
@@ -175,6 +182,7 @@ def score_batch(
             dtype=np.int32,
         )
     else:
+        logits_for_nll = pointer_logits
         pred_patches = np.argmax(pointer_logits, axis=-1)[step_indices]
     tolerance_sec = experiment_config.run.tolerance_sec
 
@@ -206,7 +214,7 @@ def score_batch(
         "n_denom": int(report["n_denom"]),
         "n_steps": int(step_indices.size),
         "patch_wrong": int(np.sum(pred_patches != target_patches)),
-        "nll_sum": pointer_nll(pointer_logits[step_indices], target_patches),
+        "nll_sum": pointer_nll(logits_for_nll[step_indices], target_patches),
         "uniform_nll_sum": float(np.log(max(n_valid, 1)) * step_indices.size),
         "n_valid_patches": n_valid,
         "token_correct": token_correct,
@@ -377,7 +385,12 @@ def audio_grounding_gate(
 
         timing = float(row["timing_match"])
         same_pred = float(row["same_pred_as_matched"])
-        if timing >= matched_timing - timing_match_eps:
+        # When matched timing is already below eps, ``matched - eps`` is ≤ 0 so
+        # every non-negative corrupted score "matches" — a floor lie that always
+        # fails the pointer clause on R2. Rely on same_pred collapse instead.
+        if matched_timing >= timing_match_eps and (
+            timing >= matched_timing - timing_match_eps
+        ):
             failures.append(
                 f"pointer/{variant}: timing_match {timing:.4f} "
                 f"≈ matched {matched_timing:.4f}",

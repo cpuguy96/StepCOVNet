@@ -35,6 +35,14 @@ def build_token_class_weights_numpy(
     return weights.astype(np.float32)
 
 
+def _soft_expected_patch_indices(pointer_logits: tf.Tensor) -> tf.Tensor:
+    """Softmax-weighted expected patch index per decoder step."""
+    n_patches = tf.shape(pointer_logits)[-1]
+    patch_indices = tf.cast(tf.range(n_patches), tf.float32)
+    probs = tf.nn.softmax(pointer_logits, axis=-1)
+    return tf.reduce_sum(probs * patch_indices, axis=-1)
+
+
 def predicted_times_from_outputs(
     pointer_logits: tf.Tensor,
     residual_sec: tf.Tensor,
@@ -42,25 +50,64 @@ def predicted_times_from_outputs(
     patch_frames: int,
     hop_sec: float,
     use_soft_expected: bool = False,
+    use_ste: bool = False,
 ) -> tf.Tensor:
-    """Convert pointer logits and residual head outputs to onset times in seconds."""
+    """Convert pointer logits and residual head outputs to onset times in seconds.
+
+    Args:
+        pointer_logits: Pointer logits ``[B, T, P]``.
+        residual_sec: Within-patch residual seconds ``[B, T]``.
+        patch_frames: Frames per patch.
+        hop_sec: Frame hop in seconds.
+        use_soft_expected: If True (and not ``use_ste``), use soft expected patch.
+        use_ste: If True, hard argmax forward with soft expected backward (STE).
+    """
     pointer_logits = tf.cast(pointer_logits, tf.float32)
     residual_sec = tf.cast(residual_sec, tf.float32)
     patch_frames_f = tf.cast(patch_frames, tf.float32)
     hop_sec_f = tf.cast(hop_sec, tf.float32)
     patch_duration = patch_frames_f * hop_sec_f
-    if use_soft_expected:
-        n_patches = tf.shape(pointer_logits)[-1]
-        patch_indices = tf.cast(tf.range(n_patches), tf.float32)
-        probs = tf.nn.softmax(pointer_logits, axis=-1)
-        expected_patch = tf.reduce_sum(probs * patch_indices, axis=-1)
-        patch_idx = expected_patch
+    hard_patch = tf.cast(tf.argmax(pointer_logits, axis=-1), tf.float32)
+    if use_ste:
+        soft_patch = _soft_expected_patch_indices(pointer_logits)
+        # Forward = hard; backward = soft (straight-through estimator).
+        patch_idx = soft_patch + tf.stop_gradient(hard_patch - soft_patch)
+    elif use_soft_expected:
+        patch_idx = _soft_expected_patch_indices(pointer_logits)
     else:
-        patch_idx = tf.cast(
-            tf.argmax(pointer_logits, axis=-1),
-            tf.float32,
-        )
+        patch_idx = hard_patch
     return patch_idx * patch_duration + residual_sec
+
+
+def apply_local_pointer_ce_mask(
+    pointer_logits: tf.Tensor,
+    target_patch_indices: tf.Tensor,
+    *,
+    radius: int,
+) -> tf.Tensor:
+    """Mask pointer logits outside ``[target - radius, target + radius]``.
+
+    Args:
+        pointer_logits: Pointer logits ``[B, T, P]``.
+        target_patch_indices: Target patch ids ``[B, T]``.
+        radius: Inclusive half-width in patches. ``0`` or negative leaves logits
+            unchanged.
+
+    Returns:
+        Logits with out-of-window positions set to a large negative value.
+    """
+    if radius <= 0:
+        return pointer_logits
+    pointer_logits = tf.cast(pointer_logits, tf.float32)
+    target_patch_indices = tf.cast(target_patch_indices, tf.int32)
+    n_patches = tf.shape(pointer_logits)[-1]
+    patch_ids = tf.range(n_patches, dtype=tf.int32)
+    patch_ids = tf.reshape(patch_ids, (1, 1, n_patches))
+    target = tf.expand_dims(target_patch_indices, axis=-1)
+    lo = target - int(radius)
+    hi = target + int(radius)
+    invalid = tf.logical_or(patch_ids < lo, patch_ids > hi)
+    return pointer_logits + tf.cast(invalid, pointer_logits.dtype) * (-1e9)
 
 
 def predicted_time_at_decoder_position(
@@ -70,6 +117,7 @@ def predicted_time_at_decoder_position(
     patch_frames: int,
     hop_sec: float,
     use_soft_expected: bool = False,
+    use_ste: bool = False,
 ) -> tf.Tensor:
     """Scalar onset time per batch item from one decoder position."""
     pointer_logits = tf.expand_dims(pointer_logits, axis=1)
@@ -80,6 +128,7 @@ def predicted_time_at_decoder_position(
         patch_frames=patch_frames,
         hop_sec=hop_sec,
         use_soft_expected=use_soft_expected,
+        use_ste=use_ste,
     )
     return times[:, 0]
 
@@ -96,6 +145,7 @@ def incremental_predicted_times_tf(
     hop_sec: float,
     use_soft_pointer_time: bool = False,
     max_unroll_steps: int = 0,
+    pointer_key_input: tf.Tensor | None = None,
 ) -> tf.Tensor:
     """Prefix decoder unrolls; predicted time written at each visited position."""
     batch_size = tf.shape(decoder_input_ids)[0]
@@ -103,6 +153,7 @@ def incremental_predicted_times_tf(
     seq_len = tf.cast(tf.reduce_sum(decoder_mask[0]), tf.int32)
     if max_unroll_steps > 0:
         seq_len = tf.minimum(seq_len, tf.cast(max_unroll_steps, tf.int32))
+    key_input = encoder_memory if pointer_key_input is None else pointer_key_input
 
     def cond(cur_len: tf.Tensor, _times: tf.Tensor) -> tf.Tensor:
         return cur_len <= seq_len
@@ -111,13 +162,17 @@ def incremental_predicted_times_tf(
         cur_len_f = tf.cast(cur_len, tf.float32)
         positions = tf.cast(tf.range(max_decoder_len), tf.float32)[tf.newaxis, :]
         prefix_mask = tf.cast(positions < cur_len_f, tf.float32) * decoder_mask
+        decoder_feed: dict[str, tf.Tensor] = {
+            "encoder_memory": encoder_memory,
+            "patch_mask": patch_mask,
+            "decoder_input_ids": decoder_input_ids,
+            "decoder_mask": prefix_mask,
+        }
+        dec_inputs = decoder.input
+        if isinstance(dec_inputs, dict) and "pointer_key_input" in dec_inputs:
+            decoder_feed["pointer_key_input"] = key_input
         outputs = decoder(
-            {
-                "encoder_memory": encoder_memory,
-                "patch_mask": patch_mask,
-                "decoder_input_ids": decoder_input_ids,
-                "decoder_mask": prefix_mask,
-            },
+            decoder_feed,
             training=True,
         )
         pos = cur_len - 1
@@ -246,9 +301,31 @@ def compute_ar_onset_loss(
     length_normalize_ce: bool,
     token_class_weights: tf.Tensor | None = None,
     use_soft_pointer_time: bool = False,
+    use_ste_pointer_time: bool = False,
+    time_loss_correct_patch_only: bool = False,
+    pointer_local_ce_radius: int = 0,
     monotonic_pointer: bool = False,
 ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
-    """Combined teacher-forcing loss for ``gate-tide-overfit``."""
+    """Combined teacher-forcing loss for ``gate-tide-overfit``.
+
+    Args:
+        outputs: Model heads (``token_logits``, ``pointer_logits``, ``residual_sec``).
+        batch: Teacher-forced batch tensors.
+        patch_frames: Frames per patch.
+        hop_sec: Frame hop in seconds.
+        lambda_time: Weight on absolute time error.
+        lambda_residual: Weight on residual MSE.
+        pointer_loss_weight: Weight on pointer CE.
+        length_normalize_ce: Mean token CE over valid positions when True.
+        token_class_weights: Optional per-vocab CE weights.
+        use_soft_pointer_time: Soft expected patch for ``λ_time`` (ignored if STE).
+        use_ste_pointer_time: Hard forward / soft backward for ``λ_time``.
+        time_loss_correct_patch_only: Apply ``λ_time`` only where hard argmax
+            matches the target patch (avoids residual fighting wrong patches).
+        pointer_local_ce_radius: If ``> 0``, restrict pointer CE to a window
+            around each target patch.
+        monotonic_pointer: Apply teacher-forced monotonic mask before losses.
+    """
     token_logits = tf.cast(outputs["token_logits"], tf.float32)
     pointer_logits = tf.cast(outputs["pointer_logits"], tf.float32)
     residual_sec = tf.cast(outputs["residual_sec"], tf.float32)
@@ -283,9 +360,14 @@ def compute_ar_onset_loss(
     else:
         token_loss = tf.reduce_sum(token_losses)
 
+    pointer_logits_for_ce = apply_local_pointer_ce_mask(
+        pointer_logits,
+        target_patch_indices,
+        radius=int(pointer_local_ce_radius),
+    )
     pointer_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
         labels=target_patch_indices,
-        logits=pointer_logits,
+        logits=pointer_logits_for_ce,
     )
     pointer_losses = pointer_losses * onset_step_mask
     pointer_count = tf.reduce_sum(onset_step_mask) + 1e-9
@@ -296,10 +378,20 @@ def compute_ar_onset_loss(
         residual_sec,
         patch_frames=patch_frames,
         hop_sec=hop_sec,
-        use_soft_expected=use_soft_pointer_time,
+        use_soft_expected=use_soft_pointer_time and not use_ste_pointer_time,
+        use_ste=use_ste_pointer_time,
     )
-    time_errors = tf.abs(pred_times - target_times) * onset_step_mask
-    time_loss = tf.reduce_sum(time_errors) / pointer_count
+    time_mask = onset_step_mask
+    if time_loss_correct_patch_only:
+        hard_patch = tf.argmax(pointer_logits, axis=-1, output_type=tf.int32)
+        correct = tf.cast(
+            tf.equal(hard_patch, target_patch_indices),
+            tf.float32,
+        )
+        time_mask = onset_step_mask * correct
+    time_errors = tf.abs(pred_times - target_times) * time_mask
+    time_denom = tf.reduce_sum(time_mask) + 1e-9
+    time_loss = tf.reduce_sum(time_errors) / time_denom
 
     residual_sq = tf.square(residual_sec - target_residual_sec) * onset_step_mask
     residual_loss = tf.reduce_sum(residual_sq) / pointer_count
@@ -317,6 +409,23 @@ def compute_ar_onset_loss(
         "time_loss": time_loss,
         "residual_loss": residual_loss,
     }
+
+
+def masked_pointer_patch_accuracy(
+    pointer_logits: tf.Tensor,
+    target_patch_indices: tf.Tensor,
+    onset_step_mask: tf.Tensor,
+) -> tf.Tensor:
+    """Top-1 patch accuracy over onset decoder steps.
+
+    ``pointer_logits`` should already include the same monotonic mask used for
+    pointer CE when ``monotonic_pointer`` is on (call after that mask).
+    """
+    predictions = tf.argmax(pointer_logits, axis=-1, output_type=tf.int32)
+    target_patch_indices = tf.cast(target_patch_indices, tf.int32)
+    correct = tf.cast(tf.equal(predictions, target_patch_indices), tf.float32)
+    mask = tf.cast(onset_step_mask, tf.float32)
+    return tf.reduce_sum(correct * mask) / (tf.reduce_sum(mask) + 1e-9)
 
 
 def masked_token_accuracy(

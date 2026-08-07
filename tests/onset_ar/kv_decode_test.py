@@ -44,17 +44,21 @@ class KvDecodeTest(unittest.TestCase):
             model,
             experiment_config,
         )
-        memory = encoder(
+        enc_out = encoder(
             {"mert_patches": mert_patches, "patch_mask": patch_mask},
             training=False,
-        ).numpy()
+        )
+        memory, key_input = models.unpack_encoder_outputs(enc_out)
+        memory_np = np.asarray(memory.numpy())
+        key_np = np.asarray(key_input.numpy())
         dec_in = np.zeros((1, max_dec), dtype=np.int32)
         dec_mask = np.zeros((1, max_dec), dtype=np.float32)
         dec_in[0, 0] = targets.BOS_ID
         dec_mask[0, 0] = 1.0
         prefix_outputs = decoder(
             {
-                "encoder_memory": memory,
+                "encoder_memory": memory_np,
+                "pointer_key_input": key_np,
                 "patch_mask": patch_mask,
                 "decoder_input_ids": dec_in,
                 "decoder_mask": dec_mask,
@@ -69,7 +73,8 @@ class KvDecodeTest(unittest.TestCase):
         )
         patch_mask_tf = tf.constant(patch_mask, dtype=tf.float32)
         kv_decoder.reset_decode_state()
-        kv_decoder.set_memory(tf.constant(memory, dtype=tf.float32))
+        kv_decoder.set_memory(tf.constant(memory_np, dtype=tf.float32))
+        kv_decoder.set_pointer_key_input(tf.constant(key_np, dtype=tf.float32))
         kv_outputs = kv_decoder.decode_step(
             tf.constant([[targets.BOS_ID]], dtype=tf.int32),
             0,
@@ -268,12 +273,14 @@ class KvDecodeTest(unittest.TestCase):
             ],
             axis=1,
         )
-        memory = encoder(
+        enc_out = encoder(
             {"mert_patches": mert_patches, "patch_mask": patch_mask},
             training=False,
         )
+        memory, key_input = models.unpack_encoder_outputs(enc_out)
         kv_decoder.reset_decode_state()
         kv_decoder.set_memory(memory)
+        kv_decoder.set_pointer_key_input(key_input)
         outputs = kv_decoder.decode_step(
             tf.constant([[targets.BOS_ID]], dtype=tf.int32),
             0,

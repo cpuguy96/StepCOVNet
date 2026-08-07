@@ -67,6 +67,117 @@ class LossesTest(unittest.TestCase):
             float(hard[0, 0].numpy()),
         )
 
+    def test_ste_matches_hard_forward_and_gives_pointer_grads(self) -> None:
+        tf.random.set_seed(0)
+        pointer_logits = tf.Variable(tf.random.normal((1, 2, 8), dtype=tf.float32))
+        residual_sec = tf.Variable(tf.constant([[0.02, 0.03]], dtype=tf.float32))
+        batch = {
+            "decoder_target_ids": tf.constant([[1, 2]], dtype=tf.int32),
+            "decoder_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "onset_step_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "target_patch_indices": tf.constant([[3, 5]], dtype=tf.int32),
+            "target_times": tf.constant([[0.3, 0.5]], dtype=tf.float32),
+            "target_residual_sec": tf.constant([[0.02, 0.03]], dtype=tf.float32),
+        }
+        outputs = {
+            "token_logits": tf.zeros((1, 2, 10), dtype=tf.float32),
+            "pointer_logits": pointer_logits,
+            "residual_sec": residual_sec,
+        }
+        hard_times = losses.predicted_times_from_outputs(
+            pointer_logits,
+            residual_sec,
+            patch_frames=8,
+            hop_sec=0.01,
+            use_soft_expected=False,
+        )
+        ste_times = losses.predicted_times_from_outputs(
+            pointer_logits,
+            residual_sec,
+            patch_frames=8,
+            hop_sec=0.01,
+            use_ste=True,
+        )
+        np.testing.assert_allclose(
+            ste_times.numpy(),
+            hard_times.numpy(),
+            rtol=0,
+            atol=1e-6,
+        )
+        with tf.GradientTape() as tape_hard:
+            total_hard, _ = losses.compute_ar_onset_loss(
+                outputs,
+                batch,
+                patch_frames=8,
+                hop_sec=0.01,
+                lambda_time=1.0,
+                lambda_residual=0.0,
+                pointer_loss_weight=0.0,
+                length_normalize_ce=True,
+                use_soft_pointer_time=False,
+                use_ste_pointer_time=False,
+            )
+        g_hard = tape_hard.gradient(total_hard, pointer_logits)
+        with tf.GradientTape() as tape_ste:
+            total_ste, _ = losses.compute_ar_onset_loss(
+                outputs,
+                batch,
+                patch_frames=8,
+                hop_sec=0.01,
+                lambda_time=1.0,
+                lambda_residual=0.0,
+                pointer_loss_weight=0.0,
+                length_normalize_ce=True,
+                use_soft_pointer_time=False,
+                use_ste_pointer_time=True,
+            )
+        g_ste = tape_ste.gradient(total_ste, pointer_logits)
+        self.assertAlmostEqual(float(tf.norm(g_hard)), 0.0, places=6)
+        self.assertGreater(float(tf.norm(g_ste)), 0.0)
+
+    def test_local_ce_mask_keeps_target_window(self) -> None:
+        logits = tf.zeros((1, 1, 16), dtype=tf.float32)
+        targets_p = tf.constant([[8]], dtype=tf.int32)
+        masked = losses.apply_local_pointer_ce_mask(logits, targets_p, radius=2)
+        # In-window positions stay 0; outside become large negative.
+        self.assertAlmostEqual(float(masked[0, 0, 8]), 0.0, places=5)
+        self.assertAlmostEqual(float(masked[0, 0, 6]), 0.0, places=5)
+        self.assertLess(float(masked[0, 0, 5]), -1e8)
+        self.assertLess(float(masked[0, 0, 11]), -1e8)
+
+    def test_time_loss_correct_patch_only_ignores_wrong_patches(self) -> None:
+        # Argmax prefers patch 0; target is patch 3 → time term must be zero.
+        pointer_logits = tf.constant(
+            [[[10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]],
+            dtype=tf.float32,
+        )
+        residual = tf.constant([[0.04]], dtype=tf.float32)
+        outputs = {
+            "token_logits": tf.zeros((1, 1, 8), dtype=tf.float32),
+            "pointer_logits": pointer_logits,
+            "residual_sec": residual,
+        }
+        batch = {
+            "decoder_target_ids": tf.constant([[1]], dtype=tf.int32),
+            "decoder_mask": tf.constant([[1.0]], dtype=tf.float32),
+            "onset_step_mask": tf.constant([[1.0]], dtype=tf.float32),
+            "target_patch_indices": tf.constant([[3]], dtype=tf.int32),
+            "target_times": tf.constant([[0.5]], dtype=tf.float32),
+            "target_residual_sec": residual,
+        }
+        _, parts = losses.compute_ar_onset_loss(
+            outputs,
+            batch,
+            patch_frames=8,
+            hop_sec=0.01,
+            lambda_time=1.0,
+            lambda_residual=0.0,
+            pointer_loss_weight=0.0,
+            length_normalize_ce=True,
+            time_loss_correct_patch_only=True,
+        )
+        self.assertAlmostEqual(float(parts["time_loss"].numpy()), 0.0, places=6)
+
     def test_class_weighted_token_loss_penalizes_majority_mismatch(self) -> None:
         vocab_size = targets.DeltaBucketVocab().vocab_size
         decoder_target_ids = tf.constant([[83, 50]], dtype=tf.int32)
@@ -206,7 +317,7 @@ class LossesTest(unittest.TestCase):
         max_dec = experiment_config.max_decoder_len()
         max_patches = experiment_config.max_encoder_patches()
         patch_dim = experiment_config.patch_input_dim()
-        memory = encoder(
+        enc_out = encoder(
             {
                 "mert_patches": tf.zeros((1, max_patches, patch_dim), dtype=tf.float32),
                 "patch_mask": tf.concat(
@@ -216,6 +327,7 @@ class LossesTest(unittest.TestCase):
             },
             training=False,
         )
+        memory, key_input = ar_models.unpack_encoder_outputs(enc_out)
         dec_in = tf.zeros((1, max_dec), dtype=tf.int32)
         dec_mask = tf.concat(
             [
@@ -237,6 +349,7 @@ class LossesTest(unittest.TestCase):
             patch_frames=4,
             hop_sec=0.01,
             max_unroll_steps=4,
+            pointer_key_input=key_input,
         )
         self.assertEqual(times.shape, (1, max_dec))
 
