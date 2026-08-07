@@ -6,6 +6,31 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
 
+### NOTE-20260807-06: Hard R is diagnostic, not the holistic system
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 12:39:00 |
+| **Topic** | Steering: hard prev-local windows are crutches |
+
+**Context.** Prev-local R shrink (32→8→4) produced large timing gains, and the agent proposed force-advance / further R tricks.
+
+**User steering.** Improving val by hard-restricting the pointer to “notes are nearby” is not the long-term approach. The goal is a **holistic** system that can predict open-ended timing — including long pauses — not one that overfits the train/val gap histogram. Hard-R gains are informative, not a product recipe to stack.
+
+**Implication.**
+
+1. Keep hard-R EXPs as **evidence** that diffuse full-suffix CE was a real failure mode.
+2. Stop recommending R-shrink / force-advance / min_ahead as **Now** unless the user explicitly asks for a diagnostic-only probe.
+3. Prefer learned localization under mono/full support that does not hard-fail long gaps.
+
+**Follow-up.** Unmasked eval → **Done** [EXP-20260807-12](EXPERIMENT_LOG.md#exp-20260807-12-r4-weights-collapse-without-hard-window): **collapse** (timing **0.156→0.0016**).
+
+**Follow-up.** Soft distance prior → **Done** [EXP-20260807-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent): α=0.5 timing **0.105** / F1 **0.279**; α=0 eval still collapses.
+
+**Evidence-backed next.** Localization that survives **without** a decode prior (relative gap head, or anneal α→0). Soft prior &gt; hard-R as a crutch, not the product path.
+
+**Related.** [EXP-20260807-10](EXPERIMENT_LOG.md#exp-20260807-10-prev-local-r4-beats-r8) · [EXP-20260807-11](EXPERIMENT_LOG.md#exp-20260807-11-r4-error-mix--stickiness-not-mid-window-soup) · [EXP-20260807-12](EXPERIMENT_LOG.md#exp-20260807-12-r4-weights-collapse-without-hard-window) · [EXP-20260807-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent) · JRN-20260807-03 · whats-next § No hard locality hacks
+
 ### NOTE-20260807-05: Inside r=32 the soup shrinks to ~33-way; GT is left-skewed
 
 | Field | Value |
@@ -19,9 +44,15 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Implication.** Failures are not “stuck at prev”; the model still spreads mass across the allowed window while true gaps hug the left edge. Shrinking **R** is the one-knob match to measured gap mass (p50=2, p95≈5, p99≈12).
 
-**Evidence-backed next.** Prev-local probe with **R=8** (same recipe otherwise). Alternate: R=16 if R=8 starves rare long gaps.
+**Follow-up.** R=8 probe → **Done** [EXP-20260807-08](EXPERIMENT_LOG.md#exp-20260807-08-prev-local-r8-beats-r32): timing **0.0697**, patch-acc **16.6%**. In-window/residual mix → **Done** [EXP-20260807-09](EXPERIMENT_LOG.md#exp-20260807-09-r8-still-diffuse--residual-secondary): still H/Huni **0.96**; **83%** patch_wrong vs **10%** residual-tax.
 
-**Related.** [EXP-20260807-07](EXPERIMENT_LOG.md#exp-20260807-07-in-window-errors-are-left-skewed-gt-vs-diffuse-mid-window-preds) · `_tmp/r2_qk_ln_gap/inwindow_errors.json`
+**Follow-up (cont).** R=4 → **Done** [EXP-20260807-10](EXPERIMENT_LOG.md#exp-20260807-10-prev-local-r4-beats-r8): timing **0.156**, F1 **0.251** (skill **−0.084**).
+
+**Follow-up (cont).** R=4 error-mix → **Done** [EXP-20260807-11](EXPERIMENT_LOG.md#exp-20260807-11-r4-error-mix--stickiness-not-mid-window-soup): **31%** at_prev; R=2 starves **20%**.
+
+**Open.** Superseded by [NOTE-20260807-06](#note-20260807-06-hard-r-is-diagnostic-not-the-holistic-system): no more hard-mask stacking; learn localization without hard R.
+
+**Related.** [EXP-20260807-07](EXPERIMENT_LOG.md#exp-20260807-07-in-window-errors-are-left-skewed-gt-vs-diffuse-mid-window-preds) · [EXP-20260807-08](EXPERIMENT_LOG.md#exp-20260807-08-prev-local-r8-beats-r32) · [EXP-20260807-09](EXPERIMENT_LOG.md#exp-20260807-09-r8-still-diffuse--residual-secondary) · [EXP-20260807-10](EXPERIMENT_LOG.md#exp-20260807-10-prev-local-r4-beats-r8) · [EXP-20260807-11](EXPERIMENT_LOG.md#exp-20260807-11-r4-error-mix--stickiness-not-mid-window-soup) · `_tmp/r2_qk_ln_gap/r4_error_mix.json`
 
 ### NOTE-20260807-04: Prev-relative local CE works — but hard-mask CE needs OOD skip
 

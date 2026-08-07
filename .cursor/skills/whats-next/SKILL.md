@@ -49,6 +49,17 @@ Copying Current phase **Next action** verbatim is wrong when that line is an unp
 
 Do **not** put R3+ / more train songs / “scale the ladder” in **Now** or **If you say "do it"** unless the user **explicitly** asks to scale. Prefer fixed-R2 diagnostics, architecture, or objective changes. Scale may appear only under **Alternate** (and only if evidence supports it).
 
+### No hard locality hacks as the product path
+
+Hard prev-relative windows (`pointer_local_ce_radius` / force-advance / min_ahead) are **diagnostic crutches**: they shrink the search space using chart gap statistics and **fail on long pauses**. Do **not** put further R-shrink, force-advance, or similar hard decode/CE masks in **Now** / **do it** as the long-term approach — even if they raise val numbers.
+
+| Allowed | Not the goal |
+| ------- | ------------ |
+| Use hard-R results as **evidence** that diffuse full-suffix CE was the failure mode | Treat hard-R / force-advance as the system to ship or keep stacking |
+| Prefer objectives/architecture that **learn** to localize under mono/full support and still handle long gaps | Optimize R for this val set’s gap histogram |
+
+If the user asks for another hard-mask probe anyway, run it under **Alternate** and label it diagnostic-only.
+
 ## Answer template
 
 ```markdown

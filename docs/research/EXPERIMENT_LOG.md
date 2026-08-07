@@ -12,11 +12,11 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Prev-local CE r=32 beats ptrloss on timing ([EXP-20260807-06](#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2)), but in-window mass is still ~uniform over 33 bins while GT gaps sit near `prev` ([EXP-20260807-07](#exp-20260807-07-in-window-errors-are-left-skewed-gt-vs-diffuse-mid-window-preds)).
+**Status:** Soft distance prior α=0.5 raises open-suffix timing to **0.105** / F1 **0.279** without hard starve ([EXP-20260807-13](#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent)). Removing α at eval still **collapses** (timing **0.0001**) — prior-dependent, but long gaps stay reachable when α is on.
 
-**Next action:** Shrink prev-local radius to match gap mass — short probe **R=8** (covers ~p99 of inter-onset gaps; GT offset p50=2) on the same recipe. Do **not** scale to R3+.
+**Next action:** Prefer levers that keep skill **without** a decode prior (relative gap head, or anneal α→0). Soft prior is a better crutch than hard-R, not the endgame. Do **not** stack hard-R.
 **Blockers:** None — GPU free.
-**Defer:** ladder scale-up (R3+) unless user asks; attn-mass; STE+local re-spam; target-centered local CE; dropout-as-primary.
+**Defer:** hard-R / force-advance as product path; ladder scale-up unless asked; attn-mass; STE spam.
 
 ### Dataset prep (PRE ingestion)
 
@@ -66,6 +66,12 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-13 | `train` + `metric` | Does soft distance-from-prev prior (no hard cutoff) beat full CE without starving long gaps? | **Partial** | α=0.5 timing **0.105** / F1 **0.279** vs ptrloss **0.0035**; α=0 eval still collapses |
+| EXP-20260807-12 | `metric` | Do R=4 weights keep skill if the hard window is removed at eval? | **Supported** (collapse) | Unmasked timing **0.0016** vs masked **0.156**; patch-acc **0.25%** — crutch-dependent |
+| EXP-20260807-11 | `metric` | At R=4, is leftover error mid-window soup, residual, or stickiness? | **Supported** | Val **31%** at_prev + **30%** near_miss≤2; H/Huni **0.89**; resid secondary; **R=2 starves 20%** gaps |
+| EXP-20260807-10 | `train` + `metric` | Does shrinking prev-local R 8→4 raise val timing / patch-acc / F1? | **Supported** | Offline timing **0.156** vs R8 **0.070**; patch-acc **26.9%**; F1 **0.251** (skill **−0.084**) |
+| EXP-20260807-09 | `metric` | On R=8, is the window still diffuse, and is residual the binding leftover? | **Supported** (soup yes; residual secondary) | Val H/Huni **0.96**; **83%** patch_wrong vs **10%** patch_ok_timing_wrong; resid p50 **28 ms** when patch_ok |
+| EXP-20260807-08 | `train` + `metric` | Does shrinking prev-local R 32→8 raise val timing / patch-acc? | **Supported** | Offline timing **0.0697** vs R32 **0.0228**; patch-acc **16.6%** vs **5.5%**; timing skill **+0.062** |
 | EXP-20260807-07 | `metric` | Where inside `[prev, prev+32]` do v3 errors land? | **Supported** | Val: GT offset p50 **2**, pred offset p50 **15**; H/Huni **0.95**; **63%** wrong-far-in-window — diffuse mid-window vs left-skewed GT |
 | EXP-20260807-06 | `train` + `metric` | Does decode-consistent prev-relative local CE (r=32) beat ptrloss ep2? | **Supported** | Offline timing **0.0228** vs **0.0035**; patch-acc **~5.5%**; timing skill **+0.0145** (F1 skill still **−0.40**) |
 | EXP-20260807-05 | `train` + `metric` | Does clean local CE (r=32, no STE) beat ptrloss ep2 on val timing / patch-acc? | **Not supported** | Offline **0.0025** &lt; ep2 **0.0035**; **88%** preds outside ±32 window — train/infer mismatch |
@@ -168,6 +174,92 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-13: Soft distance prior beats full CE; still prior-dependent
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 13:44:23 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Can a **soft** ahead penalty (`logits -= α·max(0,p−prev)`, no hard cutoff) raise val timing vs full-CE ptrloss while keeping long gaps reachable? |
+| **Setup** | [`configs/ar/ladder_r2_soft_distance_probe.json`](../../configs/ar/ladder_r2_soft_distance_probe.json) — QK-LN + hard time, `pointer_local_ce_radius: 0`, `pointer_soft_distance_alpha: 0.5`. ES @ ep **20**, restore ep **10**. `logs/r2_soft_distance_a0p5_train.log` |
+| **In-train (best ep 10)** | `val_pointer_loss` **2.444**; val patch-acc **0.090**; val timing **0.105** |
+| **Offline α=0.5 (matched)** | Timing **3717/35439 = 0.105**; F1 **0.279**; patch-acc **11.0%**. Skill: timing **+0.097**, F1 **−0.043**. `logs/r2_soft_distance_a0p5_teacher_val.log` |
+| **Offline α=0 (prior off)** | Timing **4/35439 = 0.00011**; F1 **0.00014**; patch-acc **0.05%**. Collapse. `logs/r2_soft_distance_a0_eval_teacher_val.log` |
+| **vs baselines** | vs ptrloss ep2 timing **0.0035** (~**30×**); vs hard R=4 masked **0.156** (lower timing, **higher** F1 **0.279** vs **0.251**); vs hard R=4 unmasked collapse **0.0016** |
+| **Conclusion** | **Partial.** Soft prior is a strictly better diagnostic than hard-R (no unreachable gaps; strong timing/F1 with α on). Weights still do **not** localize when the prior is removed at eval — same failure class as hard-R, milder constraint. Next: gap head or anneal α→0 so skill survives without a decode prior |
+
+### EXP-20260807-12: R=4 weights collapse without hard window
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 12:45:07 |
+| **Track** | `metric` (AR) |
+| **Question** | After hard-R was labeled a crutch ([NOTE-20260807-06](DISCUSSION_NOTES.md#note-20260807-06-hard-r-is-diagnostic-not-the-holistic-system)), do R=4-trained weights retain skill when eval uses **mono-only** (no `prev+R` cap)? |
+| **Setup** | Same ckpt `models_wsl/ar/ladder_r2_prev_local_ce_r4/`; eval config [`ladder_r2_prev_local_ce_r4_unmasked_eval.json`](../../configs/ar/ladder_r2_prev_local_ce_r4_unmasked_eval.json) with `pointer_local_ce_radius: 0`. Offline teacher val 50 songs. `logs/r2_prev_local_ce_r4_unmasked_teacher_val.log` |
+| **Unmasked offline** | Timing **57/35439 = 0.0016**; F1 **0.0023**; patch-acc **0.25%** (`patch_wrong` **35349**). Skill: timing **−0.0069**, F1 **−0.443** |
+| **vs masked R=4** | Timing **0.0016** vs **0.156** (~**100×** drop); patch-acc **0.25%** vs **26.9%**; F1 **0.002** vs **0.251** |
+| **vs ptrloss ep2 (full CE)** | Unmasked R=4 weights (**0.0016**) are **worse** than the earlier full-CE ptrloss ep2 (**0.0035**) |
+| **Conclusion** | **Supported.** Hard-R training did **not** teach open-set localization — skill is mask-dependent. Hard-R closed as product path. Next must localize under mono/full support without hard unreachable gaps |
+
+### EXP-20260807-11: R=4 error-mix — stickiness, not mid-window soup
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 12:33:28 |
+| **Track** | `metric` (AR) |
+| **Question** | On the R=4 ckpt, is the leftover failure still a diffuse mini-soup, residual, or a new mode (e.g. at_prev stickiness)? Also: does R=2 starve too many GT gaps? |
+| **Setup** | `_tmp/r2_qk_ln_gap/diagnose_r8_error_mix.py` on R=4 ckpt (8 train / 12 val). Gap starve: `_tmp/r2_qk_ln_gap/gap_starve_r2_r4_r8.json`. Logs: `logs/r2_prev_local_ce_r4_error_mix.log` |
+| **Val mix** | patch_ok_time_ok **15.6%**; patch_ok_timing_wrong **12.2%**; **patch_wrong 72.2%** (was 83% @ R=8) |
+| **Val buckets** | **at_prev 30.7%**; near_miss≤2 **30.0%**; correct **27.8%**; near_miss 3–4 **7.6%**; wrong_far **0.3%** |
+| **Val concentration** | H/Huni **0.892**; top-1 **0.347**; tgt rank p50 **2**; tgt_off=pred_off p50 **2** (geometry matched — no mid-window bias) |
+| **Residual (patch_ok)** | resid_err_ms p50 **17.1** / p90 **41.6**; among patch_ok, **44%** still miss 20 ms tol |
+| **Train contrast** | correct **41%**; at_prev **44%**; H/Huni **0.65**; top-1 **0.52** — train peaks, still sticky |
+| **Gap starve (val later onsets)** | R=8 **1.8%**; R=4 **5.8%**; **R=2 20.3%**. Gap hist: =1 **44%**, =2 **34%**, =0 **1.6%**, ≥3 **20%** |
+| **Conclusion** | **Supported.** Mid-window soup is largely gone; binding in-window miss is **at_prev stickiness** (+ near-miss≤2). Residual improved (p50 under tol) but secondary. **Defer R=2** — 20% of GT gaps are unreachable under `[prev, prev+2]`. Next: force-advance (`min_ahead=1`) on R=4 |
+
+### EXP-20260807-10: Prev-local R=4 beats R=8
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 12:30:51 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | After [EXP-20260807-09](#exp-20260807-09-r8-still-diffuse--residual-secondary) showed R=8 still a ~9-way soup with GT offset p50=2, does **R=4** beat R=8? |
+| **Setup** | [`configs/ar/ladder_r2_prev_local_ce_r4_probe.json`](../../configs/ar/ladder_r2_prev_local_ce_r4_probe.json) — same recipe, `pointer_local_ce_radius: 4`. ES @ ep **29**, restore ep **19**. `logs/r2_prev_local_ce_r4_train.log` |
+| **In-train (best ep 19)** | `val_pointer_loss` **1.743**; val patch-acc **0.244**; val timing **0.156** |
+| **Offline val (50 songs)** | **5539/35439 = 0.156**; F1 **0.251**; patch-acc **26.9%** (`patch_wrong` **25911**); `patch_ok_timing_wrong` **3997**. Skill: timing **+0.149**, F1 **−0.084**. `logs/r2_prev_local_ce_r4_teacher_val.log` |
+| **vs R=8** | Timing **0.156** vs **0.070** (~**2.2×**); patch-acc **26.9%** vs **16.6%**; F1 **0.251** vs **0.108**; F1 skill **−0.084** vs **−0.29** |
+| **vs ptrloss ep2** | Timing **~45×** (**0.156** vs **0.0035**) |
+| **Conclusion** | **Supported.** R-shrink continues to pay. F1 approaching the audio-blind floor; next measure soup/residual/gap-starve at R=4 before R=2 |
+
+### EXP-20260807-09: R=8 still diffuse; residual secondary
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 12:12:02 |
+| **Track** | `metric` (AR) |
+| **Question** | On the R=8 ckpt, is the local window still a mini-soup, and how much of the leftover error is residual (`patch_ok_timing_wrong`) vs wrong patch? |
+| **Setup** | `_tmp/r2_qk_ln_gap/diagnose_r8_error_mix.py` — teacher-forced prev + mono + `max_ahead=8`; 8 train / 12 val. `logs/r2_prev_local_ce_r8_error_mix.log` · `_tmp/r2_qk_ln_gap/r8_error_mix.json` |
+| **Val mix (8925 steps)** | patch_ok_time_ok **6.8%**; **patch_ok_timing_wrong 10.0%**; **patch_wrong 83.2%**. Among patch_ok, **60%** miss 20 ms tol |
+| **Val buckets** | correct **16.8%**; at_prev **17.3%**; near_miss≤2 **20.6%**; near_miss 3–4 **19.5%**; wrong_far **23.7%** (was **63%** at R=32) |
+| **Val concentration** | H/Huni **0.961**; top-1 **0.178**; target rank p50 **4** (of ~9); tgt_off p50 **2** / pred_off p50 **4** |
+| **Residual (patch_ok only)** | resid_err_ms p50 **27.5** / p90 **50.4** — equals abs time err when patch matches; systematically above 20 ms tol |
+| **vs R=32 in-window** | Soup shrunk 33→9 bins but still near-uniform; mid-window bias reduced (pred_off 15→4); at_prev stickiness up (6%→17%) |
+| **Conclusion** | **Supported.** Binding leftover is still **wrong patch** (83%), not residual. Residual is a real but secondary tax (~10% of steps; ~60% of correct patches). Evidence-backed next: **R=4** prev-local probe; defer residual-focused trains until patch localization improves further |
+
+### EXP-20260807-08: Prev-local R=8 beats R=32
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 12:08:36 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | After [EXP-20260807-07](#exp-20260807-07-in-window-errors-are-left-skewed-gt-vs-diffuse-mid-window-preds) showed GT gaps near `prev` (p50=2) under a diffuse 33-way window, does **R=8** beat R=32 on val timing / patch-acc? |
+| **Setup** | [`configs/ar/ladder_r2_prev_local_ce_r8_probe.json`](../../configs/ar/ladder_r2_prev_local_ce_r8_probe.json) — same as v3 but `pointer_local_ce_radius: 8`, separate `model_output_dir`. ES @ ep **16**, restore ep **6**. `logs/r2_prev_local_ce_r8_train.log` |
+| **In-train (best ep 6)** | `val_pointer_loss` **2.178**; val patch-acc **0.164**; val timing **0.0697** (peak timing **0.0975 @ ep 5**, not selected) |
+| **Offline val (50 songs)** | **2471/35439 = 0.0697**; F1 **0.108**; patch-acc **16.6%** (`patch_wrong` **29551**); `patch_ok_timing_wrong` **3478**. Skill: timing **+0.0618**, F1 **−0.291**. `logs/r2_prev_local_ce_r8_teacher_val.log` |
+| **vs R=32 v3** | Timing **0.0697** vs **0.0228** (~**3.1×**); patch-acc **16.6%** vs **5.5%**; timing skill **+0.062** vs **+0.015** |
+| **vs ptrloss ep2** | Timing **~20×** (**0.0697** vs **0.0035**) |
+| **Conclusion** | **Supported.** Matching R to gap mass is a real lever. Remaining: still below null F1; **3478** correct-patch / wrong-time steps; check whether R=8 window is still diffuse before shrinking further or attacking residual |
 
 ### EXP-20260807-07: In-window errors are left-skewed GT vs diffuse mid-window preds
 

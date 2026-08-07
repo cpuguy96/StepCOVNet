@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260807-03: Hard locality masks are diagnostic, not the product path
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 12:39:00 |
+| **Category** | convention |
+| **Summary** | User rejected stacking hard prev-local R / force-advance hacks for val gains. Goal is a holistic open-set predictor (incl. long pauses), not gap-histogram crutches. |
+| **Artifact** | skill: `.cursor/skills/whats-next/SKILL.md` (§ No hard locality hacks as the product path); NOTE-20260807-06; Current phase pivot |
+| **Action taken** | whats-next forbids further hard-R / force-advance as Now/do-it; hard-R EXPs kept as evidence only; next = eval R=4 without hard window then non-hard-mask localization |
+| **Related** | NOTE-20260807-06 · EXP-20260807-10 · EXP-20260807-11 |
+
 ### JRN-20260807-02: Do not recommend ladder scale-up unless asked
 
 | Field | Value |
