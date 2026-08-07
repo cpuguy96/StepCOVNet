@@ -12,9 +12,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Content gap Phase 3 tide gate **PASS** ([EXP-20260807-15](#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded)): teacher **626/634 (0.987)**; ablation **PASS** (shuffle/zeros timing → **0**, `same_pred` → **0**). Dense gap FAIL remains [EXP-20260807-14](#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind).
+**Status:** Content gap Phase 4 R2 probe **beats ptrloss** ([EXP-20260807-16](#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor)): offline val timing **0.0075** vs **0.0035** (~**2.1×**), no α / hard R. Skill still near floor (F1 **−0.43**). Tide gate remains [EXP-20260807-15](#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded).
 
-**Next action:** Phase 4 — R2 short probe with content gap (beat ptrloss timing **~0.0035** without decode prior); log EXP.
+**Next action:** Decide follow-up — longer R2 train, residual/error-mode dig on content-gap ckpt, or Phase 5 design-default flip. Ask before ladder scale-up.
 **Blockers:** None — GPU free.
 **Defer:** hard-R / force-advance as product path; ladder scale-up unless asked; attn-mass; STE spam.
 
@@ -66,6 +66,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-16 | `train` + `metric` | Does R2 content gap beat ptrloss timing **~0.0035** without α / hard R? | **Supported** | Offline timing **0.0075** (~**2.1×**); F1 skill **−0.43** |
 | EXP-20260807-15 | `model` + `train` + `metric` | Does content gap (`q·k(memory[prev+Δ])`) pass tide timing ≈1 **and** audio grounding? | **Supported** | Teacher **0.987**; ablation **PASS** (shuffle/zeros collapse) |
 | EXP-20260807-14 | `train` + `metric` | Does Dense gap+residual pass tide timing ≈1 **and** audio grounding? | **Not supported** | Teacher **632/634**; ablation same_pred **1.0** under zeros — audio-blind |
 | EXP-20260807-13 | `train` + `metric` | Does soft distance-from-prev prior (no hard cutoff) beat full CE without starving long gaps? | **Partial** | α=0.5 timing **0.105** / F1 **0.279** vs ptrloss **0.0035**; α=0 eval still collapses |
@@ -176,6 +177,19 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-16: R2 content gap beats ptrloss timing; still near floor
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 16:08:08 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Does content gap on R2 50t/50v beat full-CE ptrloss timing (**~0.0035**) **without** soft α / hard R? |
+| **Setup** | [`configs/ar/ladder_r2_gap_content_probe.json`](../../configs/ar/ladder_r2_gap_content_probe.json); 50 ep, ES patience 10 on `val_pointer_loss`; restore ep **11**. Train `logs/r2_gap_content_train.log`; offline `logs/r2_gap_content_teacher_val.log` |
+| **In-train (best ep 11)** | `val_pointer_loss` **5.131**; val patch-acc **0.018**; val timing **0.0075** |
+| **Offline teacher val** | Timing **266/35439 = 0.0075**; F1 **0.0119**; patch_wrong **34827**; patch_ok_timing_wrong **383**. Skill: timing **−0.0009**, F1 **−0.43** vs ioi_shuffle null |
+| **vs ptrloss ep2** | Timing **~2.1×** (**0.0075** vs **0.0035**); comparable to encode-then-PE / QK-LN offline (**~0.007**) |
+| **Conclusion** | **Supported** on the Phase 4 bar (beats ptrloss without decode prior). Localization still weak vs null skill — content gap clears the crutch-dependent failure class but does not yet transfer. Next: longer train, error-mode dig, or design default |
 
 ### EXP-20260807-15: Content gap tide gate PASS — audio-grounded
 

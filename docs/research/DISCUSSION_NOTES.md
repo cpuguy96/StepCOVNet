@@ -6,6 +6,19 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
 
+### NOTE-20260807-11: R2 content gap clears ptrloss bar
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 16:08:08 |
+| **Topic** | Phase 4 short probe |
+
+**Verdict.** [EXP-20260807-16](EXPERIMENT_LOG.md#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor): offline timing **0.0075** vs ptrloss **0.0035** (~**2.1×**), no α / hard R. F1 skill still **−0.43** — beats the open-set CE floor but not chance.
+
+**Next.** Longer R2, error-mode dig, or Phase 5 design default — pick deliberately.
+
+**Related.** [NOTE-20260807-10](#note-20260807-10-content-gap-passes-tide-audio-gate) · [`ladder_r2_gap_content_probe.json`](../../configs/ar/ladder_r2_gap_content_probe.json)
+
 ### NOTE-20260807-10: Content gap passes tide audio gate
 
 | Field | Value |
@@ -15,7 +28,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Verdict.** [EXP-20260807-15](EXPERIMENT_LOG.md#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded): teacher **626/634 (0.987)**; ablation **PASS** — shuffle/zeros collapse timing to **0** / `same_pred` **0**. Fixes Dense gap FAIL ([EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind) / [NOTE-20260807-09](#note-20260807-09-dense-gap-head-is-audio-blind-phase-3-fail)).
 
-**Next.** Phase 4 R2 probe (beat ptrloss **~0.0035** without α / hard R).
+**Follow-up.** Phase 4 **PASS** on timing bar ([NOTE-20260807-11](#note-20260807-11-r2-content-gap-clears-ptrloss-bar)).
 
 **Related.** [NOTE-20260807-07](#note-20260807-07-relative-gap-δ-alignment-head--v1-spec) · `gap_head: content` in [`tide_gap_residual.json`](../../configs/ar/tide_gap_residual.json)
 
