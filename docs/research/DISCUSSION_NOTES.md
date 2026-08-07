@@ -6,6 +6,23 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
 
+### NOTE-20260807-05: Inside r=32 the soup shrinks to ~33-way; GT is left-skewed
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 11:53:22 |
+| **Topic** | In-window error geometry on prev-local v3 ckpt |
+
+**Context.** [EXP-20260807-06](EXPERIMENT_LOG.md#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2) raised timing to **0.0228** but patch-acc stayed ~**5.5%**.
+
+**Discovery** (12 val / 8 train, decode mask on). Val: GT `target−prev` p50 **2**, pred `pred−prev` p50 **15**, H/Huni **0.95**, **63%** wrong-far-in-window. Mask integrity OK (0 outside / behind).
+
+**Implication.** Failures are not “stuck at prev”; the model still spreads mass across the allowed window while true gaps hug the left edge. Shrinking **R** is the one-knob match to measured gap mass (p50=2, p95≈5, p99≈12).
+
+**Evidence-backed next.** Prev-local probe with **R=8** (same recipe otherwise). Alternate: R=16 if R=8 starves rare long gaps.
+
+**Related.** [EXP-20260807-07](EXPERIMENT_LOG.md#exp-20260807-07-in-window-errors-are-left-skewed-gt-vs-diffuse-mid-window-preds) · `_tmp/r2_qk_ln_gap/inwindow_errors.json`
+
 ### NOTE-20260807-04: Prev-relative local CE works — but hard-mask CE needs OOD skip
 
 | Field | Value |
@@ -22,7 +39,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Result.** [EXP-20260807-06](EXPERIMENT_LOG.md#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2): offline timing **0.0228** vs ptrloss **0.0035**; timing skill **+0.0145**. F1 skill still **−0.40**.
 
-**Implication.** Binding failure is no longer “800-way soup”; it is **in-window miss** (~5.5% patch-acc). Next measurement: where inside `[prev, prev+32]` mass lands (at_prev / near-target / edge).
+**Implication.** Binding failure is no longer “800-way soup”; it is **in-window miss** (~5.5% patch-acc). → **Done** [NOTE-20260807-05](#note-20260807-05-inside-r32-the-soup-shrinks-to-33-way-gt-is-left-skewed): ~33-way diffuse mid-window vs left-skewed GT.
 
 **Related.** `_tmp/r2_qk_ln_gap/prev_local_gaps.json` · `pointer_mask.prev_relative_ce_step_mask` · configs `ladder_r2_prev_local_ce_probe.json` (v3)
 

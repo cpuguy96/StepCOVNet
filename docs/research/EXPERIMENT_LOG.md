@@ -12,9 +12,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Prev-relative local CE (`[prev, prev+32]`, decode-consistent) **beats** ptrloss ep2 on val timing ([EXP-20260807-06](#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2)). Offline **809/35439 = 0.0228** vs **0.0035**; first **positive** timing skill vs null (**+0.0145**). F1 still deep-negative vs null (**−0.40**).
+**Status:** Prev-local CE r=32 beats ptrloss on timing ([EXP-20260807-06](#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2)), but in-window mass is still ~uniform over 33 bins while GT gaps sit near `prev` ([EXP-20260807-07](#exp-20260807-07-in-window-errors-are-left-skewed-gt-vs-diffuse-mid-window-preds)).
 
-**Next action:** Cheap in-window error modes on the v3 ckpt (at_prev / near-miss / edge-of-window) before another train — do **not** scale to R3+.
+**Next action:** Shrink prev-local radius to match gap mass — short probe **R=8** (covers ~p99 of inter-onset gaps; GT offset p50=2) on the same recipe. Do **not** scale to R3+.
 **Blockers:** None — GPU free.
 **Defer:** ladder scale-up (R3+) unless user asks; attn-mass; STE+local re-spam; target-centered local CE; dropout-as-primary.
 
@@ -66,6 +66,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-07 | `metric` | Where inside `[prev, prev+32]` do v3 errors land? | **Supported** | Val: GT offset p50 **2**, pred offset p50 **15**; H/Huni **0.95**; **63%** wrong-far-in-window — diffuse mid-window vs left-skewed GT |
 | EXP-20260807-06 | `train` + `metric` | Does decode-consistent prev-relative local CE (r=32) beat ptrloss ep2? | **Supported** | Offline timing **0.0228** vs **0.0035**; patch-acc **~5.5%**; timing skill **+0.0145** (F1 skill still **−0.40**) |
 | EXP-20260807-05 | `train` + `metric` | Does clean local CE (r=32, no STE) beat ptrloss ep2 on val timing / patch-acc? | **Not supported** | Offline **0.0025** &lt; ep2 **0.0035**; **88%** preds outside ±32 window — train/infer mismatch |
 | EXP-20260807-04 | `metric` | Is far_ahead diffuse mono-suffix mass or confident wrong peaks? | **Supported** | Ep2 val: H/Huni **0.92**, top-1 **0.016**, n_allowed ~**800** — diffuse; ep31 val top-1 **0.20** peaked wrong → local CE next |
@@ -167,6 +168,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-07: In-window errors are left-skewed GT vs diffuse mid-window preds
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 11:53:22 |
+| **Track** | `metric` (AR) |
+| **Question** | After prev-local r=32 beat ([EXP-20260807-06](#exp-20260807-06-prev-relative-local-ce-beats-ptrloss-ep2)), where inside the decode window do remaining errors sit — at_prev stickiness, near-miss, or diffuse mid-window? |
+| **Setup** | `_tmp/r2_qk_ln_gap/diagnose_inwindow_errors.py` on v3 ckpt; teacher-forced prev + mono + `max_ahead=32`. 8 train / 12 val. `logs/r2_prev_local_ce_v3_inwindow.log` · `_tmp/r2_qk_ln_gap/inwindow_errors.json` |
+| **Val buckets (8925 steps)** | correct **5.7%**; at_prev **6.2%**; near_miss≤2 **6.4%**; near_miss 3–8 **17.8%**; **wrong_far_in_window 63.3%**; at_prev+1 **0.6%**. outside/behind **0** (mask holds) |
+| **Val geometry** | target_offset_from_prev p50 **2** / p90 **3**; pred_offset p50 **15** / p90 **30**; signed(pred−tgt) mean **+14.3**; abs_delta p50 **13** |
+| **Val concentration** | window H/Huni **0.95**; top-1 **0.064**; target rank p50 **11** (of ~33 allowed) |
+| **Train (contrast)** | correct **9.5%**; same mid-window bias (pred offset p50 **15**, target p50 **3**); slightly less diffuse (H/Huni **0.86**) |
+| **Conclusion** | **Supported.** Local CE stopped the 800-way soup but left a **~33-way soup**. GT gaps are left-skewed near `prev`; argmax lands near the window center as if nearly uniform. Evidence-backed next: **shrink R** toward gap mass (R≈8; gap p99≈12 from earlier gap scan) — not scale-up |
 
 ### EXP-20260807-06: Prev-relative local CE beats ptrloss ep2
 
