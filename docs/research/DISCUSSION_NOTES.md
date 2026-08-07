@@ -6,6 +6,19 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
 
+### NOTE-20260807-10: Content gap passes tide audio gate
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 15:52:00 |
+| **Topic** | Phase 3 re-gate after content gap head |
+
+**Verdict.** [EXP-20260807-15](EXPERIMENT_LOG.md#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded): teacher **626/634 (0.987)**; ablation **PASS** — shuffle/zeros collapse timing to **0** / `same_pred` **0**. Fixes Dense gap FAIL ([EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind) / [NOTE-20260807-09](#note-20260807-09-dense-gap-head-is-audio-blind-phase-3-fail)).
+
+**Next.** Phase 4 R2 probe (beat ptrloss **~0.0035** without α / hard R).
+
+**Related.** [NOTE-20260807-07](#note-20260807-07-relative-gap-δ-alignment-head--v1-spec) · `gap_head: content` in [`tide_gap_residual.json`](../../configs/ar/tide_gap_residual.json)
+
 ### NOTE-20260807-09: Dense gap head is audio-blind (Phase 3 FAIL)
 
 | Field | Value |
@@ -15,7 +28,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Verdict.** [EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind): teacher **632/634**, ablation **identical** under reverse/shuffle/zeros (`same_pred` **1.0**). Relative Δ CE alone does not force audio use when the head is `Dense(gap_vocab)` over decoder state — same class as absolute index classification ([EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)).
 
-**Implication.** Before R2: replace Dense gap with a **content-based** gap (logits for Δ from `q · k(memory[prev+Δ])`, dense ids exact; log buckets as needed). Re-run tide + ablation; only then Phase 4.
+**Follow-up.** Content gap landed and re-gated **PASS** ([NOTE-20260807-10](#note-20260807-10-content-gap-passes-tide-audio-gate) / [EXP-20260807-15](EXPERIMENT_LOG.md#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded)). Keep `gap_head: dense` only to rebuild this FAIL.
 
 **Related.** [NOTE-20260807-07](#note-20260807-07-relative-gap-δ-alignment-head--v1-spec) · [NOTE-20260807-08](#note-20260807-08-gap-alignment-phase-2--model--loss-landed) · [EXP-20260804-06](EXPERIMENT_LOG.md#exp-20260804-06-content-based-pointer-restores-audio-grounding-and-still-passes-the-tide-gate)
 
@@ -40,9 +53,9 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Tests.** 80+ unit tests green across losses/models/targets/datasets/ablation; inference/kv/trainers also green. Log: `logs/gap_phase2_unit_test.log`.
 
-**Phase 3.** Ran — **FAIL** on audio grounding ([EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind), [NOTE-20260807-09](#note-20260807-09-dense-gap-head-is-audio-blind-phase-3-fail)).
+**Phase 3.** Dense FAIL → content gap **PASS** ([EXP-20260807-15](EXPERIMENT_LOG.md#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded), [NOTE-20260807-10](#note-20260807-10-content-gap-passes-tide-audio-gate)).
 
-**Next.** Content-based gap head, then re-gate tide. Hold R2 / design default.
+**Next.** Phase 4 R2 probe. Hold design-doc default until R2 clears.
 
 **Related.** [NOTE-20260807-07](#note-20260807-07-relative-gap-δ-alignment-head--v1-spec) · `src/stepcovnet/onset_ar/{models,losses,trainers,inference}.py`
 
@@ -88,7 +101,7 @@ Defaults in `PatchGapVocab`: **`delta_max_dense=256`** (exact ids `0…256`), **
 
 **Out of scope for v1.** Anneal-α on absolute pointer; ladder R3+; hard-R stacking.
 
-**Implementation status.** Phase 0–2 done ([NOTE-20260807-08](#note-20260807-08-gap-alignment-phase-2--model--loss-landed)). Phase 3 Dense gap **FAIL** ([EXP-20260807-14](EXPERIMENT_LOG.md#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind) / [NOTE-20260807-09](#note-20260807-09-dense-gap-head-is-audio-blind-phase-3-fail)). Next: content-based gap, then re-gate.
+**Implementation status.** Phase 0–3 done for content gap ([EXP-20260807-15](EXPERIMENT_LOG.md#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded)). Dense gap closed as FAIL. Next: Phase 4 R2 probe.
 
 **Related.** [NOTE-20260807-06](#note-20260807-06-hard-r-is-diagnostic-not-the-holistic-system) · [NOTE-20260807-08](#note-20260807-08-gap-alignment-phase-2--model--loss-landed) · [EXP-20260807-12](EXPERIMENT_LOG.md#exp-20260807-12-r4-weights-collapse-without-hard-window) · [EXP-20260807-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent) · `src/stepcovnet/onset_ar/targets.py` · JRN-20260807-03
 

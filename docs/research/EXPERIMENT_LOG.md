@@ -12,10 +12,10 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Gap (Δ) Phase 3 tide gate **FAIL** ([EXP-20260807-14](#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind)): teacher **632/634**, ablation identical under reverse/shuffle/zeros. `Dense(gap_vocab)` is the same absolute-classifier failure as [EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer).
+**Status:** Content gap Phase 3 tide gate **PASS** ([EXP-20260807-15](#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded)): teacher **626/634 (0.987)**; ablation **PASS** (shuffle/zeros timing → **0**, `same_pred` → **0**). Dense gap FAIL remains [EXP-20260807-14](#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind).
 
-**Next action:** Content-based gap head (score Δ via `q · k(memory[prev+Δ])`, not `Dense(gap_vocab)`), then re-run tide gate + ablation. Do **not** proceed to R2 until ablation moves the gap head.
-**Blockers:** Gap head audio-blind by construction.
+**Next action:** Phase 4 — R2 short probe with content gap (beat ptrloss timing **~0.0035** without decode prior); log EXP.
+**Blockers:** None — GPU free.
 **Defer:** hard-R / force-advance as product path; ladder scale-up unless asked; attn-mass; STE spam.
 
 ### Dataset prep (PRE ingestion)
@@ -66,6 +66,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-15 | `model` + `train` + `metric` | Does content gap (`q·k(memory[prev+Δ])`) pass tide timing ≈1 **and** audio grounding? | **Supported** | Teacher **0.987**; ablation **PASS** (shuffle/zeros collapse) |
 | EXP-20260807-14 | `train` + `metric` | Does Dense gap+residual pass tide timing ≈1 **and** audio grounding? | **Not supported** | Teacher **632/634**; ablation same_pred **1.0** under zeros — audio-blind |
 | EXP-20260807-13 | `train` + `metric` | Does soft distance-from-prev prior (no hard cutoff) beat full CE without starving long gaps? | **Partial** | α=0.5 timing **0.105** / F1 **0.279** vs ptrloss **0.0035**; α=0 eval still collapses |
 | EXP-20260807-12 | `metric` | Do R=4 weights keep skill if the hard window is removed at eval? | **Supported** (collapse) | Unmasked timing **0.0016** vs masked **0.156**; patch-acc **0.25%** — crutch-dependent |
@@ -175,6 +176,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-15: Content gap tide gate PASS — audio-grounded
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 15:52:00 |
+| **Track** | `model` + `train` + `metric` (AR) |
+| **Question** | Does content-based gap (`gap_head: content`, score Δ via `q · k(memory[prev+Δ])`) pass tide: teacher timing ≈1 **and** audio ablation moves the gap head? |
+| **Setup** | [`configs/ar/tide_gap_residual.json`](../../configs/ar/tide_gap_residual.json) with `gap_head: content`; 400 ep; ckpt `models_wsl/ar/tide_gap_residual/`. Train `logs/tide_gap_content_train.log`; decode `logs/tide_gap_content_decode.log`; ablation `logs/tide_gap_content_ablation.log` / `logs/audio_ablation_tide_gap_residual.json` |
+| **In-train** | Peak `val_overfit_gate` **~0.986**; patch-acc **1.0**; late epochs stable (unlike Dense gap destabilization) |
+| **Offline teacher** | Ordered @ 20 ms **626/634 (0.9874)** vs `target_times`; patch errors **0**. Free-run skipped (not perfect) |
+| **Audio ablation** | matched timing **0.9874**; reverse **0.0126** / shuffle **0.0000** / zeros **0.0000**; `same_pred` **0** under shuffle+zeros. Gate **PASS** (pointer+token+query) |
+| **vs Dense gap** | [EXP-20260807-14](#exp-20260807-14-tide-gap-residual-overfit--timing-near1-audio-blind) held **0.9968** under zeros — content gap fixes the audio-blind failure |
+| **Conclusion** | **Supported.** Relative Δ CE + content scoring passes the non-keys-only tide gate. Timing short of perfect **634/634** but ≈1 and grounded. Next: R2 probe without decode prior |
 
 ### EXP-20260807-14: Tide gap_residual overfit — timing near-1, audio-blind
 
