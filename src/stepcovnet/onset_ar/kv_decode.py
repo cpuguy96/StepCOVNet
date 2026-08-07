@@ -25,6 +25,8 @@ class ArOnsetKvDecoder:
     _memory: tf.Tensor | None = None
     _pointer_key_input: tf.Tensor | None = None
     _density_scalar: tf.Tensor | None = None
+    _prev_patch_indices: tf.Tensor | None = None
+    _running_prev_patch: int = 0
 
     @classmethod
     def from_model(
@@ -49,6 +51,11 @@ class ArOnsetKvDecoder:
             (batch_size, self.max_decoder_len),
             dtype=tf.float32,
         )
+        self._prev_patch_indices = tf.zeros(
+            (batch_size, self.max_decoder_len),
+            dtype=tf.int32,
+        )
+        self._running_prev_patch = 0
 
     def set_memory(self, memory: tf.Tensor) -> None:
         """Store encoder memory for the current sequence.
@@ -95,6 +102,12 @@ class ArOnsetKvDecoder:
             [[0, position]],
             tf.constant([1.0], dtype=tf.float32),
         )
+        if self._prev_patch_indices is not None:
+            self._prev_patch_indices = tf.tensor_scatter_nd_update(
+                self._prev_patch_indices,
+                [[0, position]],
+                tf.constant([self._running_prev_patch], dtype=tf.int32),
+            )
 
         outputs = self.decoder(
             self._decoder_step_inputs(patch_mask),
@@ -144,6 +157,11 @@ class ArOnsetKvDecoder:
             else:
                 key_input = self._pointer_key_input
             inputs["pointer_key_input"] = key_input
+        if config.prev_patch_input_active(self.experiment_config.model):
+            if self._prev_patch_indices is None:
+                msg = "Call reset_decode_state() before content-gap decode."
+                raise RuntimeError(msg)
+            inputs["prev_patch_indices"] = self._prev_patch_indices
         if self._density_scalar is not None:
             inputs["density_scalar"] = self._density_scalar
         return inputs
@@ -288,6 +306,7 @@ def decode_autoregressive_with_kv_cache_numpy(
             )
             if monotonic:
                 prev_patch = patch_idx
+        kv_decoder._running_prev_patch = int(prev_patch)  # noqa: SLF001
         pointer_times.append(float(patch_idx) * patch_duration + residual_sec)
         if cur_len >= max_decoder_len - 1:
             break

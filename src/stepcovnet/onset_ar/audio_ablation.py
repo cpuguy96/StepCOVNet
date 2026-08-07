@@ -69,7 +69,14 @@ def model_inputs(
     keys = ["mert_patches", "patch_mask", "decoder_input_ids", "decoder_mask"]
     if config.density_conditioning_active(experiment_config.model):
         keys.append("density_scalar")
-    return {key: tf.constant(batch[key]) for key in keys}
+    inputs = {key: tf.constant(batch[key]) for key in keys}
+    if config.prev_patch_input_active(experiment_config.model):
+        inputs["prev_patch_indices"] = tf.constant(
+            pointer_mask.teacher_forced_prev_patch_indices_numpy(
+                batch["target_patch_indices"],
+            ),
+        )
+    return inputs
 
 
 def pointer_nll(pointer_logits: np.ndarray, targets_idx: np.ndarray) -> float:

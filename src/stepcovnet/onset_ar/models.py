@@ -6,7 +6,7 @@ import keras
 import numpy as np
 import tensorflow as tf
 
-from stepcovnet.onset_ar import config
+from stepcovnet.onset_ar import config, targets
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
@@ -165,6 +165,49 @@ class MaskPointerLogits(keras.layers.Layer):
         valid = keras.ops.expand_dims(valid, axis=1)
         bias = (1.0 - valid) * -1e9
         return pointer_logits + bias
+
+
+@keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
+class ContentGapLogits(keras.layers.Layer):
+    """Map absolute content-pointer scores to relative Δ gap-vocab logits.
+
+    For each gap id with decoded Δ, gathers ``absolute_scores[..., prev+Δ]``.
+    Invalid landings (OOB or padded) get ``-1e9``. Log overflow buckets use the
+    bin-center Δ so every class stays audio-tied.
+    """
+
+    def __init__(
+        self, delta_lookup: list[int] | tuple[int, ...] | np.ndarray, **kwargs
+    ):
+        super().__init__(**kwargs)
+        lookup = np.asarray(delta_lookup, dtype=np.int32).reshape(-1)
+        self.delta_lookup = [int(v) for v in lookup.tolist()]
+
+    def call(
+        self,
+        inputs: tuple[tf.Tensor, tf.Tensor, tf.Tensor],
+    ) -> tf.Tensor:
+        absolute_scores, prev_patch_indices, patch_mask = inputs
+        n_patches = keras.ops.shape(absolute_scores)[-1]
+        deltas = tf.constant(self.delta_lookup, dtype=tf.int32)
+        prev = keras.ops.cast(prev_patch_indices, "int32")
+        idx = keras.ops.expand_dims(prev, axis=-1) + deltas
+        in_range = keras.ops.logical_and(idx >= 0, idx < n_patches)
+        idx_clamped = keras.ops.clip(idx, 0, n_patches - 1)
+        gathered = tf.gather(absolute_scores, idx_clamped, batch_dims=2)
+        mask_f = keras.ops.cast(patch_mask > 0.5, gathered.dtype)
+        patch_valid = tf.gather(mask_f, idx_clamped, batch_dims=1)
+        valid = keras.ops.logical_and(
+            in_range,
+            keras.ops.cast(patch_valid > 0.5, "bool"),
+        )
+        bias = (1.0 - keras.ops.cast(valid, gathered.dtype)) * -1e9
+        return gathered + bias
+
+    def get_config(self) -> dict:
+        config_dict = super().get_config()
+        config_dict["delta_lookup"] = list(self.delta_lookup)
+        return config_dict
 
 
 @keras.saving.register_keras_serializable(package="stepcovnet.onset_ar")
@@ -436,11 +479,15 @@ def _decode_from_memory(
     decoder_cross_content_only: bool = False,
     qk_layernorm: bool = True,
     gap_vocab_size: int = 0,
+    content_gap: bool = False,
+    gap_delta_lookup: np.ndarray | None = None,
+    prev_patch_indices: tf.Tensor | None = None,
     build_absolute_pointer: bool = True,
     density_scalar: tf.Tensor | None = None,
     density_proj: keras.layers.Layer | None = None,
 ) -> dict[str, tf.Tensor]:
     """Run the causal decoder and return logits and residual outputs."""
+    need_content_qk = bool(content_pointer or content_gap)
     token_embed = keras.layers.Embedding(
         vocab_size,
         d_model,
@@ -472,11 +519,11 @@ def _decode_from_memory(
     # queries shuffle-invariant (NOTE-20260806-02 follow-up).
     # Keep ``memory`` (enc_pos) in the graph via a zero add so Keras does not
     # prune it — inference rebuild still needs ``encoder_memory``.
-    if content_pointer and pe_free_keys and decoder_cross_content_only:
+    if need_content_qk and pe_free_keys and decoder_cross_content_only:
         cross_memory = ContentOnlyCrossMemory(name="cross_memory")(
             [patch_embed, memory],
         )
-    elif content_pointer and pe_free_keys:
+    elif need_content_qk and pe_free_keys:
         memory_proj = keras.layers.Dense(
             d_model,
             name="cross_memory_proj",
@@ -504,20 +551,24 @@ def _decode_from_memory(
         dtype="float32",
     )(decoder)
     outputs: dict[str, tf.Tensor] = {"token_logits": token_logits}
+    absolute_content_scores = None
+    if need_content_qk:
+        absolute_content_scores = _content_pointer_logits(
+            decoder,
+            memory,
+            patch_embed,
+            cross_mask=cross_mask,
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            pe_free_keys=pe_free_keys,
+            query_from_cross_attn=query_from_cross_attn,
+            qk_layernorm=qk_layernorm,
+        )
     if build_absolute_pointer:
         if content_pointer:
-            pointer_logits = _content_pointer_logits(
-                decoder,
-                memory,
-                patch_embed,
-                cross_mask=cross_mask,
-                d_model=d_model,
-                num_heads=num_heads,
-                dropout_rate=dropout_rate,
-                pe_free_keys=pe_free_keys,
-                query_from_cross_attn=query_from_cross_attn,
-                qk_layernorm=qk_layernorm,
-            )
+            assert absolute_content_scores is not None
+            pointer_logits = absolute_content_scores
         else:
             pointer_logits = keras.layers.Dense(
                 max_patches,
@@ -529,11 +580,25 @@ def _decode_from_memory(
         )
         outputs["pointer_logits"] = pointer_logits
     if gap_vocab_size > 0:
-        outputs["gap_logits"] = keras.layers.Dense(
-            gap_vocab_size,
-            name="gap_logits",
-            dtype="float32",
-        )(decoder)
+        if content_gap:
+            if absolute_content_scores is None or prev_patch_indices is None:
+                msg = "content gap requires absolute content scores and prev_patch_indices"
+                raise ValueError(msg)
+            if gap_delta_lookup is None:
+                msg = "content gap requires gap_delta_lookup"
+                raise ValueError(msg)
+            outputs["gap_logits"] = ContentGapLogits(
+                gap_delta_lookup,
+                name="gap_logits",
+            )(
+                [absolute_content_scores, prev_patch_indices, patch_mask],
+            )
+        else:
+            outputs["gap_logits"] = keras.layers.Dense(
+                gap_vocab_size,
+                name="gap_logits",
+                dtype="float32",
+            )(decoder)
     residual_ratio = keras.layers.Dense(
         1,
         activation="sigmoid",
@@ -584,21 +649,28 @@ def build_ar_onset_inference_models(
     d_model = model_config.d_model
     use_density = config.density_conditioning_active(model_config)
     density_proj = full_model.get_layer("density_proj") if use_density else None
-    content_pointer = _has_layer(full_model, "pointer_logits_content")
-    has_absolute_pointer = content_pointer or _has_layer(full_model, "pointer_logits")
+    content_qk = _has_layer(full_model, "pointer_logits_content")
+    has_absolute_pointer = _has_layer(full_model, "mask_pointer_logits")
     has_gap_head = _has_layer(full_model, "gap_logits")
+    content_gap = bool(
+        has_gap_head
+        and content_qk
+        and isinstance(full_model.input, dict)
+        and "prev_patch_indices" in full_model.input,
+    )
     # Prefer graph topology over config so a drifted JSON cannot feed PE keys.
-    pe_free_keys = content_pointer and (
+    pe_free_keys = content_qk and (
         _has_layer(full_model, "cross_memory")
         or bool(model_config.pointer_keys_pe_free)
     )
     query_from_cross = (
-        content_pointer
+        content_qk
         and bool(
             model_config.pointer_query_from_cross_attn,
         )
         and _has_layer(full_model, "pointer_cross_attn")
     )
+    content_pointer = content_qk  # pe-free key stream / QK rebuild
 
     # Encoder runs before absolute PE; ``enc_*_ln2`` is contextualized content.
     content_tensor = full_model.get_layer(f"enc_{n_enc_layers - 1}_ln2").output
@@ -653,6 +725,14 @@ def build_ar_onset_inference_models(
             dtype=tf.float32,
         )
         decoder_inputs["pointer_key_input"] = pointer_key_input
+    prev_patch_indices = None
+    if content_gap:
+        prev_patch_indices = keras.Input(
+            shape=(None,),
+            name="prev_patch_indices",
+            dtype=tf.int32,
+        )
+        decoder_inputs["prev_patch_indices"] = prev_patch_indices
     density_scalar = None
     if use_density:
         density_scalar = keras.Input(
@@ -709,28 +789,31 @@ def build_ar_onset_inference_models(
 
     token_logits = full_model.get_layer("token_logits")(decoder)
     decoder_outputs: dict[str, tf.Tensor] = {"token_logits": token_logits}
-    if has_absolute_pointer:
-        if content_pointer:
-            if query_from_cross:
-                query_source = full_model.get_layer("pointer_cross_attn")(
-                    query=decoder,
-                    value=pointer_attn_memory,
-                    key=pointer_attn_memory,
-                    attention_mask=cross_mask,
-                )
-            else:
-                query_source = decoder
-            key_source = pointer_key_input
-            if _has_layer(full_model, "pointer_query_ln"):
-                query_source = full_model.get_layer("pointer_query_ln")(query_source)
-            if _has_layer(full_model, "pointer_key_ln"):
-                key_source = full_model.get_layer("pointer_key_ln")(key_source)
-            pointer_logits = full_model.get_layer("pointer_logits_content")(
-                [
-                    full_model.get_layer("pointer_query")(query_source),
-                    full_model.get_layer("pointer_key")(key_source),
-                ],
+    absolute_content_scores = None
+    if content_pointer:
+        if query_from_cross:
+            query_source = full_model.get_layer("pointer_cross_attn")(
+                query=decoder,
+                value=pointer_attn_memory,
+                key=pointer_attn_memory,
+                attention_mask=cross_mask,
             )
+        else:
+            query_source = decoder
+        key_source = pointer_key_input
+        if _has_layer(full_model, "pointer_query_ln"):
+            query_source = full_model.get_layer("pointer_query_ln")(query_source)
+        if _has_layer(full_model, "pointer_key_ln"):
+            key_source = full_model.get_layer("pointer_key_ln")(key_source)
+        absolute_content_scores = full_model.get_layer("pointer_logits_content")(
+            [
+                full_model.get_layer("pointer_query")(query_source),
+                full_model.get_layer("pointer_key")(key_source),
+            ],
+        )
+    if has_absolute_pointer:
+        if absolute_content_scores is not None:
+            pointer_logits = absolute_content_scores
         else:
             pointer_logits = full_model.get_layer("pointer_logits")(decoder)
         pointer_logits = full_model.get_layer("mask_pointer_logits")(
@@ -738,7 +821,15 @@ def build_ar_onset_inference_models(
         )
         decoder_outputs["pointer_logits"] = pointer_logits
     if has_gap_head:
-        decoder_outputs["gap_logits"] = full_model.get_layer("gap_logits")(decoder)
+        gap_layer = full_model.get_layer("gap_logits")
+        if content_gap:
+            assert absolute_content_scores is not None
+            assert prev_patch_indices is not None
+            decoder_outputs["gap_logits"] = gap_layer(
+                [absolute_content_scores, prev_patch_indices, patch_mask],
+            )
+        else:
+            decoder_outputs["gap_logits"] = gap_layer(decoder)
     residual_ratio = full_model.get_layer("residual_ratio")(decoder)
     residual_ratio = full_model.get_layer("residual_ratio_flat")(residual_ratio)
     residual_sec = full_model.get_layer("residual_sec")(residual_ratio)
@@ -768,10 +859,15 @@ def build_ar_onset_model(
     content_pointer = build_absolute_pointer and config.content_pointer_active(
         model_config,
     )
-    gap_vocab_size = (
-        experiment_config.build_gap_vocab().vocab_size
+    content_gap = config.content_gap_active(model_config)
+    gap_vocab = (
+        experiment_config.build_gap_vocab()
         if config.gap_alignment_active(model_config)
-        else 0
+        else None
+    )
+    gap_vocab_size = 0 if gap_vocab is None else gap_vocab.vocab_size
+    gap_delta_lookup = (
+        None if gap_vocab is None else targets.gap_delta_lookup_table(gap_vocab)
     )
 
     mert_patches = keras.Input(
@@ -817,6 +913,14 @@ def build_ar_onset_model(
         "decoder_input_ids": decoder_input_ids,
         "decoder_mask": decoder_mask,
     }
+    prev_patch_indices = None
+    if content_gap:
+        prev_patch_indices = keras.Input(
+            shape=(None,),
+            name="prev_patch_indices",
+            dtype=tf.int32,
+        )
+        model_inputs["prev_patch_indices"] = prev_patch_indices
     if use_density:
         density_scalar = keras.Input(
             shape=(1,),
@@ -846,6 +950,9 @@ def build_ar_onset_model(
         decoder_cross_content_only=bool(model_config.decoder_cross_content_only),
         qk_layernorm=bool(model_config.pointer_qk_layernorm),
         gap_vocab_size=gap_vocab_size,
+        content_gap=content_gap,
+        gap_delta_lookup=gap_delta_lookup,
+        prev_patch_indices=prev_patch_indices,
         build_absolute_pointer=build_absolute_pointer,
         density_scalar=density_scalar,
         density_proj=density_proj,

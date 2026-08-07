@@ -399,6 +399,12 @@ class ArOnsetTrainingModel(keras.Model):
             "decoder_input_ids": batch["decoder_input_ids"],
             "decoder_mask": batch["decoder_mask"],
         }
+        if config.prev_patch_input_active(self.experiment_config.model):
+            inputs["prev_patch_indices"] = (
+                pointer_mask.teacher_forced_prev_patch_indices(
+                    batch["target_patch_indices"],
+                )
+            )
         if config.density_conditioning_active(self.experiment_config.model):
             density = batch["density_scalar"]
             if density.shape.rank == 0:
@@ -415,6 +421,7 @@ class ArOnsetTrainingModel(keras.Model):
         memory: tf.Tensor,
         decoder_input_ids: tf.Tensor,
         pointer_key_input: tf.Tensor | None = None,
+        prev_patch_indices: tf.Tensor | None = None,
     ) -> dict[str, tf.Tensor]:
         """Build inputs for the split inference decoder submodel."""
         inputs = {
@@ -433,6 +440,12 @@ class ArOnsetTrainingModel(keras.Model):
                     raise ValueError(msg)
                 pointer_key_input = memory
             inputs["pointer_key_input"] = pointer_key_input
+        if config.prev_patch_input_active(self.experiment_config.model):
+            if prev_patch_indices is None:
+                prev_patch_indices = pointer_mask.teacher_forced_prev_patch_indices(
+                    batch["target_patch_indices"],
+                )
+            inputs["prev_patch_indices"] = prev_patch_indices
         if config.density_conditioning_active(self.experiment_config.model):
             density = batch["density_scalar"]
             if density.shape.rank == 0:

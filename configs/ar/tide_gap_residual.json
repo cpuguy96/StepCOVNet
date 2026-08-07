@@ -13,6 +13,7 @@
     "n_dec_layers": 4,
     "token_scheme": "delta_bucketed",
     "alignment": "gap_residual",
+    "gap_head": "content",
     "keep_absolute_pointer_head": false,
     "patch_delta_max_dense": 256,
     "patch_n_log_buckets": 16,

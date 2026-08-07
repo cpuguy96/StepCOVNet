@@ -86,6 +86,7 @@ class ModelsTest(unittest.TestCase):
     def test_gap_residual_model_emits_gap_logits_without_pointer(self) -> None:
         experiment_config = _tiny_experiment_config()
         experiment_config.model.alignment = "gap_residual"
+        experiment_config.model.gap_head = "dense"
         experiment_config.model.keep_absolute_pointer_head = False
         experiment_config.model.patch_delta_max_dense = 16
         experiment_config.model.patch_n_log_buckets = 4
@@ -578,6 +579,65 @@ class PointerHeadTest(unittest.TestCase):
             ).astype("int32"),
             "decoder_mask": np.ones((1, n_steps), dtype="float32"),
         }
+
+    def test_content_gap_depends_on_audio(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        experiment_config.model.alignment = "gap_residual"
+        experiment_config.model.gap_head = "content"
+        experiment_config.model.keep_absolute_pointer_head = False
+        experiment_config.model.patch_delta_max_dense = 16
+        experiment_config.model.patch_n_log_buckets = 4
+        model = models.build_ar_onset_model(experiment_config)
+        inputs = self._inputs(experiment_config, n_patches=9, n_steps=5)
+        inputs["prev_patch_indices"] = np.asarray([[0, 1, 2, 3, 4]], dtype=np.int32)
+        real = model(inputs, training=False)["gap_logits"].numpy()
+        zeroed = model(
+            {**inputs, "mert_patches": np.zeros_like(inputs["mert_patches"])},
+            training=False,
+        )["gap_logits"].numpy()
+        self.assertGreater(float(np.abs(real - zeroed).max()), 1e-3)
+        self.assertIn("prev_patch_indices", model.input)
+        self.assertTrue(config.content_gap_active(experiment_config.model))
+        encoder, decoder = models.build_ar_onset_inference_models(
+            model,
+            experiment_config,
+        )
+        enc_out = encoder(
+            {
+                "mert_patches": inputs["mert_patches"],
+                "patch_mask": inputs["patch_mask"],
+            },
+            training=False,
+        )
+        memory, key_input = models.unpack_encoder_outputs(enc_out)
+        dec_out = decoder(
+            {
+                "encoder_memory": memory,
+                "pointer_key_input": key_input,
+                "patch_mask": tf.constant(inputs["patch_mask"]),
+                "decoder_input_ids": tf.constant(inputs["decoder_input_ids"]),
+                "decoder_mask": tf.constant(inputs["decoder_mask"]),
+                "prev_patch_indices": tf.constant(inputs["prev_patch_indices"]),
+            },
+            training=False,
+        )
+        self.assertIn("gap_logits", dec_out)
+        self.assertNotIn("pointer_logits", dec_out)
+
+    def test_content_gap_masks_oob_deltas(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        experiment_config.model.alignment = "gap_residual"
+        experiment_config.model.gap_head = "content"
+        experiment_config.model.keep_absolute_pointer_head = False
+        experiment_config.model.patch_delta_max_dense = 8
+        experiment_config.model.patch_n_log_buckets = 2
+        model = models.build_ar_onset_model(experiment_config)
+        inputs = self._inputs(experiment_config, n_patches=4, n_steps=2)
+        # prev=3 → Δ≥1 lands past the last valid patch.
+        inputs["prev_patch_indices"] = np.asarray([[3, 3]], dtype=np.int32)
+        logits = model(inputs, training=False)["gap_logits"].numpy()[0, 0]
+        self.assertLess(float(logits[1]), -1e8)
+        self.assertGreater(float(logits[0]), -1e8)
 
     def test_content_pointer_is_the_default(self) -> None:
         self.assertEqual(config.ArModelConfig().pointer_head, "content")

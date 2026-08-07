@@ -88,6 +88,9 @@ class ArModelConfig(_DictSerializableMixin):
     patch_n_log_buckets: int = targets.DEFAULT_PATCH_N_LOG_BUCKETS
     # When alignment=gap_residual, also build the absolute pointer head for A/B.
     keep_absolute_pointer_head: bool = False
+    # Gap head: "content" scores Δ via q·k(memory[prev+Δ]); "dense" is the
+    # audio-blind Dense(gap_vocab) classifier (EXP-20260807-14 FAIL).
+    gap_head: str = "content"
     num_heads: int = 4
     dropout_rate: float = 0.1
     pointer_head: str = "content"
@@ -254,6 +257,10 @@ POINTER_HEAD_CONTENT = "content"
 POINTER_HEAD_INDEX = "index"
 POINTER_HEADS = (POINTER_HEAD_CONTENT, POINTER_HEAD_INDEX)
 
+GAP_HEAD_CONTENT = "content"
+GAP_HEAD_DENSE = "dense"
+GAP_HEADS = (GAP_HEAD_CONTENT, GAP_HEAD_DENSE)
+
 ALIGNMENT_POINTER_RESIDUAL = "pointer_residual"
 ALIGNMENT_GAP_RESIDUAL = "gap_residual"
 ALIGNMENTS = (ALIGNMENT_POINTER_RESIDUAL, ALIGNMENT_GAP_RESIDUAL)
@@ -284,11 +291,41 @@ def absolute_pointer_head_active(model_config: ArModelConfig) -> bool:
     return bool(model_config.keep_absolute_pointer_head)
 
 
-def content_pointer_input_active(model_config: ArModelConfig) -> bool:
+def content_gap_active(model_config: ArModelConfig) -> bool:
+    """Whether gap logits are content-scored against ``memory[prev+Δ]``.
+
+    Raises:
+        ValueError: If ``gap_head`` is not a recognized mode.
+    """
+    if not gap_alignment_active(model_config):
+        return False
+    mode = str(model_config.gap_head).strip().lower()
+    if mode not in GAP_HEADS:
+        msg = f"model.gap_head must be one of {GAP_HEADS}, got {mode!r}"
+        raise ValueError(msg)
+    return mode == GAP_HEAD_CONTENT
+
+
+def prev_patch_input_active(model_config: ArModelConfig) -> bool:
+    """Whether the model requires ``prev_patch_indices`` as an input."""
+    return content_gap_active(model_config)
+
+
+def content_key_input_active(model_config: ArModelConfig) -> bool:
     """Whether decoder inputs must include ``pointer_key_input``."""
+    if content_gap_active(model_config):
+        return True
     return absolute_pointer_head_active(model_config) and content_pointer_active(
         model_config,
     )
+
+
+def content_pointer_input_active(model_config: ArModelConfig) -> bool:
+    """Whether decoder inputs must include ``pointer_key_input``.
+
+    Alias of :func:`content_key_input_active` (content gap also needs pe-free keys).
+    """
+    return content_key_input_active(model_config)
 
 
 def content_pointer_active(model_config: ArModelConfig) -> bool:

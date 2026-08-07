@@ -839,6 +839,10 @@ def _model_inputs(
         "decoder_input_ids": batch["decoder_input_ids"],
         "decoder_mask": batch["decoder_mask"],
     }
+    if config.prev_patch_input_active(experiment_config.model):
+        inputs["prev_patch_indices"] = pointer_mask.teacher_forced_prev_patch_indices(
+            batch["target_patch_indices"],
+        )
     if config.density_conditioning_active(experiment_config.model):
         inputs["density_scalar"] = batch["density_scalar"]
     return inputs
@@ -1076,6 +1080,7 @@ def _gt_timing_diagnostic(
         patch_mask,
         gt_tokens,
         experiment_config=experiment_config,
+        target_patch_indices=batch_np["target_patch_indices"],
     )
     incremental_times = inference.decode_gt_incremental_pointer_times_numpy(
         model,

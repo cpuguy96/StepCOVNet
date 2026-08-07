@@ -95,6 +95,20 @@ def _with_density_decoder_inputs(
     return merged
 
 
+def _with_prev_patch_decoder_inputs(
+    inputs: dict[str, np.ndarray],
+    *,
+    experiment_config: config.ArExperimentConfig,
+    prev_patch_indices: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Attach ``prev_patch_indices`` when the content gap head requires it."""
+    if not config.prev_patch_input_active(experiment_config.model):
+        return inputs
+    merged = dict(inputs)
+    merged["prev_patch_indices"] = np.asarray(prev_patch_indices, dtype=np.int32)
+    return merged
+
+
 @dataclasses.dataclass(frozen=True)
 class ArDecodeStats:
     """Free-running autoregressive decode summary.
@@ -321,6 +335,7 @@ def decode_parallel_pointer_times_numpy(
     encoder_memory: np.ndarray | None = None,
     patch_mask_batched: np.ndarray | None = None,
     density_scalar: np.ndarray | float | None = None,
+    target_patch_indices: np.ndarray | None = None,
 ) -> np.ndarray:
     """One parallel decoder forward; pointer+residual times at each onset step."""
     tokens = np.asarray(onset_token_ids, dtype=np.int32).reshape(-1)
@@ -367,6 +382,26 @@ def decode_parallel_pointer_times_numpy(
     }
     if config.content_pointer_input_active(experiment_config.model):
         decoder_feed["pointer_key_input"] = pointer_key_input
+    if config.prev_patch_input_active(experiment_config.model):
+        if target_patch_indices is None:
+            msg = (
+                "content gap parallel decode requires target_patch_indices "
+                "for teacher-forced prev"
+            )
+            raise ValueError(msg)
+        targets_arr = np.asarray(target_patch_indices, dtype=np.int32)
+        if targets_arr.ndim == 1:
+            targets_arr = targets_arr[np.newaxis, ...]
+        prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(targets_arr)
+        # Match decoder length (pad/truncate).
+        prev_feed = np.zeros((1, max_decoder_len), dtype=np.int32)
+        n = min(prev.shape[-1], max_decoder_len)
+        prev_feed[0, :n] = prev.reshape(-1)[:n]
+        decoder_feed = _with_prev_patch_decoder_inputs(
+            decoder_feed,
+            experiment_config=experiment_config,
+            prev_patch_indices=prev_feed,
+        )
     outputs = decoder(
         _with_density_decoder_inputs(
             decoder_feed,
@@ -467,8 +502,11 @@ def decode_gt_incremental_pointer_times_numpy(
         if gap_alignment
         else config.pointer_soft_distance_alpha(experiment_config.run)
     )
+    prev_feed = np.zeros((1, max_decoder_len), dtype=np.int32)
     cur_len = 1
     while cur_len < max_decoder_len:
+        pos = cur_len - 1
+        prev_feed[0, pos] = prev_patch
         decoder_feed = {
             "encoder_memory": memory,
             "patch_mask": patch_mask,
@@ -477,6 +515,11 @@ def decode_gt_incremental_pointer_times_numpy(
         }
         if config.content_pointer_input_active(experiment_config.model):
             decoder_feed["pointer_key_input"] = pointer_key_input
+        decoder_feed = _with_prev_patch_decoder_inputs(
+            decoder_feed,
+            experiment_config=experiment_config,
+            prev_patch_indices=prev_feed,
+        )
         outputs = decoder(
             _with_density_decoder_inputs(
                 decoder_feed,
@@ -485,7 +528,6 @@ def decode_gt_incremental_pointer_times_numpy(
             ),
             training=False,
         )
-        pos = cur_len - 1
         if onset_step_mask[pos] > 0.5:
             residual_sec = float(outputs["residual_sec"][0, pos].numpy())
             if gap_alignment:
@@ -569,6 +611,10 @@ def decode_autoregressive_two_pass_with_stats_numpy(
             onset_token_ids=token_pass.onset_token_ids,
             eos_prob_trace=token_pass.eos_prob_trace,
         )
+    # Content gap logits depend on running prev; the token pass already scored
+    # each step with the correct prev, so skip the parallel re-forward.
+    if config.prev_patch_input_active(experiment_config.model):
+        return token_pass
     parallel_times = decode_parallel_pointer_times_numpy(
         model,
         mert_patches,
@@ -756,13 +802,21 @@ def _decode_autoregressive_prefix_numpy(
         if experiment_config is not None and not gap_alignment
         else 0.0
     )
+    prev_feed = np.zeros_like(decoder_input, dtype=np.int32)
+    if experiment_config is not None and config.prev_patch_input_active(
+        experiment_config.model,
+    ):
+        decoder_inputs["prev_patch_indices"] = prev_feed
     cur_len = 1
     n_forward_steps = 0
     stopped_on_eos = False
     while cur_len < max_decoder_len:
         n_forward_steps += 1
-        outputs = decoder(decoder_inputs, training=False)
         pos = cur_len - 1
+        prev_feed[0, pos] = prev_patch
+        if "prev_patch_indices" in decoder_inputs:
+            decoder_inputs["prev_patch_indices"] = prev_feed
+        outputs = decoder(decoder_inputs, training=False)
         token_logits = np.asarray(outputs["token_logits"][0, pos], dtype=np.float32)
         residual_sec = float(outputs["residual_sec"][0, pos].numpy())
         eos_probs.append(eos_probability(token_logits, eos_id=eos_id))
