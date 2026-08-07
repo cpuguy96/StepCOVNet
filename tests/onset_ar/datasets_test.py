@@ -54,6 +54,8 @@ def _synthetic_load_callback_arrays(
         np.zeros((max_dec,), dtype=np.int32),
         np.ones((max_dec,), dtype=np.float32),
         np.zeros((max_dec,), dtype=np.int32),
+        np.zeros((max_dec,), dtype=np.int32),
+        np.zeros((max_dec,), dtype=np.int32),
         np.zeros((max_dec,), dtype=np.float32),
         np.zeros((max_dec,), dtype=np.float32),
         np.ones((max_dec,), dtype=np.float32),

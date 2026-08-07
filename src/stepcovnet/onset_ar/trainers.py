@@ -20,6 +20,7 @@ from stepcovnet.onset_ar import (
     losses,
     models,
     pointer_mask,
+    targets,
 )
 from stepcovnet.onset_events import matching
 from stepcovnet.onset_events import trainers as event_trainers
@@ -259,6 +260,16 @@ class ArOnsetTrainingModel(keras.Model):
             getattr(run_config, "pointer_soft_distance_alpha", 0.0) or 0.0,
         )
         self.monotonic_pointer = bool(model_config.monotonic_pointer)
+        self.gap_alignment = config.gap_alignment_active(model_config)
+        self.gap_loss_weight = float(
+            getattr(run_config, "gap_loss_weight", 1.0) or 1.0,
+        )
+        self._gap_delta_lookup: tf.Tensor | None = None
+        if self.gap_alignment:
+            lookup = targets.gap_delta_lookup_table(
+                experiment_config.build_gap_vocab(),
+            )
+            self._gap_delta_lookup = tf.constant(lookup, dtype=tf.int32)
         self.lambda_residual = run_config.lambda_residual
         self.lambda_incremental_consistency = run_config.lambda_incremental_consistency
         self.incremental_consistency_max_steps = (
@@ -412,7 +423,7 @@ class ArOnsetTrainingModel(keras.Model):
             "decoder_input_ids": decoder_input_ids,
             "decoder_mask": batch["decoder_mask"],
         }
-        if config.content_pointer_active(self.experiment_config.model):
+        if config.content_pointer_input_active(self.experiment_config.model):
             if pointer_key_input is None:
                 if self.experiment_config.model.pointer_keys_pe_free:
                     msg = (
@@ -453,6 +464,8 @@ class ArOnsetTrainingModel(keras.Model):
         )
         if self.monotonic_pointer:
             logits = pointer_mask.apply_monotonic_pointer_mask_tf(logits, prev)
+        if self.gap_alignment:
+            return logits
         if self.pointer_soft_distance_alpha > 0.0:
             logits = pointer_mask.apply_soft_distance_prior_tf(
                 logits,
@@ -466,6 +479,24 @@ class ArOnsetTrainingModel(keras.Model):
                 max_ahead=self.pointer_local_ce_radius,
             )
         return logits
+
+    def _alignment_accuracy(
+        self,
+        outputs: dict[str, tf.Tensor],
+        batch: dict[str, tf.Tensor],
+    ) -> tf.Tensor:
+        """Gap-id or absolute-patch top-1 accuracy for the active alignment head."""
+        if self.gap_alignment:
+            return losses.masked_gap_accuracy(
+                outputs["gap_logits"],
+                batch["target_gap_ids"],
+                batch["onset_step_mask"],
+            )
+        return losses.masked_pointer_patch_accuracy(
+            self._pointer_logits_for_metrics(outputs, batch),
+            batch["target_patch_indices"],
+            batch["onset_step_mask"],
+        )
 
     def _forward_parallel_infer(
         self,
@@ -599,6 +630,9 @@ class ArOnsetTrainingModel(keras.Model):
             pointer_local_ce_anchor=self.pointer_local_ce_anchor,
             pointer_soft_distance_alpha=self.pointer_soft_distance_alpha,
             monotonic_pointer=self.monotonic_pointer,
+            gap_alignment=self.gap_alignment,
+            gap_loss_weight=self.gap_loss_weight,
+            gap_delta_lookup=self._gap_delta_lookup,
         )
         if use_incremental:
             assert memory is not None
@@ -634,10 +668,18 @@ class ArOnsetTrainingModel(keras.Model):
                 self.use_soft_pointer_time and not self.use_ste_pointer_time
             ),
             monotonic_pointer=self.monotonic_pointer,
-            max_ahead=config.pointer_decode_max_ahead(self.experiment_config.run),
-            soft_distance_alpha=config.pointer_soft_distance_alpha(
-                self.experiment_config.run,
+            max_ahead=(
+                0
+                if self.gap_alignment
+                else config.pointer_decode_max_ahead(self.experiment_config.run)
             ),
+            soft_distance_alpha=(
+                0.0
+                if self.gap_alignment
+                else config.pointer_soft_distance_alpha(self.experiment_config.run)
+            ),
+            gap_alignment=self.gap_alignment,
+            gap_delta_lookup=self._gap_delta_lookup,
         )
         self.event_f1_metric.update_state(
             pred_times,
@@ -729,11 +771,7 @@ class ArOnsetTrainingModel(keras.Model):
             ),
         )
         self.pointer_patch_accuracy.update_state(
-            losses.masked_pointer_patch_accuracy(
-                self._pointer_logits_for_metrics(outputs, batch),
-                batch["target_patch_indices"],
-                batch["onset_step_mask"],
-            ),
+            self._alignment_accuracy(outputs, batch),
         )
         self._update_teacher_fed_f1(outputs, batch)
         return self._metric_results(self._batch_metrics())
@@ -760,11 +798,7 @@ class ArOnsetTrainingModel(keras.Model):
             ),
         )
         self.pointer_patch_accuracy.update_state(
-            losses.masked_pointer_patch_accuracy(
-                self._pointer_logits_for_metrics(outputs, batch),
-                batch["target_patch_indices"],
-                batch["onset_step_mask"],
-            ),
+            self._alignment_accuracy(outputs, batch),
         )
         self._update_teacher_fed_f1(outputs, batch)
         return self._metric_results(self._batch_metrics())

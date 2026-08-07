@@ -1,4 +1,4 @@
-"""Losses for AR onset training (token CE + pointer/residual time)."""
+"""Losses for AR onset training (token CE + pointer/gap/residual time)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,46 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet.onset_ar import pointer_mask, targets
+
+
+def resolved_patches_from_gap_logits(
+    gap_logits: tf.Tensor,
+    prev_patch_indices: tf.Tensor,
+    *,
+    delta_lookup: tf.Tensor,
+    max_patch: tf.Tensor | int,
+) -> tf.Tensor:
+    """Resolve absolute patches as ``prev + decode(argmax Δ)``, clamped.
+
+    Args:
+        gap_logits: Gap-vocab logits ``[B, T, V]``.
+        prev_patch_indices: Teacher-forced previous patch ``[B, T]`` (0 at step 0).
+        delta_lookup: ``decode_delta(id)`` table ``[V]``.
+        max_patch: Inclusive clamp (typically ``T' - 1``).
+
+    Returns:
+        Absolute patch indices ``[B, T]``.
+    """
+    gap_ids = tf.argmax(gap_logits, axis=-1, output_type=tf.int32)
+    deltas = tf.gather(tf.cast(delta_lookup, tf.int32), gap_ids)
+    prev = tf.cast(prev_patch_indices, tf.int32)
+    patches = prev + deltas
+    max_patch_i = tf.cast(max_patch, tf.int32)
+    return tf.clip_by_value(patches, 0, max_patch_i)
+
+
+def predicted_times_from_patches(
+    patch_indices: tf.Tensor,
+    residual_sec: tf.Tensor,
+    *,
+    patch_frames: int,
+    hop_sec: float,
+) -> tf.Tensor:
+    """Convert absolute patch indices and residual seconds to onset times."""
+    patch_indices = tf.cast(patch_indices, tf.float32)
+    residual_sec = tf.cast(residual_sec, tf.float32)
+    patch_duration = tf.cast(patch_frames, tf.float32) * tf.cast(hop_sec, tf.float32)
+    return patch_indices * patch_duration + residual_sec
 
 
 def build_token_class_weights_numpy(
@@ -307,17 +347,21 @@ def compute_ar_onset_loss(
     pointer_local_ce_anchor: str = "target",
     pointer_soft_distance_alpha: float = 0.0,
     monotonic_pointer: bool = False,
+    gap_alignment: bool = False,
+    gap_loss_weight: float = 1.0,
+    gap_delta_lookup: tf.Tensor | None = None,
 ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
     """Combined teacher-forcing loss for ``gate-tide-overfit``.
 
     Args:
-        outputs: Model heads (``token_logits``, ``pointer_logits``, ``residual_sec``).
+        outputs: Model heads (``token_logits``, ``pointer_logits`` and/or
+            ``gap_logits``, ``residual_sec``).
         batch: Teacher-forced batch tensors.
         patch_frames: Frames per patch.
         hop_sec: Frame hop in seconds.
         lambda_time: Weight on absolute time error.
         lambda_residual: Weight on residual MSE.
-        pointer_loss_weight: Weight on pointer CE.
+        pointer_loss_weight: Weight on absolute pointer CE (A/B or legacy).
         length_normalize_ce: Mean token CE over valid positions when True.
         token_class_weights: Optional per-vocab CE weights.
         use_soft_pointer_time: Soft expected patch for ``λ_time`` (ignored if STE).
@@ -325,17 +369,26 @@ def compute_ar_onset_loss(
         time_loss_correct_patch_only: Apply ``λ_time`` only where hard argmax
             matches the target patch (avoids residual fighting wrong patches).
         pointer_local_ce_radius: If ``> 0``, restrict pointer CE to a window
-            (see ``pointer_local_ce_anchor``).
+            (see ``pointer_local_ce_anchor``). Ignored when ``gap_alignment``.
         pointer_local_ce_anchor: ``\"target\"`` → ``[target±r]`` CE-only;
             ``\"prev\"`` → ``[prev, prev+r]`` (also applied to time-head logits);
             teacher gaps ``> r`` are dropped from pointer CE (not poisoned).
-        pointer_soft_distance_alpha: Soft ahead penalty
-            ``alpha * max(0, patch - prev)`` on pointer logits (decode-consistent).
-        monotonic_pointer: Apply teacher-forced monotonic mask before losses.
+        pointer_soft_distance_alpha: Soft ahead penalty on absolute pointer
+            logits. Ignored when ``gap_alignment`` (no decode prior on Δ).
+        monotonic_pointer: Apply teacher-forced monotonic mask on absolute
+            pointer logits before losses.
+        gap_alignment: Use relative gap CE as primary alignment loss.
+        gap_loss_weight: Weight on gap CE when ``gap_alignment``.
+        gap_delta_lookup: ``decode_delta(id)`` table for resolving patches.
     """
     token_logits = tf.cast(outputs["token_logits"], tf.float32)
-    pointer_logits = tf.cast(outputs["pointer_logits"], tf.float32)
     residual_sec = tf.cast(outputs["residual_sec"], tf.float32)
+    has_pointer = "pointer_logits" in outputs
+    has_gap = "gap_logits" in outputs
+    pointer_logits = (
+        tf.cast(outputs["pointer_logits"], tf.float32) if has_pointer else None
+    )
+    gap_logits = tf.cast(outputs["gap_logits"], tf.float32) if has_gap else None
 
     decoder_target_ids = tf.cast(batch["decoder_target_ids"], tf.int32)
     decoder_mask = tf.cast(batch["decoder_mask"], tf.float32)
@@ -347,17 +400,24 @@ def compute_ar_onset_loss(
     prev_patches = pointer_mask.teacher_forced_prev_patch_indices(
         target_patch_indices,
     )
-    if monotonic_pointer:
+    # Gap path never applies soft α / hard-R decode priors (NOTE-20260807-07).
+    if pointer_logits is not None and not gap_alignment:
+        if monotonic_pointer:
+            pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
+                pointer_logits,
+                prev_patches,
+            )
+        soft_alpha = float(pointer_soft_distance_alpha)
+        if soft_alpha > 0.0:
+            pointer_logits = pointer_mask.apply_soft_distance_prior_tf(
+                pointer_logits,
+                prev_patches,
+                alpha=soft_alpha,
+            )
+    elif pointer_logits is not None and monotonic_pointer:
         pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
             pointer_logits,
             prev_patches,
-        )
-    soft_alpha = float(pointer_soft_distance_alpha)
-    if soft_alpha > 0.0:
-        pointer_logits = pointer_mask.apply_soft_distance_prior_tf(
-            pointer_logits,
-            prev_patches,
-            alpha=soft_alpha,
         )
 
     token_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -374,48 +434,97 @@ def compute_ar_onset_loss(
     else:
         token_loss = tf.reduce_sum(token_losses)
 
-    anchor = str(pointer_local_ce_anchor or "target").lower()
-    radius = int(pointer_local_ce_radius)
-    pointer_ce_mask = onset_step_mask
-    if radius > 0 and anchor == "prev":
-        pointer_logits = pointer_mask.apply_prev_relative_window_tf(
-            pointer_logits,
-            prev_patches,
-            max_ahead=radius,
-        )
-        pointer_logits_for_ce = pointer_logits
-        pointer_ce_mask = pointer_mask.prev_relative_ce_step_mask(
-            target_patch_indices,
-            prev_patches,
-            max_ahead=radius,
-            onset_step_mask=onset_step_mask,
-        )
-    else:
-        pointer_logits_for_ce = apply_local_pointer_ce_mask(
-            pointer_logits,
-            target_patch_indices,
-            radius=radius,
-        )
-    pointer_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        labels=target_patch_indices,
-        logits=pointer_logits_for_ce,
-    )
-    pointer_losses = pointer_losses * pointer_ce_mask
-    pointer_ce_count = tf.reduce_sum(pointer_ce_mask) + 1e-9
-    pointer_loss = tf.reduce_sum(pointer_losses) / pointer_ce_count
     onset_count = tf.reduce_sum(onset_step_mask) + 1e-9
+    gap_loss = tf.constant(0.0, dtype=tf.float32)
+    pointer_loss = tf.constant(0.0, dtype=tf.float32)
+    alignment_term = tf.constant(0.0, dtype=tf.float32)
 
-    pred_times = predicted_times_from_outputs(
-        pointer_logits,
-        residual_sec,
-        patch_frames=patch_frames,
-        hop_sec=hop_sec,
-        use_soft_expected=use_soft_pointer_time and not use_ste_pointer_time,
-        use_ste=use_ste_pointer_time,
-    )
+    if gap_alignment:
+        if gap_logits is None:
+            raise ValueError("gap_alignment requires outputs['gap_logits']")
+        if gap_delta_lookup is None:
+            raise ValueError("gap_alignment requires gap_delta_lookup")
+        target_gap_ids = tf.cast(batch["target_gap_ids"], tf.int32)
+        gap_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=target_gap_ids,
+            logits=gap_logits,
+        )
+        gap_losses = gap_losses * onset_step_mask
+        gap_loss = tf.reduce_sum(gap_losses) / onset_count
+        alignment_term = tf.cast(gap_loss_weight, tf.float32) * gap_loss
+        # Report primary alignment CE under pointer_loss for checkpoint continuity.
+        pointer_loss = gap_loss
+        if pointer_logits is not None and float(pointer_loss_weight) > 0.0:
+            abs_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                labels=target_patch_indices,
+                logits=pointer_logits,
+            )
+            abs_losses = abs_losses * onset_step_mask
+            abs_pointer_loss = tf.reduce_sum(abs_losses) / onset_count
+            alignment_term = (
+                alignment_term
+                + tf.cast(pointer_loss_weight, tf.float32) * abs_pointer_loss
+            )
+        n_patches = tf.shape(batch["patch_mask"])[1]
+        max_patch = n_patches - 1
+        resolved = resolved_patches_from_gap_logits(
+            gap_logits,
+            prev_patches,
+            delta_lookup=gap_delta_lookup,
+            max_patch=max_patch,
+        )
+        pred_times = predicted_times_from_patches(
+            resolved,
+            residual_sec,
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+        )
+        hard_patch = resolved
+    else:
+        if pointer_logits is None:
+            raise ValueError("pointer alignment requires outputs['pointer_logits']")
+        anchor = str(pointer_local_ce_anchor or "target").lower()
+        radius = int(pointer_local_ce_radius)
+        pointer_ce_mask = onset_step_mask
+        if radius > 0 and anchor == "prev":
+            pointer_logits = pointer_mask.apply_prev_relative_window_tf(
+                pointer_logits,
+                prev_patches,
+                max_ahead=radius,
+            )
+            pointer_logits_for_ce = pointer_logits
+            pointer_ce_mask = pointer_mask.prev_relative_ce_step_mask(
+                target_patch_indices,
+                prev_patches,
+                max_ahead=radius,
+                onset_step_mask=onset_step_mask,
+            )
+        else:
+            pointer_logits_for_ce = apply_local_pointer_ce_mask(
+                pointer_logits,
+                target_patch_indices,
+                radius=radius,
+            )
+        pointer_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=target_patch_indices,
+            logits=pointer_logits_for_ce,
+        )
+        pointer_losses = pointer_losses * pointer_ce_mask
+        pointer_ce_count = tf.reduce_sum(pointer_ce_mask) + 1e-9
+        pointer_loss = tf.reduce_sum(pointer_losses) / pointer_ce_count
+        alignment_term = tf.cast(pointer_loss_weight, tf.float32) * pointer_loss
+        pred_times = predicted_times_from_outputs(
+            pointer_logits,
+            residual_sec,
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+            use_soft_expected=use_soft_pointer_time and not use_ste_pointer_time,
+            use_ste=use_ste_pointer_time,
+        )
+        hard_patch = tf.argmax(pointer_logits, axis=-1, output_type=tf.int32)
+
     time_mask = onset_step_mask
     if time_loss_correct_patch_only:
-        hard_patch = tf.argmax(pointer_logits, axis=-1, output_type=tf.int32)
         correct = tf.cast(
             tf.equal(hard_patch, target_patch_indices),
             tf.float32,
@@ -428,19 +537,32 @@ def compute_ar_onset_loss(
     residual_sq = tf.square(residual_sec - target_residual_sec) * onset_step_mask
     residual_loss = tf.reduce_sum(residual_sq) / onset_count
 
-    pointer_term = tf.cast(pointer_loss_weight, tf.float32) * pointer_loss
     total_loss = (
         token_loss
-        + pointer_term
+        + alignment_term
         + tf.cast(lambda_time, tf.float32) * time_loss
         + tf.cast(lambda_residual, tf.float32) * residual_loss
     )
     return total_loss, {
         "token_loss": token_loss,
         "pointer_loss": pointer_loss,
+        "gap_loss": gap_loss,
         "time_loss": time_loss,
         "residual_loss": residual_loss,
     }
+
+
+def masked_gap_accuracy(
+    gap_logits: tf.Tensor,
+    target_gap_ids: tf.Tensor,
+    onset_step_mask: tf.Tensor,
+) -> tf.Tensor:
+    """Top-1 gap-id accuracy over onset decoder steps."""
+    predictions = tf.argmax(gap_logits, axis=-1, output_type=tf.int32)
+    target_gap_ids = tf.cast(target_gap_ids, tf.int32)
+    correct = tf.cast(tf.equal(predictions, target_gap_ids), tf.float32)
+    mask = tf.cast(onset_step_mask, tf.float32)
+    return tf.reduce_sum(correct * mask) / (tf.reduce_sum(mask) + 1e-9)
 
 
 def masked_pointer_patch_accuracy(

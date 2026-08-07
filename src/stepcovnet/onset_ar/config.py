@@ -77,11 +77,17 @@ class ArModelConfig(_DictSerializableMixin):
     n_enc_layers: int = 4
     n_dec_layers: int = 4
     token_scheme: str = "delta_bucketed"
+    # "pointer_residual" = absolute patch CE; "gap_residual" = relative Δ CE
+    # (NOTE-20260807-07). Soft α / hard R stay diagnostic-only.
     alignment: str = "pointer_residual"
     max_decode_steps: int = constants.MAX_STEPS
     delta_max_dense: int = targets.DEFAULT_DELTA_MAX_DENSE
     n_log_buckets: int = targets.DEFAULT_N_LOG_BUCKETS
     n_first_abs_bins: int = targets.DEFAULT_N_FIRST_ABS_BINS
+    patch_delta_max_dense: int = targets.DEFAULT_PATCH_DELTA_MAX_DENSE
+    patch_n_log_buckets: int = targets.DEFAULT_PATCH_N_LOG_BUCKETS
+    # When alignment=gap_residual, also build the absolute pointer head for A/B.
+    keep_absolute_pointer_head: bool = False
     num_heads: int = 4
     dropout_rate: float = 0.1
     pointer_head: str = "content"
@@ -134,6 +140,8 @@ class ArRunConfig(_DictSerializableMixin):
     scheduled_sampling_ramp_epochs: int = 0
     scheduled_sampling_warmup_epochs: int = 0
     pointer_loss_weight: float = 1.0
+    # Gap-alignment CE weight (NOTE-20260807-07); used when alignment=gap_residual.
+    gap_loss_weight: float = 1.0
     eos_token_weight_scale: float = 1.0
     init_model_path: str = ""
     length_normalize_ce: bool = True
@@ -211,6 +219,13 @@ class ArExperimentConfig:
             hop_sec=self.dataset.hop_sec,
         )
 
+    def build_gap_vocab(self) -> targets.PatchGapVocab:
+        """Return the patch-gap vocabulary implied by model settings."""
+        return targets.PatchGapVocab(
+            delta_max_dense=self.model.patch_delta_max_dense,
+            n_log_buckets=self.model.patch_n_log_buckets,
+        )
+
     def max_encoder_patches(self) -> int:
         """Maximum patch count for padded encoder memory."""
         max_frames = max(
@@ -238,6 +253,42 @@ def density_conditioning_active(model_config: ArModelConfig) -> bool:
 POINTER_HEAD_CONTENT = "content"
 POINTER_HEAD_INDEX = "index"
 POINTER_HEADS = (POINTER_HEAD_CONTENT, POINTER_HEAD_INDEX)
+
+ALIGNMENT_POINTER_RESIDUAL = "pointer_residual"
+ALIGNMENT_GAP_RESIDUAL = "gap_residual"
+ALIGNMENTS = (ALIGNMENT_POINTER_RESIDUAL, ALIGNMENT_GAP_RESIDUAL)
+
+
+def normalize_alignment(mode: str) -> str:
+    """Return lowercase alignment mode token."""
+    return str(mode).strip().lower()
+
+
+def gap_alignment_active(model_config: ArModelConfig) -> bool:
+    """Whether the primary alignment head is relative patch-gap CE.
+
+    Raises:
+        ValueError: If ``alignment`` is not a recognized mode.
+    """
+    mode = normalize_alignment(model_config.alignment)
+    if mode not in ALIGNMENTS:
+        msg = f"model.alignment must be one of {ALIGNMENTS}, got {mode!r}"
+        raise ValueError(msg)
+    return mode == ALIGNMENT_GAP_RESIDUAL
+
+
+def absolute_pointer_head_active(model_config: ArModelConfig) -> bool:
+    """Whether the model builds an absolute ``pointer_logits`` head."""
+    if not gap_alignment_active(model_config):
+        return True
+    return bool(model_config.keep_absolute_pointer_head)
+
+
+def content_pointer_input_active(model_config: ArModelConfig) -> bool:
+    """Whether decoder inputs must include ``pointer_key_input``."""
+    return absolute_pointer_head_active(model_config) and content_pointer_active(
+        model_config,
+    )
 
 
 def content_pointer_active(model_config: ArModelConfig) -> bool:

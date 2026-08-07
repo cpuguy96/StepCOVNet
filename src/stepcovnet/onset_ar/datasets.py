@@ -106,6 +106,7 @@ def load_ar_sample(
     dataset_config: config.ArDatasetConfig,
     model_config: config.ArModelConfig,
     vocab: targets.DeltaBucketVocab | None = None,
+    gap_vocab: targets.PatchGapVocab | None = None,
     chart_index: int = 0,
 ) -> ArSample:
     """Load one audio/chart pair into patched MERT memory and token targets."""
@@ -141,6 +142,10 @@ def load_ar_sample(
     )
 
     vocab = vocab or targets.DeltaBucketVocab(hop_sec=dataset_config.hop_sec)
+    gap_vocab = gap_vocab or targets.PatchGapVocab(
+        delta_max_dense=model_config.patch_delta_max_dense,
+        n_log_buckets=model_config.patch_n_log_buckets,
+    )
     gt_times_sec = event_targets.clip_times_to_duration(raw_times, duration_sec)
     token_seq = targets.encode_onset_times(
         gt_times_sec,
@@ -148,6 +153,7 @@ def load_ar_sample(
         hop_sec=dataset_config.hop_sec,
         patch_frames=model_config.patch_frames,
         vocab=vocab,
+        gap_vocab=gap_vocab,
         max_steps=dataset_config.max_steps_per_chart,
     )
     meter = training_loader.load_chart_meter(chart_path, chart_index)
@@ -224,6 +230,7 @@ def load_overfit_sample(experiment_config: config.ArExperimentConfig) -> ArSampl
         dataset_config=experiment_config.dataset,
         model_config=experiment_config.model,
         vocab=experiment_config.build_vocab(),
+        gap_vocab=experiment_config.build_gap_vocab(),
     )
 
 
@@ -366,6 +373,7 @@ def _load_first_valid_ar_sample(
         dataset_config=experiment_config.dataset,
         model_config=experiment_config.model,
         vocab=experiment_config.build_vocab(),
+        gap_vocab=experiment_config.build_gap_vocab(),
         chart_index=chart_index,
     )
 
@@ -464,11 +472,15 @@ def sample_to_training_arrays(
 
     n_steps = sample.token_seq.n_steps
     target_patch_indices = np.zeros((max_dec,), dtype=np.int32)
+    target_delta_patches = np.zeros((max_dec,), dtype=np.int32)
+    target_gap_ids = np.zeros((max_dec,), dtype=np.int32)
     target_residual_sec = np.zeros((max_dec,), dtype=np.float32)
     target_times = np.zeros((max_dec,), dtype=np.float32)
     onset_step_mask = np.zeros((max_dec,), dtype=np.float32)
     if n_steps > 0:
         target_patch_indices[:n_steps] = sample.token_seq.patch_indices
+        target_delta_patches[:n_steps] = sample.token_seq.delta_patches
+        target_gap_ids[:n_steps] = sample.token_seq.gap_token_ids
         target_residual_sec[:n_steps] = sample.token_seq.residual_sec
         target_times[:n_steps] = targets.decode_pointer_residual_to_times(
             sample.token_seq.patch_indices,
@@ -490,6 +502,8 @@ def sample_to_training_arrays(
         "decoder_target_ids": decoder_target_ids,
         "decoder_mask": decoder_mask,
         "target_patch_indices": target_patch_indices,
+        "target_delta_patches": target_delta_patches,
+        "target_gap_ids": target_gap_ids,
         "target_residual_sec": target_residual_sec,
         "target_times": target_times,
         "onset_step_mask": onset_step_mask,
@@ -534,6 +548,7 @@ def _load_ar_sample_py_callback(
         dataset_config=experiment_config.dataset,
         model_config=experiment_config.model,
         vocab=experiment_config.build_vocab(),
+        gap_vocab=experiment_config.build_gap_vocab(),
         chart_index=chart_index,
     )
     arrays = sample_to_training_arrays(
@@ -548,6 +563,8 @@ def _load_ar_sample_py_callback(
         arrays["decoder_target_ids"],
         arrays["decoder_mask"],
         arrays["target_patch_indices"],
+        arrays["target_delta_patches"],
+        arrays["target_gap_ids"],
         arrays["target_residual_sec"],
         arrays["target_times"],
         arrays["onset_step_mask"],
@@ -579,6 +596,8 @@ def _map_ar_sample_to_batch(
         tf.int32,
         tf.float32,
         tf.int32,
+        tf.int32,
+        tf.int32,
         tf.float32,
         tf.float32,
         tf.float32,
@@ -601,6 +620,8 @@ def _map_ar_sample_to_batch(
             decoder_target_ids,
             decoder_mask,
             target_patch_indices,
+            target_delta_patches,
+            target_gap_ids,
             target_residual_sec,
             target_times,
             onset_step_mask,
@@ -617,6 +638,8 @@ def _map_ar_sample_to_batch(
             decoder_target_ids,
             decoder_mask,
             target_patch_indices,
+            target_delta_patches,
+            target_gap_ids,
             target_residual_sec,
             target_times,
             onset_step_mask,
@@ -630,6 +653,8 @@ def _map_ar_sample_to_batch(
     decoder_target_ids.set_shape([max_dec])
     decoder_mask.set_shape([max_dec])
     target_patch_indices.set_shape([max_dec])
+    target_delta_patches.set_shape([max_dec])
+    target_gap_ids.set_shape([max_dec])
     target_residual_sec.set_shape([max_dec])
     target_times.set_shape([max_dec])
     onset_step_mask.set_shape([max_dec])
@@ -643,6 +668,8 @@ def _map_ar_sample_to_batch(
         "decoder_target_ids": decoder_target_ids,
         "decoder_mask": decoder_mask,
         "target_patch_indices": target_patch_indices,
+        "target_delta_patches": target_delta_patches,
+        "target_gap_ids": target_gap_ids,
         "target_residual_sec": target_residual_sec,
         "target_times": target_times,
         "onset_step_mask": onset_step_mask,

@@ -100,11 +100,23 @@ class ArOnsetKvDecoder:
             self._decoder_step_inputs(patch_mask),
             training=False,
         )
-        return {
+        step_out: dict[str, tf.Tensor] = {
             "token_logits": outputs["token_logits"][:, position : position + 1, :],
-            "pointer_logits": outputs["pointer_logits"][:, position : position + 1, :],
             "residual_sec": outputs["residual_sec"][:, position : position + 1],
         }
+        if "pointer_logits" in outputs:
+            step_out["pointer_logits"] = outputs["pointer_logits"][
+                :,
+                position : position + 1,
+                :,
+            ]
+        if "gap_logits" in outputs:
+            step_out["gap_logits"] = outputs["gap_logits"][
+                :,
+                position : position + 1,
+                :,
+            ]
+        return step_out
 
     def _decoder_step_inputs(self, patch_mask: tf.Tensor) -> dict[str, tf.Tensor]:
         """Build decoder inputs for one incremental decode step."""
@@ -120,7 +132,7 @@ class ArOnsetKvDecoder:
             "decoder_input_ids": self._decoder_input_ids,
             "decoder_mask": self._decoder_mask,
         }
-        if config.content_pointer_active(self.experiment_config.model):
+        if config.content_pointer_input_active(self.experiment_config.model):
             if self._pointer_key_input is None:
                 if self.experiment_config.model.pointer_keys_pe_free:
                     msg = (
@@ -215,9 +227,18 @@ def decode_autoregressive_with_kv_cache_numpy(
     onset_token_ids: list[int] = []
     eos_probs: list[float] = []
     prev_patch = 0
+    gap_alignment = config.gap_alignment_active(experiment_config.model)
+    gap_vocab = experiment_config.build_gap_vocab() if gap_alignment else None
+    max_patch = max(int(np.asarray(patch_mask).sum()) - 1, 0)
     monotonic = bool(experiment_config.model.monotonic_pointer)
-    max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
-    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
+    max_ahead = (
+        0 if gap_alignment else config.pointer_decode_max_ahead(experiment_config.run)
+    )
+    soft_alpha = (
+        0.0
+        if gap_alignment
+        else config.pointer_soft_distance_alpha(experiment_config.run)
+    )
     n_forward_steps = 0
     stopped_on_eos = False
     cur_len = 1
@@ -231,7 +252,6 @@ def decode_autoregressive_with_kv_cache_numpy(
             patch_mask=patch_mask_tf,
         )
         token_logits = np.asarray(outputs["token_logits"][0, 0], dtype=np.float32)
-        pointer_logits = np.asarray(outputs["pointer_logits"][0, 0], dtype=np.float32)
         residual_sec = float(np.asarray(outputs["residual_sec"]).reshape(-1)[0])
         eos_probs.append(ar_inference.eos_probability(token_logits, eos_id=eos_id))
         next_token = ar_inference.select_next_token(
@@ -244,15 +264,30 @@ def decode_autoregressive_with_kv_cache_numpy(
             stopped_on_eos = True
             break
         onset_token_ids.append(next_token)
-        patch_idx = ar_inference._argmax_pointer_patch(  # noqa: SLF001
-            pointer_logits,
-            prev_patch=prev_patch,
-            monotonic=monotonic,
-            max_ahead=max_ahead,
-            soft_distance_alpha=soft_alpha,
-        )
-        if monotonic:
+        if gap_alignment:
+            assert gap_vocab is not None
+            gap_logits = np.asarray(outputs["gap_logits"][0, 0], dtype=np.float32)
+            patch_idx = ar_inference._argmax_gap_patch(  # noqa: SLF001
+                gap_logits,
+                prev_patch=prev_patch,
+                gap_vocab=gap_vocab,
+                max_patch=max_patch,
+            )
             prev_patch = patch_idx
+        else:
+            pointer_logits = np.asarray(
+                outputs["pointer_logits"][0, 0],
+                dtype=np.float32,
+            )
+            patch_idx = ar_inference._argmax_pointer_patch(  # noqa: SLF001
+                pointer_logits,
+                prev_patch=prev_patch,
+                monotonic=monotonic,
+                max_ahead=max_ahead,
+                soft_distance_alpha=soft_alpha,
+            )
+            if monotonic:
+                prev_patch = patch_idx
         pointer_times.append(float(patch_idx) * patch_duration + residual_sec)
         if cur_len >= max_decoder_len - 1:
             break

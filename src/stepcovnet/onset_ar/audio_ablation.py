@@ -134,9 +134,8 @@ def score_batch(
     *,
     experiment_config: config.ArExperimentConfig,
 ) -> dict[str, object]:
-    """Teacher-forced pointer + token metrics for one corrupted batch."""
+    """Teacher-forced alignment + token metrics for one corrupted batch."""
     outputs = model(model_inputs(batch, experiment_config), training=False)
-    pointer_logits = outputs["pointer_logits"].numpy()[0]
     token_logits = outputs["token_logits"].numpy()[0]
     residual_sec = outputs["residual_sec"].numpy()[0]
     query = _pointer_query_numpy(model, batch, experiment_config)
@@ -148,55 +147,91 @@ def score_batch(
     gt_times = batch["gt_times"][0][batch["gt_mask"][0] > 0.5]
     decoder_target_ids = batch["decoder_target_ids"][0]
     decoder_mask = batch["decoder_mask"][0]
-    monotonic = bool(experiment_config.model.monotonic_pointer)
+    gap_alignment = config.gap_alignment_active(experiment_config.model)
+    n_valid_patches = int(batch["patch_mask"][0].sum())
+    max_patch = max(n_valid_patches - 1, 0)
 
-    max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
-    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
-    pred_times = inference.decode_teacher_fed_times_numpy(
-        pointer_logits,
-        residual_sec,
-        onset_step_mask,
-        patch_frames=experiment_config.model.patch_frames,
-        hop_sec=experiment_config.dataset.hop_sec,
-        target_patch_indices=batch["target_patch_indices"][0],
-        monotonic=monotonic,
-        max_ahead=max_ahead,
-        soft_distance_alpha=soft_alpha,
-    )
-    if monotonic:
+    if gap_alignment:
+        gap_logits = outputs["gap_logits"].numpy()[0]
+        gap_vocab = experiment_config.build_gap_vocab()
+        pred_times = inference.decode_teacher_fed_gap_times_numpy(
+            gap_logits,
+            residual_sec,
+            onset_step_mask,
+            batch["target_patch_indices"][0],
+            gap_vocab=gap_vocab,
+            patch_frames=experiment_config.model.patch_frames,
+            hop_sec=experiment_config.dataset.hop_sec,
+            max_patch=max_patch,
+        )
         prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
             batch["target_patch_indices"][0],
         )
-        # Per-step mono (+ soft prior / optional prev+R) so NLL matches train CE.
-        logits_for_nll = pointer_logits.astype(np.float32).copy()
-        n_patches = logits_for_nll.shape[-1]
-        for i in range(logits_for_nll.shape[0]):
-            p = int(prev[i])
-            if p > 0:
-                logits_for_nll[i, : min(p, n_patches)] = -1e9
-            if soft_alpha > 0.0 and p > 0:
-                ahead = np.arange(n_patches, dtype=np.float32) - float(p)
-                logits_for_nll[i] -= soft_alpha * np.maximum(ahead, 0.0)
-            if max_ahead > 0:
-                hi = p + max_ahead
-                if hi + 1 < n_patches:
-                    logits_for_nll[i, hi + 1 :] = -1e9
-        pred_patches = np.asarray(
-            [
-                inference._argmax_pointer_patch(  # noqa: SLF001
-                    pointer_logits[i],
-                    prev_patch=int(prev[i]),
-                    monotonic=True,
-                    max_ahead=max_ahead,
-                    soft_distance_alpha=soft_alpha,
-                )
-                for i in step_indices
-            ],
-            dtype=np.int32,
-        )
+        pred_patches_list: list[int] = []
+        for i in step_indices:
+            gap_id = int(np.argmax(gap_logits[i]))
+            delta = gap_vocab.decode_delta(gap_id)
+            pred_patches_list.append(
+                min(max(int(prev[i]) + delta, 0), max_patch),
+            )
+        pred_patches = np.asarray(pred_patches_list, dtype=np.int32)
+        target_gap_ids = batch["target_gap_ids"][0][step_indices]
+        logits_for_nll = gap_logits
+        nll_targets = target_gap_ids
+        uniform_classes = gap_vocab.vocab_size
     else:
-        logits_for_nll = pointer_logits
-        pred_patches = np.argmax(pointer_logits, axis=-1)[step_indices]
+        pointer_logits = outputs["pointer_logits"].numpy()[0]
+        monotonic = bool(experiment_config.model.monotonic_pointer)
+        max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
+        soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
+        pred_times = inference.decode_teacher_fed_times_numpy(
+            pointer_logits,
+            residual_sec,
+            onset_step_mask,
+            patch_frames=experiment_config.model.patch_frames,
+            hop_sec=experiment_config.dataset.hop_sec,
+            target_patch_indices=batch["target_patch_indices"][0],
+            monotonic=monotonic,
+            max_ahead=max_ahead,
+            soft_distance_alpha=soft_alpha,
+        )
+        if monotonic:
+            prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
+                batch["target_patch_indices"][0],
+            )
+            # Per-step mono (+ soft prior / optional prev+R) so NLL matches train CE.
+            logits_for_nll = pointer_logits.astype(np.float32).copy()
+            n_patches = logits_for_nll.shape[-1]
+            for i in range(logits_for_nll.shape[0]):
+                p = int(prev[i])
+                if p > 0:
+                    logits_for_nll[i, : min(p, n_patches)] = -1e9
+                if soft_alpha > 0.0 and p > 0:
+                    ahead = np.arange(n_patches, dtype=np.float32) - float(p)
+                    logits_for_nll[i] -= soft_alpha * np.maximum(ahead, 0.0)
+                if max_ahead > 0:
+                    hi = p + max_ahead
+                    if hi + 1 < n_patches:
+                        logits_for_nll[i, hi + 1 :] = -1e9
+            pred_patches = np.asarray(
+                [
+                    inference._argmax_pointer_patch(  # noqa: SLF001
+                        pointer_logits[i],
+                        prev_patch=int(prev[i]),
+                        monotonic=True,
+                        max_ahead=max_ahead,
+                        soft_distance_alpha=soft_alpha,
+                    )
+                    for i in step_indices
+                ],
+                dtype=np.int32,
+            )
+        else:
+            logits_for_nll = pointer_logits
+            pred_patches = np.argmax(pointer_logits, axis=-1)[step_indices]
+        nll_targets = target_patches
+        uniform_classes = max(n_valid_patches, 1)
+
     tolerance_sec = experiment_config.run.tolerance_sec
 
     tp, fp, fn = trainers._ar_event_onset_counts_numpy(  # noqa: SLF001
@@ -218,7 +253,6 @@ def score_batch(
     )
     token_preds = np.argmax(token_logits, axis=-1)
     valid = decoder_mask > 0.5
-    n_valid = int(batch["patch_mask"][0].sum())
     return {
         "tp": int(tp),
         "fp": int(fp),
@@ -227,9 +261,9 @@ def score_batch(
         "n_denom": int(report["n_denom"]),
         "n_steps": int(step_indices.size),
         "patch_wrong": int(np.sum(pred_patches != target_patches)),
-        "nll_sum": pointer_nll(logits_for_nll[step_indices], target_patches),
-        "uniform_nll_sum": float(np.log(max(n_valid, 1)) * step_indices.size),
-        "n_valid_patches": n_valid,
+        "nll_sum": pointer_nll(logits_for_nll[step_indices], nll_targets),
+        "uniform_nll_sum": float(np.log(max(uniform_classes, 1)) * step_indices.size),
+        "n_valid_patches": n_valid_patches,
         "token_correct": token_correct,
         "token_total": token_total,
         "token_wrong": token_total - token_correct,

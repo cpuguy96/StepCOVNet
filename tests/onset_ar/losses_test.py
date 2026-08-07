@@ -423,6 +423,89 @@ class LossesTest(unittest.TestCase):
         )
         self.assertEqual(times.shape, (1, max_dec))
 
+    def test_gap_alignment_ce_and_resolved_times(self) -> None:
+        gap_vocab = targets.PatchGapVocab(delta_max_dense=16, n_log_buckets=4)
+        lookup = tf.constant(targets.gap_delta_lookup_table(gap_vocab), dtype=tf.int32)
+        # Targets: patches [2, 5] → Δ [2, 3]; peak gap logits on those ids.
+        gap_logits = tf.zeros((1, 2, gap_vocab.vocab_size), dtype=tf.float32)
+        gap_logits = tf.tensor_scatter_nd_update(
+            gap_logits,
+            [[0, 0, 2], [0, 1, 3]],
+            [20.0, 20.0],
+        )
+        residual = tf.constant([[0.01, 0.02]], dtype=tf.float32)
+        outputs = {
+            "token_logits": tf.zeros((1, 2, 8), dtype=tf.float32),
+            "gap_logits": gap_logits,
+            "residual_sec": residual,
+        }
+        batch = {
+            "decoder_target_ids": tf.constant([[1, 2]], dtype=tf.int32),
+            "decoder_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "onset_step_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "target_patch_indices": tf.constant([[2, 5]], dtype=tf.int32),
+            "target_gap_ids": tf.constant([[2, 3]], dtype=tf.int32),
+            "target_times": tf.constant([[0.17, 0.42]], dtype=tf.float32),
+            "target_residual_sec": residual,
+            "patch_mask": tf.ones((1, 16), dtype=tf.float32),
+        }
+        total, parts = losses.compute_ar_onset_loss(
+            outputs,
+            batch,
+            patch_frames=8,
+            hop_sec=0.01,
+            lambda_time=1.0,
+            lambda_residual=1.0,
+            pointer_loss_weight=0.0,
+            length_normalize_ce=True,
+            gap_alignment=True,
+            gap_loss_weight=1.0,
+            gap_delta_lookup=lookup,
+        )
+        self.assertLess(float(parts["gap_loss"].numpy()), 0.01)
+        self.assertAlmostEqual(
+            float(parts["pointer_loss"].numpy()), float(parts["gap_loss"].numpy())
+        )
+        self.assertLess(float(parts["time_loss"].numpy()), 1e-5)
+        self.assertAlmostEqual(float(parts["residual_loss"].numpy()), 0.0, places=6)
+        self.assertGreater(float(total.numpy()), 0.0)
+
+    def test_gap_alignment_ignores_soft_distance_prior(self) -> None:
+        gap_vocab = targets.PatchGapVocab(delta_max_dense=8, n_log_buckets=2)
+        lookup = tf.constant(targets.gap_delta_lookup_table(gap_vocab), dtype=tf.int32)
+        gap_logits = tf.zeros((1, 1, gap_vocab.vocab_size), dtype=tf.float32)
+        gap_logits = tf.tensor_scatter_nd_update(gap_logits, [[0, 0, 1]], [10.0])
+        outputs = {
+            "token_logits": tf.zeros((1, 1, 4), dtype=tf.float32),
+            "gap_logits": gap_logits,
+            "residual_sec": tf.zeros((1, 1), dtype=tf.float32),
+        }
+        batch = {
+            "decoder_target_ids": tf.constant([[1]], dtype=tf.int32),
+            "decoder_mask": tf.constant([[1.0]], dtype=tf.float32),
+            "onset_step_mask": tf.constant([[1.0]], dtype=tf.float32),
+            "target_patch_indices": tf.constant([[1]], dtype=tf.int32),
+            "target_gap_ids": tf.constant([[1]], dtype=tf.int32),
+            "target_times": tf.constant([[0.08]], dtype=tf.float32),
+            "target_residual_sec": tf.zeros((1, 1), dtype=tf.float32),
+            "patch_mask": tf.ones((1, 8), dtype=tf.float32),
+        }
+        _, parts = losses.compute_ar_onset_loss(
+            outputs,
+            batch,
+            patch_frames=8,
+            hop_sec=0.01,
+            lambda_time=0.0,
+            lambda_residual=0.0,
+            pointer_loss_weight=0.0,
+            length_normalize_ce=True,
+            gap_alignment=True,
+            gap_delta_lookup=lookup,
+            pointer_soft_distance_alpha=100.0,
+            pointer_local_ce_radius=1,
+        )
+        self.assertLess(float(parts["gap_loss"].numpy()), 0.01)
+
 
 if __name__ == "__main__":
     unittest.main()

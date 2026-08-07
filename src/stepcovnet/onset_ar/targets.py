@@ -1,4 +1,4 @@
-"""Tokenization and alignment targets for AR onset (delta_bucketed + pointer/residual)."""
+"""Tokenization and alignment targets for AR onset (delta_bucketed + gap/residual)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,11 @@ EOS_ID = 2
 DEFAULT_DELTA_MAX_DENSE = 256
 DEFAULT_N_LOG_BUCKETS = 16
 DEFAULT_N_FIRST_ABS_BINS = 64
+
+# Patch-gap alignment head (NOTE-20260807-07). Fit on R2 50t/50v patch gaps:
+# later Δ p99=12 / max=134; first-abs max=187 → dense 0..256 is exact on R2.
+DEFAULT_PATCH_DELTA_MAX_DENSE = 256
+DEFAULT_PATCH_N_LOG_BUCKETS = 16
 
 SPECIAL_TOKEN_IDS = frozenset({PAD_ID, BOS_ID, EOS_ID})
 
@@ -123,13 +128,138 @@ class DeltaBucketVocab:
 
 
 @dataclasses.dataclass(frozen=True)
+class PatchGapVocab:
+    """Finite vocabulary for relative patch-gap (Δ) alignment targets.
+
+    First onset uses absolute patch as ``Δ`` from virtual ``prev=0``. Later
+    steps use ``Δ = patch − prev``. Dense ids cover ``0 … delta_max_dense``
+    exactly; larger gaps use log-spaced overflow buckets (decode to bin center).
+
+    Attributes:
+        delta_max_dense: Largest Δ with an exact class id (inclusive).
+        n_log_buckets: Overflow buckets for ``Δ > delta_max_dense``.
+    """
+
+    delta_max_dense: int = DEFAULT_PATCH_DELTA_MAX_DENSE
+    n_log_buckets: int = DEFAULT_PATCH_N_LOG_BUCKETS
+
+    @property
+    def dense_start(self) -> int:
+        return 0
+
+    @property
+    def log_start(self) -> int:
+        return self.delta_max_dense + 1
+
+    @property
+    def vocab_size(self) -> int:
+        return self.log_start + self.n_log_buckets
+
+    def encode_delta(self, delta_patches: int) -> int:
+        """Encode a non-negative patch gap into a gap-vocab id.
+
+        Args:
+            delta_patches: ``patch − prev`` (first onset: absolute patch).
+
+        Returns:
+            Gap vocabulary id in ``[0, vocab_size)``.
+        """
+        delta_patches = max(0, int(delta_patches))
+        if delta_patches <= self.delta_max_dense:
+            return self.dense_start + delta_patches
+        return self.log_start + self._log_bucket_index(delta_patches)
+
+    def decode_delta(self, gap_id: int) -> int:
+        """Decode a gap-vocab id back to a patch gap (bin center for overflow).
+
+        Args:
+            gap_id: Gap vocabulary id.
+
+        Returns:
+            Non-negative Δpatch.
+
+        Raises:
+            ValueError: If ``gap_id`` is outside the vocabulary.
+        """
+        gap_id = int(gap_id)
+        if self.dense_start <= gap_id <= self.delta_max_dense:
+            return gap_id - self.dense_start
+        if self.log_start <= gap_id < self.vocab_size:
+            return self._log_bucket_value(gap_id - self.log_start)
+        raise ValueError(f"gap_id {gap_id} is outside PatchGapVocab")
+
+    def is_dense_id(self, gap_id: int) -> bool:
+        """Check whether ``gap_id`` is an exact dense Δ class.
+
+        Args:
+            gap_id: Gap vocabulary id.
+
+        Returns:
+            True if ``gap_id`` is in the dense Δ range.
+        """
+        gap_id = int(gap_id)
+        return self.dense_start <= gap_id <= self.delta_max_dense
+
+    def is_log_id(self, gap_id: int) -> bool:
+        """Check whether ``gap_id`` is a log overflow bucket.
+
+        Args:
+            gap_id: Gap vocabulary id.
+
+        Returns:
+            True if ``gap_id`` is in the log-bucket range.
+        """
+        gap_id = int(gap_id)
+        return self.log_start <= gap_id < self.vocab_size
+
+    def _log_bucket_index(self, delta_patches: int) -> int:
+        lo = self.delta_max_dense + 1
+        hi = max(lo + 1, lo * (2**self.n_log_buckets))
+        edges = np.logspace(
+            math.log10(lo),
+            math.log10(hi),
+            num=self.n_log_buckets + 1,
+            base=10.0,
+        )
+        idx = int(np.searchsorted(edges, delta_patches, side="right") - 1)
+        return min(max(idx, 0), self.n_log_buckets - 1)
+
+    def _log_bucket_value(self, log_idx: int) -> int:
+        lo = self.delta_max_dense + 1
+        hi = max(lo + 1, lo * (2**self.n_log_buckets))
+        edges = np.logspace(
+            math.log10(lo),
+            math.log10(hi),
+            num=self.n_log_buckets + 1,
+            base=10.0,
+        )
+        log_idx = min(max(int(log_idx), 0), self.n_log_buckets - 1)
+        left = int(edges[log_idx])
+        right = int(edges[log_idx + 1])
+        return max(0, (left + right) // 2)
+
+
+@dataclasses.dataclass(frozen=True)
 class OnsetTokenSequence:
-    """Teacher-forcing token targets for one chart."""
+    """Teacher-forcing token and alignment targets for one chart.
+
+    Attributes:
+        token_ids: Token-LM ids (``delta_bucketed``), length ``n_steps``.
+        frame_indices: Hop-frame indices per onset.
+        patch_indices: Absolute patch indices per onset.
+        residual_sec: Within-patch residual seconds.
+        delta_patches: Raw Δpatch targets (first onset = absolute patch).
+        gap_token_ids: ``PatchGapVocab`` ids for the gap alignment head.
+        decoder_input_ids: Teacher-forcing decoder inputs (BOS + tokens).
+        decoder_target_ids: Teacher-forcing decoder targets (tokens + EOS).
+    """
 
     token_ids: np.ndarray
     frame_indices: np.ndarray
     patch_indices: np.ndarray
     residual_sec: np.ndarray
+    delta_patches: np.ndarray
+    gap_token_ids: np.ndarray
     decoder_input_ids: np.ndarray
     decoder_target_ids: np.ndarray
 
@@ -171,6 +301,71 @@ def frame_to_pointer(
     return int(patch_idx), residual_sec
 
 
+def gap_delta_lookup_table(gap_vocab: PatchGapVocab) -> np.ndarray:
+    """Return ``decode_delta(id)`` for every gap-vocab id (TF gather table).
+
+    Args:
+        gap_vocab: Patch-gap vocabulary.
+
+    Returns:
+        Int32 array of shape ``[vocab_size]``.
+    """
+    return np.asarray(
+        [gap_vocab.decode_delta(gap_id) for gap_id in range(gap_vocab.vocab_size)],
+        dtype=np.int32,
+    )
+
+
+def patch_delta_targets(patch_indices: np.ndarray) -> np.ndarray:
+    """Return per-step Δpatch with first onset absolute (virtual ``prev=0``).
+
+    Args:
+        patch_indices: Absolute patch indices ``[N]``, non-decreasing.
+
+    Returns:
+        Integer gaps ``[N]`` where ``out[0] = patch[0]`` and
+        ``out[i] = patch[i] - patch[i - 1]`` for ``i > 0``.
+    """
+    patches = np.asarray(patch_indices, dtype=np.int32)
+    if patches.size == 0:
+        return np.zeros(0, dtype=np.int32)
+    deltas = np.empty(patches.shape, dtype=np.int32)
+    deltas[0] = patches[0]
+    if patches.size > 1:
+        deltas[1:] = patches[1:] - patches[:-1]
+    return deltas
+
+
+def decode_gap_ids_to_patch_indices(
+    gap_token_ids: np.ndarray,
+    *,
+    gap_vocab: PatchGapVocab,
+    max_patch: int,
+) -> np.ndarray:
+    """Resolve gap-vocab ids to absolute patch indices (``prev + Δ``, clamped).
+
+    Args:
+        gap_token_ids: Gap vocabulary ids ``[N]``.
+        gap_vocab: Vocabulary used to decode Δ.
+        max_patch: Inclusive clamp (typically ``T' - 1``).
+
+    Returns:
+        Absolute patch indices ``[N]``.
+    """
+    ids = np.asarray(gap_token_ids, dtype=np.int32)
+    if ids.size == 0:
+        return np.zeros(0, dtype=np.int32)
+    max_patch = max(0, int(max_patch))
+    patches = np.empty(ids.shape, dtype=np.int32)
+    prev = 0
+    for i, gap_id in enumerate(ids.tolist()):
+        delta = gap_vocab.decode_delta(int(gap_id))
+        patch = min(max(prev + delta, 0), max_patch)
+        patches[i] = patch
+        prev = patch
+    return patches
+
+
 def encode_onset_times(
     times_sec: np.ndarray,
     *,
@@ -178,9 +373,27 @@ def encode_onset_times(
     hop_sec: float,
     patch_frames: int,
     vocab: DeltaBucketVocab,
+    gap_vocab: PatchGapVocab | None = None,
     max_steps: int = constants.MAX_STEPS,
 ) -> OnsetTokenSequence:
-    """Encode clipped sorted onset times into AR token and pointer targets."""
+    """Encode clipped sorted onset times into AR token and alignment targets.
+
+    Args:
+        times_sec: Sorted onset times in seconds.
+        duration_sec: Clip horizon for chart times.
+        hop_sec: Frame hop in seconds.
+        patch_frames: Frames per encoder patch.
+        vocab: Token-LM ``delta_bucketed`` vocabulary.
+        gap_vocab: Patch-gap alignment vocabulary (default ``PatchGapVocab``).
+        max_steps: Maximum onset count before raising.
+
+    Returns:
+        Token sequence with pointer, residual, and gap-alignment targets.
+
+    Raises:
+        ValueError: If the onset count exceeds ``max_steps``.
+    """
+    gap_vocab = gap_vocab or PatchGapVocab()
     clipped = event_targets.clip_times_to_duration(times_sec, duration_sec)
     frames = times_to_frame_indices(clipped, hop_sec)
     if frames.size > max_steps:
@@ -196,6 +409,8 @@ def encode_onset_times(
             frame_indices=empty,
             patch_indices=empty,
             residual_sec=np.zeros(0, dtype=np.float32),
+            delta_patches=empty,
+            gap_token_ids=empty,
             decoder_input_ids=decoder_input,
             decoder_target_ids=decoder_target,
         )
@@ -227,6 +442,11 @@ def encode_onset_times(
     frame_arr = frames.astype(np.int32)
     patch_arr = np.asarray(patch_indices, dtype=np.int32)
     residual_arr = np.asarray(residual_sec, dtype=np.float32)
+    delta_arr = patch_delta_targets(patch_arr)
+    gap_ids = np.asarray(
+        [gap_vocab.encode_delta(int(delta)) for delta in delta_arr.tolist()],
+        dtype=np.int32,
+    )
     decoder_target = np.concatenate([token_arr, np.asarray([EOS_ID], dtype=np.int32)])
     decoder_input = np.concatenate([np.asarray([BOS_ID], dtype=np.int32), token_arr])
     return OnsetTokenSequence(
@@ -234,6 +454,8 @@ def encode_onset_times(
         frame_indices=frame_arr,
         patch_indices=patch_arr,
         residual_sec=residual_arr,
+        delta_patches=delta_arr,
+        gap_token_ids=gap_ids,
         decoder_input_ids=decoder_input,
         decoder_target_ids=decoder_target,
     )

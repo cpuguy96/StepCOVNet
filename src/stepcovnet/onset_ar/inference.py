@@ -12,6 +12,19 @@ from stepcovnet.onset_ar import config, kv_decode, losses, pointer_mask, targets
 from stepcovnet.onset_ar import models as ar_models
 
 
+def _argmax_gap_patch(
+    gap_logits: np.ndarray,
+    *,
+    prev_patch: int,
+    gap_vocab: targets.PatchGapVocab,
+    max_patch: int,
+) -> int:
+    """Resolve ``prev + decode(argmax Δ)``, clamped to ``[0, max_patch]``."""
+    gap_id = int(np.argmax(np.asarray(gap_logits, dtype=np.float32)))
+    delta = gap_vocab.decode_delta(gap_id)
+    return min(max(int(prev_patch) + delta, 0), int(max_patch))
+
+
 def _argmax_pointer_patch(
     pointer_logits: np.ndarray,
     *,
@@ -329,9 +342,7 @@ def decode_parallel_pointer_times_numpy(
         patch_mask = patch_mask_batched
         # Never silently reuse PE ``memory`` as pe-free pointer keys.
         if (
-            config.content_pointer_active(
-                experiment_config.model,
-            )
+            config.content_pointer_input_active(experiment_config.model)
             and experiment_config.model.pointer_keys_pe_free
         ):
             _, pointer_key_input, _ = get_encoder_memory_numpy(
@@ -354,7 +365,7 @@ def decode_parallel_pointer_times_numpy(
         "decoder_input_ids": decoder_input_ids,
         "decoder_mask": decoder_mask,
     }
-    if config.content_pointer_active(experiment_config.model):
+    if config.content_pointer_input_active(experiment_config.model):
         decoder_feed["pointer_key_input"] = pointer_key_input
     outputs = decoder(
         _with_density_decoder_inputs(
@@ -365,10 +376,28 @@ def decode_parallel_pointer_times_numpy(
         ),
         training=False,
     )
-    pointer_logits = np.asarray(outputs["pointer_logits"][0], dtype=np.float32)
     residual_sec = np.asarray(outputs["residual_sec"][0], dtype=np.float32)
     times: list[float] = []
     prev_patch = 0
+    gap_alignment = config.gap_alignment_active(experiment_config.model)
+    max_patch = max(int(np.asarray(patch_mask).sum()) - 1, 0)
+    if gap_alignment:
+        gap_logits = np.asarray(outputs["gap_logits"][0], dtype=np.float32)
+        gap_vocab = experiment_config.build_gap_vocab()
+        for pos in range(int(tokens.size)):
+            patch_idx = _argmax_gap_patch(
+                gap_logits[pos],
+                prev_patch=prev_patch,
+                gap_vocab=gap_vocab,
+                max_patch=max_patch,
+            )
+            prev_patch = patch_idx
+            times.append(
+                float(patch_idx) * patch_duration + float(residual_sec[pos]),
+            )
+        return np.asarray(times, dtype=np.float32)
+
+    pointer_logits = np.asarray(outputs["pointer_logits"][0], dtype=np.float32)
     monotonic = bool(experiment_config.model.monotonic_pointer)
     max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
     soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
@@ -422,9 +451,22 @@ def decode_gt_incremental_pointer_times_numpy(
 
     times: list[float] = []
     prev_patch = 0
+    gap_alignment = config.gap_alignment_active(experiment_config.model)
+    gap_vocab = experiment_config.build_gap_vocab() if gap_alignment else None
+    max_patch = max(int(np.asarray(patch_mask).sum()) - 1, 0)
     monotonic = bool(experiment_config.model.monotonic_pointer)
-    max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
-    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
+    max_ahead = (
+        0
+        if gap_alignment
+        else config.pointer_decode_max_ahead(
+            experiment_config.run,
+        )
+    )
+    soft_alpha = (
+        0.0
+        if gap_alignment
+        else config.pointer_soft_distance_alpha(experiment_config.run)
+    )
     cur_len = 1
     while cur_len < max_decoder_len:
         decoder_feed = {
@@ -433,7 +475,7 @@ def decode_gt_incremental_pointer_times_numpy(
             "decoder_input_ids": dec_in,
             "decoder_mask": dec_mask,
         }
-        if config.content_pointer_active(experiment_config.model):
+        if config.content_pointer_input_active(experiment_config.model):
             decoder_feed["pointer_key_input"] = pointer_key_input
         outputs = decoder(
             _with_density_decoder_inputs(
@@ -445,19 +487,34 @@ def decode_gt_incremental_pointer_times_numpy(
         )
         pos = cur_len - 1
         if onset_step_mask[pos] > 0.5:
-            pointer_logits = np.asarray(
-                outputs["pointer_logits"][0, pos], dtype=np.float32
-            )
             residual_sec = float(outputs["residual_sec"][0, pos].numpy())
-            patch_idx = _argmax_pointer_patch(
-                pointer_logits,
-                prev_patch=prev_patch,
-                monotonic=monotonic,
-                max_ahead=max_ahead,
-                soft_distance_alpha=soft_alpha,
-            )
-            if monotonic:
+            if gap_alignment:
+                assert gap_vocab is not None
+                gap_logits = np.asarray(
+                    outputs["gap_logits"][0, pos],
+                    dtype=np.float32,
+                )
+                patch_idx = _argmax_gap_patch(
+                    gap_logits,
+                    prev_patch=prev_patch,
+                    gap_vocab=gap_vocab,
+                    max_patch=max_patch,
+                )
                 prev_patch = patch_idx
+            else:
+                pointer_logits = np.asarray(
+                    outputs["pointer_logits"][0, pos],
+                    dtype=np.float32,
+                )
+                patch_idx = _argmax_pointer_patch(
+                    pointer_logits,
+                    prev_patch=prev_patch,
+                    monotonic=monotonic,
+                    max_ahead=max_ahead,
+                    soft_distance_alpha=soft_alpha,
+                )
+                if monotonic:
+                    prev_patch = patch_idx
             times.append(float(patch_idx) * patch_duration + residual_sec)
         next_token = int(decoder_input_ids[cur_len])
         if next_token == eos_id:
@@ -671,17 +728,32 @@ def _decode_autoregressive_prefix_numpy(
     onset_token_ids: list[int] = []
     eos_probs: list[float] = []
     prev_patch = 0
+    gap_alignment = bool(
+        experiment_config is not None
+        and config.gap_alignment_active(experiment_config.model),
+    )
+    gap_vocab = (
+        experiment_config.build_gap_vocab()
+        if gap_alignment and experiment_config is not None
+        else None
+    )
+    patch_mask_arr = decoder_inputs.get("patch_mask")
+    max_patch = (
+        max(int(np.asarray(patch_mask_arr).sum()) - 1, 0)
+        if patch_mask_arr is not None
+        else 10**9
+    )
     monotonic = bool(
         experiment_config is not None and experiment_config.model.monotonic_pointer,
     )
     max_ahead = (
         config.pointer_decode_max_ahead(experiment_config.run)
-        if experiment_config is not None
+        if experiment_config is not None and not gap_alignment
         else 0
     )
     soft_alpha = (
         config.pointer_soft_distance_alpha(experiment_config.run)
-        if experiment_config is not None
+        if experiment_config is not None and not gap_alignment
         else 0.0
     )
     cur_len = 1
@@ -692,7 +764,6 @@ def _decode_autoregressive_prefix_numpy(
         outputs = decoder(decoder_inputs, training=False)
         pos = cur_len - 1
         token_logits = np.asarray(outputs["token_logits"][0, pos], dtype=np.float32)
-        pointer_logits = np.asarray(outputs["pointer_logits"][0, pos], dtype=np.float32)
         residual_sec = float(outputs["residual_sec"][0, pos].numpy())
         eos_probs.append(eos_probability(token_logits, eos_id=eos_id))
         next_token = select_next_token(
@@ -705,15 +776,30 @@ def _decode_autoregressive_prefix_numpy(
             stopped_on_eos = True
             break
         onset_token_ids.append(next_token)
-        patch_idx = _argmax_pointer_patch(
-            pointer_logits,
-            prev_patch=prev_patch,
-            monotonic=monotonic,
-            max_ahead=max_ahead,
-            soft_distance_alpha=soft_alpha,
-        )
-        if monotonic:
+        if gap_alignment:
+            assert gap_vocab is not None
+            gap_logits = np.asarray(outputs["gap_logits"][0, pos], dtype=np.float32)
+            patch_idx = _argmax_gap_patch(
+                gap_logits,
+                prev_patch=prev_patch,
+                gap_vocab=gap_vocab,
+                max_patch=max_patch,
+            )
             prev_patch = patch_idx
+        else:
+            pointer_logits = np.asarray(
+                outputs["pointer_logits"][0, pos],
+                dtype=np.float32,
+            )
+            patch_idx = _argmax_pointer_patch(
+                pointer_logits,
+                prev_patch=prev_patch,
+                monotonic=monotonic,
+                max_ahead=max_ahead,
+                soft_distance_alpha=soft_alpha,
+            )
+            if monotonic:
+                prev_patch = patch_idx
         pointer_times.append(float(patch_idx) * patch_duration + residual_sec)
         if cur_len >= max_decoder_len - 1:
             break
@@ -797,7 +883,7 @@ def decode_autoregressive_with_stats_numpy(
             "decoder_input_ids": decoder_input,
             "decoder_mask": decoder_mask_arr,
         }
-        if config.content_pointer_active(experiment_config.model):
+        if config.content_pointer_input_active(experiment_config.model):
             decoder_inputs["pointer_key_input"] = key_np
     else:
         decoder = model
@@ -917,12 +1003,35 @@ def decode_teacher_fed_times_tf(
     monotonic_pointer: bool = False,
     max_ahead: int = 0,
     soft_distance_alpha: float = 0.0,
+    gap_alignment: bool = False,
+    gap_delta_lookup: tf.Tensor | None = None,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Tensor wrapper returning padded predicted times and a validity mask."""
-    pointer_logits = outputs["pointer_logits"]
     prev = pointer_mask.teacher_forced_prev_patch_indices(
         batch["target_patch_indices"],
     )
+    if gap_alignment:
+        if "gap_logits" not in outputs:
+            raise ValueError("gap_alignment requires outputs['gap_logits']")
+        if gap_delta_lookup is None:
+            raise ValueError("gap_alignment requires gap_delta_lookup")
+        n_patches = tf.shape(batch["patch_mask"])[1]
+        resolved = losses.resolved_patches_from_gap_logits(
+            outputs["gap_logits"],
+            prev,
+            delta_lookup=gap_delta_lookup,
+            max_patch=n_patches - 1,
+        )
+        pred_times = losses.predicted_times_from_patches(
+            resolved,
+            outputs["residual_sec"],
+            patch_frames=patch_frames,
+            hop_sec=hop_sec,
+        )
+        pred_mask = tf.cast(batch["onset_step_mask"], tf.float32)
+        return pred_times, pred_mask
+
+    pointer_logits = outputs["pointer_logits"]
     if monotonic_pointer:
         pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
             pointer_logits,
@@ -949,3 +1058,41 @@ def decode_teacher_fed_times_tf(
     )
     pred_mask = tf.cast(batch["onset_step_mask"], tf.float32)
     return pred_times, pred_mask
+
+
+def decode_teacher_fed_gap_times_numpy(
+    gap_logits: np.ndarray,
+    residual_sec: np.ndarray,
+    onset_step_mask: np.ndarray,
+    target_patch_indices: np.ndarray,
+    *,
+    gap_vocab: targets.PatchGapVocab,
+    patch_frames: int,
+    hop_sec: float,
+    max_patch: int,
+) -> np.ndarray:
+    """Teacher-fed times from gap logits: ``patch = prev + Δ``, then residual."""
+    gap_logits = np.asarray(gap_logits, dtype=np.float32)
+    residual_sec = np.asarray(residual_sec, dtype=np.float32)
+    onset_step_mask = np.asarray(onset_step_mask, dtype=np.float32)
+    target_patch_indices = np.asarray(target_patch_indices, dtype=np.int32)
+    if gap_logits.ndim == 3:
+        gap_logits = gap_logits[0]
+        residual_sec = residual_sec[0]
+    if onset_step_mask.ndim > 1:
+        onset_step_mask = onset_step_mask[0]
+    if target_patch_indices.ndim > 1:
+        target_patch_indices = target_patch_indices[0]
+    prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
+        target_patch_indices,
+    )
+    patch_duration = float(patch_frames) * float(hop_sec)
+    times: list[float] = []
+    for step_idx, active in enumerate(onset_step_mask):
+        if active <= 0.5:
+            continue
+        gap_id = int(np.argmax(gap_logits[step_idx]))
+        delta = gap_vocab.decode_delta(gap_id)
+        patch_idx = min(max(int(prev_patches[step_idx]) + delta, 0), int(max_patch))
+        times.append(float(patch_idx) * patch_duration + float(residual_sec[step_idx]))
+    return np.asarray(times, dtype=np.float32)

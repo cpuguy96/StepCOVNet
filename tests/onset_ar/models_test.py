@@ -81,6 +81,64 @@ class ModelsTest(unittest.TestCase):
         self.assertEqual(outputs["token_logits"].shape, (1, max_dec, vocab_size))
         self.assertEqual(outputs["pointer_logits"].shape, (1, max_dec, max_patches))
         self.assertEqual(outputs["residual_sec"].shape, (1, max_dec))
+        self.assertNotIn("gap_logits", outputs)
+
+    def test_gap_residual_model_emits_gap_logits_without_pointer(self) -> None:
+        experiment_config = _tiny_experiment_config()
+        experiment_config.model.alignment = "gap_residual"
+        experiment_config.model.keep_absolute_pointer_head = False
+        experiment_config.model.patch_delta_max_dense = 16
+        experiment_config.model.patch_n_log_buckets = 4
+        model = models.build_ar_onset_model(experiment_config)
+        max_patches = experiment_config.max_encoder_patches()
+        max_dec = experiment_config.max_decoder_len()
+        patch_dim = experiment_config.patch_input_dim()
+        gap_vocab_size = experiment_config.build_gap_vocab().vocab_size
+        inputs = {
+            "mert_patches": tf.zeros((1, max_patches, patch_dim), dtype=tf.float32),
+            "patch_mask": tf.concat(
+                [
+                    tf.ones((1, 4), dtype=tf.float32),
+                    tf.zeros((1, max_patches - 4), tf.float32),
+                ],
+                axis=1,
+            ),
+            "decoder_input_ids": tf.zeros((1, max_dec), dtype=tf.int32),
+            "decoder_mask": tf.concat(
+                [
+                    tf.ones((1, 3), dtype=tf.float32),
+                    tf.zeros((1, max_dec - 3), tf.float32),
+                ],
+                axis=1,
+            ),
+        }
+        outputs = model(inputs, training=False)
+        self.assertIn("gap_logits", outputs)
+        self.assertNotIn("pointer_logits", outputs)
+        self.assertEqual(outputs["gap_logits"].shape, (1, max_dec, gap_vocab_size))
+        encoder, decoder = models.build_ar_onset_inference_models(
+            model,
+            experiment_config,
+        )
+        enc_out = encoder(
+            {
+                "mert_patches": inputs["mert_patches"],
+                "patch_mask": inputs["patch_mask"],
+            },
+            training=False,
+        )
+        memory, _ = models.unpack_encoder_outputs(enc_out)
+        dec_out = decoder(
+            {
+                "encoder_memory": memory,
+                "patch_mask": inputs["patch_mask"],
+                "decoder_input_ids": inputs["decoder_input_ids"],
+                "decoder_mask": inputs["decoder_mask"],
+            },
+            training=False,
+        )
+        self.assertIn("gap_logits", dec_out)
+        self.assertNotIn("pointer_logits", dec_out)
 
     def test_ar_onset_model_accepts_compact_dynamic_shapes(self) -> None:
         experiment_config = _tiny_experiment_config()

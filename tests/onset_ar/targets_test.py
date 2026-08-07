@@ -10,6 +10,7 @@ from stepcovnet.onset_ar import config, datasets, targets
 class TargetsTest(unittest.TestCase):
     def setUp(self) -> None:
         self.vocab = targets.DeltaBucketVocab()
+        self.gap_vocab = targets.PatchGapVocab()
         self.hop_sec = constants.HOP_COEFF
         self.patch_frames = 8
 
@@ -23,6 +24,13 @@ class TargetsTest(unittest.TestCase):
             + self.vocab.n_log_buckets,
         )
 
+    def test_patch_gap_vocab_size_matches_ranges(self) -> None:
+        self.assertEqual(self.gap_vocab.dense_start, 0)
+        self.assertEqual(
+            self.gap_vocab.vocab_size,
+            self.gap_vocab.delta_max_dense + 1 + self.gap_vocab.n_log_buckets,
+        )
+
     def test_empty_chart_is_bos_eos_only(self) -> None:
         seq = targets.encode_onset_times(
             np.zeros(0, dtype=np.float64),
@@ -30,10 +38,13 @@ class TargetsTest(unittest.TestCase):
             hop_sec=self.hop_sec,
             patch_frames=self.patch_frames,
             vocab=self.vocab,
+            gap_vocab=self.gap_vocab,
         )
         self.assertEqual(seq.n_steps, 0)
         np.testing.assert_array_equal(seq.decoder_input_ids, [targets.BOS_ID])
         np.testing.assert_array_equal(seq.decoder_target_ids, [targets.EOS_ID])
+        np.testing.assert_array_equal(seq.delta_patches, [])
+        np.testing.assert_array_equal(seq.gap_token_ids, [])
 
     def test_encode_builds_monotonic_pointers(self) -> None:
         times = np.asarray([0.05, 0.10, 0.25], dtype=np.float64)
@@ -43,6 +54,7 @@ class TargetsTest(unittest.TestCase):
             hop_sec=self.hop_sec,
             patch_frames=self.patch_frames,
             vocab=self.vocab,
+            gap_vocab=self.gap_vocab,
         )
         self.assertTrue(np.all(np.diff(seq.patch_indices) >= 0))
         pointer_times = targets.decode_pointer_residual_to_times(
@@ -58,6 +70,61 @@ class TargetsTest(unittest.TestCase):
         for delta in (1, 5, 50, 200):
             token = self.vocab.encode_delta_frames(delta)
             self.assertEqual(self.vocab.decode_delta_frames(token), delta)
+
+    def test_patch_gap_dense_round_trip(self) -> None:
+        for delta in (0, 1, 2, 12, 134, 187, 256):
+            gap_id = self.gap_vocab.encode_delta(delta)
+            self.assertTrue(self.gap_vocab.is_dense_id(gap_id))
+            self.assertEqual(self.gap_vocab.decode_delta(gap_id), delta)
+
+    def test_patch_gap_log_bucket_round_trip_near_center(self) -> None:
+        delta = self.gap_vocab.delta_max_dense + 50
+        gap_id = self.gap_vocab.encode_delta(delta)
+        self.assertTrue(self.gap_vocab.is_log_id(gap_id))
+        decoded = self.gap_vocab.decode_delta(gap_id)
+        self.assertGreater(decoded, self.gap_vocab.delta_max_dense)
+
+    def test_patch_delta_targets_first_absolute_then_gaps(self) -> None:
+        patches = np.asarray([10, 10, 12, 20], dtype=np.int32)
+        deltas = targets.patch_delta_targets(patches)
+        np.testing.assert_array_equal(deltas, [10, 0, 2, 8])
+
+    def test_gap_ids_round_trip_to_patch_indices(self) -> None:
+        times = np.asarray([0.05, 0.10, 0.12, 0.80, 2.00], dtype=np.float64)
+        seq = targets.encode_onset_times(
+            times,
+            duration_sec=5.0,
+            hop_sec=self.hop_sec,
+            patch_frames=self.patch_frames,
+            vocab=self.vocab,
+            gap_vocab=self.gap_vocab,
+        )
+        self.assertEqual(int(seq.delta_patches[0]), int(seq.patch_indices[0]))
+        if seq.n_steps > 1:
+            np.testing.assert_array_equal(
+                seq.delta_patches[1:],
+                seq.patch_indices[1:] - seq.patch_indices[:-1],
+            )
+        max_patch = int(seq.patch_indices[-1]) + 8
+        recovered = targets.decode_gap_ids_to_patch_indices(
+            seq.gap_token_ids,
+            gap_vocab=self.gap_vocab,
+            max_patch=max_patch,
+        )
+        np.testing.assert_array_equal(recovered, seq.patch_indices)
+        gap_times = targets.decode_pointer_residual_to_times(
+            recovered,
+            seq.residual_sec,
+            patch_frames=self.patch_frames,
+            hop_sec=self.hop_sec,
+        )
+        pointer_times = targets.decode_pointer_residual_to_times(
+            seq.patch_indices,
+            seq.residual_sec,
+            patch_frames=self.patch_frames,
+            hop_sec=self.hop_sec,
+        )
+        np.testing.assert_allclose(gap_times, pointer_times, rtol=0, atol=1e-6)
 
     def test_times_to_frame_indices_deduplicates_same_bin(self) -> None:
         times = np.asarray([0.050, 0.054, 0.120], dtype=np.float64)
@@ -132,6 +199,30 @@ class TideIntegrationTest(unittest.TestCase):
             hop_sec * 1000.0 + 1e-3,
             "target_times must be hop-quantized chart times",
         )
+
+    def test_batch_emits_gap_targets_masked_to_onsets(self) -> None:
+        experiment_config = config.ArExperimentConfig.from_json(
+            "configs/ar/tide_overfit.json"
+        )
+        sample = datasets.load_overfit_sample(experiment_config)
+        batch = datasets.sample_to_training_batch(sample, experiment_config)
+        onset_mask = batch["onset_step_mask"][0] > 0.5
+        deltas = batch["target_delta_patches"][0]
+        gap_ids = batch["target_gap_ids"][0]
+        patches = batch["target_patch_indices"][0]
+        self.assertIn("target_delta_patches", batch)
+        self.assertIn("target_gap_ids", batch)
+        np.testing.assert_array_equal(
+            deltas[onset_mask],
+            sample.token_seq.delta_patches,
+        )
+        np.testing.assert_array_equal(
+            gap_ids[onset_mask],
+            sample.token_seq.gap_token_ids,
+        )
+        self.assertEqual(int(deltas[onset_mask][0]), int(patches[onset_mask][0]))
+        np.testing.assert_array_equal(deltas[~onset_mask], 0)
+        np.testing.assert_array_equal(gap_ids[~onset_mask], 0)
 
     def test_cached_overfit_dataset_matches_uncached_batch(self) -> None:
         experiment_config = config.ArExperimentConfig.from_json(
