@@ -151,6 +151,7 @@ def score_batch(
     monotonic = bool(experiment_config.model.monotonic_pointer)
 
     max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
+    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
     pred_times = inference.decode_teacher_fed_times_numpy(
         pointer_logits,
         residual_sec,
@@ -160,18 +161,22 @@ def score_batch(
         target_patch_indices=batch["target_patch_indices"][0],
         monotonic=monotonic,
         max_ahead=max_ahead,
+        soft_distance_alpha=soft_alpha,
     )
     if monotonic:
         prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
             batch["target_patch_indices"][0],
         )
-        # Per-step mono (+ optional prev+R) so NLL matches train pointer CE.
+        # Per-step mono (+ soft prior / optional prev+R) so NLL matches train CE.
         logits_for_nll = pointer_logits.astype(np.float32).copy()
         n_patches = logits_for_nll.shape[-1]
         for i in range(logits_for_nll.shape[0]):
             p = int(prev[i])
             if p > 0:
                 logits_for_nll[i, : min(p, n_patches)] = -1e9
+            if soft_alpha > 0.0 and p > 0:
+                ahead = np.arange(n_patches, dtype=np.float32) - float(p)
+                logits_for_nll[i] -= soft_alpha * np.maximum(ahead, 0.0)
             if max_ahead > 0:
                 hi = p + max_ahead
                 if hi + 1 < n_patches:
@@ -183,6 +188,7 @@ def score_batch(
                     prev_patch=int(prev[i]),
                     monotonic=True,
                     max_ahead=max_ahead,
+                    soft_distance_alpha=soft_alpha,
                 )
                 for i in step_indices
             ],

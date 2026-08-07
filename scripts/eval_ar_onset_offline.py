@@ -866,6 +866,7 @@ def _diagnose_batch(
 
     monotonic = bool(model_config.monotonic_pointer)
     max_ahead = config.pointer_decode_max_ahead(run_config)
+    soft_alpha = config.pointer_soft_distance_alpha(run_config)
     pred_times = inference.decode_teacher_fed_times_numpy(
         pointer_logits,
         residual_sec,
@@ -875,6 +876,7 @@ def _diagnose_batch(
         target_patch_indices=target_patches,
         monotonic=monotonic,
         max_ahead=max_ahead,
+        soft_distance_alpha=soft_alpha,
     )
     if monotonic:
         prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
@@ -887,6 +889,7 @@ def _diagnose_batch(
                     prev_patch=int(prev_patches[i]),
                     monotonic=True,
                     max_ahead=max_ahead,
+                    soft_distance_alpha=soft_alpha,
                 )
                 for i in range(pointer_logits.shape[0])
             ],

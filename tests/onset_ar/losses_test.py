@@ -188,6 +188,33 @@ class LossesTest(unittest.TestCase):
         self.assertAlmostEqual(float(mask[0, 0]), 1.0, places=5)
         self.assertAlmostEqual(float(mask[0, 1]), 0.0, places=5)
 
+    def test_soft_distance_prior_penalizes_ahead_keeps_far_finite(self) -> None:
+        from stepcovnet.onset_ar import pointer_mask
+
+        logits = tf.zeros((1, 1, 16), dtype=tf.float32)
+        prev = tf.constant([[4]], dtype=tf.int32)
+        soft = pointer_mask.apply_soft_distance_prior_tf(
+            logits,
+            prev,
+            alpha=0.5,
+        )
+        # At prev: no penalty. +4 ahead: -2.0. Far patch stays finite (not -1e9).
+        self.assertAlmostEqual(float(soft[0, 0, 4]), 0.0, places=5)
+        self.assertAlmostEqual(float(soft[0, 0, 8]), -2.0, places=5)
+        self.assertGreater(float(soft[0, 0, 15]), -100.0)
+
+    def test_soft_distance_prior_skips_when_prev_zero(self) -> None:
+        from stepcovnet.onset_ar import pointer_mask
+
+        logits = tf.zeros((1, 1, 16), dtype=tf.float32)
+        prev = tf.constant([[0]], dtype=tf.int32)
+        soft = pointer_mask.apply_soft_distance_prior_tf(
+            logits,
+            prev,
+            alpha=0.5,
+        )
+        self.assertAlmostEqual(float(soft[0, 0, 15]), 0.0, places=5)
+
     def test_time_loss_correct_patch_only_ignores_wrong_patches(self) -> None:
         # Argmax prefers patch 0; target is patch 3 → time term must be zero.
         pointer_logits = tf.constant(

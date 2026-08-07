@@ -255,6 +255,9 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_local_ce_anchor = str(
             getattr(run_config, "pointer_local_ce_anchor", "target") or "target",
         ).lower()
+        self.pointer_soft_distance_alpha = float(
+            getattr(run_config, "pointer_soft_distance_alpha", 0.0) or 0.0,
+        )
         self.monotonic_pointer = bool(model_config.monotonic_pointer)
         self.lambda_residual = run_config.lambda_residual
         self.lambda_incremental_consistency = run_config.lambda_incremental_consistency
@@ -450,6 +453,12 @@ class ArOnsetTrainingModel(keras.Model):
         )
         if self.monotonic_pointer:
             logits = pointer_mask.apply_monotonic_pointer_mask_tf(logits, prev)
+        if self.pointer_soft_distance_alpha > 0.0:
+            logits = pointer_mask.apply_soft_distance_prior_tf(
+                logits,
+                prev,
+                alpha=self.pointer_soft_distance_alpha,
+            )
         if self.pointer_local_ce_radius > 0 and self.pointer_local_ce_anchor == "prev":
             logits = pointer_mask.apply_prev_relative_window_tf(
                 logits,
@@ -588,6 +597,7 @@ class ArOnsetTrainingModel(keras.Model):
             time_loss_correct_patch_only=self.time_loss_correct_patch_only,
             pointer_local_ce_radius=self.pointer_local_ce_radius,
             pointer_local_ce_anchor=self.pointer_local_ce_anchor,
+            pointer_soft_distance_alpha=self.pointer_soft_distance_alpha,
             monotonic_pointer=self.monotonic_pointer,
         )
         if use_incremental:
@@ -625,6 +635,9 @@ class ArOnsetTrainingModel(keras.Model):
             ),
             monotonic_pointer=self.monotonic_pointer,
             max_ahead=config.pointer_decode_max_ahead(self.experiment_config.run),
+            soft_distance_alpha=config.pointer_soft_distance_alpha(
+                self.experiment_config.run,
+            ),
         )
         self.event_f1_metric.update_state(
             pred_times,

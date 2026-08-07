@@ -127,6 +127,9 @@ class ArRunConfig(_DictSerializableMixin):
     # "target": [target - r, target + r] CE-only (decode unrestricted — footgun).
     # "prev": [prev, prev + r] for CE + decode/metrics (decode-consistent).
     pointer_local_ce_anchor: str = "target"
+    # Soft ahead penalty: logits -= alpha * max(0, patch - prev). 0 = off.
+    # Decode-consistent; no hard cutoff (long gaps stay reachable).
+    pointer_soft_distance_alpha: float = 0.0
     scheduled_sampling_max_p: float = 0.0
     scheduled_sampling_ramp_epochs: int = 0
     scheduled_sampling_warmup_epochs: int = 0
@@ -157,6 +160,11 @@ def pointer_decode_max_ahead(run: ArRunConfig) -> int:
     if str(run.pointer_local_ce_anchor or "target").lower() != "prev":
         return 0
     return int(run.pointer_local_ce_radius)
+
+
+def pointer_soft_distance_alpha(run: ArRunConfig) -> float:
+    """Soft distance-from-prev logit penalty used at train and decode."""
+    return float(getattr(run, "pointer_soft_distance_alpha", 0.0) or 0.0)
 
 
 @dataclasses.dataclass

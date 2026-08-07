@@ -305,6 +305,7 @@ def compute_ar_onset_loss(
     time_loss_correct_patch_only: bool = False,
     pointer_local_ce_radius: int = 0,
     pointer_local_ce_anchor: str = "target",
+    pointer_soft_distance_alpha: float = 0.0,
     monotonic_pointer: bool = False,
 ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
     """Combined teacher-forcing loss for ``gate-tide-overfit``.
@@ -328,6 +329,8 @@ def compute_ar_onset_loss(
         pointer_local_ce_anchor: ``\"target\"`` → ``[target±r]`` CE-only;
             ``\"prev\"`` → ``[prev, prev+r]`` (also applied to time-head logits);
             teacher gaps ``> r`` are dropped from pointer CE (not poisoned).
+        pointer_soft_distance_alpha: Soft ahead penalty
+            ``alpha * max(0, patch - prev)`` on pointer logits (decode-consistent).
         monotonic_pointer: Apply teacher-forced monotonic mask before losses.
     """
     token_logits = tf.cast(outputs["token_logits"], tf.float32)
@@ -348,6 +351,13 @@ def compute_ar_onset_loss(
         pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
             pointer_logits,
             prev_patches,
+        )
+    soft_alpha = float(pointer_soft_distance_alpha)
+    if soft_alpha > 0.0:
+        pointer_logits = pointer_mask.apply_soft_distance_prior_tf(
+            pointer_logits,
+            prev_patches,
+            alpha=soft_alpha,
         )
 
     token_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(

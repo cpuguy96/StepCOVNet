@@ -115,6 +115,48 @@ def apply_prev_relative_window_numpy(
     return logits
 
 
+def apply_soft_distance_prior_tf(
+    pointer_logits: tf.Tensor,
+    prev_patch_indices: tf.Tensor,
+    *,
+    alpha: float,
+) -> tf.Tensor:
+    """Subtract ``alpha * max(0, patch - prev)`` from logits (no hard cutoff).
+
+    Encourages mass near ``prev`` while keeping long jumps reachable. Skipped
+    when ``alpha <= 0`` or ``prev == 0`` (first onset may land far into the
+    song). Combine with :func:`apply_monotonic_pointer_mask_tf` for ``p >= prev``.
+    """
+    if float(alpha) <= 0.0:
+        return pointer_logits
+    pointer_logits = tf.cast(pointer_logits, tf.float32)
+    n_patches = tf.shape(pointer_logits)[-1]
+    patch_ids = tf.range(n_patches, dtype=tf.float32)
+    patch_ids = tf.reshape(patch_ids, (1, 1, n_patches))
+    prev = tf.cast(prev_patch_indices, tf.float32)
+    prev = tf.expand_dims(prev, axis=-1)
+    ahead = tf.nn.relu(patch_ids - prev)
+    apply = tf.cast(prev > 0.0, pointer_logits.dtype)
+    return pointer_logits - (float(alpha) * ahead * apply)
+
+
+def apply_soft_distance_prior_numpy(
+    pointer_logits: np.ndarray,
+    prev_patch: int,
+    *,
+    alpha: float,
+) -> np.ndarray:
+    """Numpy version of :func:`apply_soft_distance_prior_tf` for one step."""
+    if float(alpha) <= 0.0 or int(prev_patch) <= 0:
+        return pointer_logits
+    logits = np.asarray(pointer_logits, dtype=np.float32).copy()
+    n = logits.shape[-1]
+    ahead = np.arange(n, dtype=np.float32) - float(prev_patch)
+    ahead = np.maximum(ahead, 0.0)
+    logits = logits - float(alpha) * ahead
+    return logits
+
+
 def teacher_forced_prev_patch_indices_numpy(
     target_patch_indices: np.ndarray,
 ) -> np.ndarray:
