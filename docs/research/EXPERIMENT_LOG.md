@@ -10,13 +10,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-06
+**Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** **Hard-time R2 still best in-train; tide λ_residual parity does not beat it.** Full hard-time R2 peaks val timing **0.0085 @ ep 96**; lam30 short probe **0.0065 @ ep 16** ([EXP-20260805-07](#exp-20260805-07-hard-time--tide-lambda_residual30--no-beat-over-lam5-r2)). Offline val on full run still at floor (timing **0.00079**, skill **−0.42**) — [EXP-20260805-06](#exp-20260805-06-full-r2-hard-pointer-time--timing-rises-still-below-skill).
+**Status:** **Defect sweep landed** ([NOTE-20260806-03](DISCUSSION_NOTES.md#note-20260806-03-remaining-defect-inventory-after-encode-then-pe)). Encode-then-PE + pointer QK LayerNorm; ablation floor lie fixed (R2 pointer gate now informative); patch-acc metric + mono-aware NLL; PE-key footguns closed. Content-only decoder cross **ruled out** (tide peak **0.67**). QK-LN R2 short probe offline timing **0.0070** ≈ encode-then-PE **0.0069**; patch top-1 ~**1.7%**; still ≪ null skill.
 
-**Next action:** New recipe axis — e.g. tide **`lambda_time_ramp_epochs`**, **`dropout_rate: 0`**, or offline eval on lam30 ckpt to confirm train/offline gap. Keep **`use_soft_pointer_time: false`**, **`lambda_residual: 5`** as ladder default. Do **not** scale to R3+.
+**Next action:** Before another train: cheap evidence on the QK-LN R2 ckpt (train/val patch-acc trajectory, pointer NLL vs uniform, error modes). Only then pick a localization lever the numbers support. Do **not** scale to R3+ yet.
 **Blockers:** None — GPU free.
-**Defer:** R2+SS; R3–R5; density variants; EOS-only tuning; “more dropout” without a train-timing signal.
+**Defer:** speculative attn-mass / STE recipe variants until measurements justify them; content-only decoder cross as default; R3–R5.
 
 ### Dataset prep (PRE ingestion)
 
@@ -66,6 +66,13 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260806-07 | `model` + `train` + `metric` | Does pointer QK LayerNorm raise R2 patch-acc / beat encode-then-PE short probe? | **Partial** | Tide gate **PASS** (timing **0.99**). R2: val patch-acc **0.0185**, offline timing **0.0070** ≈ ctx-pefree **0.0069**; ablation pointer **PASS** after floor-fix |
+| EXP-20260806-06 | `model` | Does content-only decoder cross (no PE residual) help without breaking tide? | **Not supported** | Tide peak timing **0.67** vs mix **~0.94**; default stays **False** |
+| EXP-20260806-05 | `train` + `metric` | Does full 500-ep R2 with encode-then-PE beat prior full hard R2 **0.0085**? | **Supported** | Best val **0.00945 @ ep 144**; offline **334/35439 = 0.0094**; F1 **0.046** (was **0.021**) |
+| EXP-20260806-04 | `model` + `train` + `metric` | Does encode-then-PE (contextualized pe-free keys) beat hard-time R2 short probe? | **Supported** | Val/offline timing **0.0069** vs hard **0.005**; tide gate **PASS**; val ptr NLL **6.14** &lt; uniform |
+| EXP-20260806-03 | `train` + `metric` | Does STE + full CE **without** correct-patch mask beat hard-time **0.005**? | **Not supported** | ES @ ep **26**, restore ep **16**; best val **0.0041**; `time_loss` ~**21** (active) but still below hard |
+| EXP-20260806-02 | `train` + `metric` | Does STE + correct-patch `λ_time` + **full** CE beat hard-time / local-CE probes? | **Not supported** | ES @ ep **18**, restore ep **8**; best val timing **0.004** &lt; hard **0.005**; `time_loss` still ~**0.02** |
+| EXP-20260806-01 | `model` + `train` + `metric` | Do STE + local CE + correct-patch `λ_time` + offline monotonic fix raise R2 timing / close train–offline gap? | **Partial** | Offline mono fix: **28→305**/35439 (**0.00079→0.0086**). Localizing probe best val **0.0037** &lt; hard **0.005** — not a beat |
 | EXP-20260805-07 | `train` + `metric` | Does tide `lambda_residual: 30` + hard time beat lam5 hard-time R2 on val timing? | **Not supported** | 50 ep probe: ES @ ep **26**, restore ep **16**; best val timing **0.0065** (lam5 hard probe **0.005**, full lam5 R2 **0.0085**) — modest vs short probe, below full R2 |
 | EXP-20260805-06 | `train` + `metric` | Does full R2 with hard pointer time beat soft-time R2 on val timing? | **Partial** | ES @ ep **146**, restore ep **96**; best val timing **0.0085** (soft R2 **0.0014**); train timing **0.054** @ best — still below null skill |
 | EXP-20260805-05 | `train` + `metric` | Does hard-argmax pointer time (`use_soft_pointer_time: false`) train multi-song timing where soft time fails? | **Partial** | 50 ep probe: best val timing **0.005 @ ep 7** vs soft/no-mono **~0.0005** (~**10×**); still at null floor — first recipe axis with measurable movement |
@@ -154,6 +161,105 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260806-07: Pointer QK LayerNorm — tide PASS; R2 patch-acc visible, timing flat
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 20:22:33 |
+| **Track** | `model` + `train` + `metric` (AR) |
+| **Question** | After encode-then-PE, does LayerNorm on pointer Q/K streams improve R2 localization vs short ctx-pefree **0.0069**? |
+| **Code** | `pointer_qk_layernorm` (default True) → `pointer_query_ln` / `pointer_key_ln` before Dense; inference rebuild aware. Also: ablation floor skip, `pointer_patch_accuracy`, mono-aware ablation NLL, PE-key footguns closed ([NOTE-20260806-03](DISCUSSION_NOTES.md#note-20260806-03-remaining-defect-inventory-after-encode-then-pe)) |
+| **Tide** | Gate **PASS** — matched timing **0.968**, zeros query cos **−0.12**, shuffle same_pred **0**. `logs/tide_qk_ln_ablation_gate.json` |
+| **Setup (R2)** | [`configs/ar/ladder_r2_qk_ln_probe.json`](../../configs/ar/ladder_r2_qk_ln_probe.json) — hard time, ckpt `val_pointer_patch_accuracy`, 50 ep / ES **10**. `logs/r2_qk_ln_probe_train.log` |
+| **Best** | val patch-acc **0.0185**, val timing **0.0070–0.0073**; offline **247/35439 = 0.0070**; `patch_wrong` **34828**; F1 **0.0094**. `logs/r2_qk_ln_teacher_val.log` |
+| **Ablation (12 val, floor-fixed gate)** | Pointer **PASS** (shuffle same_pred **0**); query **PASS** (zeros cos **0.71**); token zeros still ≈ matched. Overall gate **PASS**. `logs/r2_qk_ln_ablation_gate.json` |
+| **Compare** | Ctx-pefree short offline **0.0069** / patch_wrong **34877** — QK LN ≈ ties timing, ~**50** more correct patches |
+| **Conclusion** | **Partial.** QK LN is safe (tide) and makes patch-acc a usable signal; not enough alone for null skill. Ablation floor fix is the diagnostic unlock |
+
+### EXP-20260806-06: Content-only decoder cross regresses tide
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 19:48:00 |
+| **Track** | `model` (AR) |
+| **Question** | Does removing PE residual from decoder cross (`decoder_cross_content_only`) help localization without breaking the tide gate? |
+| **Setup** | Default True briefly; tide 400-ep train (`logs/tide_content_cross_train.log`). First attempt used unsafe `Lambda` (reload failed); replaced with `ContentOnlyCrossMemory` |
+| **Result** | Peak `val_timing_match_teacher` **0.6735** vs encode-then-PE mix **~0.94–0.99** |
+| **Conclusion** | **Not supported** as default. Flag kept **False**; serializable path remains for R2 A/B only |
+
+### EXP-20260806-05: Full R2 encode-then-PE beats prior hard-time full run
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 14:12:44 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Does 500-ep R2 with encode-then-PE beat the prior full hard-time content-pointer R2 (**0.0085** in-train / **0.0086** offline mono)? |
+| **Setup** | [`configs/ar/ladder_r2_ctx_pefree_full.json`](../../configs/ar/ladder_r2_ctx_pefree_full.json) — hard time, ES patience **50**, 500 ep. WSL GPU ~**67** min. `logs/r2_ctx_pefree_full_train.log` |
+| **Stop** | ES around ep **194** (best @ **144**); TensorBoard `epoch_timing_match_teacher` |
+| **Best (ep 144)** | val timing **0.00945** |
+| **Offline val (50 songs, mono teacher)** | **334/35439 = 0.0094**; F1 **0.0464**; `patch_wrong` **34774**; skill F1 **−0.38**. `logs/r2_ctx_pefree_full_teacher_val.log` |
+| **Compare** | Prior full hard: in-train **0.0085**, offline mono **0.0086**, F1 **0.021** — encode-then-PE **+11%** timing, **~2.2×** F1 |
+| **Conclusion** | **Supported.** Architecture fix scales to full R2. Absolute performance still at floor vs null — next is localization beyond pe-free contextualization |
+
+### EXP-20260806-04: Encode-then-PE — contextualized pe-free keys beat hard short probe
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 13:02:01 |
+| **Track** | `model` + `train` + `metric` (AR) |
+| **Question** | Prior `pointer_keys_pe_free` keyed on raw ``Dense(MERT)`` (encoder skipped). Does encoding **before** absolute PE give contextualized pe-free keys that beat hard-time short probe **0.005**? |
+| **Code** | `_encode_patches`: encoder on `patch_embed`, then `enc_pos`; pe-free keys = encoder output. Inference `pointer_key_input` from `enc_*_ln2`. Unit test: content ≠ raw embed |
+| **Tide check** | Gate **PASS** — matched timing **0.94**, zeros query/token PASS. `logs/tide_ctx_pefree_ablation_gate.json` |
+| **Setup (R2 probe)** | [`configs/ar/ladder_r2_ctx_pefree_probe.json`](../../configs/ar/ladder_r2_ctx_pefree_probe.json) — hard time, full CE, 50 ep / ES **10**. WSL ~**13** min. `logs/r2_ctx_pefree_probe_train.log` |
+| **Stop** | ES @ ep **25**, restore ep **15** |
+| **Best (ep 15)** | val timing **0.0069**, train timing **0.0124**; val pointer CE **6.14** (&lt; uniform ~**7.4**); train pointer **5.04** |
+| **Offline val (50 songs, mono teacher)** | **245/35439 = 0.0069** (matches in-train); `patch_wrong` **34877**; F1 **0.0077**; skill **−0.44**. `logs/r2_ctx_pefree_teacher_val.log` |
+| **Compare** | Hard short probe **0.005**; prior full hard R2 **0.0085** in-train — this 50-ep probe already **1.38×** hard short bar |
+| **Conclusion** | **Supported.** Skipping the encoder for pe-free keys was the architecture bug; encode-then-PE is the fix. Still at absolute floor vs null skill — full 500-ep next |
+| **Related** | [NOTE-20260806-02](DISCUSSION_NOTES.md) · [EXP-20260805-05](#exp-20260805-05-hard-pointer-time-probe-raises-timing-10-but-still-at-floor) |
+
+### EXP-20260806-03: STE without correct-patch — grads live, still below hard CE
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 12:34:53 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | With correct-patch masking removed, does STE `λ_time` + full CE beat hard-time short probe **0.005**? |
+| **Setup** | [`configs/ar/ladder_r2_ste_nocorrect_probe.json`](../../configs/ar/ladder_r2_ste_nocorrect_probe.json) — STE on, `time_loss_correct_patch_only: false`, `pointer_local_ce_radius: 0`, 50 ep / ES **10**. WSL GPU ~**13** min. `logs/r2_ste_nocorrect_probe_train.log` |
+| **Stop** | ES @ ep **26**, restore ep **16** |
+| **Best (ep 16)** | val timing **0.0041**, train timing **0.0035**; val pointer CE **19.5**; val `time_loss` **21.4** |
+| **Compare** | Hard probe **0.005**; STE+correct-patch **0.004**; local-CE STE **0.0037**. `time_loss` now ~**20–28** (was ~**0.02** with correct-patch) — STE path is live |
+| **Conclusion** | **Not supported.** Unmasking `λ_time` activates STE grads but soft expected-patch seconds remain a weak multi-song localizer (see NOTE-20260806-01). Hard-time CE-only stays the short-probe bar. Close STE recipe chase; next is architecture (shuffle-sensitive queries) |
+
+### EXP-20260806-02: STE + full CE + correct-patch `λ_time` — no beat over hard time
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 11:51:00 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | After local-CE STE underperformed ([EXP-20260806-01](#exp-20260806-01-ste--local-ce--offline-monotonic-fix)), does STE + correct-patch `λ_time` with **full** pointer CE beat hard-time short probe **0.005**? |
+| **Setup** | [`configs/ar/ladder_r2_ste_full_ce_probe.json`](../../configs/ar/ladder_r2_ste_full_ce_probe.json) — `use_ste_pointer_time: true`, `time_loss_correct_patch_only: true`, `pointer_local_ce_radius: 0`, 50 ep / ES **10**. WSL GPU ~**11** min. `logs/r2_ste_full_ce_probe_train.log` |
+| **Stop** | ES @ ep **18**, restore ep **8** |
+| **Best (ep 8)** | val timing **0.0040**, train timing **0.0019**; val pointer CE **16.2**; val `time_loss` **0.017** |
+| **Compare** | Hard probe **0.005**; local-CE STE **0.0037** — full CE STE slightly above local CE, still below hard |
+| **Conclusion** | **Not supported.** Correct-patch gating keeps `λ_time` near-zero while patches are wrong, so STE never becomes the localization teacher. Hard-time CE-only remains the best short R2 bar. Next: STE **without** correct-patch mask, or architecture (shuffle-sensitive queries) |
+
+### EXP-20260806-01: STE + local CE + offline monotonic fix
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 11:01:36 |
+| **Track** | `model` + `train` + `metric` (AR) |
+| **Question** | After [NOTE-20260806-01](DISCUSSION_NOTES.md#note-20260806-01-hard-λ_time-never-trains-the-pointer-soft-epatch-is-non-localizing-offline-drops-monotonic): (A) localizing pointer loss + STE/`λ_time` on correct patches, (C) offline teacher monotonic parity — does R2 timing move, and does offline match in-train? |
+| **Code** | `use_ste_pointer_time`, `time_loss_correct_patch_only`, `pointer_local_ce_radius` in `losses.py` / `config.py` / `trainers.py`; offline `eval_ar_onset_offline.py` passes `monotonic` + `target_patch_indices`. Unit tests: STE `grad_pointer≠0`, local mask, correct-patch time gate |
+| **Setup (probe)** | [`configs/ar/ladder_r2_localizing_pointer_probe.json`](../../configs/ar/ladder_r2_localizing_pointer_probe.json) — STE + correct-patch `λ_time` + local CE radius **32**, hard decode metrics, 50 ep / ES **10**. WSL GPU ~**12** min. `logs/r2_localizing_pointer_probe_train.log` |
+| **Stop** | ES @ ep **20**, restore ep **10** |
+| **Best (ep 10)** | val timing **0.0037**, train timing **0.0023**; val pointer CE **9.20** (local window) |
+| **Compare** | Hard-time short probe **0.005 @ ep 7**; full hard R2 **0.0085 @ ep 96** — localizing package **below** hard short probe |
+| **Offline mono fix (same hard R2 ckpt)** | Before: **28/35439 = 0.00079**, `patch_wrong` **35382**. After: **305/35439 = 0.0086**, `patch_wrong` **34885** — matches in-train/ablation (~**0.0085** / **0.0071**). `logs/r2_hard_time_teacher_val_mono_fix.log` |
+| **Conclusion** | **Partial.** Metric bug **C fixed** (train/offline cliff was mostly teacher-forced monotonic). Package **A+B with local CE r=32 did not beat** hard-time baseline — `time_loss` stayed ~**0.02** (almost no correct patches → STE rarely fires) and local CE NLL stayed ≫ window-uniform. Next: STE + correct-patch **without** local window (full CE) |
+| **Related** | [NOTE-20260806-01](DISCUSSION_NOTES.md#note-20260806-01-hard-λ_time-never-trains-the-pointer-soft-epatch-is-non-localizing-offline-drops-monotonic) · [EXP-20260805-05](#exp-20260805-05-hard-pointer-time-probe-raises-timing-10-but-still-at-floor) · [EXP-20260805-06](#exp-20260805-06-full-r2-hard-pointer-time--timing-rises-still-below-skill) |
 
 ### EXP-20260805-07: Hard time + tide `lambda_residual: 30` — no beat over lam5 R2
 

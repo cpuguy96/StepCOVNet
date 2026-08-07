@@ -29,6 +29,8 @@ Plan docs with JSON/schemas: [design-doc-fields.mdc](../../rules/design-doc-fiel
 
 **Before suggesting a re-run:** `grep` [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) and `logs/` for the checkpoint/config — if decode already exists on disk, read it and update the log instead of proposing the job again.
 
+**Before suggesting a new experiment / loss / architecture probe:** gather **evidence first** (existing ckpt metrics, ablation, cheap analysis). Do not recommend a train because Current phase named a lever — that line is a candidate until measurements support it. See [whats-next § Evidence before recommending a run](../whats-next/SKILL.md#evidence-before-recommending-a-run).
+
 Prepend to [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) after measurable runs:
 
 - Top of `## Experiment entries` + new index row at top

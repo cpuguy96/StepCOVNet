@@ -31,6 +31,20 @@ Also load this skill when the user says **do it**, **go ahead**, **start it**, o
 
 7. **Always** fill **If you say "do it"** with numbered, copy-paste-ready steps (commands, config paths, log names). This block is the contract for a follow-up **do it**.
 
+## Evidence before recommending a run
+
+**Do not** put a new train/probe/loss in **Now** (or **If you say "do it"**) unless you have **concrete evidence** it addresses the binding failure — not only that Current phase / a NOTE named it as a backlog idea.
+
+| Allowed as **Now** | Not enough alone |
+| ------------------ | ---------------- |
+| Cheap diagnostics (ablation numbers, patch-acc curves, NLL vs uniform, error-mode analysis on an existing ckpt) | “Next action” text that lists an untested lever |
+| A one-knob change with a mechanism already supported by logged numbers | Recipe spam (another λ / STE / aux) after similar recipes failed |
+| A fix that already has unit/offline proof in-repo | Speculative architecture (“attn-mass might help”) with no supporting measurement |
+
+If evidence is thin: **Now** = the measurement that would raise confidence; put speculative trains under **After that** or **Alternate**, and say confidence is low.
+
+Copying Current phase **Next action** verbatim is wrong when that line is an unproven hypothesis — treat it as a candidate, then verify or demote it.
+
 ## Answer template
 
 ```markdown

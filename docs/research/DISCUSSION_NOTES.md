@@ -4,6 +4,97 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-06 — pointer time objective is broken (not a recipe miss)
+
+### NOTE-20260806-03: Remaining defect inventory after encode-then-PE
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 19:57:00 |
+| **Topic** | Exhaustive follow-up — do not stop at one architecture win |
+
+**Closed this pass (code + unit / tide proof).**
+
+| # | Defect | Fix |
+| - | ------ | --- |
+| 1 | Ablation timing clause always fails when matched &lt; `GATE_TIMING_MATCH_EPS` (0.02) | Skip timing≈matched when matched below eps; rely on `same_pred` |
+| 2 | No logged patch top-1; ckpt on floor `val_timing_match_teacher` | `pointer_patch_accuracy` metric; ladder configs can monitor it |
+| 3 | Patch-acc / ablation NLL omitted teacher mono mask | Mono before metric / NLL |
+| 4 | PE keys footgun if `encoder_memory` reused without pe-free keys | Refuse silent fallback in kv_decode / trainer / parallel decode |
+| 5 | Infer `pe_free_keys` from config only | Prefer `cross_memory` topology |
+| 6 | `Lambda(content + 0·PE)` not safe-reloadable | `ContentOnlyCrossMemory` registered layer |
+
+**Ruled out with proof.**
+
+| Hypothesis | Result |
+| ---------- | ------ |
+| Decoder cross content-only (no PE residual) | **Tide regresses** — peak timing **0.67** vs encode-then-PE mix **~0.94**. Default stays **False**; R2 A/B only |
+
+**Proved this pass.**
+
+| Item | Result |
+| ---- | ------ |
+| QK LayerNorm | Tide gate **PASS** (~0.99). R2 short: offline timing **0.0070** ≈ ctx-pefree **0.0069**; patch-acc **~1.7%** ([EXP-20260806-07](EXPERIMENT_LOG.md#exp-20260806-07-pointer-qk-layernorm--tide-pass-r2-patch-acc-visible-timing-flat)) |
+| Ablation floor fix | R2 val gate pointer **PASS** (shuffle same_pred **0**) — previously always FAIL on timing≈floor |
+
+**Still open (binding for R2 localization).**
+
+| # | Issue | Status |
+| - | ----- | ------ |
+| A | Hard `λ_time` still `grad_pointer=0` in ladder recipe | Known; STE exists, recipe closed vs hard CE |
+| B | Shuffle query cos still ~1 (pooling); zeros is the decoder probe | Not a wiring bug; optional attn-mass aux |
+| C | Absolute skill still ≪ null on R2 | Need patch-acc ≫ chance / positive F1 skill |
+
+### NOTE-20260806-02: Pe-free keys skipped the encoder — encode-then-PE fixes it
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 13:02:01 |
+| **Topic** | Architecture root cause after STE recipe branch closed |
+
+**Verdict.** `pointer_keys_pe_free: true` used ``Dense(MERT)`` (`patch_embed`) as keys — **before** any encoder layer — because post-encoder `memory` was PE-dominated when PE was applied *before* encoding. That avoided PE but threw away contextualization.
+
+**Fix.** Encode on `patch_embed` **without** absolute PE, then add `enc_pos`. Pe-free keys = encoder output; `memory` = content + PE for positional decoder paths.
+
+**Proof ([EXP-20260806-04](EXPERIMENT_LOG.md#exp-20260806-04-encode-then-pe--contextualized-pe-free-keys-beat-hard-short-probe)).**
+- Unit: content ≠ raw `patch_embed`
+- Tide gate **PASS** (timing **0.94**)
+- R2 50-ep: val + offline timing **0.0069** vs hard short **0.005**; val pointer NLL **6.14** &lt; uniform
+
+**Full R2 ([EXP-20260806-05](EXPERIMENT_LOG.md#exp-20260806-05-full-r2-encode-then-pe-beats-prior-hard-time-full-run)).** Best val **0.00945** / offline **0.0094** vs prior hard **0.0085 / 0.0086**; F1 **0.046** vs **0.021**. Fix confirmed at full scale. Still negative null skill.
+
+**Open.** See [NOTE-20260806-03](#note-20260806-03-remaining-defect-inventory-after-encode-then-pe) — content-only ruled out; QK LN + metric/gate fixes landed.
+
+### NOTE-20260806-01: Hard `λ_time` never trains the pointer; soft `E[patch]` is non-localizing; offline drops monotonic
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-06 10:35:59 |
+| **Topic** | Root cause of “R2 never learns meaningful timing” after hard-time / wiring probes |
+
+**Verdict.** Recipe probes (λ_residual, monotonic off, ramp/dropout) are the wrong lever. Three concrete defects explain the floor:
+
+1. **Hard-argmax `λ_time` → `grad_pointer = 0`.** In `predicted_times_from_outputs`, `use_soft_expected=false` uses `tf.argmax`, which is non-differentiable. Isolating `λ_time=1`, `pointer_loss_weight=0`, `λ_residual=0`: hard → `grad_pointer=0.0` / `grad_residual=0.707`; soft → `grad_pointer=0.068` / same residual. STE (`soft + stop_gradient(hard−soft)`) restores soft grads while keeping hard forward loss. Documented earlier as a gap ([NOTE-20260805-01](#note-20260805-01-pointer-gate-pass-was-keys-only--the-decoder-never-read-the-audio) item 3) then contradicted by EXP-05’s hypothesis that hard time “backprops into the pointer.”
+
+2. **Soft `E[patch]` MAE is non-localizing.** A bimodal `p` with `E[patch]=target` has soft abs-err **0** and `p(target)=0` (hard err = many patches). Soft R2 after the wiring fix kept train **and** val timing at ~**10⁻³** while tokens overfit ([EXP-20260805-03](EXPERIMENT_LOG.md#exp-20260805-03-fixed-stack-r2-content-pointer-still-at-timing-floor)) — consistent with minimizing soft seconds without peaking the pointer. STE alone reintroduces that soft gradient; it is necessary for “hard metric + differentiable time,” **not sufficient** as the sole localization loss.
+
+3. **Offline teacher decode omits monotonic; in-train / ablation keep it.** `eval_ar_onset_offline.py` calls `decode_teacher_fed_times_numpy` without `target_patch_indices` / `monotonic`. Same hard-time R2 ckpt: in-train val **0.0085**, ablation matched **0.0071**, offline **0.00079** (~**11%** of ablation). Toy: constant argmax@0 → free mean abs err **0.67** s; teacher-forced mono → **0.24** s without any pointer learning. The train/offline “cliff” is mostly a **metric bug**. Ablation still shows real failure: `pointer_nll` **11.2** ≫ uniform **7.37**, `patch_wrong` **98.5%**, shuffle `query_cosine` ≈ **1.0**.
+
+**Implication.** Do **not** run another tide-parity hyperparam probe next. Fix the objective + metric:
+
+| Fix | Proof already in hand | Remaining proof |
+| --- | -------------------- | --------------- |
+| A. Localizing pointer loss (full/local CE primary; optional entropy / attention-mass aux). Keep hard decode for metrics. | Soft non-localizing toy; hard grad=0; val NLL worse than uniform | 50-ep R2: train **and** offline `patch_wrong` fall; val `pointer_nll` &lt; uniform |
+| B. If retaining `λ_time` on seconds: STE or soft-for-loss + hard-for-metric; mask `time_loss` to correct-patch steps (or `stop_gradient` patch) so residual is not corrupted when patch is wrong | STE unit grad; residual_loss already ~0 while time_loss ~20 s on wrong patches | Short probe vs hard baseline |
+| C. Offline teacher path mirrors train/ablation monotonic | Call-site + metric bridge 0.0085≈0.0071≫0.00079 | Re-score same ckpt offline with `monotonic=True` → ~ablation timing |
+| D. Keep demanding shuffle-sensitive queries (architecture) | Ablation shuffle query cos ≈ 1 | Gate must keep failing until queries move |
+
+**Follow-up ([EXP-20260806-01](EXPERIMENT_LOG.md#exp-20260806-01-ste--local-ce--offline-monotonic-fix)–[03](EXPERIMENT_LOG.md#exp-20260806-03-ste-without-correct-patch--grads-live-still-below-hard-ce)).** Fix **C landed and proved**: offline teacher on hard R2 **0.00079 → 0.0086**. STE variants (local CE **0.0037**, full CE+correct-patch **0.004**, full CE no-mask **0.0041** with live `time_loss` ~**21**) all **miss** hard short probe (**0.005**). Soft/`STE` seconds are not the multi-song lever. Next: architecture — shuffle-sensitive pointer queries.
+
+**Defer.** `lambda_time_ramp_epochs`, `dropout_rate: 0`, R3+ — until a localizing objective beats hard-time in-train.
+
+**Related:** [EXP-20260806-01](EXPERIMENT_LOG.md#exp-20260806-01-ste--local-ce--offline-monotonic-fix) · [EXP-20260805-03](EXPERIMENT_LOG.md#exp-20260805-03-fixed-stack-r2-content-pointer-still-at-timing-floor) · [EXP-20260805-05](EXPERIMENT_LOG.md#exp-20260805-05-hard-pointer-time-probe-raises-timing-10-but-still-at-floor) · [EXP-20260805-06](EXPERIMENT_LOG.md#exp-20260805-06-full-r2-hard-pointer-time--timing-rises-still-below-skill) · [NOTE-20260805-01](#note-20260805-01-pointer-gate-pass-was-keys-only--the-decoder-never-read-the-audio)
+
 ## Session 2026-08-05 — content-pointer decoder is audio-blind
 
 ### NOTE-20260805-06: Tide `lambda_residual: 30` does not beat lam5 hard-time R2

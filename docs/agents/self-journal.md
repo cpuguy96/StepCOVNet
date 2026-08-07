@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260807-01: Evidence before suggesting the next train
+
+| Field            | Value |
+| ---------------- | ----- |
+| **Timestamp**    | 2026-08-07 00:18:48 |
+| **Category**     | convention |
+| **Summary**      | Suggested attn-mass aux as the next R2 probe because Current phase named it, without measurements showing it would help. User: do not recommend experiments without evidence first. |
+| **Artifact**     | Skill: `.cursor/skills/whats-next/SKILL.md` § Evidence before recommending a run; `.cursor/skills/research-session-workflow/SKILL.md` § During work; Current phase demoted speculative attn-mass in `docs/research/EXPERIMENT_LOG.md` |
+| **Action taken** | whats-next / research workflow require cheap evidence (or a mechanism already supported by logged numbers) before **Now** / do-it trains; Current phase next action is diagnose QK-LN ckpt first |
+| **Related**      | NOTE-20260806-03 · EXP-20260806-07 |
+
 ### JRN-20260802-04: A green test suite hid a dead feature for months
 
 | Field            | Value                                                                                                      |
