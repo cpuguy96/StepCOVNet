@@ -42,7 +42,7 @@
     "length_normalize_ce": true,
     "tolerance_sec": 0.02,
     "epochs": 500,
-    "checkpoint_metric": "val_pointer_patch_accuracy",
+    "checkpoint_metric": "val_pointer_loss",
     "early_stopping_patience": 50,
     "perfect_overfit_early_stop": false,
     "model_output_dir": "models_wsl/ar/ladder_r2_ctx_pefree_full",

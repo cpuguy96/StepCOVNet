@@ -18,11 +18,13 @@ class OnsetMetricNamesTest(unittest.TestCase):
             "val_overfit_gate",
         )
 
-    def test_resolve_checkpoint_canonical_timing(self) -> None:
+    def test_resolve_checkpoint_pointer_loss(self) -> None:
         self.assertEqual(
-            mn.resolve_checkpoint_metric("val_timing_match_teacher"),
-            "val_ordered_onset_match",
+            mn.resolve_checkpoint_metric("val_pointer_loss"),
+            "val_pointer_loss",
         )
+        # AR trainer uses min mode when "loss" is in the monitor name.
+        self.assertIn("loss", mn.resolve_checkpoint_metric("val_pointer_loss"))
 
     def test_publish_legacy_val_aliases(self) -> None:
         logs = {"val_timing_match_teacher": 0.99, "val_aux_f1_hungarian": 0.98}
