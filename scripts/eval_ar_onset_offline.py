@@ -869,6 +869,7 @@ def _diagnose_batch(
     gap_alignment = config.gap_alignment_active(model_config)
     max_patch = max(int(np.asarray(batch["patch_mask"][0]).sum()) - 1, 0)
 
+    soft_alpha = config.pointer_soft_distance_alpha(run_config)
     if gap_alignment:
         gap_logits = outputs["gap_logits"].numpy()[0]
         gap_vocab = experiment_config.build_gap_vocab()
@@ -881,6 +882,7 @@ def _diagnose_batch(
             patch_frames=patch_frames,
             hop_sec=hop_sec,
             max_patch=max_patch,
+            soft_distance_alpha=soft_alpha,
         )
         prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
             np.asarray(target_patches, dtype=np.int32),
@@ -892,6 +894,7 @@ def _diagnose_batch(
                     prev_patch=int(prev_patches[i]),
                     gap_vocab=gap_vocab,
                     max_patch=max_patch,
+                    soft_distance_alpha=soft_alpha,
                 )
                 for i in range(gap_logits.shape[0])
             ],
@@ -901,7 +904,6 @@ def _diagnose_batch(
         pointer_logits = outputs["pointer_logits"].numpy()[0]
         monotonic = bool(model_config.monotonic_pointer)
         max_ahead = config.pointer_decode_max_ahead(run_config)
-        soft_alpha = config.pointer_soft_distance_alpha(run_config)
         pred_times = inference.decode_teacher_fed_times_numpy(
             pointer_logits,
             residual_sec,

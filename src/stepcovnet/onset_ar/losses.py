@@ -345,7 +345,7 @@ def compute_ar_onset_loss(
     time_loss_correct_patch_only: bool = False,
     pointer_local_ce_radius: int = 0,
     pointer_local_ce_anchor: str = "target",
-    pointer_soft_distance_alpha: float = 0.0,
+    pointer_soft_distance_alpha: float | tf.Tensor = 0.0,
     monotonic_pointer: bool = False,
     gap_alignment: bool = False,
     gap_loss_weight: float = 1.0,
@@ -373,8 +373,10 @@ def compute_ar_onset_loss(
         pointer_local_ce_anchor: ``\"target\"`` → ``[target±r]`` CE-only;
             ``\"prev\"`` → ``[prev, prev+r]`` (also applied to time-head logits);
             teacher gaps ``> r`` are dropped from pointer CE (not poisoned).
-        pointer_soft_distance_alpha: Soft ahead penalty on absolute pointer
-            logits. Ignored when ``gap_alignment`` (no decode prior on Δ).
+        pointer_soft_distance_alpha: Soft ahead / Δ penalty (float or live
+            ``tf.Variable`` for anneal). Absolute pointer: ``α·max(0, p−prev)``.
+            Gap head: ``α·decode_delta(id)`` (skipped when ``prev == 0``).
+            Hard-R still ignored on the gap path.
         monotonic_pointer: Apply teacher-forced monotonic mask on absolute
             pointer logits before losses.
         gap_alignment: Use relative gap CE as primary alignment loss.
@@ -400,24 +402,33 @@ def compute_ar_onset_loss(
     prev_patches = pointer_mask.teacher_forced_prev_patch_indices(
         target_patch_indices,
     )
-    # Gap path never applies soft α / hard-R decode priors (NOTE-20260807-07).
+    # Cast (not float()) so a live anneal Variable stays in the train graph.
+    soft_alpha = tf.cast(pointer_soft_distance_alpha, tf.float32)
+    # Hard-R stays diagnostic-only and is not applied on the gap path.
     if pointer_logits is not None and not gap_alignment:
         if monotonic_pointer:
             pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
                 pointer_logits,
                 prev_patches,
             )
-        soft_alpha = float(pointer_soft_distance_alpha)
-        if soft_alpha > 0.0:
-            pointer_logits = pointer_mask.apply_soft_distance_prior_tf(
-                pointer_logits,
-                prev_patches,
-                alpha=soft_alpha,
-            )
+        pointer_logits = pointer_mask.apply_soft_distance_prior_tf(
+            pointer_logits,
+            prev_patches,
+            alpha=soft_alpha,
+        )
     elif pointer_logits is not None and monotonic_pointer:
         pointer_logits = pointer_mask.apply_monotonic_pointer_mask_tf(
             pointer_logits,
             prev_patches,
+        )
+    if gap_alignment and gap_logits is not None:
+        if gap_delta_lookup is None:
+            raise ValueError("gap_alignment requires gap_delta_lookup")
+        gap_logits = pointer_mask.apply_gap_soft_distance_prior_tf(
+            gap_logits,
+            prev_patches,
+            alpha=soft_alpha,
+            delta_lookup=gap_delta_lookup,
         )
 
     token_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(

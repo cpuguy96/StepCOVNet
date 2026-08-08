@@ -119,17 +119,17 @@ def apply_soft_distance_prior_tf(
     pointer_logits: tf.Tensor,
     prev_patch_indices: tf.Tensor,
     *,
-    alpha: float,
+    alpha: float | tf.Tensor,
 ) -> tf.Tensor:
     """Subtract ``alpha * max(0, patch - prev)`` from logits (no hard cutoff).
 
-    Encourages mass near ``prev`` while keeping long jumps reachable. Skipped
-    when ``alpha <= 0`` or ``prev == 0`` (first onset may land far into the
-    song). Combine with :func:`apply_monotonic_pointer_mask_tf` for ``p >= prev``.
+    Encourages mass near ``prev`` while keeping long jumps reachable. ``alpha``
+    may be a ``tf.Variable`` (anneal); ``alpha == 0`` is a no-op. Skipped when
+    ``prev == 0`` (first onset may land far into the song). Combine with
+    :func:`apply_monotonic_pointer_mask_tf` for ``p >= prev``.
     """
-    if float(alpha) <= 0.0:
-        return pointer_logits
     pointer_logits = tf.cast(pointer_logits, tf.float32)
+    alpha_t = tf.cast(alpha, tf.float32)
     n_patches = tf.shape(pointer_logits)[-1]
     patch_ids = tf.range(n_patches, dtype=tf.float32)
     patch_ids = tf.reshape(patch_ids, (1, 1, n_patches))
@@ -137,7 +137,7 @@ def apply_soft_distance_prior_tf(
     prev = tf.expand_dims(prev, axis=-1)
     ahead = tf.nn.relu(patch_ids - prev)
     apply = tf.cast(prev > 0.0, pointer_logits.dtype)
-    return pointer_logits - (float(alpha) * ahead * apply)
+    return pointer_logits - (alpha_t * ahead * apply)
 
 
 def apply_soft_distance_prior_numpy(
@@ -155,6 +155,44 @@ def apply_soft_distance_prior_numpy(
     ahead = np.maximum(ahead, 0.0)
     logits = logits - float(alpha) * ahead
     return logits
+
+
+def apply_gap_soft_distance_prior_tf(
+    gap_logits: tf.Tensor,
+    prev_patch_indices: tf.Tensor,
+    *,
+    alpha: float | tf.Tensor,
+    delta_lookup: tf.Tensor,
+) -> tf.Tensor:
+    """Subtract ``alpha * decode_delta(id)`` from gap logits (no hard cutoff).
+
+    Encourages small Δ while keeping long jumps reachable. ``alpha`` may be a
+    ``tf.Variable`` (anneal); ``alpha == 0`` is a no-op. Skipped when
+    ``prev == 0`` (first onset may need a large absolute Δ).
+    ``delta_lookup[id]`` is ``PatchGapVocab.decode_delta(id)``.
+    """
+    gap_logits = tf.cast(gap_logits, tf.float32)
+    alpha_t = tf.cast(alpha, tf.float32)
+    deltas = tf.cast(delta_lookup, tf.float32)
+    penalty = alpha_t * tf.reshape(deltas, (1, 1, -1))
+    prev = tf.cast(prev_patch_indices, tf.float32)
+    apply = tf.cast(tf.expand_dims(prev, axis=-1) > 0.0, gap_logits.dtype)
+    return gap_logits - penalty * apply
+
+
+def apply_gap_soft_distance_prior_numpy(
+    gap_logits: np.ndarray,
+    prev_patch: int,
+    *,
+    alpha: float,
+    delta_lookup: np.ndarray,
+) -> np.ndarray:
+    """Numpy version of :func:`apply_gap_soft_distance_prior_tf` for one step."""
+    if float(alpha) <= 0.0 or int(prev_patch) <= 0:
+        return gap_logits
+    logits = np.asarray(gap_logits, dtype=np.float32).copy()
+    deltas = np.asarray(delta_lookup, dtype=np.float32)
+    return logits - float(alpha) * deltas
 
 
 def teacher_forced_prev_patch_indices_numpy(

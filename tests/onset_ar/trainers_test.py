@@ -90,6 +90,34 @@ class TrainersTest(unittest.TestCase):
             0.01,
         )
 
+    def test_soft_distance_alpha_hold_then_anneal(self) -> None:
+        kwargs = {"alpha_start": 0.5, "hold_epochs": 10, "anneal_epochs": 20}
+        self.assertEqual(trainers.soft_distance_alpha_for_epoch(0, **kwargs), 0.5)
+        self.assertEqual(trainers.soft_distance_alpha_for_epoch(9, **kwargs), 0.5)
+        self.assertEqual(trainers.soft_distance_alpha_for_epoch(10, **kwargs), 0.5)
+        self.assertAlmostEqual(
+            trainers.soft_distance_alpha_for_epoch(20, **kwargs),
+            0.25,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            trainers.soft_distance_alpha_for_epoch(29, **kwargs),
+            0.025,
+            places=5,
+        )
+        self.assertEqual(trainers.soft_distance_alpha_for_epoch(30, **kwargs), 0.0)
+
+    def test_soft_distance_alpha_no_anneal_is_constant(self) -> None:
+        self.assertEqual(
+            trainers.soft_distance_alpha_for_epoch(
+                40,
+                alpha_start=0.5,
+                hold_epochs=10,
+                anneal_epochs=0,
+            ),
+            0.5,
+        )
+
     def test_overfit_gate_score_teacher_fed_only(self) -> None:
         self.assertEqual(
             trainers.overfit_gate_score(

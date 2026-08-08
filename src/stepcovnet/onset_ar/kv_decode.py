@@ -252,11 +252,7 @@ def decode_autoregressive_with_kv_cache_numpy(
     max_ahead = (
         0 if gap_alignment else config.pointer_decode_max_ahead(experiment_config.run)
     )
-    soft_alpha = (
-        0.0
-        if gap_alignment
-        else config.pointer_soft_distance_alpha(experiment_config.run)
-    )
+    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
     n_forward_steps = 0
     stopped_on_eos = False
     cur_len = 1
@@ -290,6 +286,7 @@ def decode_autoregressive_with_kv_cache_numpy(
                 prev_patch=prev_patch,
                 gap_vocab=gap_vocab,
                 max_patch=max_patch,
+                soft_distance_alpha=soft_alpha,
             )
             prev_patch = patch_idx
         else:

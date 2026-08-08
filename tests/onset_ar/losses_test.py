@@ -470,41 +470,83 @@ class LossesTest(unittest.TestCase):
         self.assertAlmostEqual(float(parts["residual_loss"].numpy()), 0.0, places=6)
         self.assertGreater(float(total.numpy()), 0.0)
 
-    def test_gap_alignment_ignores_soft_distance_prior(self) -> None:
+    def test_gap_soft_distance_prior_penalizes_large_delta(self) -> None:
+        from stepcovnet.onset_ar import pointer_mask
+
+        gap_vocab = targets.PatchGapVocab(delta_max_dense=16, n_log_buckets=4)
+        lookup = tf.constant(targets.gap_delta_lookup_table(gap_vocab), dtype=tf.int32)
+        logits = tf.zeros((1, 1, gap_vocab.vocab_size), dtype=tf.float32)
+        prev = tf.constant([[4]], dtype=tf.int32)
+        soft = pointer_mask.apply_gap_soft_distance_prior_tf(
+            logits,
+            prev,
+            alpha=0.5,
+            delta_lookup=lookup,
+        )
+        # Δ=0: no penalty. Δ=4: −2.0. Far dense Δ stays finite (not −1e9).
+        self.assertAlmostEqual(float(soft[0, 0, 0]), 0.0, places=5)
+        self.assertAlmostEqual(float(soft[0, 0, 4]), -2.0, places=5)
+        self.assertGreater(float(soft[0, 0, 16]), -100.0)
+
+    def test_gap_soft_distance_prior_skips_when_prev_zero(self) -> None:
+        from stepcovnet.onset_ar import pointer_mask
+
         gap_vocab = targets.PatchGapVocab(delta_max_dense=8, n_log_buckets=2)
         lookup = tf.constant(targets.gap_delta_lookup_table(gap_vocab), dtype=tf.int32)
-        gap_logits = tf.zeros((1, 1, gap_vocab.vocab_size), dtype=tf.float32)
-        gap_logits = tf.tensor_scatter_nd_update(gap_logits, [[0, 0, 1]], [10.0])
+        logits = tf.zeros((1, 1, gap_vocab.vocab_size), dtype=tf.float32)
+        prev = tf.constant([[0]], dtype=tf.int32)
+        soft = pointer_mask.apply_gap_soft_distance_prior_tf(
+            logits,
+            prev,
+            alpha=0.5,
+            delta_lookup=lookup,
+        )
+        self.assertAlmostEqual(float(soft[0, 0, 8]), 0.0, places=5)
+
+    def test_gap_alignment_applies_soft_distance_prior(self) -> None:
+        gap_vocab = targets.PatchGapVocab(delta_max_dense=8, n_log_buckets=2)
+        lookup = tf.constant(targets.gap_delta_lookup_table(gap_vocab), dtype=tf.int32)
+        # Uniform logits; target Δ=1 with prev>0. Soft prior should lower CE.
+        gap_logits = tf.zeros((1, 2, gap_vocab.vocab_size), dtype=tf.float32)
         outputs = {
-            "token_logits": tf.zeros((1, 1, 4), dtype=tf.float32),
+            "token_logits": tf.zeros((1, 2, 4), dtype=tf.float32),
             "gap_logits": gap_logits,
-            "residual_sec": tf.zeros((1, 1), dtype=tf.float32),
+            "residual_sec": tf.zeros((1, 2), dtype=tf.float32),
         }
         batch = {
-            "decoder_target_ids": tf.constant([[1]], dtype=tf.int32),
-            "decoder_mask": tf.constant([[1.0]], dtype=tf.float32),
-            "onset_step_mask": tf.constant([[1.0]], dtype=tf.float32),
-            "target_patch_indices": tf.constant([[1]], dtype=tf.int32),
-            "target_gap_ids": tf.constant([[1]], dtype=tf.int32),
-            "target_times": tf.constant([[0.08]], dtype=tf.float32),
-            "target_residual_sec": tf.zeros((1, 1), dtype=tf.float32),
-            "patch_mask": tf.ones((1, 8), dtype=tf.float32),
+            "decoder_target_ids": tf.constant([[1, 1]], dtype=tf.int32),
+            "decoder_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "onset_step_mask": tf.constant([[1.0, 1.0]], dtype=tf.float32),
+            "target_patch_indices": tf.constant([[5, 6]], dtype=tf.int32),
+            "target_gap_ids": tf.constant([[5, 1]], dtype=tf.int32),
+            "target_times": tf.constant([[0.4, 0.48]], dtype=tf.float32),
+            "target_residual_sec": tf.zeros((1, 2), dtype=tf.float32),
+            "patch_mask": tf.ones((1, 16), dtype=tf.float32),
         }
-        _, parts = losses.compute_ar_onset_loss(
-            outputs,
-            batch,
-            patch_frames=8,
-            hop_sec=0.01,
-            lambda_time=0.0,
-            lambda_residual=0.0,
-            pointer_loss_weight=0.0,
-            length_normalize_ce=True,
-            gap_alignment=True,
-            gap_delta_lookup=lookup,
-            pointer_soft_distance_alpha=100.0,
-            pointer_local_ce_radius=1,
+        kwargs = {
+            "outputs": outputs,
+            "batch": batch,
+            "patch_frames": 8,
+            "hop_sec": 0.01,
+            "lambda_time": 0.0,
+            "lambda_residual": 0.0,
+            "pointer_loss_weight": 0.0,
+            "length_normalize_ce": True,
+            "gap_alignment": True,
+            "gap_delta_lookup": lookup,
+        }
+        _, parts0 = losses.compute_ar_onset_loss(
+            **kwargs,
+            pointer_soft_distance_alpha=0.0,
         )
-        self.assertLess(float(parts["gap_loss"].numpy()), 0.01)
+        _, parts1 = losses.compute_ar_onset_loss(
+            **kwargs,
+            pointer_soft_distance_alpha=1.0,
+        )
+        self.assertLess(
+            float(parts1["gap_loss"].numpy()),
+            float(parts0["gap_loss"].numpy()),
+        )
 
 
 if __name__ == "__main__":

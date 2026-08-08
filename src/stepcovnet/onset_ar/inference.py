@@ -18,9 +18,18 @@ def _argmax_gap_patch(
     prev_patch: int,
     gap_vocab: targets.PatchGapVocab,
     max_patch: int,
+    soft_distance_alpha: float = 0.0,
 ) -> int:
     """Resolve ``prev + decode(argmax Δ)``, clamped to ``[0, max_patch]``."""
-    gap_id = int(np.argmax(np.asarray(gap_logits, dtype=np.float32)))
+    logits = np.asarray(gap_logits, dtype=np.float32)
+    if float(soft_distance_alpha) > 0.0:
+        logits = pointer_mask.apply_gap_soft_distance_prior_numpy(
+            logits,
+            prev_patch,
+            alpha=float(soft_distance_alpha),
+            delta_lookup=targets.gap_delta_lookup_table(gap_vocab),
+        )
+    gap_id = int(np.argmax(logits))
     delta = gap_vocab.decode_delta(gap_id)
     return min(max(int(prev_patch) + delta, 0), int(max_patch))
 
@@ -416,6 +425,7 @@ def decode_parallel_pointer_times_numpy(
     prev_patch = 0
     gap_alignment = config.gap_alignment_active(experiment_config.model)
     max_patch = max(int(np.asarray(patch_mask).sum()) - 1, 0)
+    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
     if gap_alignment:
         gap_logits = np.asarray(outputs["gap_logits"][0], dtype=np.float32)
         gap_vocab = experiment_config.build_gap_vocab()
@@ -425,6 +435,7 @@ def decode_parallel_pointer_times_numpy(
                 prev_patch=prev_patch,
                 gap_vocab=gap_vocab,
                 max_patch=max_patch,
+                soft_distance_alpha=soft_alpha,
             )
             prev_patch = patch_idx
             times.append(
@@ -435,7 +446,6 @@ def decode_parallel_pointer_times_numpy(
     pointer_logits = np.asarray(outputs["pointer_logits"][0], dtype=np.float32)
     monotonic = bool(experiment_config.model.monotonic_pointer)
     max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
-    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
     for pos in range(int(tokens.size)):
         patch_idx = _argmax_pointer_patch(
             pointer_logits[pos],
@@ -497,11 +507,7 @@ def decode_gt_incremental_pointer_times_numpy(
             experiment_config.run,
         )
     )
-    soft_alpha = (
-        0.0
-        if gap_alignment
-        else config.pointer_soft_distance_alpha(experiment_config.run)
-    )
+    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
     prev_feed = np.zeros((1, max_decoder_len), dtype=np.int32)
     cur_len = 1
     while cur_len < max_decoder_len:
@@ -541,6 +547,7 @@ def decode_gt_incremental_pointer_times_numpy(
                     prev_patch=prev_patch,
                     gap_vocab=gap_vocab,
                     max_patch=max_patch,
+                    soft_distance_alpha=soft_alpha,
                 )
                 prev_patch = patch_idx
             else:
@@ -799,7 +806,7 @@ def _decode_autoregressive_prefix_numpy(
     )
     soft_alpha = (
         config.pointer_soft_distance_alpha(experiment_config.run)
-        if experiment_config is not None and not gap_alignment
+        if experiment_config is not None
         else 0.0
     )
     prev_feed = np.zeros_like(decoder_input, dtype=np.int32)
@@ -838,6 +845,7 @@ def _decode_autoregressive_prefix_numpy(
                 prev_patch=prev_patch,
                 gap_vocab=gap_vocab,
                 max_patch=max_patch,
+                soft_distance_alpha=soft_alpha,
             )
             prev_patch = patch_idx
         else:
@@ -1056,7 +1064,7 @@ def decode_teacher_fed_times_tf(
     use_soft_expected: bool = False,
     monotonic_pointer: bool = False,
     max_ahead: int = 0,
-    soft_distance_alpha: float = 0.0,
+    soft_distance_alpha: float | tf.Tensor = 0.0,
     gap_alignment: bool = False,
     gap_delta_lookup: tf.Tensor | None = None,
 ) -> tuple[tf.Tensor, tf.Tensor]:
@@ -1064,14 +1072,21 @@ def decode_teacher_fed_times_tf(
     prev = pointer_mask.teacher_forced_prev_patch_indices(
         batch["target_patch_indices"],
     )
+    soft_alpha = tf.cast(soft_distance_alpha, tf.float32)
     if gap_alignment:
         if "gap_logits" not in outputs:
             raise ValueError("gap_alignment requires outputs['gap_logits']")
         if gap_delta_lookup is None:
             raise ValueError("gap_alignment requires gap_delta_lookup")
+        gap_logits = pointer_mask.apply_gap_soft_distance_prior_tf(
+            tf.cast(outputs["gap_logits"], tf.float32),
+            prev,
+            alpha=soft_alpha,
+            delta_lookup=gap_delta_lookup,
+        )
         n_patches = tf.shape(batch["patch_mask"])[1]
         resolved = losses.resolved_patches_from_gap_logits(
-            outputs["gap_logits"],
+            gap_logits,
             prev,
             delta_lookup=gap_delta_lookup,
             max_patch=n_patches - 1,
@@ -1091,12 +1106,11 @@ def decode_teacher_fed_times_tf(
             pointer_logits,
             prev,
         )
-    if float(soft_distance_alpha) > 0.0:
-        pointer_logits = pointer_mask.apply_soft_distance_prior_tf(
-            pointer_logits,
-            prev,
-            alpha=float(soft_distance_alpha),
-        )
+    pointer_logits = pointer_mask.apply_soft_distance_prior_tf(
+        pointer_logits,
+        prev,
+        alpha=soft_alpha,
+    )
     if max_ahead > 0:
         pointer_logits = pointer_mask.apply_prev_relative_window_tf(
             pointer_logits,
@@ -1124,6 +1138,7 @@ def decode_teacher_fed_gap_times_numpy(
     patch_frames: int,
     hop_sec: float,
     max_patch: int,
+    soft_distance_alpha: float = 0.0,
 ) -> np.ndarray:
     """Teacher-fed times from gap logits: ``patch = prev + Δ``, then residual."""
     gap_logits = np.asarray(gap_logits, dtype=np.float32)
@@ -1140,12 +1155,21 @@ def decode_teacher_fed_gap_times_numpy(
     prev_patches = pointer_mask.teacher_forced_prev_patch_indices_numpy(
         target_patch_indices,
     )
+    delta_lookup = targets.gap_delta_lookup_table(gap_vocab)
     patch_duration = float(patch_frames) * float(hop_sec)
     times: list[float] = []
     for step_idx, active in enumerate(onset_step_mask):
         if active <= 0.5:
             continue
-        gap_id = int(np.argmax(gap_logits[step_idx]))
+        step_logits = gap_logits[step_idx]
+        if float(soft_distance_alpha) > 0.0:
+            step_logits = pointer_mask.apply_gap_soft_distance_prior_numpy(
+                step_logits,
+                int(prev_patches[step_idx]),
+                alpha=float(soft_distance_alpha),
+                delta_lookup=delta_lookup,
+            )
+        gap_id = int(np.argmax(step_logits))
         delta = gap_vocab.decode_delta(gap_id)
         patch_idx = min(max(int(prev_patches[step_idx]) + delta, 0), int(max_patch))
         times.append(float(patch_idx) * patch_duration + float(residual_sec[step_idx]))

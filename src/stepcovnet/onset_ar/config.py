@@ -136,9 +136,12 @@ class ArRunConfig(_DictSerializableMixin):
     # "target": [target - r, target + r] CE-only (decode unrestricted — footgun).
     # "prev": [prev, prev + r] for CE + decode/metrics (decode-consistent).
     pointer_local_ce_anchor: str = "target"
-    # Soft ahead penalty: logits -= alpha * max(0, patch - prev). 0 = off.
-    # Decode-consistent; no hard cutoff (long gaps stay reachable).
+    # Soft distance/Δ penalty (decode-consistent; no hard cutoff). 0 = off.
+    # Pointer: logits[p] -= α·max(0, p−prev). Gap: logits[Δ] -= α·decode_delta(Δ).
     pointer_soft_distance_alpha: float = 0.0
+    # Hold α at start, then linear decay to 0 over anneal epochs (0 = constant α).
+    pointer_soft_distance_alpha_hold_epochs: int = 0
+    pointer_soft_distance_alpha_anneal_epochs: int = 0
     scheduled_sampling_max_p: float = 0.0
     scheduled_sampling_ramp_epochs: int = 0
     scheduled_sampling_warmup_epochs: int = 0
@@ -174,8 +177,23 @@ def pointer_decode_max_ahead(run: ArRunConfig) -> int:
 
 
 def pointer_soft_distance_alpha(run: ArRunConfig) -> float:
-    """Soft distance-from-prev logit penalty used at train and decode."""
+    """Soft distance / Δ logit penalty used at train and decode.
+
+    Absolute pointer: ``logits[p] -= α·max(0, p − prev)``.
+    Gap head: ``logits[Δ] -= α·decode_delta(Δ)`` (skipped when ``prev == 0``).
+    Static config value (offline eval). During train with anneal, the live
+    ``tf.Variable`` on the training model is authoritative.
+    """
     return float(getattr(run, "pointer_soft_distance_alpha", 0.0) or 0.0)
+
+
+def soft_distance_alpha_anneal_end_epoch(run: ArRunConfig) -> int:
+    """First epoch index where annealed soft-α reaches 0 (0 if no anneal)."""
+    anneal = int(getattr(run, "pointer_soft_distance_alpha_anneal_epochs", 0) or 0)
+    if anneal <= 0:
+        return 0
+    hold = int(getattr(run, "pointer_soft_distance_alpha_hold_epochs", 0) or 0)
+    return hold + anneal
 
 
 @dataclasses.dataclass

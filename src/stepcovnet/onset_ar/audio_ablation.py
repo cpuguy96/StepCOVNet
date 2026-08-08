@@ -15,7 +15,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet import timing_match
-from stepcovnet.onset_ar import config, inference, pointer_mask, trainers
+from stepcovnet.onset_ar import config, inference, pointer_mask, targets, trainers
 
 VARIANTS = ("matched", "cross_song", "reverse", "shuffle", "zeros")
 CORRUPTED_VARIANTS = ("shuffle", "zeros")
@@ -158,6 +158,7 @@ def score_batch(
     n_valid_patches = int(batch["patch_mask"][0].sum())
     max_patch = max(n_valid_patches - 1, 0)
 
+    soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
     if gap_alignment:
         gap_logits = outputs["gap_logits"].numpy()[0]
         gap_vocab = experiment_config.build_gap_vocab()
@@ -170,27 +171,36 @@ def score_batch(
             patch_frames=experiment_config.model.patch_frames,
             hop_sec=experiment_config.dataset.hop_sec,
             max_patch=max_patch,
+            soft_distance_alpha=soft_alpha,
         )
         prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
             batch["target_patch_indices"][0],
         )
+        delta_lookup = targets.gap_delta_lookup_table(gap_vocab)
         pred_patches_list: list[int] = []
+        logits_for_nll = gap_logits.astype(np.float32).copy()
+        for i in range(logits_for_nll.shape[0]):
+            if soft_alpha > 0.0:
+                logits_for_nll[i] = pointer_mask.apply_gap_soft_distance_prior_numpy(
+                    logits_for_nll[i],
+                    int(prev[i]),
+                    alpha=soft_alpha,
+                    delta_lookup=delta_lookup,
+                )
         for i in step_indices:
-            gap_id = int(np.argmax(gap_logits[i]))
+            gap_id = int(np.argmax(logits_for_nll[i]))
             delta = gap_vocab.decode_delta(gap_id)
             pred_patches_list.append(
                 min(max(int(prev[i]) + delta, 0), max_patch),
             )
         pred_patches = np.asarray(pred_patches_list, dtype=np.int32)
         target_gap_ids = batch["target_gap_ids"][0][step_indices]
-        logits_for_nll = gap_logits
         nll_targets = target_gap_ids
         uniform_classes = gap_vocab.vocab_size
     else:
         pointer_logits = outputs["pointer_logits"].numpy()[0]
         monotonic = bool(experiment_config.model.monotonic_pointer)
         max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
-        soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
         pred_times = inference.decode_teacher_fed_times_numpy(
             pointer_logits,
             residual_sec,

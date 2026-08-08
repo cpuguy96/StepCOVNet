@@ -256,8 +256,27 @@ class ArOnsetTrainingModel(keras.Model):
         self.pointer_local_ce_anchor = str(
             getattr(run_config, "pointer_local_ce_anchor", "target") or "target",
         ).lower()
-        self.pointer_soft_distance_alpha = float(
+        self.pointer_soft_distance_alpha_start = float(
             getattr(run_config, "pointer_soft_distance_alpha", 0.0) or 0.0,
+        )
+        self.pointer_soft_distance_alpha_hold_epochs = int(
+            getattr(run_config, "pointer_soft_distance_alpha_hold_epochs", 0) or 0,
+        )
+        self.pointer_soft_distance_alpha_anneal_epochs = int(
+            getattr(run_config, "pointer_soft_distance_alpha_anneal_epochs", 0) or 0,
+        )
+        # tf.Variable so anneal updates stay inside the traced train_step graph
+        # (same trap as scheduled_sampling_p — a Python float freezes at warmup).
+        self.pointer_soft_distance_alpha = tf.Variable(
+            soft_distance_alpha_for_epoch(
+                -1,
+                alpha_start=self.pointer_soft_distance_alpha_start,
+                hold_epochs=self.pointer_soft_distance_alpha_hold_epochs,
+                anneal_epochs=self.pointer_soft_distance_alpha_anneal_epochs,
+            ),
+            trainable=False,
+            dtype=tf.float32,
+            name="pointer_soft_distance_alpha",
         )
         self.monotonic_pointer = bool(model_config.monotonic_pointer)
         self.gap_alignment = config.gap_alignment_active(model_config)
@@ -479,12 +498,11 @@ class ArOnsetTrainingModel(keras.Model):
             logits = pointer_mask.apply_monotonic_pointer_mask_tf(logits, prev)
         if self.gap_alignment:
             return logits
-        if self.pointer_soft_distance_alpha > 0.0:
-            logits = pointer_mask.apply_soft_distance_prior_tf(
-                logits,
-                prev,
-                alpha=self.pointer_soft_distance_alpha,
-            )
+        logits = pointer_mask.apply_soft_distance_prior_tf(
+            logits,
+            prev,
+            alpha=self.pointer_soft_distance_alpha,
+        )
         if self.pointer_local_ce_radius > 0 and self.pointer_local_ce_anchor == "prev":
             logits = pointer_mask.apply_prev_relative_window_tf(
                 logits,
@@ -500,8 +518,22 @@ class ArOnsetTrainingModel(keras.Model):
     ) -> tf.Tensor:
         """Gap-id or absolute-patch top-1 accuracy for the active alignment head."""
         if self.gap_alignment:
+            gap_logits = tf.cast(outputs["gap_logits"], tf.float32)
+            if self._gap_delta_lookup is None:
+                raise ValueError(
+                    "gap soft-distance metrics require gap_delta_lookup",
+                )
+            prev = pointer_mask.teacher_forced_prev_patch_indices(
+                batch["target_patch_indices"],
+            )
+            gap_logits = pointer_mask.apply_gap_soft_distance_prior_tf(
+                gap_logits,
+                prev,
+                alpha=self.pointer_soft_distance_alpha,
+                delta_lookup=self._gap_delta_lookup,
+            )
             return losses.masked_gap_accuracy(
-                outputs["gap_logits"],
+                gap_logits,
                 batch["target_gap_ids"],
                 batch["onset_step_mask"],
             )
@@ -686,11 +718,7 @@ class ArOnsetTrainingModel(keras.Model):
                 if self.gap_alignment
                 else config.pointer_decode_max_ahead(self.experiment_config.run)
             ),
-            soft_distance_alpha=(
-                0.0
-                if self.gap_alignment
-                else config.pointer_soft_distance_alpha(self.experiment_config.run)
-            ),
+            soft_distance_alpha=self.pointer_soft_distance_alpha,
             gap_alignment=self.gap_alignment,
             gap_delta_lookup=self._gap_delta_lookup,
         )
@@ -1051,6 +1079,62 @@ def scheduled_sampling_for_epoch(
     return float(max_p) * progress
 
 
+def soft_distance_alpha_for_epoch(
+    epoch_index: int,
+    *,
+    alpha_start: float,
+    hold_epochs: int = 0,
+    anneal_epochs: int = 0,
+) -> float:
+    """Hold soft-α at ``alpha_start``, then linear decay to 0.
+
+    With ``anneal_epochs == 0``, α stays constant. Epoch indices are 0-based
+    (``on_epoch_begin``). ``epoch_index < 0`` returns the start value (init).
+    """
+    if alpha_start <= 0.0:
+        return 0.0
+    if anneal_epochs <= 0:
+        return float(alpha_start)
+    if epoch_index < 0:
+        return float(alpha_start)
+    if epoch_index < hold_epochs:
+        return float(alpha_start)
+    t = int(epoch_index) - int(hold_epochs)
+    if t >= anneal_epochs:
+        return 0.0
+    progress = float(t) / float(anneal_epochs)
+    return float(alpha_start) * (1.0 - progress)
+
+
+class SoftDistanceAlphaAnnealCallback(keras.callbacks.Callback):
+    """Update ``ArOnsetTrainingModel.pointer_soft_distance_alpha`` each epoch."""
+
+    def __init__(
+        self,
+        training_model: ArOnsetTrainingModel,
+        *,
+        alpha_start: float,
+        hold_epochs: int = 0,
+        anneal_epochs: int = 0,
+    ) -> None:
+        super().__init__()
+        self.training_model = training_model
+        self.alpha_start = float(alpha_start)
+        self.hold_epochs = int(hold_epochs)
+        self.anneal_epochs = int(anneal_epochs)
+
+    def on_epoch_begin(self, epoch: int, logs: dict | None = None) -> None:
+        _ = logs
+        self.training_model.pointer_soft_distance_alpha.assign(
+            soft_distance_alpha_for_epoch(
+                epoch,
+                alpha_start=self.alpha_start,
+                hold_epochs=self.hold_epochs,
+                anneal_epochs=self.anneal_epochs,
+            ),
+        )
+
+
 class ScheduledSamplingRampCallback(keras.callbacks.Callback):
     """Update ``ArOnsetTrainingModel.scheduled_sampling_p`` each epoch."""
 
@@ -1190,6 +1274,26 @@ def train_ar_onset(
             ),
         )
 
+    anneal_epochs = int(
+        getattr(run_config, "pointer_soft_distance_alpha_anneal_epochs", 0) or 0,
+    )
+    if anneal_epochs > 0 and float(run_config.pointer_soft_distance_alpha) > 0.0:
+        callbacks.append(
+            SoftDistanceAlphaAnnealCallback(
+                training_model,
+                alpha_start=float(run_config.pointer_soft_distance_alpha),
+                hold_epochs=int(
+                    getattr(
+                        run_config,
+                        "pointer_soft_distance_alpha_hold_epochs",
+                        0,
+                    )
+                    or 0,
+                ),
+                anneal_epochs=anneal_epochs,
+            ),
+        )
+
     callbacks.insert(0, EpochTimingCallback())
     callbacks.insert(0, MetricAliasCallback())
     if should_attach_overfit_gate_callback(run_config):
@@ -1206,15 +1310,19 @@ def train_ar_onset(
         )
 
     if run_config.early_stopping_patience > 0:
-        callbacks.append(
-            keras.callbacks.EarlyStopping(
-                monitor=monitor_metric,
-                mode=monitor_mode,
-                patience=run_config.early_stopping_patience,
-                restore_best_weights=True,
-                verbose=1,
-            ),
-        )
+        # Delay ES until soft-α has finished annealing so restore_best does not
+        # pick a high-α epoch that collapses at α=0 decode.
+        es_kwargs: dict = {
+            "monitor": monitor_metric,
+            "mode": monitor_mode,
+            "patience": run_config.early_stopping_patience,
+            "restore_best_weights": True,
+            "verbose": 1,
+        }
+        anneal_end = config.soft_distance_alpha_anneal_end_epoch(run_config)
+        if anneal_end > 0:
+            es_kwargs["start_from_epoch"] = anneal_end
+        callbacks.append(keras.callbacks.EarlyStopping(**es_kwargs))
 
     history = training_model.fit(
         train_ds,
