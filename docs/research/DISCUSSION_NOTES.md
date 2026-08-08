@@ -4,7 +4,73 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
-## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
+## Session 2026-08-07 — Content-gap soft-α closed (prior dependence)
+
+### NOTE-20260808-01: Soft-α / hard-R locality path — closed
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-08 01:43:22 |
+| **Topic** | Final wrap-up for decode-prior localization |
+
+**Chain (R2, content gap unless noted).**
+
+| Step | Result |
+| ---- | ------ |
+| Content gap alone | Timing **0.0075** — beats ptrloss, still near floor ([EXP-16](EXPERIMENT_LOG.md#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor)) |
+| Error dig | **92%** wrong_far; pred Δ p50 **92** vs GT **2** ([EXP-17](EXPERIMENT_LOG.md#exp-20260807-17-content-gap-r2-errors-are-wrong-far-δ-soup--not-stickiness)) |
+| Soft Δ α=0.5 | Timing **0.0968** with prior on ([EXP-18](EXPERIMENT_LOG.md#exp-20260807-18-content-gap--soft-δ-prior-raises-r2-timing--still-prior-class)) |
+| α=0 eval | Collapse **0.0019** ([EXP-19](EXPERIMENT_LOG.md#exp-20260807-19-content-gap-soft-α-collapses-at-α0-eval)) |
+| Anneal 0.5→0 | Still collapse **0.0016** ([EXP-20](EXPERIMENT_LOG.md#exp-20260807-20-content-gap-soft-α-anneal-still-collapses-at-α0)) |
+
+**Closed as product path.** Soft Δ prior, soft-α anneal, and hard prev-local R are diagnostic crutches: they raise matched-prior numbers and vanish when removed. Same class as absolute soft-α ([EXP-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent)) and hard-R unmask ([EXP-12](EXPERIMENT_LOG.md#exp-20260807-12-r4-weights-collapse-without-hard-window)).
+
+**Still standing.** Content gap (`gap_head: content`) passes tide audio grounding ([EXP-15](EXPERIMENT_LOG.md#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded)); keep as alignment head. Phase 5 “design default = gap” stays held until localization works **without** a decode prior.
+
+**Do not.** Stack another α / R / force-advance recipe; treat soft-α as shippable; ladder scale-up to paper over open-set localization.
+
+**Next (when resuming).** A non-prior mechanism with a concrete binding hypothesis — not a schedule tweak. Harness keeps soft-α / anneal knobs for diagnostics only.
+
+**Related.** [NOTE-20260807-15](#note-20260807-15-soft-α-anneal-does-not-fix-prior-dependence) · [NOTE-20260807-06](#note-20260807-06-hard-r-is-diagnostic-not-the-holistic-system) · EXP-12…20
+
+### NOTE-20260807-15: Soft-α anneal does not fix prior dependence
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 22:58:58 |
+| **Topic** | Anneal α 0.5→0 on content-gap |
+
+**Verdict.** [EXP-20260807-20](EXPERIMENT_LOG.md#exp-20260807-20-content-gap-soft-α-anneal-still-collapses-at-α0): α=0 timing **0.0016**. Hold+anneal does not teach localization that survives without the prior.
+
+**Implication.** Soft-α (fixed or annealed) is closed as a product path. Next needs a non-prior mechanism; do not stack another α schedule.
+
+**Related.** [NOTE-20260807-14](#note-20260807-14-soft-δ-on-content-gap-collapses-without-the-prior) · [`ladder_r2_gap_content_soft_anneal_probe.json`](../../configs/ar/ladder_r2_gap_content_soft_anneal_probe.json)
+
+### NOTE-20260807-14: Soft Δ on content-gap collapses without the prior
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 22:24:53 |
+| **Topic** | α=0 decode after soft-Δ train |
+
+**Verdict.** [EXP-20260807-19](EXPERIMENT_LOG.md#exp-20260807-19-content-gap-soft-α-collapses-at-α0-eval): α=0 timing **0.0019** vs matched **0.0968**. Soft Δ is a crutch — same class as absolute soft-α ([EXP-20260807-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent)).
+
+**Follow-up.** Anneal → still collapses ([NOTE-20260807-15](#note-20260807-15-soft-α-anneal-does-not-fix-prior-dependence)).
+
+**Related.** [NOTE-20260807-13](#note-20260807-13-soft-δ-prior-on-content-gap--timing-up-prior-class-tbd) · [`ladder_r2_gap_content_soft_a0_eval.json`](../../configs/ar/ladder_r2_gap_content_soft_a0_eval.json)
+
+### NOTE-20260807-13: Soft Δ prior on content-gap — timing up, prior class TBD
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 18:07:18 |
+| **Topic** | Soft Δ prior after wrong-far dig |
+
+**Verdict.** [EXP-20260807-18](EXPERIMENT_LOG.md#exp-20260807-18-content-gap--soft-δ-prior-raises-r2-timing--still-prior-class): α=0.5 offline timing **0.0968** (~**13×** vs content-gap **0.0075**); F1 skill **−0.056**. Magnitude matches absolute soft-α ([EXP-20260807-13](EXPERIMENT_LOG.md#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent)).
+
+**Follow-up.** α=0 → collapse ([NOTE-20260807-14](#note-20260807-14-soft-δ-on-content-gap-collapses-without-the-prior)).
+
+**Related.** [NOTE-20260807-12](#note-20260807-12-content-gap-leftover-is-wrong-far-δ-soup) · [`ladder_r2_gap_content_soft_a0p5_probe.json`](../../configs/ar/ladder_r2_gap_content_soft_a0p5_probe.json)
 
 ### NOTE-20260807-12: Content-gap leftover is wrong-far Δ soup
 
@@ -15,7 +81,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Verdict.** [EXP-20260807-17](EXPERIMENT_LOG.md#exp-20260807-17-content-gap-r2-errors-are-wrong-far-δ-soup--not-stickiness): val **92%** wrong_far; GT Δ p50 **2** vs pred **92**; H/Huni **0.93**. Not the hard-R stickiness mode.
 
-**Implication.** Soft Δ-distance prior on gap logits is the evidence-backed next knob (overshoot + diffuse mass). Hard-R / Phase 5 default stay deferred.
+**Follow-up.** Soft Δ prior → [EXP-20260807-18](EXPERIMENT_LOG.md#exp-20260807-18-content-gap--soft-δ-prior-raises-r2-timing--still-prior-class).
 
 **Related.** [EXP-20260807-16](EXPERIMENT_LOG.md#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor) · `_tmp/r2_gap_content/error_mix.json`
 

@@ -10,13 +10,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-07
+**Updated:** 2026-08-08
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Content-gap R2 error dig ([EXP-20260807-17](#exp-20260807-17-content-gap-r2-errors-are-wrong-far-δ-soup--not-stickiness)): val **98%** patch_wrong / **92%** wrong_far; GT Δ p50 **2** vs pred Δ p50 **92**; H/Huni **0.93**. Not at_prev stickiness; residual secondary.
+**Status:** Soft-α / hard-R locality path **closed** ([NOTE-20260808-01](DISCUSSION_NOTES.md#note-20260808-01-soft-α--hard-r-locality-path--closed)): content gap stands (tide **PASS**); matched soft-α **0.0968** but α=0 / anneal collapse to **~0.002**. Wrap-up EXP-16…20.
 
-**Next action:** Soft Δ-distance prior on content-gap logits (`logits[Δ] -= α·Δ` for dense ids; no hard R) — short R2 probe; mechanism = systematic overshoot + diffuse vocab mass. Hold Phase 5 default until localization moves.
+**Next action:** Non-prior localization hypothesis with a concrete binding mechanism — not another α/R schedule. Hold Phase 5 design-default flip.
 **Blockers:** None — GPU free.
-**Defer:** hard-R / force-advance as product path; ladder scale-up unless asked; attn-mass; STE spam.
+**Defer:** hard-R / force-advance / soft-α / anneal as product path; ladder scale-up unless asked; attn-mass; STE spam.
 
 ### Dataset prep (PRE ingestion)
 
@@ -66,6 +66,9 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-20 | `train` + `metric` | Does soft-α anneal (0.5→0) teach content-gap localization that survives α=0? | **Not supported** | α=0 timing **0.0016**; F1 skill **−0.44** — same collapse |
+| EXP-20260807-19 | `metric` | Do content-gap soft-α weights keep skill with α=0 at decode? | **Supported** (collapse) | α=0 timing **0.0019** vs matched **0.0968**; F1 skill **−0.44** |
+| EXP-20260807-18 | `train` + `metric` | Does soft Δ prior (α=0.5) on content-gap fix wrong-far overshoot on R2? | **Partial** | Offline timing **0.0968** (~**13×** vs **0.0075**); F1 skill **−0.056**; α=0 collapses |
 | EXP-20260807-17 | `metric` | On content-gap R2, is leftover error stickiness, residual, or wrong-far Δ soup? | **Supported** | Val **92%** wrong_far; pred Δ p50 **92** vs GT **2**; H/Huni **0.93** |
 | EXP-20260807-16 | `train` + `metric` | Does R2 content gap beat ptrloss timing **~0.0035** without α / hard R? | **Supported** | Offline timing **0.0075** (~**2.1×**); F1 skill **−0.43** |
 | EXP-20260807-15 | `model` + `train` + `metric` | Does content gap (`q·k(memory[prev+Δ])`) pass tide timing ≈1 **and** audio grounding? | **Supported** | Teacher **0.987**; ablation **PASS** (shuffle/zeros collapse) |
@@ -178,6 +181,47 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-20: Content-gap soft-α anneal still collapses at α=0
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 22:58:58 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Does holding soft Δ α=0.5 then linearly annealing to 0 teach content-gap weights that keep skill at α=0 decode? |
+| **Setup** | [`configs/ar/ladder_r2_gap_content_soft_anneal_probe.json`](../../configs/ar/ladder_r2_gap_content_soft_anneal_probe.json): hold **10** / anneal **20** → α=0 by ep **30**; ES `start_from_epoch=30`, restore ep **31**. Train `logs/r2_gap_content_soft_anneal_train.log`. α=0 eval [`ladder_r2_gap_content_soft_anneal_a0_eval.json`](../../configs/ar/ladder_r2_gap_content_soft_anneal_a0_eval.json) → `logs/r2_gap_content_soft_anneal_a0_teacher_val.log` |
+| **In-train (best ep 31, α=0)** | `val_pointer_loss` **5.225**; val patch-acc **0.015**; val timing **0.0064** |
+| **Offline α=0 teacher val** | Timing **58/35439 = 0.0016**; F1 **0.0042**; patch_wrong **35148**. Skill: timing **−0.0069**, F1 **−0.441** |
+| **vs fixed soft-α** | Matched α=0.5 **0.0968** ([EXP-18](#exp-20260807-18-content-gap--soft-δ-prior-raises-r2-timing--still-prior-class)); fixed α=0 collapse **0.0019** ([EXP-19](#exp-20260807-19-content-gap-soft-α-collapses-at-α0-eval)) — anneal does not beat the collapse floor |
+| **vs content-gap α=0** | Timing **worse** than content-gap alone **0.0075** ([EXP-16](#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor)) |
+| **Conclusion** | **Not supported.** Annealing the decode prior does not internalize localization. Close the soft-α product path; next must be a different mechanism |
+
+### EXP-20260807-19: Content-gap soft-α collapses at α=0 eval
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 22:24:53 |
+| **Track** | `metric` (AR) |
+| **Question** | Do content-gap weights trained with soft Δ α=0.5 ([EXP-20260807-18](#exp-20260807-18-content-gap--soft-δ-prior-raises-r2-timing--still-prior-class)) keep skill when the prior is removed at decode? |
+| **Setup** | Same ckpt `models_wsl/ar/ladder_r2_gap_content_soft_a0p5/`; eval config [`ladder_r2_gap_content_soft_a0_eval.json`](../../configs/ar/ladder_r2_gap_content_soft_a0_eval.json) with `pointer_soft_distance_alpha: 0`. Offline teacher val 50 songs. `logs/r2_gap_content_soft_a0_eval_teacher_val.log` |
+| **α=0 offline** | Timing **66/35439 = 0.0019**; F1 **0.0036**; patch_wrong **35119**. Skill: timing **−0.0066**, F1 **−0.442** |
+| **vs matched α=0.5** | Timing **~51×** drop (**0.0968 → 0.0019**); F1 **0.270 → 0.0036** |
+| **vs absolute soft-α α=0** | Same class as [EXP-20260807-13](#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent) α=0 collapse (**0.00011**) |
+| **Conclusion** | **Supported** (collapse). Soft Δ on gap is a decode crutch, not learned localization. Do not ship soft-α / Phase 5 default; next must survive α→0 |
+
+### EXP-20260807-18: Content-gap + soft Δ prior raises R2 timing — still prior class
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 18:07:18 |
+| **Track** | `train` + `metric` (AR) |
+| **Question** | Does soft Δ-distance prior (`logits[Δ] -= α·decode_delta(Δ)`, α=0.5, no hard R) on content-gap fix the wrong-far overshoot from [EXP-20260807-17](#exp-20260807-17-content-gap-r2-errors-are-wrong-far-δ-soup--not-stickiness)? |
+| **Setup** | [`configs/ar/ladder_r2_gap_content_soft_a0p5_probe.json`](../../configs/ar/ladder_r2_gap_content_soft_a0p5_probe.json); 50 ep, ES patience 10 on `val_pointer_loss`; restore ep **15**. Train `logs/r2_gap_content_soft_a0p5_train.log`; offline `logs/r2_gap_content_soft_a0p5_teacher_val.log` |
+| **In-train (best ep 15)** | `val_pointer_loss` **2.440**; val patch-acc **0.100**; val timing **0.0969** |
+| **Offline teacher val** | Timing **3432/35439 = 0.0968**; F1 **0.270**; patch_wrong **31122**; patch_ok_timing_wrong **3051**. Skill: timing **+0.089**, F1 **−0.056** vs ioi_shuffle |
+| **vs content-gap α=0** | Timing **~13×** (**0.0968** vs **0.0075**); F1 skill much less negative (**−0.056** vs **−0.43**) |
+| **vs absolute soft-α** | Comparable to [EXP-20260807-13](#exp-20260807-13-soft-distance-prior-beats-full-ce-still-prior-dependent) (timing **0.105** / F1 **0.279**) — same magnitude class |
+| **Conclusion** | **Partial.** Soft Δ prior moves the needle hard on the stated overshoot failure. α=0 eval → collapse ([EXP-20260807-19](#exp-20260807-19-content-gap-soft-α-collapses-at-α0-eval)) — prior-dependent, not learned localization |
 
 ### EXP-20260807-17: Content-gap R2 errors are wrong-far Δ soup — not stickiness
 
