@@ -6,6 +6,19 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-07 — QK-LN R2 diagnosis (evidence before next train)
 
+### NOTE-20260807-12: Content-gap leftover is wrong-far Δ soup
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 17:46:26 |
+| **Topic** | Error-mode dig after Phase 4 |
+
+**Verdict.** [EXP-20260807-17](EXPERIMENT_LOG.md#exp-20260807-17-content-gap-r2-errors-are-wrong-far-δ-soup--not-stickiness): val **92%** wrong_far; GT Δ p50 **2** vs pred **92**; H/Huni **0.93**. Not the hard-R stickiness mode.
+
+**Implication.** Soft Δ-distance prior on gap logits is the evidence-backed next knob (overshoot + diffuse mass). Hard-R / Phase 5 default stay deferred.
+
+**Related.** [EXP-20260807-16](EXPERIMENT_LOG.md#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor) · `_tmp/r2_gap_content/error_mix.json`
+
 ### NOTE-20260807-11: R2 content gap clears ptrloss bar
 
 | Field | Value |
@@ -15,7 +28,7 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Verdict.** [EXP-20260807-16](EXPERIMENT_LOG.md#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor): offline timing **0.0075** vs ptrloss **0.0035** (~**2.1×**), no α / hard R. F1 skill still **−0.43** — beats the open-set CE floor but not chance.
 
-**Next.** Longer R2, error-mode dig, or Phase 5 design default — pick deliberately.
+**Follow-up.** Error dig ([NOTE-20260807-12](#note-20260807-12-content-gap-leftover-is-wrong-far-δ-soup)) → soft Δ prior next.
 
 **Related.** [NOTE-20260807-10](#note-20260807-10-content-gap-passes-tide-audio-gate) · [`ladder_r2_gap_content_probe.json`](../../configs/ar/ladder_r2_gap_content_probe.json)
 

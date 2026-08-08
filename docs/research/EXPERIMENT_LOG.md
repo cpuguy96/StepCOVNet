@@ -12,9 +12,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-07
 **Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Content gap Phase 4 R2 probe **beats ptrloss** ([EXP-20260807-16](#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor)): offline val timing **0.0075** vs **0.0035** (~**2.1×**), no α / hard R. Skill still near floor (F1 **−0.43**). Tide gate remains [EXP-20260807-15](#exp-20260807-15-content-gap-tide-gate-pass--audio-grounded).
+**Status:** Content-gap R2 error dig ([EXP-20260807-17](#exp-20260807-17-content-gap-r2-errors-are-wrong-far-δ-soup--not-stickiness)): val **98%** patch_wrong / **92%** wrong_far; GT Δ p50 **2** vs pred Δ p50 **92**; H/Huni **0.93**. Not at_prev stickiness; residual secondary.
 
-**Next action:** Decide follow-up — longer R2 train, residual/error-mode dig on content-gap ckpt, or Phase 5 design-default flip. Ask before ladder scale-up.
+**Next action:** Soft Δ-distance prior on content-gap logits (`logits[Δ] -= α·Δ` for dense ids; no hard R) — short R2 probe; mechanism = systematic overshoot + diffuse vocab mass. Hold Phase 5 default until localization moves.
 **Blockers:** None — GPU free.
 **Defer:** hard-R / force-advance as product path; ladder scale-up unless asked; attn-mass; STE spam.
 
@@ -66,6 +66,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260807-17 | `metric` | On content-gap R2, is leftover error stickiness, residual, or wrong-far Δ soup? | **Supported** | Val **92%** wrong_far; pred Δ p50 **92** vs GT **2**; H/Huni **0.93** |
 | EXP-20260807-16 | `train` + `metric` | Does R2 content gap beat ptrloss timing **~0.0035** without α / hard R? | **Supported** | Offline timing **0.0075** (~**2.1×**); F1 skill **−0.43** |
 | EXP-20260807-15 | `model` + `train` + `metric` | Does content gap (`q·k(memory[prev+Δ])`) pass tide timing ≈1 **and** audio grounding? | **Supported** | Teacher **0.987**; ablation **PASS** (shuffle/zeros collapse) |
 | EXP-20260807-14 | `train` + `metric` | Does Dense gap+residual pass tide timing ≈1 **and** audio grounding? | **Not supported** | Teacher **632/634**; ablation same_pred **1.0** under zeros — audio-blind |
@@ -177,6 +178,22 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260807-17: Content-gap R2 errors are wrong-far Δ soup — not stickiness
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-07 17:46:26 |
+| **Track** | `metric` (AR) |
+| **Question** | On the content-gap R2 ckpt ([EXP-20260807-16](#exp-20260807-16-r2-content-gap-beats-ptrloss-timing-still-near-floor)), is leftover error at_prev stickiness, residual, or diffuse wrong-Δ? |
+| **Setup** | `_tmp/r2_gap_content/diagnose_error_mix.py` on `models_wsl/ar/ladder_r2_gap_content/` (8 train / 12 val). `logs/r2_gap_content_error_mix.log` · `_tmp/r2_gap_content/error_mix.json` |
+| **Val mix (8925 steps)** | patch_ok_time_ok **0.6%**; patch_ok_timing_wrong **1.2%**; **patch_wrong 98.2%** |
+| **Val patch buckets** | correct **1.8%**; at_prev **2.0%**; near_miss≤4 **4.0%**; **wrong_far 91.9%** |
+| **Val Δ geometry** | tgt_off p50 **2** / pred_off p50 **92**; Δerr p50 **+90**; sticky Δ=0 when tgt>0 only **2.0%** |
+| **Val concentration** | H/Huni **0.932**; top-1 **0.025**; tgt_gap_rank p50 **65** — near-uniform over allowed gap ids |
+| **Residual (patch_ok)** | resid_err_ms p50 **39** / p90 **60** — secondary (only **~1.8%** steps patch_ok) |
+| **Train contrast** | wrong_far **85%**; correct **4.7%**; same overshoot (pred_off p50 **64** vs tgt **3**) — not a train≫val story |
+| **Conclusion** | **Supported.** Binding failure is **wrong-far Δ soup with systematic overshoot**, not stickiness or residual. Differs from hard-R leftovers (at_prev). Next one-knob with mechanism: soft Δ-distance prior on gap logits (no hard cutoff); do not flip design default yet |
 
 ### EXP-20260807-16: R2 content gap beats ptrloss timing; still near floor
 
