@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 from collections.abc import Iterator
@@ -74,6 +75,47 @@ def _batch_generator(
         )
 
 
+def tensorboard_run_log_dir(callback_root_dir: str, model_name: str) -> pathlib.Path:
+    """Return a per-run TensorBoard directory under the stage ``logs/`` tree.
+
+    Args:
+        callback_root_dir: Stage root shared by DDC placement runs.
+        model_name: Run label (appended after a timestamp).
+
+    Returns:
+        ``{callback_root_dir}/logs/{YYYYMMDD-HHMMSS}-{model_name}``.
+    """
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_name = str(model_name).strip() or "ddc_placement"
+    log_dir = pathlib.Path(callback_root_dir) / "logs" / f"{stamp}-{safe_name}"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+BEST_CHECKPOINT_FILENAME = "best.keras"
+LAST_EVAL_FILENAME = "eval_val_ddc.json"
+BEST_EVAL_FILENAME = "eval_val_ddc_best.json"
+
+
+def _write_eval_report(
+    report: evaluation.PlacementEvalReport,
+    path: pathlib.Path,
+    *,
+    weights: str,
+) -> None:
+    """Write a placement eval JSON tagged with which weights were scored.
+
+    Args:
+        report: Val F-score report.
+        path: Output JSON path.
+        weights: ``last`` or ``best``.
+    """
+    payload = report.as_dict()
+    payload["weights"] = weights
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(payload, indent=2))
+
+
 def train_placement(
     experiment: config.PlacementExperimentConfig,
 ) -> keras.Model:
@@ -106,12 +148,28 @@ def train_placement(
     )
     output_dir = pathlib.Path(experiment.run.model_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    callback_root = pathlib.Path(experiment.run.callback_root_dir)
-    callbacks: list[keras.callbacks.Callback] = []
+    best_path = output_dir / BEST_CHECKPOINT_FILENAME
+    callbacks: list[keras.callbacks.Callback] = [
+        keras.callbacks.ModelCheckpoint(
+            filepath=str(best_path),
+            monitor="val_loss",
+            mode="min",
+            save_best_only=True,
+            verbose=1,
+        )
+    ]
     if experiment.run.callback_root_dir:
-        log_dir = callback_root / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        callbacks.append(keras.callbacks.TensorBoard(log_dir=str(log_dir)))
+        log_dir = tensorboard_run_log_dir(
+            experiment.run.callback_root_dir,
+            experiment.run.model_name,
+        )
+        callbacks.append(
+            keras.callbacks.TensorBoard(
+                log_dir=str(log_dir),
+                histogram_freq=0,
+                write_images=False,
+            )
+        )
     steps = experiment.run.steps_per_epoch
     val_steps = experiment.run.validation_steps
     model.fit(
@@ -137,11 +195,23 @@ def train_placement(
     save_path = output_dir / f"{experiment.run.model_name}.keras"
     model.save(save_path)
     print(f"saved {save_path}")
-    report = evaluation.evaluate_placement(model, val_charts, seed=experiment.run.seed)
-    report_path = output_dir / "eval_val_ddc.json"
-    report_path.write_text(
-        json.dumps(report.as_dict(), indent=2) + "\n",
-        encoding="utf-8",
+    last_report = evaluation.evaluate_placement(
+        model, val_charts, seed=experiment.run.seed
     )
-    print(json.dumps(report.as_dict(), indent=2))
+    _write_eval_report(
+        last_report,
+        output_dir / LAST_EVAL_FILENAME,
+        weights="last",
+    )
+    if best_path.is_file():
+        best_model = keras.models.load_model(best_path)
+        best_report = evaluation.evaluate_placement(
+            best_model, val_charts, seed=experiment.run.seed
+        )
+        _write_eval_report(
+            best_report,
+            output_dir / BEST_EVAL_FILENAME,
+            weights="best",
+        )
+        print(f"saved {best_path}")
     return model

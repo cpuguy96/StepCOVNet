@@ -58,6 +58,13 @@ class DdcTrainersTest(unittest.TestCase):
         loss = model.train_on_batch(inputs, labels)
         self.assertTrue(np.isfinite(loss))
 
+    def test_tensorboard_run_log_dir_is_timestamped_child(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = trainers.tensorboard_run_log_dir(tmpdir, "smoke")
+            self.assertEqual(log_dir.parent, pathlib.Path(tmpdir) / "logs")
+            self.assertTrue(log_dir.name.endswith("-smoke"))
+            self.assertTrue(log_dir.is_dir())
+
     def test_train_placement_writes_artifacts(self):
         chart = _synthetic_chart()
         report = mock.Mock()
@@ -92,14 +99,28 @@ class DdcTrainersTest(unittest.TestCase):
                 mock.patch(
                     "stepcovnet.ddc.trainers.evaluation.evaluate_placement",
                     return_value=report,
-                ),
+                ) as mock_eval,
             ):
                 trainers.train_placement(experiment)
             saved = pathlib.Path(tmpdir) / "models" / "smoke.keras"
+            best = pathlib.Path(tmpdir) / "models" / "best.keras"
             eval_path = pathlib.Path(tmpdir) / "models" / "eval_val_ddc.json"
+            best_eval = pathlib.Path(tmpdir) / "models" / "eval_val_ddc_best.json"
             self.assertTrue(saved.is_file())
+            self.assertTrue(best.is_file())
             payload = json.loads(eval_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["f_score_m"], 0.2)
+            self.assertEqual(payload["weights"], "last")
+            best_payload = json.loads(best_eval.read_text(encoding="utf-8"))
+            self.assertEqual(best_payload["weights"], "best")
+            self.assertEqual(
+                mock_eval.call_count,
+                2,
+            )
+            log_root = pathlib.Path(tmpdir) / "callbacks" / "logs"
+            run_dirs = [path for path in log_root.iterdir() if path.is_dir()]
+            self.assertEqual(len(run_dirs), 1)
+            self.assertTrue(run_dirs[0].name.endswith("-smoke"))
 
 
 if __name__ == "__main__":

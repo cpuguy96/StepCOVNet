@@ -29,7 +29,7 @@ audits — not duplicated into [AGENTS.md](../../AGENTS.md) as prose.
 | `python-style.mdc`      | `**/*.py`                  | Python code style — imports, third-party submodules, and docstrings                        |
 | `python-tests.mdc`      | `{src,scripts,tests}/**/*` | Tests and coverage when changing src/, scripts/, or tests/                                 |
 | `research-logging.mdc`  | `docs/research/**`         | Log EXP/NOTE; add paper citations to PAPER_LEDGER.md + paper.bib                           |
-| `scripts-execution.mdc` | `scripts/**`               | Visible console, TensorBoard with train jobs, scale-up naming, logs/\_tmp captures, no repo-root tmp |
+| `scripts-execution.mdc` | `scripts/**`               | Visible console, TensorBoard stage log trees (AR + DDC placement), logs/\_tmp captures, no repo-root tmp |
 
 ## Skills
 
