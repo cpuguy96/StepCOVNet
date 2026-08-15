@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Evaluate DDC placement F-score_c / F-score_m (`M-ddc-20ms`)."""
+"""Evaluate DDC placement F-score_c / F-score_m plus parallel ``timing_match``."""
 
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ from stepcovnet.ddc import config, datasets, evaluation, models
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Evaluate DDC C-LSTM placement with Hamming ±20 ms F1.",
+        description=(
+            "Evaluate DDC C-LSTM placement: Hamming ±20 ms F1 and timing_match."
+        ),
     )
     parser.add_argument("--config", required=True)
     parser.add_argument("--model_path", default="")

@@ -63,6 +63,11 @@ class DdcEvalTest(unittest.TestCase):
         self.assertIn("hard", report.per_difficulty_threshold)
         payload = report.as_dict()
         self.assertIn("skill_f_score_m", payload)
+        self.assertGreater(report.timing_match, 0.9)
+        self.assertIn("timing_match", payload)
+        self.assertIn("null_timing_match", payload)
+        self.assertIn("skill_timing_match", payload)
+        self.assertEqual(payload["timing_match_tolerance_sec"], 0.02)
 
     def test_evaluate_empty_charts_raises(self):
         with self.assertRaises(ValueError):
@@ -98,6 +103,24 @@ class DdcEvalTest(unittest.TestCase):
             seed=0,
         )
         self.assertEqual(untuned.per_difficulty_threshold["hard"], 0.5)
+
+    def test_extra_peak_lowers_timing_match_not_greedy_f1(self):
+        chart = _chart_with_onsets()
+        salience = chart.target.copy()
+        salience[30] = 1.0
+        model = _QueueModel([salience])
+        report = evaluation.evaluate_placement(
+            model,
+            [chart],
+            thresholds={"hard": 0.5},
+            tune_on=False,
+            seed=0,
+        )
+        self.assertEqual(report.counts.true_positives, 2)
+        self.assertEqual(report.counts.false_positives, 1)
+        self.assertGreater(report.f_score_m, 0.7)
+        self.assertAlmostEqual(report.timing_match, 2.0 / 3.0)
+        self.assertLess(report.timing_match, report.f_score_m)
 
 
 if __name__ == "__main__":

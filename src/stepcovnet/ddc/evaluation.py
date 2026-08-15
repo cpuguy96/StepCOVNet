@@ -1,4 +1,4 @@
-"""Val F-score_c / F-score_m for DDC placement (`M-ddc-20ms`)."""
+"""Val F-score_c / F-score_m (`M-ddc-20ms`) plus parallel ``timing_match``."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from stepcovnet import onset_null_baseline
+from stepcovnet import timing_match as timing_match_lib
 from stepcovnet.ddc import constants, datasets, features, peak_pick
 
 DEFAULT_THRESHOLDS = tuple(round(0.05 * step, 2) for step in range(1, 20))
@@ -24,6 +25,7 @@ class ChartEvalResult:
         counts: TP/FP/FN at that threshold.
         n_pred: Number of predicted peaks.
         n_gt: Number of ground-truth onsets.
+        pred_times: Hamming peak-pick times in seconds.
     """
 
     song_key: str
@@ -32,6 +34,7 @@ class ChartEvalResult:
     counts: peak_pick.OnsetMatchCounts
     n_pred: int
     n_gt: int
+    pred_times: np.ndarray
 
 
 @dataclasses.dataclass(frozen=True)
@@ -39,9 +42,14 @@ class PlacementEvalReport:
     """Pooled DDC placement metrics.
 
     Attributes:
-        f_score_c: Chart-averaged F1.
-        f_score_m: Micro-averaged F1.
+        f_score_c: Chart-averaged F1 (``M-ddc-20ms``).
+        f_score_m: Micro-averaged F1 (``M-ddc-20ms``).
         null_f_score_m: Density-matched ioi-shuffle F-score_m.
+        timing_match: Micro ordered match @ 20 ms (not mixed into F-scores).
+        null_timing_match: Ioi-shuffle ``timing_match`` at the same peak counts.
+        timing_match_n_matched: Pooled ordered matches.
+        timing_match_n_pred: Pooled predicted peak count.
+        timing_match_n_ref: Pooled ground-truth onset count.
         per_difficulty_threshold: Threshold chosen per difficulty.
         n_charts: Number of evaluated charts.
         counts: Pooled TP/FP/FN.
@@ -51,6 +59,11 @@ class PlacementEvalReport:
     f_score_c: float
     f_score_m: float
     null_f_score_m: float
+    timing_match: float
+    null_timing_match: float
+    timing_match_n_matched: int
+    timing_match_n_pred: int
+    timing_match_n_ref: int
     per_difficulty_threshold: dict[str, float]
     n_charts: int
     counts: peak_pick.OnsetMatchCounts
@@ -67,6 +80,17 @@ class PlacementEvalReport:
             "f_score_m": self.f_score_m,
             "null_f_score_m": self.null_f_score_m,
             "skill_f_score_m": self.f_score_m - self.null_f_score_m,
+            "timing_match": self.timing_match,
+            "null_timing_match": self.null_timing_match,
+            "skill_timing_match": self.timing_match - self.null_timing_match,
+            "timing_match_n_matched": self.timing_match_n_matched,
+            "timing_match_n_pred": self.timing_match_n_pred,
+            "timing_match_n_ref": self.timing_match_n_ref,
+            "timing_match_n_denom": timing_match_lib.timing_match_denom(
+                self.timing_match_n_pred,
+                self.timing_match_n_ref,
+            ),
+            "timing_match_tolerance_sec": timing_match_lib.DEFAULT_TOLERANCE_SEC,
             "per_difficulty_threshold": dict(self.per_difficulty_threshold),
             "n_charts": self.n_charts,
             "true_positives": self.counts.true_positives,
@@ -134,6 +158,7 @@ def _score_chart(
         counts=counts,
         n_pred=int(pred_times.size),
         n_gt=int(chart.gt_times.size),
+        pred_times=pred_times,
     )
 
 
@@ -173,13 +198,30 @@ def choose_thresholds(
     return chosen
 
 
-def _null_f_score_m(
+def _chart_duration_sec(chart: datasets.PlacementChart) -> float:
+    """Return a duration that covers both spectrogram length and last onset.
+
+    Args:
+        chart: Loaded chart.
+
+    Returns:
+        Duration in seconds.
+    """
+    duration = float(chart.n_frames * constants.HOP_SEC)
+    if chart.gt_times.size:
+        duration = max(duration, float(chart.gt_times[-1]) + constants.HOP_SEC)
+    return duration
+
+
+def _null_metrics(
     charts: list[datasets.PlacementChart],
     n_preds: list[int],
     *,
     seed: int = 42,
-) -> float:
-    """Density-matched ioi-shuffle F-score_m (audio-blind floor).
+) -> tuple[float, float]:
+    """Density-matched ioi-shuffle floors for F-score_m and ``timing_match``.
+
+    Both scores use the same shuffled times so the floors stay comparable.
 
     Args:
         charts: Evaluated charts.
@@ -187,21 +229,18 @@ def _null_f_score_m(
         seed: Null RNG seed.
 
     Returns:
-        Micro F1 of the ioi-shuffle baseline.
+        ``(null_f_score_m, null_timing_match)``.
     """
     rng = np.random.default_rng(seed)
     pooled = peak_pick.OnsetMatchCounts(0, 0, 0)
+    total_matched = 0
+    total_pred = 0
+    total_ref = 0
     for chart, n_pred in zip(charts, n_preds, strict=True):
-        duration = float(chart.n_frames * constants.HOP_SEC)
-        if chart.gt_times.size:
-            duration = max(
-                duration,
-                float(chart.gt_times[-1]) + constants.HOP_SEC,
-            )
         null_times = onset_null_baseline.build_null_onsets(
             "ioi_shuffle",
             chart.gt_times,
-            duration_sec=duration,
+            duration_sec=_chart_duration_sec(chart),
             n_pred=int(n_pred),
             rng=rng,
             hop_sec=constants.HOP_SEC,
@@ -210,7 +249,19 @@ def _null_f_score_m(
             pooled,
             peak_pick.match_onsets(null_times, chart.gt_times),
         )
-    return pooled.f_score
+        n_matched, n_ref = timing_match_lib.timing_match_counts_numpy(
+            null_times,
+            chart.gt_times,
+            tolerance_sec=timing_match_lib.DEFAULT_TOLERANCE_SEC,
+        )
+        total_matched += n_matched
+        total_pred += int(null_times.size)
+        total_ref += n_ref
+    return pooled.f_score, timing_match_lib.micro_timing_match_rate(
+        total_matched,
+        total_ref,
+        total_pred,
+    )
 
 
 def evaluate_placement(
@@ -221,10 +272,11 @@ def evaluate_placement(
     tune_on: bool = True,
     seed: int = 42,
 ) -> PlacementEvalReport:
-    """Compute F-score_c, F-score_m, and an audio-blind floor.
+    """Compute ``M-ddc-20ms`` F-scores plus parallel ``timing_match``.
 
     When ``tune_on`` is True, per-difficulty thresholds are chosen on the same
     charts (DDC tuned on val and reported test; this split has no test set).
+    ``timing_match`` uses the same peak times; it is not mixed into F-score_c/m.
 
     Args:
         model: Keras placement model.
@@ -251,6 +303,9 @@ def evaluate_placement(
     pooled = peak_pick.OnsetMatchCounts(0, 0, 0)
     chart_f: list[float] = []
     n_preds: list[int] = []
+    total_matched = 0
+    total_pred = 0
+    total_ref = 0
     for salience, chart in zip(saliences, charts, strict=True):
         threshold = thresholds.get(chart.difficulty, 0.5)
         row = _score_chart(salience, chart, threshold)
@@ -258,10 +313,28 @@ def evaluate_placement(
         pooled = peak_pick.add_counts(pooled, row.counts)
         chart_f.append(row.counts.f_score)
         n_preds.append(row.n_pred)
+        n_matched, n_ref = timing_match_lib.timing_match_counts_numpy(
+            row.pred_times,
+            chart.gt_times,
+            tolerance_sec=timing_match_lib.DEFAULT_TOLERANCE_SEC,
+        )
+        total_matched += n_matched
+        total_pred += row.n_pred
+        total_ref += n_ref
+    null_f_score_m, null_timing = _null_metrics(charts, n_preds, seed=seed)
     return PlacementEvalReport(
         f_score_c=peak_pick.f_score_c(chart_f),
         f_score_m=peak_pick.f_score_m(pooled),
-        null_f_score_m=_null_f_score_m(charts, n_preds, seed=seed),
+        null_f_score_m=null_f_score_m,
+        timing_match=timing_match_lib.micro_timing_match_rate(
+            total_matched,
+            total_ref,
+            total_pred,
+        ),
+        null_timing_match=null_timing,
+        timing_match_n_matched=total_matched,
+        timing_match_n_pred=total_pred,
+        timing_match_n_ref=total_ref,
         per_difficulty_threshold=dict(thresholds),
         n_charts=len(charts),
         counts=pooled,
