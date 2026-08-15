@@ -12,21 +12,21 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-15
 **Primary track:** Literature recreation — Dataset A original Fraxtil (`donahue2017ddc`)
-**Status:** DDC C-LSTM placement **Partial** ([EXP-20260815-02](#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null)): val F-score_c **0.594** / F-score_m **0.667** vs paper **0.681** / **0.756**; ioi-shuffle null **0.270**, skill **+0.397**. Dataset A ingest: [EXP-20260815-01](#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs).
+**Status:** DDC C-LSTM placement T-repro **accepted** (~**96%** / **97%** of paper): val F-score_c **0.652** / F-score_m **0.734** vs **0.681** / **0.756** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)); best-val **tied** ([EXP-20260815-04](#exp-20260815-04-best-val-ddc-weights-do-not-close-the-paper-gap)).
 
-**Next action:** Longer placement train toward paper budget (128 ep / batch 256; this run was 8 ep / batch 32 and val_loss still moved through ep 7) before treating T-repro as matched. Then DDC step selection (LSTM, no audio) on the same `training_index_standard.json` split.
+**Next action:** Stay on **onset / placement**. Do not chase the residual ~**0.03** F1. Selection stays deferred.
 **Blockers:** None — GPU free.
-**Defer:** AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B (expanded Fraxtil) until DDC/DDCL exist on A.
+**Defer:** **DDC/DDCL step selection** until asked; chasing placement PRE/eval fidelity unless asked; AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B.
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
-| **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. Placement 8-ep val **0.594 / 0.667** ([EXP-20260815-02](#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null)). Cite `donahue2017ddc`. |
+| **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. Placement 128-ep val **0.652 / 0.734** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). Cite `donahue2017ddc`. |
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Close placement T-repro with a longer C-LSTM train, then DDC selection on `data/literature_fraxtil_orig` (not a `final_data` dense train).
+**Recommended next step:** Onset/placement only. T-repro accepted at **0.652** / **0.734**. Not step selection; not another placement retrain unless asked.
 
 ### Onset detection (research track)
 
@@ -67,6 +67,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260815-04 | `train` + `metric` | Do best-`val_loss` weights close the ~0.03 F1 gap to paper? | **Not supported** | Best **0.650** / **0.735** ≈ last **0.652** / **0.734**; gap remains |
+| EXP-20260815-03 | `train` + `metric` | Does 128-ep C-LSTM placement close the ~0.09 F1 gap to paper? | **Partial** | Val **0.652** / **0.734** vs paper **0.681** / **0.756** (~**96%** / **97%**); vs 8-ep **+0.058** / **+0.067** |
 | EXP-20260815-02 | `train` + `metric` | Does an 8-ep DDC C-LSTM on original Fraxtil match paper F-score_c / F-score_m? | **Partial** | Val **0.594** / **0.667** vs paper **0.681** / **0.756**; skill **+0.397** vs ioi-shuffle |
 | EXP-20260815-01 | `pre` | Can we ingest original Fraxtil (DDC Dataset A) with measured song/chart counts? | **Supported** | **90** songs / **463** rows (450 standard + 13 edit); 81/9 train/val seed 42 |
 | EXP-20260807-20 | `train` + `metric` | Does soft-α anneal (0.5→0) teach content-gap localization that survives α=0? | **Not supported** | α=0 timing **0.0016**; F1 skill **−0.44** — same collapse |
@@ -184,6 +186,34 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260815-04: Best-val DDC weights do not close the paper gap
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 04:08:18 |
+| **Track** | `train` + `metric` (literature DDC placement) |
+| **Question** | Does scoring `val_loss`-best weights (ep **112**) beat last-epoch F-score_c / F-score_m and close the ~0.03 gap to paper **0.681** / **0.756**? |
+| **Setup** | Same recipe as [EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap) ([`placement_fraxtil_128ep.json`](../../configs/ddc/placement_fraxtil_128ep.json), seed **42**, 128 ep). New dir `models_wsl/ddc/placement_fraxtil_128ep_ckpt/` so EXP-03 last keras is kept. `ModelCheckpoint(monitor=val_loss)`. Train `logs/ddc_placement_fraxtil_128ep_ckpt.log`. ~**47** min WSL GPU |
+| **Train** | Best ckpt ep **112** val_loss **0.0524**; last ep **128** val_loss **0.0588** (same as EXP-03) |
+| **Val last** | F-score_c **0.652**; F-score_m **0.734**; null **0.294**; skill **+0.440**. `eval_val_ddc.json` — matches EXP-03 |
+| **Val best (ep 112)** | F-score_c **0.650**; F-score_m **0.735**; null **0.303**; skill **+0.432**. `eval_val_ddc_best.json` |
+| **vs last / paper** | Best vs last: C **−0.002**, M **+0.001**. vs paper still **−0.031** / **−0.021** |
+| **Conclusion** | **Not supported.** Last-vs-best is not the leftover hole. Do not retrain for checkpointing. Residual ~0.03 is PRE/eval (batch 32 vs 256, Librosa, chunked LSTM, split). Stay on onset/placement; no step selection |
+
+### EXP-20260815-03: DDC 128-ep placement closes most of the paper gap
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 02:40:12 |
+| **Track** | `train` + `metric` (literature DDC placement) |
+| **Question** | Does training the same C-LSTM to the paper epoch budget (128) recover F-score_c **0.681** / F-score_m **0.756**? |
+| **Setup** | [`configs/ddc/placement_fraxtil_128ep.json`](../../configs/ddc/placement_fraxtil_128ep.json): same recipe as [EXP-20260815-02](#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null) (batch **32**, nunroll **100**, 2×200 LSTM, SGD 0.1 / clipnorm 5, seed **42**), **128** ep × 200 steps. Ckpt `models_wsl/ddc/placement_fraxtil_128ep/ddc_placement_fraxtil_128ep.keras` (last epoch). Train `logs/ddc_placement_fraxtil_128ep.log`. ~**42** min WSL GPU |
+| **Train** | ep1 **0.163** / val **0.148** (matches 8-ep); ep8 **0.090** / **0.091**; ep48 **0.072** / **0.058**; ep112 best val **0.066** / **0.052**; ep128 saved **0.066** / **0.059** |
+| **Val `M-ddc-20ms` (9 songs / 45 charts)** | F-score_c **0.652**; F-score_m **0.734**; ioi-shuffle null **0.292**; skill **+0.442**. TP **14573** / FP **7243** / FN **3295**. Thr beginner/medium **0.15**, easy/hard/challenge **0.20**. `models_wsl/ddc/placement_fraxtil_128ep/eval_val_ddc.json` |
+| **vs 8-ep** | F-score_c **+0.058** (**0.594→0.652**); F-score_m **+0.067** (**0.667→0.734**). FP dropped **11469→7243** |
+| **vs paper** | Gap **−0.029** / **−0.022** (~**96%** / **97%** of **0.681** / **0.756**). Still val-tuned on val; last weights, not best-val ep **112** |
+| **Conclusion** | **Partial.** Epoch budget was the main 8-ep shortfall. Residual ~0.03 is in the documented-deviation band (batch 32 vs 256, Librosa, chunked eval LSTM, split, last vs best ckpt). **Routing (same day):** stay on onset/placement — do not start step selection until asked |
 
 ### EXP-20260815-02: DDC C-LSTM placement 8-ep on Dataset A — below paper, above null
 

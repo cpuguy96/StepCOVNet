@@ -121,7 +121,7 @@ Canonical in-repo definitions: [ONSET_METRICS.md](ONSET_METRICS.md). Paper table
 | ID | Content | Source | Status |
 | -- | ------- | ------ | ------ |
 | T-related | Placement F1 and selection acc for DDC / DDCL / ITGPT as **published** | ITGPT Table 2 and 5; DDC Tables 2–3 | draft numbers in NOTE-20260814-01 |
-| T-repro | Same metrics from **our** reimplementations | [EXP-20260815-02](EXPERIMENT_LOG.md#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null) | 8-ep val F-score_c **0.594** / F-score_m **0.667** vs paper **0.681** / **0.756** (`configs/ddc/placement_fraxtil.json`). Not a match yet |
+| T-repro | Same metrics from **our** reimplementations | [EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap) · [EXP-20260815-04](EXPERIMENT_LOG.md#exp-20260815-04-best-val-ddc-weights-do-not-close-the-paper-gap) | 128-ep last **0.652** / **0.734**; best-val **0.650** / **0.735** vs paper **0.681** / **0.756**. Last≈best. **Accepted** as close enough |
 | F-pipeline | PRE → placement → selection → POST → metrics | [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) | methods figure |
 
 Published numbers in T-related are citations, not our results. T-repro is the first results table that can support C6–C7.
@@ -132,6 +132,8 @@ Published numbers in T-related are citations, not our results. T-repro is the fi
 
 | Date | Change |
 | ---- | ------ |
+| 2026-08-15 | DDC best-val vs last: **0.650** / **0.735** ≈ last **0.652** / **0.734**. EXP-20260815-04. |
+| 2026-08-15 | DDC 128-ep placement val F-score_c **0.652** / F-score_m **0.734** vs paper **0.681** / **0.756**. EXP-20260815-03. |
 | 2026-08-15 | DDC 8-ep placement val F-score_c **0.594** / F-score_m **0.667** vs paper **0.681** / **0.756**. EXP-20260815-02. |
 | 2026-08-15 | DDC placement PRE/POST/C-LSTM in `stepcovnet.ddc`; standard-only 450-chart index. Cite `schluter2014onset`, `hamel2012multiscale`. |
 | 2026-08-15 | Dataset A ingested: 90 songs / 463 rows; Tsunamix III reconstructed after SM5 zip 404. EXP-20260815-01. |

@@ -101,7 +101,7 @@ Order is **enforced at eval** by sorting both sides. AR decode is chronological 
 | **AR**          | `timing_match` | `val_ordered_onset_match` (teacher) | `scripts/eval_ar_onset_offline.py`                  |
 | **AR free-run** | `timing_match` | `val_ar_decode_ordered_onset_match` | same + `--ar_decode` (gate default; `--full-diagnostics` for slow extras) |
 | **Dense**       | `timing_match` | `val_timing_match` (callback)       | `scripts/eval_dense_onset.py` → `micro_timing_match` |
-| **DDC placement** | F-score_c / F-score_m (`M-ddc-20ms`) | offline JSON | `scripts/eval_ddc_placement.py` — 8-ep Dataset A val **0.594** / **0.667** ([EXP-20260815-02](EXPERIMENT_LOG.md#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null)) |
+| **DDC placement** | F-score_c / F-score_m (`M-ddc-20ms`) | offline JSON | `scripts/eval_ddc_placement.py` — 128-ep Dataset A val **0.652** / **0.734** ([EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)) |
 | **Event**       | `timing_match` | _(diagnostics only today)_          | `scripts/debug_onset_overfit.py`                     |
 
 Backward-compatible JSON keys `ordered_onset_match` still appear in AR debug output alongside `timing_match`.

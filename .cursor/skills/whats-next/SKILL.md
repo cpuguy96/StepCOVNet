@@ -60,6 +60,15 @@ Hard prev-relative windows (`pointer_local_ce_radius` / force-advance / min_ahea
 
 If the user asks for another hard-mask probe anyway, run it under **Alternate** and label it diagnostic-only.
 
+### No DDC step selection unless asked
+
+Literature recreation is **onset / step placement** (`M-ddc-20ms`) until the user explicitly asks for choreography. Do **not** put DDC/DDCL **step selection** (LSTM arrow patterns, 256-class next-step, hold acc) in **Now** or **If you say "do it"**.
+
+| Allowed | Not until asked |
+| ------- | --------------- |
+| Placement F-score_c / F-score_m, peak-pick, null floor, PRE/POST fidelity | Selection top-1 / hold acc, audio-in-selection, 48-slot DDCL as the next gate *because* placement is “close enough” |
+| Selection may appear only under **Alternate** | Treating “placement then selection” as automatic routing after a Partial T-repro |
+
 ## Answer template
 
 ```markdown

@@ -42,6 +42,28 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260815-02: Onset/placement only — no DDC step selection unless asked
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 02:43:38 |
+| **Category** | convention |
+| **Summary** | User correction: do not route to DDC step selection; current work is onsets (placement) only. |
+| **Artifact** | skill: `.cursor/skills/whats-next/SKILL.md` (§ No DDC step selection unless asked); Current phase Next action / Defer |
+| **Action taken** | what's-next forbids selection in Now/do-it unless explicitly requested; Current phase next is best-val placement checkpoint, not arrow-pattern LSTM. No new alwaysApply rule |
+| **Related** | EXP-20260815-03 |
+
+### JRN-20260815-01: DDC TensorBoard uses one stage logs tree with per-run folders
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 02:30:19 |
+| **Category** | convention |
+| **Summary** | User could not compare 8-ep vs 128-ep DDC runs in TensorBoard because each experiment wrote to a separate `callback_root_dir` (`placement/` vs `placement_128ep/`) and Keras logged to the stage `logs/` root (`logs/train`) instead of a timestamped run folder. |
+| **Artifact** | code: `src/stepcovnet/ddc/trainers.py`; scoped rule: `.cursor/rules/scripts-execution.mdc`; config: `configs/ddc/placement_fraxtil_128ep.json` (`callback_root_dir` shared) |
+| **Action taken** | DDC TensorBoard now writes `callbacks/ddc/placement/logs/{timestamp}-{model_name}/` like dense/AR; 128-ep config shares the placement stage tree; live TB restarted with `--logdir_spec=8ep:…,128ep:…`. No new alwaysApply rule |
+| **Related** | EXP-20260815-02 · scripts-execution TensorBoard stage table |
+
 ### JRN-20260814-01: Cite prior art; paper ledger is the citation home
 
 | Field | Value |
