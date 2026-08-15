@@ -4,6 +4,23 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-15 — Dataset A ingest
+
+### NOTE-20260815-01: Tsunamix III SM5 zip 404; pack reconstructed unpacked
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 00:28:51 |
+| **Topic** | Dataset A ingest caveat |
+
+**Context.** Official DDC README zip for Tsunamix III `[SM5]` returns nginx 404. Arrow Arrangements and Beast Beats SM5 zips still download.
+
+**Discovery.** Song files remain on fra.xtil.net under `/simfiles/data/tsunamix/III/pack/<folder>/` (`Folder.sm` + `Folder.ogg`; `ufd` audio is `UFD.ogg`). 50/50 songs reconstructed. Prep then exported **90** songs / **463** charts (13 are `edit`).
+
+**Implication.** Dataset A is usable. Cite `donahue2017ddc` and record that Tsunamix came from unpacked SM5 files, not the missing zip. Extra edit charts vs the paper’s 450 should be filtered or reported separately when matching DDC tables.
+
+**Related.** [EXP-20260815-01](EXPERIMENT_LOG.md#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs) · [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md)
+
 ## Session 2026-08-14 — Recreate DDC / DDCL / ITGPT, then improve
 
 ### NOTE-20260814-02: Cite prior art; track paper ledger not chat

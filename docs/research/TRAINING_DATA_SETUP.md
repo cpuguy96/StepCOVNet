@@ -2,9 +2,65 @@
 
 **Purpose:** Recreate the multi-song **`data/final_data`** corpus used for dense / AR training (`training_index.json`, **1942** chart rows after prep).
 
-**Related:** [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) (prep design) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase
+**Related:** [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) (prep design) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase · [PAPER_LEDGER.md](PAPER_LEDGER.md) (`donahue2017ddc`, D-frax-orig)
 
-All three raw bundles are hosted on **[StepMania Online](https://stepmaniaonline.net/)**. Each pack page lists song metadata and has **Download Pack** / **Mirror** buttons; the direct URLs below match those buttons.
+Two separate corpora — **do not mix** them under one `raw_data` root.
+
+| Corpus | Raw root | Prepared root | Paper use |
+| ------ | -------- | ------------- | --------- |
+| **Dataset A — original Fraxtil** | `data/raw_literature/` | `data/literature_fraxtil_orig/` | Recreate DDC / DDCL (`donahue2017ddc`) |
+| **Transfer — `final_data`** | `data/raw_data/` | `data/final_data/` | ITL / Mizuki / Vocaloid; not the literature scoreboard |
+
+---
+
+## Literature Dataset A — original Fraxtil (`donahue2017ddc`)
+
+Three **StepMania 5** packs from [fra.xtil.net](https://fra.xtil.net/simfiles/) (no +9 ms ITG offset). These are the packs listed in the [DDC dataset README](https://github.com/chrisdonahue/ddc). Published size: **90 songs / 450 charts**. Use SM5, not the ITG-offset mirrors on StepMania Online.
+
+| Pack | Songs (author site) | How we obtained SM5 |
+| ---- | ------------------- | -------------------- |
+| Tsunamix III | 50 | Official `[SM5].zip` is **404** on fra.xtil.net (2026-08-15). Reconstructed from unpacked `.sm` + `.ogg` under `/simfiles/data/tsunamix/III/pack/<song>/` (50/50 songs). |
+| Fraxtil's Arrow Arrangements | 20 | https://fra.xtil.net/simfiles/data/arrowarrangements/Fraxtil's%20Arrow%20Arrangements%20[SM5].zip |
+| Fraxtil's Beast Beats | 20 | https://fra.xtil.net/simfiles/data/beastbeats/Fraxtil's%20Beast%20Beats%20[SM5].zip |
+
+Extract so top-level folder names under `data/raw_literature/` match the pack names:
+
+```text
+data/raw_literature/
+  Tsunamix III/
+  Fraxtil's Arrow Arrangements/
+  Fraxtil's Beast Beats/
+```
+
+Prep (Windows CPU, from repo root):
+
+```powershell
+venv\Scripts\python.exe -m pip install -e ".[dataset-prep]"
+
+venv\Scripts\python.exe scripts/preprocess_dataset.py `
+  --input-dir data/raw_literature `
+  --output-dir data/literature_fraxtil_orig `
+  --dry-run
+
+venv\Scripts\python.exe scripts/preprocess_dataset.py `
+  --input-dir data/raw_literature `
+  --output-dir data/literature_fraxtil_orig `
+  --workers 8
+
+venv\Scripts\python.exe scripts/build_training_index.py `
+  --output-dir data/literature_fraxtil_orig `
+  --val-fraction 0.1 `
+  --seed 42 `
+  --overwrite
+```
+
+`build_training_index.py` writes a **90/10 song-grouped** train/val split (`stratified_song_v1`, seed 42). That is a documented in-repo split, not DDC’s unpublished 80/10/10 song IDs.
+
+**Measured 2026-08-15** ([EXP-20260815-01](EXPERIMENT_LOG.md#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs)): **90** songs, **463** chart rows (**450** standard + **13** edit); train/val **81 / 9** songs, **417 / 46** rows. Record stays in [PAPER_LEDGER.md](PAPER_LEDGER.md) D-frax-orig.
+
+---
+
+All three **transfer** bundles below are hosted on **[StepMania Online](https://stepmaniaonline.net/)**. Each pack page lists song metadata and has **Download Pack** / **Mirror** buttons; the direct URLs match those buttons.
 
 ---
 
@@ -134,6 +190,9 @@ Extract to `data/v2/` (`train/`, `val/`, `test/` with `tide.ogg` / `tide.txt` un
 
 | Step | Artifact |
 | ---- | -------- |
+| Download Dataset A (Fraxtil SM5) | `data/raw_literature/{Tsunamix III,Fraxtil's Arrow Arrangements,Fraxtil's Beast Beats}/` |
+| `preprocess_dataset.py` (literature) | `data/literature_fraxtil_orig/` — 90 songs / 463 charts |
+| `build_training_index.py` (literature) | `data/literature_fraxtil_orig/training_index.json` (81/9 songs) |
 | Download 3 SMO packs | `data/raw_data/{ITL Online 2026,Mizuki's Simfiles,Vocaloid Project Pad Pack 4th}/` |
 | `preprocess_dataset.py` | `data/final_data/{bundle}/{id}/` + reports |
 | `build_training_index.py` | `data/final_data/training_index.json` |

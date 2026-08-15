@@ -78,7 +78,7 @@ Do not put C6–C7 in the abstract until an `EXP-` supports them.
 
 | ID | Name | Packs | Size (as published) | Split | Paper use |
 | -- | ---- | ----- | ------------------- | ----- | --------- |
-| D-frax-orig | Original Fraxtil | Tsunamix III; Fraxtil’s Arrow Arrangements; Fraxtil’s Beast Beats | 90 songs, 450 charts (`donahue2017ddc`) | 80/10/10 song-grouped | Recreate DDC and DDCL |
+| D-frax-orig | Original Fraxtil | Tsunamix III; Fraxtil’s Arrow Arrangements; Fraxtil’s Beast Beats | **Measured 2026-08-15:** 90 songs, **463** chart rows (**450** standard + **13** edit). Paper table: 90 / 450 (`donahue2017ddc`) | `stratified_song_v1` seed 42, val_fraction 0.1 → **81 / 9** songs, **417 / 46** rows (`data/literature_fraxtil_orig/training_index.json`). Not DDC’s unpublished 80/10/10 IDs | Recreate DDC and DDCL. [EXP-20260815-01](EXPERIMENT_LOG.md#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs) |
 | D-itg | In The Groove | ITG 1; ITG 2 | 133 songs, 652 charts | same rule | Multi-author DDC check |
 | D-frax-exp | Expanded Fraxtil | D-frax-orig plus Cute Charts; Sweet Arrows and Hella Steps vols 1–4 | 253 songs, 952 charts (`omalley2026itgpt`) | same rule | Recreate ITGPT; freeze test songs for later ablations |
 | D-final | StepCOVNet `final_data` | ITL Online 2026; Mizuki’s Simfiles; Vocaloid Project Pad Pack 4th | ~1010/110 songs train/val; ~1942 charts | `stratified_song_v1` seed 42 | Transfer / generalization only, until C5 is satisfied |
@@ -132,4 +132,4 @@ Published numbers in T-related are citations, not our results. T-repro is the fi
 
 | Date | Change |
 | ---- | ------ |
-| 2026-08-14 | Created from NOTE-20260814-01 / NOTE-20260814-02. Seeded DDC, DDCL, ITGPT, and likely citations. |
+| 2026-08-15 | Dataset A ingested: 90 songs / 463 rows; Tsunamix III reconstructed after SM5 zip 404. EXP-20260815-01. |

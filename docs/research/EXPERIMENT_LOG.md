@@ -10,22 +10,23 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-08
-**Primary track:** AR scaling ladder (Track B) — [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)
-**Status:** Soft-α / hard-R locality path **closed** ([NOTE-20260808-01](DISCUSSION_NOTES.md#note-20260808-01-soft-α--hard-r-locality-path--closed)): content gap stands (tide **PASS**); matched soft-α **0.0968** but α=0 / anneal collapse to **~0.002**. Wrap-up EXP-16…20.
+**Updated:** 2026-08-15
+**Primary track:** Literature recreation — Dataset A original Fraxtil (`donahue2017ddc`)
+**Status:** Dataset A **ingested** ([EXP-20260815-01](#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs)): **90** songs, **463** chart rows (**450** standard + **13** edit); `stratified_song_v1` seed **42**, **81 / 9** songs train/val, **417 / 46** rows. Tsunamix III SM5 zip is 404; reconstructed from unpacked files on fra.xtil.net.
 
-**Next action:** Non-prior localization hypothesis with a concrete binding mechanism — not another α/R schedule. Hold Phase 5 design-default flip.
+**Next action:** Recreate DDC step placement on this split with ±20 ms peak-pick F1 (`M-ddc-20ms`).
 **Blockers:** None — GPU free.
-**Defer:** hard-R / force-advance / soft-α / anneal as product path; ladder scale-up unless asked; attn-mass; STE spam.
+**Defer:** AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B (expanded Fraxtil) until DDC/DDCL exist on A.
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
-| P0–P9 | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
+| **Dataset A (Fraxtil)** | **Done** — `data/literature_fraxtil_orig/training_index.json`: **90** songs, **463** rows (Arrow Arrangements 20/104, Beast Beats 20/104, Tsunamix III 50/255). Cite `donahue2017ddc`. |
+| P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step (Track A — scoreboard):** First full multi-song **dense** training on `final_data` via `--training_index_path=data/final_data/training_index.json` (WSL GPU). Extract MERT features for `final_data` if not using mel baseline; then `eval_dense_onset.py` + threshold sweep on val.
+**Recommended next step:** DDC placement recreation on `data/literature_fraxtil_orig` (not a `final_data` dense train).
 
 ### Onset detection (research track)
 
@@ -66,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260815-01 | `pre` | Can we ingest original Fraxtil (DDC Dataset A) with measured song/chart counts? | **Supported** | **90** songs / **463** rows (450 standard + 13 edit); 81/9 train/val seed 42 |
 | EXP-20260807-20 | `train` + `metric` | Does soft-α anneal (0.5→0) teach content-gap localization that survives α=0? | **Not supported** | α=0 timing **0.0016**; F1 skill **−0.44** — same collapse |
 | EXP-20260807-19 | `metric` | Do content-gap soft-α weights keep skill with α=0 at decode? | **Supported** (collapse) | α=0 timing **0.0019** vs matched **0.0968**; F1 skill **−0.44** |
 | EXP-20260807-18 | `train` + `metric` | Does soft Δ prior (α=0.5) on content-gap fix wrong-far overshoot on R2? | **Partial** | Offline timing **0.0968** (~**13×** vs **0.0075**); F1 skill **−0.056**; α=0 collapses |
@@ -181,6 +183,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260815-01: Original Fraxtil Dataset A ingested (90 songs)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 00:28:51 |
+| **Track** | `pre` (literature Dataset A) |
+| **Question** | Can the three DDC Fraxtil SM5 packs (`donahue2017ddc`) be prepared in-repo with a documented song-grouped split? |
+| **Setup** | Raw `data/raw_literature/`; prep `data/literature_fraxtil_orig/`. Arrow Arrangements + Beast Beats from official SM5 zips. Tsunamix III zip **404** on fra.xtil.net; reconstructed from unpacked `.sm`+`.ogg` per song (50/50). `logs/literature_fraxtil_dryrun.log`, `logs/literature_fraxtil_prep.log`, `logs/literature_fraxtil_index.log` |
+| **Prep** | 90 packs exported, 0 errors, 0 skipped. Charts: **463** = **450** standard (90×5) + **13** `edit` |
+| **Per pack** | Arrow Arrangements 20 songs / 104 charts (4 edit); Beast Beats 20 / 104 (4 edit); Tsunamix III 50 / 255 (5 edit) |
+| **Split** | `stratified_song_v1` seed **42**, val_fraction **0.1**: **81 / 9** songs, **417 / 46** rows; 0 song overlap. Not DDC’s unpublished 80/10/10 IDs |
+| **vs DDC table** | Paper: 90 songs / 450 charts. Extra 13 are S-Edit rows our exporter keeps |
+| **Conclusion** | **Supported.** Dataset A is on disk. Next is DDC placement recreation with `M-ddc-20ms`, not `final_data` training |
 
 ### EXP-20260807-20: Content-gap soft-α anneal still collapses at α=0
 
