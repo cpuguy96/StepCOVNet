@@ -171,6 +171,7 @@ configs/**
 !configs/**/
 !configs/README.md
 !configs/ar/**
+!configs/ddc/**
 !configs/dense/**
 !configs/event/**
 !configs/arrow/**
@@ -192,6 +193,7 @@ scripts/*
 !scripts/hyperparameter_search_arrow.py
 !scripts/investigate_bad_val_cases.py
 !scripts/build_training_index.py
+!scripts/build_training_index_standard.py
 !scripts/build_training_index_subset.py
 !scripts/calibrate_density_presets.py
 !scripts/preprocess_dataset.py
@@ -202,6 +204,8 @@ scripts/*
 !scripts/train_onset_event.py
 !scripts/train_onset_ar.py
 !scripts/eval_ar_onset_offline.py
+!scripts/eval_ddc_placement.py
+!scripts/train_ddc_placement.py
 !scripts/audio_ablation_ar_onset.py
 !scripts/graduate_ar_tide_overfit.py
 !scripts/ar_tide_iter/

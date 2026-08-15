@@ -77,6 +77,8 @@ Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
 | Script                                           | Track              |
 | ------------------------------------------------ | ------------------ |
 | `scripts/train_onset.py`                         | Dense onset — use `--training_index_path` for `final_data` |
+| `scripts/train_ddc_placement.py`                 | DDC C-LSTM placement on Dataset A |
+| `scripts/eval_ddc_placement.py`                  | Hamming ±20 ms F-score_c / F-score_m |
 | `scripts/train_arrow.py`                         | Arrow model        |
 | `scripts/extract_mert_features.py --device=cuda` | MERT feature cache |
 

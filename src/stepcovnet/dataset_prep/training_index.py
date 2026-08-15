@@ -19,7 +19,9 @@ SPLIT_TRAIN: SplitName = "train"
 SPLIT_VAL: SplitName = "val"
 SPLIT_POLICY_STRATIFIED_SONG_V1 = "stratified_song_v1"
 SUBSET_POLICY_LADDER_V1 = "ladder_v1"
+STANDARD_POLICY_TAG = "standard_v1"
 TRAINING_INDEX_FILENAME = "training_index.json"
+STANDARD_INDEX_FILENAME = "training_index_standard.json"
 
 
 @dataclasses.dataclass
@@ -717,8 +719,93 @@ def build_training_index_subset(
     return subset
 
 
+def standard_index_path(output_dir: str | os.PathLike[str]) -> pathlib.Path:
+    """Return ``{output_dir}/training_index_standard.json``.
+
+    Args:
+        output_dir: Preprocess output root that holds the full manifest.
+
+    Returns:
+        Path to the standard-difficulty (no ``edit``) training manifest.
+    """
+    return pathlib.Path(output_dir) / STANDARD_INDEX_FILENAME
+
+
+def filter_training_index(
+    source_path: str | os.PathLike[str],
+    *,
+    keep_difficulties: frozenset[str] | set[str] | None = None,
+    policy_tag: str = STANDARD_POLICY_TAG,
+) -> TrainingIndex:
+    """Keep chart rows whose difficulty is in ``keep_difficulties``.
+
+    Song-level train/val assignments are unchanged. Default keeps the five
+    StepMania standard labels (drops ``edit`` and other custom charts) so Dataset
+    A matches the DDC 450-chart table (`donahue2017ddc`).
+
+    Args:
+        source_path: Path to an existing ``training_index.json``.
+        keep_difficulties: Lowercase labels to keep. Defaults to
+            ``dataset_prep.constants.STANDARD_DIFFICULTIES``.
+        policy_tag: Suffix appended to ``split_policy`` for traceability.
+
+    Returns:
+        New manifest sharing ``output_dir`` with the source index.
+
+    Raises:
+        ValueError: When ``policy_tag`` is empty, no rows remain, or validation
+            fails.
+    """
+    tag = str(policy_tag).strip()
+    if not tag:
+        raise ValueError("policy_tag must be a non-empty string")
+    allowed = {
+        item.lower()
+        for item in (
+            keep_difficulties
+            if keep_difficulties is not None
+            else constants.STANDARD_DIFFICULTIES
+        )
+    }
+    if not allowed:
+        raise ValueError("keep_difficulties must contain at least one label")
+    source = load_training_index(source_path)
+    kept = [entry for entry in source.entries if entry.difficulty.lower() in allowed]
+    if not kept:
+        raise ValueError(
+            f"no chart rows left after filtering difficulties {sorted(allowed)}"
+        )
+    kept.sort(key=_entry_sort_key)
+    filtered = TrainingIndex(
+        schema_version=source.schema_version,
+        output_dir=source.output_dir,
+        split_policy=f"{source.split_policy}+{tag}",
+        split_seed=source.split_seed,
+        val_fraction=source.val_fraction,
+        created_at=datetime.datetime.now(tz=datetime.UTC).strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+        ),
+        counts=_counts_from_entries(kept),
+        entries=kept,
+        source_sha256=file_sha256(source_path),
+    )
+    errors = validate_training_index(filtered)
+    if errors:
+        raise ValueError(
+            f"invalid filtered training index from {source_path}: " + "; ".join(errors),
+        )
+    return filtered
+
+
 def unique_audio_relpaths(entries: list[TrainingIndexEntry]) -> set[str]:
-    """Return the set of ``audio_relpath`` values referenced by manifest rows."""
+    """Return the set of ``audio_relpath`` values referenced by manifest rows.
+
+    Args:
+        entries: Manifest rows.
+
+    Returns:
+        Unique audio paths relative to the preprocess output root.
+    """
     return {entry.audio_relpath for entry in entries}
 
 

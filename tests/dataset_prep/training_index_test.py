@@ -313,5 +313,85 @@ class TrainingIndexSubsetLadderTest(unittest.TestCase):
         self.assertEqual(round_tripped.source_sha256, subset.source_sha256)
 
 
+class TrainingIndexStandardFilterTest(unittest.TestCase):
+    @staticmethod
+    def _entry(split: str, song: str, difficulty: str, chart_index: int = 0):
+        return training_index.TrainingIndexEntry(
+            split=split,
+            normalized_bundle="bundle",
+            normalized_id=song,
+            chart_index=chart_index,
+            output_relpath=f"bundle/{song}",
+            difficulty=difficulty,
+            meter=5,
+            num_steps=10,
+            audio_relpath=f"bundle/{song}/{song}.ogg",
+            chart_relpath=f"bundle/{song}/{song}.chart.json",
+        )
+
+    def _save_source(self, tmpdir: str) -> pathlib.Path:
+        entries = [
+            self._entry("train", "song_a", "beginner", 0),
+            self._entry("train", "song_a", "easy", 1),
+            self._entry("train", "song_a", "edit", 2),
+            self._entry("val", "song_b", "challenge", 0),
+            self._entry("val", "song_b", "edit", 1),
+        ]
+        index = training_index.TrainingIndex(
+            schema_version=constants.SCHEMA_VERSION,
+            output_dir=tmpdir,
+            split_policy=training_index.SPLIT_POLICY_STRATIFIED_SONG_V1,
+            split_seed=42,
+            val_fraction=0.5,
+            created_at="2026-01-01T00:00:00Z",
+            counts=training_index._counts_from_entries(entries),
+            entries=entries,
+        )
+        return training_index.save_training_index(
+            index,
+            pathlib.Path(tmpdir) / "training_index.json",
+        )
+
+    def test_filter_drops_edit_and_keeps_song_splits(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = self._save_source(tmpdir)
+            filtered = training_index.filter_training_index(source)
+            difficulties = {entry.difficulty for entry in filtered.entries}
+            self.assertEqual(difficulties, {"beginner", "easy", "challenge"})
+            self.assertEqual(filtered.counts.rows["train"], 2)
+            self.assertEqual(filtered.counts.rows["val"], 1)
+            self.assertEqual(filtered.counts.songs["train"], 1)
+            self.assertEqual(filtered.counts.songs["val"], 1)
+            self.assertIn(training_index.STANDARD_POLICY_TAG, filtered.split_policy)
+            self.assertEqual(
+                training_index.standard_index_path(tmpdir).name,
+                training_index.STANDARD_INDEX_FILENAME,
+            )
+
+    def test_filter_rejects_empty_keep_set(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = self._save_source(tmpdir)
+            with self.assertRaises(ValueError):
+                training_index.filter_training_index(
+                    source,
+                    keep_difficulties=set(),
+                )
+
+    def test_filter_rejects_empty_policy_tag(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = self._save_source(tmpdir)
+            with self.assertRaises(ValueError):
+                training_index.filter_training_index(source, policy_tag="  ")
+
+    def test_filter_raises_when_no_rows_remain(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = self._save_source(tmpdir)
+            with self.assertRaises(ValueError):
+                training_index.filter_training_index(
+                    source,
+                    keep_difficulties={"medium"},
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

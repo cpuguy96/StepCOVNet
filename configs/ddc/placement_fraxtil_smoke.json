@@ -1,0 +1,27 @@
+{
+  "dataset": {
+    "training_index_path": "data/literature_fraxtil_orig/training_index_standard.json",
+    "batch_size": 4,
+    "nunroll": 32,
+    "max_train_songs": 2,
+    "max_val_songs": 1,
+    "cache_features": true
+  },
+  "model": {
+    "lstm_units": 64,
+    "lstm_layers": 1,
+    "dropout_rate": 0.0,
+    "dnn_sizes": [64, 32]
+  },
+  "run": {
+    "epoch": 1,
+    "steps_per_epoch": 4,
+    "validation_steps": 1,
+    "learning_rate": 0.1,
+    "clipnorm": 5.0,
+    "seed": 42,
+    "model_output_dir": "models_wsl/ddc/placement_smoke",
+    "callback_root_dir": "callbacks/ddc/placement",
+    "model_name": "ddc_placement_smoke"
+  }
+}

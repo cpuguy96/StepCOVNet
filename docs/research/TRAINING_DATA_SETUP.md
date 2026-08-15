@@ -56,6 +56,16 @@ venv\Scripts\python.exe scripts/build_training_index.py `
 
 `build_training_index.py` writes a **90/10 song-grouped** train/val split (`stratified_song_v1`, seed 42). That is a documented in-repo split, not DDC’s unpublished 80/10/10 song IDs.
 
+Drop the 13 `edit` charts before matching the DDC 450-chart table:
+
+```powershell
+venv\Scripts\python.exe scripts/build_training_index_standard.py `
+  --source data/literature_fraxtil_orig/training_index.json `
+  --overwrite
+```
+
+That writes `data/literature_fraxtil_orig/training_index_standard.json`: **81 / 9** songs, **405 / 45** standard charts (`stratified_song_v1+standard_v1`).
+
 **Measured 2026-08-15** ([EXP-20260815-01](EXPERIMENT_LOG.md#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs)): **90** songs, **463** chart rows (**450** standard + **13** edit); train/val **81 / 9** songs, **417 / 46** rows. Record stays in [PAPER_LEDGER.md](PAPER_LEDGER.md) D-frax-orig.
 
 ---
@@ -193,6 +203,7 @@ Extract to `data/v2/` (`train/`, `val/`, `test/` with `tide.ogg` / `tide.txt` un
 | Download Dataset A (Fraxtil SM5) | `data/raw_literature/{Tsunamix III,Fraxtil's Arrow Arrangements,Fraxtil's Beast Beats}/` |
 | `preprocess_dataset.py` (literature) | `data/literature_fraxtil_orig/` — 90 songs / 463 charts |
 | `build_training_index.py` (literature) | `data/literature_fraxtil_orig/training_index.json` (81/9 songs) |
+| `build_training_index_standard.py` | `data/literature_fraxtil_orig/training_index_standard.json` (405/45 standard charts) |
 | Download 3 SMO packs | `data/raw_data/{ITL Online 2026,Mizuki's Simfiles,Vocaloid Project Pad Pack 4th}/` |
 | `preprocess_dataset.py` | `data/final_data/{bundle}/{id}/` + reports |
 | `build_training_index.py` | `data/final_data/training_index.json` |
