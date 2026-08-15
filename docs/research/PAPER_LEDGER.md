@@ -38,10 +38,10 @@ Role: **related_work** | **baseline** | **method** | **dataset** | **metric** | 
 | `omalley2025ddcl` | O’Malley. Dance Dance ConvLSTM. arXiv:2507.01644, 2025. Code: [miguelomalley/DDCL](https://github.com/miguelomalley/DDCL) | related_work, baseline, method | **in_paper** | BPM-first, 32 frames/beat, 48 slots/beat, ConvLSTM, audio in selection. Same original Fraxtil as DDC. |
 | `omalley2026itgpt` | O’Malley. ITGPT. arXiv:2607.14148, 2026. Code: [miguelomalley/ITGPT](https://github.com/miguelomalley/ITGPT) | related_work, baseline, dataset | **in_paper** | Hierarchical transformer placement, diagnostic BPM/difficulty net, 500-step selection, expanded Fraxtil (253 songs / 8 packs). |
 | `yi2023goct` | Yi, Lee, Lee. Beat-aligned spectrogram-to-sequence rhythm-game charts. arXiv:2311.13687, 2023 | related_work | **likely** | Transformer chart generation; ITGPT compares as GOCT. Timing-only for DDR/ITG. |
-| `schluter2014onset` | Schlüter & Böck. CNN onset detection. ICASSP 2014 | related_work, method | **likely** | DDC’s CNN placement baseline and multi-scale log-mel recipe. |
+| `schluter2014onset` | Schlüter & Böck. CNN onset detection. ICASSP 2014 | related_work, method | **in_paper** | DDC’s CNN placement baseline and 80-band multi-scale log-mel PRE (`stepcovnet.ddc.features`). |
 | `eyben2010blstm` | Eyben et al. BLSTM onset detection. ISMIR 2010 | related_work | **likely** | Classic RNN onset detection. |
 | `bello2005onset` | Bello et al. Onset detection tutorial. IEEE 2005 | background | **likely** | Problem statement for musical onsets. |
-| `hamel2012multiscale` | Hamel, Bengio, Eck. Multiple timescale features. ISMIR 2012 | method | **likely** | Cite if we keep 23/46/93 ms STFT channels. |
+| `hamel2012multiscale` | Hamel, Bengio, Eck. Multiple timescale features. ISMIR 2012 | method | **in_paper** | 23/46/93 ms STFT channels in DDC PRE (`FFT_SIZES` 1024/2048/4096). |
 | `vandewetering2016bpm` | van de Wetering. Non-causal beat tracking / ArrowVortex | method | **likely** | Cite if generation uses ArrowVortex BPM (DDCL/ITGPT). |
 | `li2024mert` | Li et al. MERT. ICLR 2024. arXiv:2306.00107 | method | **likely** | Cite if MERT is a PRE ablation or a reported frontend. |
 | `halina2021taikonation` | Halina & Guzdial. TaikoNation. FDG 2021 | related_work | **candidate** | Other rhythm-game chart generation. |
@@ -78,7 +78,7 @@ Do not put C6–C7 in the abstract until an `EXP-` supports them.
 
 | ID | Name | Packs | Size (as published) | Split | Paper use |
 | -- | ---- | ----- | ------------------- | ----- | --------- |
-| D-frax-orig | Original Fraxtil | Tsunamix III; Fraxtil’s Arrow Arrangements; Fraxtil’s Beast Beats | **Measured 2026-08-15:** 90 songs, **463** chart rows (**450** standard + **13** edit). Paper table: 90 / 450 (`donahue2017ddc`) | `stratified_song_v1` seed 42, val_fraction 0.1 → **81 / 9** songs, **417 / 46** rows (`data/literature_fraxtil_orig/training_index.json`). Not DDC’s unpublished 80/10/10 IDs | Recreate DDC and DDCL. [EXP-20260815-01](EXPERIMENT_LOG.md#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs) |
+| D-frax-orig | Original Fraxtil | Tsunamix III; Fraxtil’s Arrow Arrangements; Fraxtil’s Beast Beats | **Measured 2026-08-15:** 90 songs, **463** chart rows (**450** standard + **13** edit). Paper table: 90 / 450 (`donahue2017ddc`) | `stratified_song_v1` seed 42, val_fraction 0.1 → **81 / 9** songs. Standard-only: `data/literature_fraxtil_orig/training_index_standard.json` (**405 / 45** rows). Not DDC’s unpublished 80/10/10 IDs | Recreate DDC and DDCL. Ingest [EXP-20260815-01](EXPERIMENT_LOG.md#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs); placement 8-ep [EXP-20260815-02](EXPERIMENT_LOG.md#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null) |
 | D-itg | In The Groove | ITG 1; ITG 2 | 133 songs, 652 charts | same rule | Multi-author DDC check |
 | D-frax-exp | Expanded Fraxtil | D-frax-orig plus Cute Charts; Sweet Arrows and Hella Steps vols 1–4 | 253 songs, 952 charts (`omalley2026itgpt`) | same rule | Recreate ITGPT; freeze test songs for later ablations |
 | D-final | StepCOVNet `final_data` | ITL Online 2026; Mizuki’s Simfiles; Vocaloid Project Pad Pack 4th | ~1010/110 songs train/val; ~1942 charts | `stratified_song_v1` seed 42 | Transfer / generalization only, until C5 is satisfied |
@@ -91,7 +91,7 @@ Record the **actual song IDs in each split** (file under `data/` or a tracked ma
 
 | ID | Name | Definition | Used by | Notes |
 | -- | ---- | ---------- | ------- | ----- |
-| M-ddc-20ms | Peak-pick F1 @ ±20 ms | Hamming-smoothed 10 ms probs, per-difficulty threshold, ±20 ms match | `donahue2017ddc` | Do not mix with beat-grid F1 |
+| M-ddc-20ms | Peak-pick F1 @ ±20 ms | Hamming-smoothed 10 ms probs, per-difficulty threshold, ±20 ms match | `donahue2017ddc` | In-repo: `stepcovnet.ddc.peak_pick` / `scripts/eval_ddc_placement.py`. Do not mix with beat-grid F1 |
 | M-slot48 | 48-slot/beat F1 | Binary vector of length 48 per beat; report @ 0.5 and max-F1 | `omalley2025ddcl`, `omalley2026itgpt` | No 20 ms window |
 | M-sel-acc | Selection top-1 / top-2 / hold acc | Teacher-forced next-step over 256 classes | all three | Hold acc is the leftover error in ITGPT vs DDCL |
 | M-timing | `timing_match` @ 20 ms | Ordered match / max(n_pred, n_ref) | current StepCOVNet AR/dense | Internal until a seconds-list track is in the paper |
@@ -121,7 +121,7 @@ Canonical in-repo definitions: [ONSET_METRICS.md](ONSET_METRICS.md). Paper table
 | ID | Content | Source | Status |
 | -- | ------- | ------ | ------ |
 | T-related | Placement F1 and selection acc for DDC / DDCL / ITGPT as **published** | ITGPT Table 2 and 5; DDC Tables 2–3 | draft numbers in NOTE-20260814-01 |
-| T-repro | Same metrics from **our** reimplementations | future EXP | not started |
+| T-repro | Same metrics from **our** reimplementations | [EXP-20260815-02](EXPERIMENT_LOG.md#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null) | 8-ep val F-score_c **0.594** / F-score_m **0.667** vs paper **0.681** / **0.756** (`configs/ddc/placement_fraxtil.json`). Not a match yet |
 | F-pipeline | PRE → placement → selection → POST → metrics | [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) | methods figure |
 
 Published numbers in T-related are citations, not our results. T-repro is the first results table that can support C6–C7.
@@ -132,4 +132,6 @@ Published numbers in T-related are citations, not our results. T-repro is the fi
 
 | Date | Change |
 | ---- | ------ |
+| 2026-08-15 | DDC 8-ep placement val F-score_c **0.594** / F-score_m **0.667** vs paper **0.681** / **0.756**. EXP-20260815-02. |
+| 2026-08-15 | DDC placement PRE/POST/C-LSTM in `stepcovnet.ddc`; standard-only 450-chart index. Cite `schluter2014onset`, `hamel2012multiscale`. |
 | 2026-08-15 | Dataset A ingested: 90 songs / 463 rows; Tsunamix III reconstructed after SM5 zip 404. EXP-20260815-01. |

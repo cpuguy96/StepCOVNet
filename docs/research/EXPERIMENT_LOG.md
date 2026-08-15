@@ -12,9 +12,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-15
 **Primary track:** Literature recreation — Dataset A original Fraxtil (`donahue2017ddc`)
-**Status:** Dataset A **ingested** ([EXP-20260815-01](#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs)): **90** songs, **463** chart rows (**450** standard + **13** edit); `stratified_song_v1` seed **42**, **81 / 9** songs train/val, **417 / 46** rows. Tsunamix III SM5 zip is 404; reconstructed from unpacked files on fra.xtil.net.
+**Status:** DDC C-LSTM placement **Partial** ([EXP-20260815-02](#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null)): val F-score_c **0.594** / F-score_m **0.667** vs paper **0.681** / **0.756**; ioi-shuffle null **0.270**, skill **+0.397**. Dataset A ingest: [EXP-20260815-01](#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs).
 
-**Next action:** Recreate DDC step placement on this split with ±20 ms peak-pick F1 (`M-ddc-20ms`).
+**Next action:** Longer placement train toward paper budget (128 ep / batch 256; this run was 8 ep / batch 32 and val_loss still moved through ep 7) before treating T-repro as matched. Then DDC step selection (LSTM, no audio) on the same `training_index_standard.json` split.
 **Blockers:** None — GPU free.
 **Defer:** AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B (expanded Fraxtil) until DDC/DDCL exist on A.
 
@@ -22,11 +22,11 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 | Phase | Status |
 | ----- | ------ |
-| **Dataset A (Fraxtil)** | **Done** — `data/literature_fraxtil_orig/training_index.json`: **90** songs, **463** rows (Arrow Arrangements 20/104, Beast Beats 20/104, Tsunamix III 50/255). Cite `donahue2017ddc`. |
+| **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. Placement 8-ep val **0.594 / 0.667** ([EXP-20260815-02](#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null)). Cite `donahue2017ddc`. |
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** DDC placement recreation on `data/literature_fraxtil_orig` (not a `final_data` dense train).
+**Recommended next step:** Close placement T-repro with a longer C-LSTM train, then DDC selection on `data/literature_fraxtil_orig` (not a `final_data` dense train).
 
 ### Onset detection (research track)
 
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260815-02 | `train` + `metric` | Does an 8-ep DDC C-LSTM on original Fraxtil match paper F-score_c / F-score_m? | **Partial** | Val **0.594** / **0.667** vs paper **0.681** / **0.756**; skill **+0.397** vs ioi-shuffle |
 | EXP-20260815-01 | `pre` | Can we ingest original Fraxtil (DDC Dataset A) with measured song/chart counts? | **Supported** | **90** songs / **463** rows (450 standard + 13 edit); 81/9 train/val seed 42 |
 | EXP-20260807-20 | `train` + `metric` | Does soft-α anneal (0.5→0) teach content-gap localization that survives α=0? | **Not supported** | α=0 timing **0.0016**; F1 skill **−0.44** — same collapse |
 | EXP-20260807-19 | `metric` | Do content-gap soft-α weights keep skill with α=0 at decode? | **Supported** (collapse) | α=0 timing **0.0019** vs matched **0.0968**; F1 skill **−0.44** |
@@ -183,6 +184,21 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260815-02: DDC C-LSTM placement 8-ep on Dataset A — below paper, above null
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 01:30:53 |
+| **Track** | `train` + `metric` (literature DDC placement) |
+| **Question** | Does a DDC-faithful C-LSTM on original Fraxtil (`donahue2017ddc`) recover paper F-score_c **0.681** / F-score_m **0.756** (`M-ddc-20ms`)? |
+| **Setup** | [`configs/ddc/placement_fraxtil.json`](../../configs/ddc/placement_fraxtil.json); `data/literature_fraxtil_orig/training_index_standard.json` (**81 / 9** songs, **405 / 45** charts, `stratified_song_v1+standard_v1` seed **42**). SGD lr **0.1** clipnorm **5**, 2×200 LSTM, dropout **0.5**. Ckpt `models_wsl/ddc/placement_fraxtil/ddc_placement_fraxtil.keras`. Train `logs/ddc_placement_fraxtil.log`. Metric `M-ddc-20ms`. Cite `schluter2014onset`, `hamel2012multiscale`. |
+| **Smoke** | [`placement_fraxtil_smoke.json`](../../configs/ddc/placement_fraxtil_smoke.json): 2 train / 1 val song, 1 ep × 4 steps, 1×64 LSTM. Pipeline **PASS** after reshape CNN (`DdcPerFrameCNN`; TimeDistributed froze T=32). Eval `models_wsl/ddc/placement_smoke/eval_val_ddc.json`: F-score_c **0.121** / F-score_m **0.128** vs null **0.184** (skill **−0.056**, 5 charts) — not a score, only an e2e check. `logs/ddc_placement_smoke.log` |
+| **Full train (8 ep × 200 steps, batch 32, nunroll 100)** | ep1 loss **0.163** / val **0.148**; ep5 **0.101** / **0.090**; ep7 **0.093** / **0.082**; ep8 (saved) **0.090** / **0.091**. ~**14** min WSL GPU |
+| **Val `M-ddc-20ms` (9 songs / 45 charts)** | F-score_c **0.594**; F-score_m **0.667**; ioi-shuffle null F-score_m **0.270**; skill **+0.397**. TP **14684** / FP **11469** / FN **3184**. Per-diff thr beginner/easy/medium/challenge **0.35**, hard **0.30**. `models_wsl/ddc/placement_fraxtil/eval_val_ddc.json` |
+| **vs paper** | C-LSTM Dataset A test: **0.681** / **0.756**. Gap **−0.087** / **−0.089** (~**87%** / **88%** of paper). Thresholds tuned on this val set (optimistic vs DDC’s unpublished test) |
+| **Deviations** | Librosa STFT not Essentia; per-song z-score not dataset-wide moments; eval LSTM state reset every **256**-frame chunk (not carried BPTT); batch **32** not **256**; **8** ep not **128**; split is seed-42 90/10 not DDC 80/10/10 |
+| **Conclusion** | **Partial.** Placement is audio-grounded (skill **+0.397**) and in the paper’s F1 neighborhood, not a match. Val_loss still improved through ep **7**, so the gap is consistent with under-training vs a PRE/POST bug. Next: longer placement train before DDC selection |
 
 ### EXP-20260815-01: Original Fraxtil Dataset A ingested (90 songs)
 

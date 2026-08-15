@@ -22,6 +22,8 @@ Chart onsets are an **ordered sequence in time**. A model that finds the right m
 
 **Auxiliary metric:** Hungarian event F1 still logs TP/FP/FN for legacy comparisons and multi-song val, but can hide per-rank timing errors (e.g. F1 **1.0** with **633/634** ordered @ 20 ms on tide).
 
+Literature DDC placement uses a **different** POST (`M-ddc-20ms`): Hamming-smoothed 10 ms salience, local maxima, per-difficulty threshold, greedy ±20 ms match, reported as chart-mean F-score_c and micro F-score_m (`stepcovnet.ddc.peak_pick`). Do not mix that column with `timing_match`.
+
 ---
 
 ## Definition — `timing_match`
@@ -99,6 +101,7 @@ Order is **enforced at eval** by sorting both sides. AR decode is chronological 
 | **AR**          | `timing_match` | `val_ordered_onset_match` (teacher) | `scripts/eval_ar_onset_offline.py`                  |
 | **AR free-run** | `timing_match` | `val_ar_decode_ordered_onset_match` | same + `--ar_decode` (gate default; `--full-diagnostics` for slow extras) |
 | **Dense**       | `timing_match` | `val_timing_match` (callback)       | `scripts/eval_dense_onset.py` → `micro_timing_match` |
+| **DDC placement** | F-score_c / F-score_m (`M-ddc-20ms`) | offline JSON | `scripts/eval_ddc_placement.py` — 8-ep Dataset A val **0.594** / **0.667** ([EXP-20260815-02](EXPERIMENT_LOG.md#exp-20260815-02-ddc-c-lstm-placement-8-ep-on-dataset-a--below-paper-above-null)) |
 | **Event**       | `timing_match` | _(diagnostics only today)_          | `scripts/debug_onset_overfit.py`                     |
 
 Backward-compatible JSON keys `ordered_onset_match` still appear in AR debug output alongside `timing_match`.
