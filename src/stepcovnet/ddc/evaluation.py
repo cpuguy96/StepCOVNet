@@ -50,6 +50,10 @@ class PlacementEvalReport:
         timing_match_n_matched: Pooled ordered matches.
         timing_match_n_pred: Pooled predicted peak count.
         timing_match_n_ref: Pooled ground-truth onset count.
+        timing_match_matched_count: Ordered match after keeping ``n_gt`` peaks.
+        null_timing_match_matched_count: Ioi-shuffle ``timing_match`` at ``n_gt``.
+        timing_match_matched_count_n_matched: Pooled matched-count ordered hits.
+        timing_match_matched_count_n_pred: Pooled peaks kept at matched count.
         per_difficulty_threshold: Threshold chosen per difficulty.
         n_charts: Number of evaluated charts.
         counts: Pooled TP/FP/FN.
@@ -64,6 +68,10 @@ class PlacementEvalReport:
     timing_match_n_matched: int
     timing_match_n_pred: int
     timing_match_n_ref: int
+    timing_match_matched_count: float
+    null_timing_match_matched_count: float
+    timing_match_matched_count_n_matched: int
+    timing_match_matched_count_n_pred: int
     per_difficulty_threshold: dict[str, float]
     n_charts: int
     counts: peak_pick.OnsetMatchCounts
@@ -91,6 +99,19 @@ class PlacementEvalReport:
                 self.timing_match_n_ref,
             ),
             "timing_match_tolerance_sec": timing_match_lib.DEFAULT_TOLERANCE_SEC,
+            "timing_match_matched_count": self.timing_match_matched_count,
+            "null_timing_match_matched_count": self.null_timing_match_matched_count,
+            "skill_timing_match_matched_count": (
+                self.timing_match_matched_count - self.null_timing_match_matched_count
+            ),
+            "timing_match_matched_count_n_matched": (
+                self.timing_match_matched_count_n_matched
+            ),
+            "timing_match_matched_count_n_pred": self.timing_match_matched_count_n_pred,
+            "timing_match_matched_count_n_denom": timing_match_lib.timing_match_denom(
+                self.timing_match_matched_count_n_pred,
+                self.timing_match_n_ref,
+            ),
             "per_difficulty_threshold": dict(self.per_difficulty_threshold),
             "n_charts": self.n_charts,
             "true_positives": self.counts.true_positives,
@@ -213,6 +234,42 @@ def _chart_duration_sec(chart: datasets.PlacementChart) -> float:
     return duration
 
 
+def _times_matched_count(
+    pred_times: np.ndarray,
+    salience: np.ndarray,
+    n_keep: int,
+    *,
+    hop_sec: float = constants.HOP_SEC,
+) -> np.ndarray:
+    """Return up to ``n_keep`` peak times with the highest salience.
+
+    Extra peaks are dropped; missing peaks are not invented. Times are sorted
+    ascending so ``timing_match`` sees chronological order.
+
+    Args:
+        pred_times: Hamming peak-pick times in seconds.
+        salience: Model probabilities, shape ``(time,)``.
+        n_keep: Maximum peaks to keep (typically ``n_gt``).
+        hop_sec: Frame hop used to index ``salience``.
+
+    Returns:
+        Sorted times of length ``min(n_pred, max(n_keep, 0))``.
+    """
+    times = np.asarray(pred_times, dtype=np.float64).reshape(-1)
+    keep = min(int(n_keep), int(times.size))
+    if keep <= 0 or times.size == 0:
+        return np.zeros((0,), dtype=np.float32)
+    if times.size <= keep:
+        return np.sort(times).astype(np.float32)
+    flat = np.asarray(salience, dtype=np.float64).reshape(-1)
+    if flat.size == 0:
+        return np.sort(times[:keep]).astype(np.float32)
+    frames = np.clip(np.rint(times / hop_sec).astype(np.int64), 0, flat.size - 1)
+    scores = flat[frames]
+    order = np.lexsort((times, -scores))
+    return np.sort(times[order[:keep]]).astype(np.float32)
+
+
 def _null_metrics(
     charts: list[datasets.PlacementChart],
     n_preds: list[int],
@@ -277,6 +334,8 @@ def evaluate_placement(
     When ``tune_on`` is True, per-difficulty thresholds are chosen on the same
     charts (DDC tuned on val and reported test; this split has no test set).
     ``timing_match`` uses the same peak times; it is not mixed into F-score_c/m.
+    ``timing_match_matched_count`` drops extra peaks to ``n_gt`` by salience
+    (diagnostic only; literature Hamming POST is unchanged).
 
     Args:
         model: Keras placement model.
@@ -306,6 +365,9 @@ def evaluate_placement(
     total_matched = 0
     total_pred = 0
     total_ref = 0
+    matched_count_hits = 0
+    matched_count_pred = 0
+    n_gts: list[int] = []
     for salience, chart in zip(saliences, charts, strict=True):
         threshold = thresholds.get(chart.difficulty, 0.5)
         row = _score_chart(salience, chart, threshold)
@@ -313,6 +375,7 @@ def evaluate_placement(
         pooled = peak_pick.add_counts(pooled, row.counts)
         chart_f.append(row.counts.f_score)
         n_preds.append(row.n_pred)
+        n_gts.append(row.n_gt)
         n_matched, n_ref = timing_match_lib.timing_match_counts_numpy(
             row.pred_times,
             chart.gt_times,
@@ -321,7 +384,16 @@ def evaluate_placement(
         total_matched += n_matched
         total_pred += row.n_pred
         total_ref += n_ref
+        kept = _times_matched_count(row.pred_times, salience, row.n_gt)
+        kept_matched, _ = timing_match_lib.timing_match_counts_numpy(
+            kept,
+            chart.gt_times,
+            tolerance_sec=timing_match_lib.DEFAULT_TOLERANCE_SEC,
+        )
+        matched_count_hits += kept_matched
+        matched_count_pred += int(kept.size)
     null_f_score_m, null_timing = _null_metrics(charts, n_preds, seed=seed)
+    _, null_matched_count = _null_metrics(charts, n_gts, seed=seed)
     return PlacementEvalReport(
         f_score_c=peak_pick.f_score_c(chart_f),
         f_score_m=peak_pick.f_score_m(pooled),
@@ -335,6 +407,14 @@ def evaluate_placement(
         timing_match_n_matched=total_matched,
         timing_match_n_pred=total_pred,
         timing_match_n_ref=total_ref,
+        timing_match_matched_count=timing_match_lib.micro_timing_match_rate(
+            matched_count_hits,
+            total_ref,
+            matched_count_pred,
+        ),
+        null_timing_match_matched_count=null_matched_count,
+        timing_match_matched_count_n_matched=matched_count_hits,
+        timing_match_matched_count_n_pred=matched_count_pred,
         per_difficulty_threshold=dict(thresholds),
         n_charts=len(charts),
         counts=pooled,

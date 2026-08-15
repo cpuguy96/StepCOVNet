@@ -12,9 +12,9 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-15
 **Primary track:** Literature recreation — Dataset A original Fraxtil (`donahue2017ddc`)
-**Status:** DDC C-LSTM placement T-repro **accepted** on `M-ddc-20ms` (~**96%** / **97%** of paper): val F-score_c **0.652** / F-score_m **0.734** vs **0.681** / **0.756** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). Parallel `timing_match` on the same peaks is at the ordered floor: **0.0024** vs ioi-shuffle **0.0109** ([EXP-20260815-05](#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)).
+**Status:** DDC C-LSTM placement T-repro **accepted** on `M-ddc-20ms` (val F-score_c **0.652** / F-score_m **0.734** vs paper **0.681** / **0.756**). Raw `timing_match` **0.0024**; matched-count **0.0154** ≈ ioi-shuffle **0.0151** ([EXP-20260815-05](#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill), [EXP-20260815-06](#exp-20260815-06-matched-count-does-not-recover-ddc-timing_match)).
 
-**Next action:** Stay on **onset / placement**. Do not chase the residual ~**0.03** F1. Do not retune peak-pick to lift `timing_match` (that mixes columns). Selection stays deferred.
+**Next action:** Stay on **onset / placement**. Extra peaks are not the ordered-skill hole. Do not retune `M-ddc-20ms` POST. Selection stays deferred.
 **Blockers:** None — GPU free.
 **Defer:** **DDC/DDCL step selection** until asked; chasing placement PRE/eval fidelity unless asked; retuning `M-ddc-20ms` POST for the internal scoreboard; AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B.
 
@@ -26,7 +26,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Onset/placement only. T-repro accepted at **0.652** / **0.734** (`M-ddc-20ms`). Same peaks: `timing_match` **0.0024** ([EXP-20260815-05](#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)). Not step selection; not another placement retrain unless asked.
+**Recommended next step:** Onset/placement only. T-repro accepted at **0.652** / **0.734** (`M-ddc-20ms`). Ordered match stays at chance even after dropping extras to `n_gt` ([EXP-20260815-06](#exp-20260815-06-matched-count-does-not-recover-ddc-timing_match)). Not step selection; not another placement retrain unless asked.
 
 ### Onset detection (research track)
 
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260815-06 | `metric` | Does keeping `n_gt` highest-salience peaks recover `timing_match`? | **Not supported** | Matched-count **0.0154** ≈ null **0.0151**; raw **0.0024** |
 | EXP-20260815-05 | `metric` | Do accepted DDC peaks have `timing_match` skill beside F-score_m **0.734**? | **Not supported** | timing_match **0.0024** vs null **0.0109**; F-score_m unchanged **0.734** |
 | EXP-20260815-04 | `train` + `metric` | Do best-`val_loss` weights close the ~0.03 F1 gap to paper? | **Not supported** | Best **0.650** / **0.735** ≈ last **0.652** / **0.734**; gap remains |
 | EXP-20260815-03 | `train` + `metric` | Does 128-ep C-LSTM placement close the ~0.09 F1 gap to paper? | **Partial** | Val **0.652** / **0.734** vs paper **0.681** / **0.756** (~**96%** / **97%**); vs 8-ep **+0.058** / **+0.067** |
@@ -187,6 +188,19 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260815-06: Matched-count does not recover DDC timing_match
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 14:31:26 |
+| **Track** | `metric` (literature DDC placement) |
+| **Question** | On the frozen 128-ep C-LSTM, does keeping the `n_gt` highest-salience Hamming peaks recover `timing_match` vs raw **0.0024**? |
+| **Setup** | No retrain. Same ckpt as [EXP-20260815-05](#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill). Diagnostic `timing_match_matched_count` drops extras to `n_gt` by salience; `M-ddc-20ms` F-scores unchanged. Ioi-shuffle floor at `n_gt`. JSON `models_wsl/ddc/placement_fraxtil_128ep/eval_val_ddc_timing.json`. Log `logs/ddc_placement_matched_count.log`. ~**2.4** min WSL GPU |
+| **Val `M-ddc-20ms`** | F-score_c **0.652**; F-score_m **0.734**; null **0.292**; skill **+0.442** — matches EXP-03/05 |
+| **Raw `timing_match`** | **52 / 21816 = 0.0024**; null **0.0109**; skill **−0.0085** |
+| **Matched-count `timing_match`** | **275 / 17868 = 0.0154**; `n_pred` kept **17533** (some charts under-predict); ioi-shuffle at `n_gt` **0.0151**; skill **+0.0003** |
+| **Conclusion** | **Not supported.** Dropping extras lifts **0.0024 → 0.0154** but that is still the ordered floor. Leftover is not “good times, extra peaks.” Do not retune Hamming / thresholds. Stay on onset/placement; no step selection |
 
 ### EXP-20260815-05: Accepted DDC peaks have no ordered timing_match skill
 

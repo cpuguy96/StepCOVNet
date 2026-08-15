@@ -68,6 +68,8 @@ class DdcEvalTest(unittest.TestCase):
         self.assertIn("null_timing_match", payload)
         self.assertIn("skill_timing_match", payload)
         self.assertEqual(payload["timing_match_tolerance_sec"], 0.02)
+        self.assertGreater(report.timing_match_matched_count, 0.9)
+        self.assertIn("timing_match_matched_count", payload)
 
     def test_evaluate_empty_charts_raises(self):
         with self.assertRaises(ValueError):
@@ -107,7 +109,7 @@ class DdcEvalTest(unittest.TestCase):
     def test_extra_peak_lowers_timing_match_not_greedy_f1(self):
         chart = _chart_with_onsets()
         salience = chart.target.copy()
-        salience[30] = 1.0
+        salience[30] = 0.6
         model = _QueueModel([salience])
         report = evaluation.evaluate_placement(
             model,
@@ -121,6 +123,22 @@ class DdcEvalTest(unittest.TestCase):
         self.assertGreater(report.f_score_m, 0.7)
         self.assertAlmostEqual(report.timing_match, 2.0 / 3.0)
         self.assertLess(report.timing_match, report.f_score_m)
+        self.assertAlmostEqual(report.timing_match_matched_count, 1.0)
+        self.assertGreater(
+            report.timing_match_matched_count,
+            report.timing_match,
+        )
+
+    def test_times_matched_count_keeps_highest_salience(self):
+        times = np.array([0.10, 0.20, 0.30], dtype=np.float32)
+        salience = np.zeros((40,), dtype=np.float32)
+        salience[10] = 1.0
+        salience[20] = 1.0
+        salience[30] = 0.6
+        kept = evaluation._times_matched_count(times, salience, 2)
+        np.testing.assert_allclose(kept, [0.10, 0.20])
+        empty = evaluation._times_matched_count(times, salience, 0)
+        self.assertEqual(empty.size, 0)
 
 
 if __name__ == "__main__":
