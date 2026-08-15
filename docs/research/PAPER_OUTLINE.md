@@ -2,6 +2,8 @@
 
 **Status:** Paper draft skeleton — **not** an experiment log. Log runs in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md); promote interesting findings here only when drafting methods/results for publication.
 
+**Citations and paper tracking:** [PAPER_LEDGER.md](PAPER_LEDGER.md) · [paper.bib](paper.bib). Cite by key (e.g. `donahue2017ddc`). Prior art is cited; recreation on a published dataset is a baseline, not a substitute for a citation.
+
 **Architecture reference:** [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) — PRE → MODEL → POST → METRICS → training feedback.
 
 ## Working title (TBD)
@@ -24,10 +26,12 @@ _TBD — write after selecting which results from [EXPERIMENT_LOG.md](EXPERIMENT
 
 ## 2. Related work
 
-- Frame-wise onset detection (mel + CNN/RNN).
-- Set prediction / DETR-style event detection.
-- Autoregressive sequence modeling (Whisper/T5-style) for sparse time lists.
-- SSL audio features (MERT) for music.
+Keys from [PAPER_LEDGER.md](PAPER_LEDGER.md) / [paper.bib](paper.bib). Do not cite a paper here without a ledger row.
+
+- **Chart generation (DDR/ITG):** placement then selection — `donahue2017ddc`; beat-grid ConvLSTM — `omalley2025ddcl`; hierarchical transformer ITGPT — `omalley2026itgpt`. Other games / variants: `yi2023goct`, `halina2021taikonation`, `lin2018generationmania`, `tsujino2018ddg`, `okeeffe2003dancingmonkeys`.
+- **Musical onset detection:** `bello2005onset`, `eyben2010blstm`, `schluter2014onset` (DDC’s CNN placement baseline).
+- **Features / BPM:** multi-scale spectrograms `hamel2012multiscale`; ArrowVortex BPM `vandewetering2016bpm`; SSL frontend `li2024mert` if used.
+- **Set prediction / AR-on-times:** DETR-style slots `carion2020detr` only if the K-query track is in the paper. Distinguish literature AR (**arrows given times**) from StepCOVNet `onset_ar` (**times**).
 
 ## 3. Methods
 
@@ -81,6 +85,8 @@ _TBD._
 
 ## Appendix
 
+- Paper ledger (citations, claims, datasets, metrics): [PAPER_LEDGER.md](PAPER_LEDGER.md)
+- BibTeX: [paper.bib](paper.bib)
 - Pipeline: [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md)
 - Experiment log (authoritative): [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)
 - Design reasoning: [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md)

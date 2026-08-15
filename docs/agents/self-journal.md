@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260814-01: Cite prior art; paper ledger is the citation home
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-14 22:15:45 |
+| **Category** | convention |
+| **Summary** | User correction: recreation of DDC/DDCL/ITGPT is understanding prior art to cite, not stealing. Paper-bound references and claims must be catalogued, not left in chat. |
+| **Artifact** | scoped rule: `.cursor/rules/research-logging.mdc`; skill: `.cursor/skills/research-session-workflow/SKILL.md`; `docs/research/PAPER_LEDGER.md`; `docs/research/paper.bib`; AGENTS.md paper-citations row |
+| **Action taken** | Same-turn citation keys in PAPER_LEDGER + paper.bib; prior art described as cited baselines; no new alwaysApply rule |
+| **Related** | NOTE-20260814-02 · NOTE-20260814-01 |
+
 ### JRN-20260807-03: Hard locality masks are diagnostic, not the product path
 
 | Field | Value |

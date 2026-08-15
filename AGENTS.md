@@ -6,6 +6,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | --------------- | ----- |
 | A **procedure** (train, overfit, WSL, log EXP/NOTE, debug playbooks) | [.cursor/skills/README.md](.cursor/skills/README.md) |
 | **Research** (experiments, design, pipeline; log runs in EXPERIMENT_LOG) | [docs/research/README.md](docs/research/README.md) |
+| **Paper draft / citations** (related work, BibTeX keys, claim ledger) | [docs/research/PAPER_LEDGER.md](docs/research/PAPER_LEDGER.md) · [paper.bib](docs/research/paper.bib) · [PAPER_OUTLINE.md](docs/research/PAPER_OUTLINE.md) |
 | **Onset metrics** (`timing_match`, F1, gates) | [docs/research/ONSET_METRICS.md](docs/research/ONSET_METRICS.md) |
 | **AR onset design** (locked stack, gates, debug notes) | [docs/research/AR_ONSET_DESIGN.md](docs/research/AR_ONSET_DESIGN.md) |
 | **Scaling AR training** (how to add songs and keep numbers comparable) | [docs/research/AR_SCALING_LADDER.md](docs/research/AR_SCALING_LADDER.md) |

@@ -24,7 +24,7 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | F1 zero or low, conv1d collapse, train vs eval matching, threshold debug | onset-event-eval-matching | [onset-event-eval-matching/SKILL.md](onset-event-eval-matching/SKILL.md) |
 | loss weights, arch ablation, threshold sweep, plateau investigation      | tide-ablations            | [tide-ablations/SKILL.md](tide-ablations/SKILL.md)                       |
 | what to do now, what's next, where are we, project status, orientation; **do it** after whats-next | whats-next                  | [whats-next/SKILL.md](whats-next/SKILL.md)                               |
-| start research session, log EXP/NOTE                                     | research-session-workflow | [research-session-workflow/SKILL.md](research-session-workflow/SKILL.md) |
+| start research session, log EXP/NOTE, add paper citations                  | research-session-workflow | [research-session-workflow/SKILL.md](research-session-workflow/SKILL.md) |
 | WSL GPU training, MERT extract, TensorFlow CUDA on Windows               | wsl-gpu-stepcovnet        | [wsl-gpu-stepcovnet/SKILL.md](wsl-gpu-stepcovnet/SKILL.md)               |
 | agent mistake, process improvement, new repeated workflow                | agent-self-improvement    | [agent-self-improvement/SKILL.md](agent-self-improvement/SKILL.md)       |
 | steering correction, remember this, optimize agent brain / context       | steering-correction-promotion | [steering-correction-promotion/SKILL.md](steering-correction-promotion/SKILL.md) |

@@ -48,19 +48,24 @@ Fields: Timestamp, Topic, Context, Discovery, Implication, Open (optional), Rela
 
 Template: [_DISCUSSION_NOTE_TEMPLATE.md](../../../docs/research/_DISCUSSION_NOTE_TEMPLATE.md)
 
+## Log citation (prior art)
+
+When a paper, official code, dataset pack, or metric definition is used as prior art, baseline, method, or data source, add it **same turn** to [PAPER_LEDGER.md](../../../docs/research/PAPER_LEDGER.md) and [paper.bib](../../../docs/research/paper.bib). Cite by key (`donahue2017ddc`). Recreating a published pipeline is how we get a comparable baseline — name the source, split, and metric. Do not describe prior art as stealing.
+
 ## Update paper (optional — when drafting for publication)
 
-Do **not** log every run in [PAPER_OUTLINE.md](../../../docs/research/PAPER_OUTLINE.md). [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) is the authoritative experiment record.
+Do **not** log every run in [PAPER_OUTLINE.md](../../../docs/research/PAPER_OUTLINE.md). [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) is the authoritative experiment record. [PAPER_LEDGER.md](../../../docs/research/PAPER_LEDGER.md) is the citation/claim/dataset/metric catalog.
 
 When a result is paper-worthy, promote it to the outline:
 
 | Section | Action |
 | ------- | ------ |
 | Abstract / Results | Selected numbers and claims only |
+| Related work / Methods | Citation keys from the ledger |
 | Methods | Align with PIPELINE_ARCHITECTURE.md |
 | Discussion | Hypotheses supported by promoted EXP + NOTE |
 
-Cite `EXP-…` / `NOTE-…`. Link back to EXPERIMENT_LOG for full history.
+Cite `EXP-…` / `NOTE-…` and bibliography keys. Link back to EXPERIMENT_LOG for full history.
 
 ## Session end
 

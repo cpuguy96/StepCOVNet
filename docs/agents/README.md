@@ -19,6 +19,7 @@ Project context for Cursor agents — **not** research findings. Routed from [AG
 | Why did we decide X? | [DISCUSSION_NOTES.md](../research/DISCUSSION_NOTES.md) |
 | Dataset prep / `final_data` | [DATASET_PREP_PIPELINE.md](../research/DATASET_PREP_PIPELINE.md) |
 | Paper draft (optional) | [PAPER_OUTLINE.md](../research/PAPER_OUTLINE.md) — promote from log when drafting |
+| Paper citations / claims | [PAPER_LEDGER.md](../research/PAPER_LEDGER.md) · [paper.bib](../research/paper.bib) |
 | Target pipeline design | [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) |
 | AR onset (locked design, not implemented) | [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
 | Open decisions / gates | [DECISIONS_CHECKLIST.md](../research/DECISIONS_CHECKLIST.md) |

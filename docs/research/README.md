@@ -18,6 +18,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 | [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)                                     | **Authoritative** run log — § Current phase for routing (`EXP-YYYYMMDD-NN`) |
 | [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md)                                 | Conversation insights — newest first (`NOTE-YYYYMMDD-NN`)     |
 | [PAPER_OUTLINE.md](PAPER_OUTLINE.md)                                       | Paper draft skeleton — promote findings from log when drafting |
+| [PAPER_LEDGER.md](PAPER_LEDGER.md) · [paper.bib](paper.bib)                 | **Citations and paper tracking** — cite keys, claims, datasets, metrics |
 | [DECISIONS_CHECKLIST.md](DECISIONS_CHECKLIST.md)                           | Open decisions before ablation runs                           |
 | [AR_ONSET_DESIGN.md](AR_ONSET_DESIGN.md)                                   | **Autoregressive onset** — v1 stack locked 2026-06; **`gate-tide-overfit` + `gate-ar-decode` passed** on tide (EXP-20260630-01); next: **`gate-10song-smoke`** |
 | [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md)                               | **Scaling protocol** — frozen val set, nested train sets, rungs R0–R5; why current rungs are not comparable |
@@ -32,6 +33,6 @@ Cursor rule [research-logging.mdc](../../.cursor/rules/research-logging.mdc) req
 1. **Discuss / explore** → prepend `NOTE-…` to `DISCUSSION_NOTES.md` (index row at top)
 2. **Run / measure** → prepend `EXP-…` to `EXPERIMENT_LOG.md` (index row + entry)
 3. **Design shifts** → update planning doc + [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) if stage contract changes
-4. **Paper (optional)** → promote selected results to `PAPER_OUTLINE.md` only when drafting for publication
+4. **Paper** → add citations to [PAPER_LEDGER.md](PAPER_LEDGER.md) + [paper.bib](paper.bib) when a work is used as prior art or baseline; promote selected results to `PAPER_OUTLINE.md` only when drafting
 
 Logs are **newest-first** under each index; `Current phase` / `Recommended next step` in `EXPERIMENT_LOG.md` stay at the top for routing.
