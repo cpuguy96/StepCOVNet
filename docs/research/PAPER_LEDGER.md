@@ -94,7 +94,7 @@ Record the **actual song IDs in each split** (file under `data/` or a tracked ma
 | M-ddc-20ms | Peak-pick F1 @ ±20 ms | Hamming-smoothed 10 ms probs, per-difficulty threshold, ±20 ms match | `donahue2017ddc` | In-repo: `stepcovnet.ddc.peak_pick` / `scripts/eval_ddc_placement.py`. Do not mix with beat-grid F1 |
 | M-slot48 | 48-slot/beat F1 | Binary vector of length 48 per beat; report @ 0.5 and max-F1 | `omalley2025ddcl`, `omalley2026itgpt` | No 20 ms window |
 | M-sel-acc | Selection top-1 / top-2 / hold acc | Teacher-forced next-step over 256 classes | all three | Hold acc is the leftover error in ITGPT vs DDCL |
-| M-timing | `timing_match` @ 20 ms | Ordered match / max(n_pred, n_ref) | current StepCOVNet AR/dense | Internal until a seconds-list track is in the paper |
+| M-timing | `timing_match` @ 20 ms | Ordered match / max(n_pred, n_ref) | current StepCOVNet AR/dense; DDC eval parallel column | Internal until a seconds-list track is in the paper. DDC literature column stays `M-ddc-20ms` ([EXP-20260815-05](EXPERIMENT_LOG.md#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)) |
 | M-null | Audio-blind / chance floor | Same metric with shuffled or silent audio, or density-matched null | EXP-20260804-03/05 | Required beside any number we claim as skill |
 
 Canonical in-repo definitions: [ONSET_METRICS.md](ONSET_METRICS.md). Paper tables must name **M-*** IDs so DDC and ITGPT columns stay comparable.

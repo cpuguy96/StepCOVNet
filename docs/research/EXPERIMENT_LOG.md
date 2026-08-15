@@ -12,11 +12,11 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 **Updated:** 2026-08-15
 **Primary track:** Literature recreation — Dataset A original Fraxtil (`donahue2017ddc`)
-**Status:** DDC C-LSTM placement T-repro **accepted** (~**96%** / **97%** of paper): val F-score_c **0.652** / F-score_m **0.734** vs **0.681** / **0.756** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)); best-val **tied** ([EXP-20260815-04](#exp-20260815-04-best-val-ddc-weights-do-not-close-the-paper-gap)).
+**Status:** DDC C-LSTM placement T-repro **accepted** on `M-ddc-20ms` (~**96%** / **97%** of paper): val F-score_c **0.652** / F-score_m **0.734** vs **0.681** / **0.756** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). Parallel `timing_match` on the same peaks is at the ordered floor: **0.0024** vs ioi-shuffle **0.0109** ([EXP-20260815-05](#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)).
 
-**Next action:** Stay on **onset / placement**. Do not chase the residual ~**0.03** F1. Selection stays deferred.
+**Next action:** Stay on **onset / placement**. Do not chase the residual ~**0.03** F1. Do not retune peak-pick to lift `timing_match` (that mixes columns). Selection stays deferred.
 **Blockers:** None — GPU free.
-**Defer:** **DDC/DDCL step selection** until asked; chasing placement PRE/eval fidelity unless asked; AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B.
+**Defer:** **DDC/DDCL step selection** until asked; chasing placement PRE/eval fidelity unless asked; retuning `M-ddc-20ms` POST for the internal scoreboard; AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B.
 
 ### Dataset prep (PRE ingestion)
 
@@ -26,7 +26,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Onset/placement only. T-repro accepted at **0.652** / **0.734**. Not step selection; not another placement retrain unless asked.
+**Recommended next step:** Onset/placement only. T-repro accepted at **0.652** / **0.734** (`M-ddc-20ms`). Same peaks: `timing_match` **0.0024** ([EXP-20260815-05](#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)). Not step selection; not another placement retrain unless asked.
 
 ### Onset detection (research track)
 
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260815-05 | `metric` | Do accepted DDC peaks have `timing_match` skill beside F-score_m **0.734**? | **Not supported** | timing_match **0.0024** vs null **0.0109**; F-score_m unchanged **0.734** |
 | EXP-20260815-04 | `train` + `metric` | Do best-`val_loss` weights close the ~0.03 F1 gap to paper? | **Not supported** | Best **0.650** / **0.735** ≈ last **0.652** / **0.734**; gap remains |
 | EXP-20260815-03 | `train` + `metric` | Does 128-ep C-LSTM placement close the ~0.09 F1 gap to paper? | **Partial** | Val **0.652** / **0.734** vs paper **0.681** / **0.756** (~**96%** / **97%**); vs 8-ep **+0.058** / **+0.067** |
 | EXP-20260815-02 | `train` + `metric` | Does an 8-ep DDC C-LSTM on original Fraxtil match paper F-score_c / F-score_m? | **Partial** | Val **0.594** / **0.667** vs paper **0.681** / **0.756**; skill **+0.397** vs ioi-shuffle |
@@ -186,6 +187,19 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260815-05: Accepted DDC peaks have no ordered timing_match skill
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 08:33:54 |
+| **Track** | `metric` (literature DDC placement) |
+| **Question** | On the frozen 128-ep C-LSTM, does `timing_match` @ 20 ms show skill beside `M-ddc-20ms` F-score_m **0.734**? |
+| **Setup** | No retrain. [`eval_ddc_placement.py`](../../scripts/eval_ddc_placement.py) on EXP-03 last ckpt `models_wsl/ddc/placement_fraxtil_128ep/ddc_placement_fraxtil_128ep.keras` ([`placement_fraxtil_128ep.json`](../../configs/ddc/placement_fraxtil_128ep.json)). Same Hamming peaks as F-score; ordered match vs `chart.gt_times`. Ioi-shuffle floor at the same peak counts. JSON `models_wsl/ddc/placement_fraxtil_128ep/eval_val_ddc_timing.json`. Log `logs/ddc_placement_timing_match.log`. ~**2.4** min WSL GPU |
+| **Val `M-ddc-20ms`** | F-score_c **0.652**; F-score_m **0.734**; null **0.292**; skill **+0.442**. TP **14573** / FP **7243** / FN **3295**. Matches [EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap) |
+| **Val `timing_match` @ 20 ms** | **52 / 21816 = 0.0024**; ioi-shuffle null **0.0109**; skill **−0.0085**. `n_pred` **21816** vs `n_ref` **17868** |
+| **Why the columns diverge** | Greedy ±20 ms F1 can pair any nearby peak to a step. Ordered match requires `pred[i] ≈ ref[i]`; **7243** extra peaks shift ranks, so F-score_m **0.734** is not ordered skill |
+| **Conclusion** | **Not supported.** Keep both columns; do not mix. Do not retune Hamming / thresholds to chase `timing_match` — that would change the literature `M-ddc-20ms` table. Stay on onset/placement; no step selection |
 
 ### EXP-20260815-04: Best-val DDC weights do not close the paper gap
 

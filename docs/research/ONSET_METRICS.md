@@ -22,7 +22,7 @@ Chart onsets are an **ordered sequence in time**. A model that finds the right m
 
 **Auxiliary metric:** Hungarian event F1 still logs TP/FP/FN for legacy comparisons and multi-song val, but can hide per-rank timing errors (e.g. F1 **1.0** with **633/634** ordered @ 20 ms on tide).
 
-Literature DDC placement uses a **different** POST (`M-ddc-20ms`): Hamming-smoothed 10 ms salience, local maxima, per-difficulty threshold, greedy ±20 ms match, reported as chart-mean F-score_c and micro F-score_m (`stepcovnet.ddc.peak_pick`). Do not mix that column with `timing_match`.
+Literature DDC placement uses a **different** POST (`M-ddc-20ms`): Hamming-smoothed 10 ms salience, local maxima, per-difficulty threshold, greedy ±20 ms match, reported as chart-mean F-score_c and micro F-score_m (`stepcovnet.ddc.peak_pick`). `scripts/eval_ddc_placement.py` also writes a parallel `timing_match` column on the same peak times — do not mix that column into F-score_c/m.
 
 ---
 
@@ -101,7 +101,7 @@ Order is **enforced at eval** by sorting both sides. AR decode is chronological 
 | **AR**          | `timing_match` | `val_ordered_onset_match` (teacher) | `scripts/eval_ar_onset_offline.py`                  |
 | **AR free-run** | `timing_match` | `val_ar_decode_ordered_onset_match` | same + `--ar_decode` (gate default; `--full-diagnostics` for slow extras) |
 | **Dense**       | `timing_match` | `val_timing_match` (callback)       | `scripts/eval_dense_onset.py` → `micro_timing_match` |
-| **DDC placement** | F-score_c / F-score_m (`M-ddc-20ms`) | offline JSON | `scripts/eval_ddc_placement.py` — 128-ep Dataset A val **0.652** / **0.734** ([EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)) |
+| **DDC placement** | F-score_c / F-score_m (`M-ddc-20ms`); parallel `timing_match` | offline JSON | `scripts/eval_ddc_placement.py` — 128-ep Dataset A val **0.652** / **0.734**; `timing_match` **0.0024** vs null **0.0109** ([EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap), [EXP-20260815-05](EXPERIMENT_LOG.md#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)) |
 | **Event**       | `timing_match` | _(diagnostics only today)_          | `scripts/debug_onset_overfit.py`                     |
 
 Backward-compatible JSON keys `ordered_onset_match` still appear in AR debug output alongside `timing_match`.
