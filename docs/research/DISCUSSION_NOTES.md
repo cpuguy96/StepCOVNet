@@ -2,7 +2,75 @@
 
 Insights, Q&A, and design reasoning (newest entries first) from research conversations. IDs: `NOTE-YYYYMMDD-NN`. Each entry includes **Timestamp** (`YYYY-MM-DD HH:MM:SS`, local system time at write).
 
-**Related:** [experiment log](EXPERIMENT_LOG.md) · [planning notes](../onset_output_targets_planning.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
+**Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
+
+## Session 2026-08-14 — Recreate DDC / DDCL / ITGPT, then improve
+
+### NOTE-20260814-02: Cite prior art; track paper ledger not chat
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-14 22:15:45 |
+| **Topic** | What the research paper must keep, vs lab notes |
+
+**Context.** Recreation of DDC / DDCL / ITGPT is understanding and citing prior art, not copying without attribution. Need a durable citation + claim catalog for the eventual paper.
+
+**Discovery.** Until now, related work in [PAPER_OUTLINE.md](PAPER_OUTLINE.md) was uncited bullets, and there was no `.bib`. Chat and NOTE-20260814-01 named the papers but keys were not catalogued.
+
+**Implication.** Keep a **paper ledger** separate from the experiment log:
+
+- Citations (`donahue2017ddc`, `omalley2025ddcl`, `omalley2026itgpt`, …) in [PAPER_LEDGER.md](PAPER_LEDGER.md) + [paper.bib](paper.bib)
+- Claims with EXP/NOTE evidence
+- Dataset packs and split rules
+- Metric IDs so 20 ms peak-pick and 48-slot F1 are never mixed
+- What is a **cited baseline** vs a **measured contribution**
+
+Same-turn rule: if a paper or pack is used, add the key. Promote numbers to the outline only when drafting.
+
+**Related.** NOTE-20260814-01 · [PAPER_LEDGER.md](PAPER_LEDGER.md)
+
+### NOTE-20260814-01: Literature recreation before incremental claims
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-14 18:56:31 |
+| **Topic** | Top-down research structure vs DDC → DDCL → ITGPT |
+
+**Context.** Goal is a better implementation of chart generation, with incremental gains over Dance Dance Convolution (DDC; Donahue et al. 2017), Dance Dance ConvLSTM (DDCL; O’Malley 2025, arXiv:2507.01644), and ITGPT (O’Malley 2026, arXiv:2607.14148; [github.com/miguelomalley/ITGPT](https://github.com/miguelomalley/ITGPT)). Current StepCOVNet work is onset-as-seconds-list on ITL/Mizuki/Vocaloid (`final_data`), not the Fraxtil literature corpus.
+
+**Discovery.** All three papers share one pipeline: **step placement** then **step selection**. Incremental gains are almost entirely (1) how time is discretized and (2) how much musical context the second stage sees.
+
+| Paper | Placement | Selection | Corpus |
+| ----- | --------- | --------- | ------ |
+| **DDC** | 10 ms log-mel (23/46/93 ms STFT → 80 bands) + C-LSTM, difficulty one-hot, Hamming peak-pick, **±20 ms** F1 | LSTM over 256 arrow classes; Δ-time / Δ-beat / beat-phase; **no audio** | Original Fraxtil: 90 songs / 450 charts (3 packs). Also ITG: 133 / 652 |
+| **DDCL** | ArrowVortex BPM first; **32 frames/beat**; **48 binary slots/beat**; branched ConvLSTM; BPM + fine difficulty | LSTM + ConvLSTM **audio** around each placed step; 64-step context | Same original Fraxtil (paper says “95 charts”; DDC table is 450) |
+| **ITGPT** | Same beat grid; hierarchical transformer, up to **2000 beats**; diagnostic net for BPM/difficulty | Transformer, **500**-step context, RVQ audio, ProphetNet 4-step curriculum | **Expanded** Fraxtil: 8 packs, **253 songs / 952 charts** (~3× DDC Fraxtil) |
+
+Published placement F1 on ITGPT’s expanded-Fraxtil comparison (threshold 0.5 / max-F1): DDC **0.50 / 0.73**, DDCL **0.70 / 0.76**, ITGPT **0.78 / 0.80**. Selection top-1: DDC **0.45**, DDCL **0.55**, ITGPT **0.59**. DDCL still wins **hold** accuracy (0.41 vs ITGPT 0.38). Original DDC paper numbers are **not** the same metric (20 ms peak-pick F-score_m **0.756** Fraxtil C-LSTM).
+
+StepCOVNet’s current setup cannot claim those increments:
+
+1. **Wrong dataset.** `TRAINING_DATA_SETUP.md` is ITL Online 2026 + Mizuki + Vocaloid (~1942 charts), not Fraxtil/ITG.
+2. **Wrong time grid.** Dense/AR tracks emit seconds lists + `timing_match` @ 20 ms. DDCL/ITGPT classify 48 slots per beat and drop the 20 ms window. DDC uses 10 ms + peak-pick.
+3. **Wrong AR object.** Literature AR generates **arrows given known times**. StepCOVNet AR generates **times**. That is a harder, different problem (audio-blind pointer, [EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)).
+4. **Missing first-class BPM/difficulty.** DDCL/ITGPT’s main placement win is beat-aligned sampling + aux conditioning, not “a bigger net.”
+
+ITGPT training packs (README): Fraxtil’s Arrow Arrangements, Beast Beats, Cute Charts, Sweet Arrows and Hella Steps vols 1–4, Tsunamix III. DDC original is the first two + Tsunamix III only; ITG 1/2 are the multi-author DDC set.
+
+**Implication.** Structure research as **recreate → match published numbers → ablate one increment on a frozen test set**. Do not scale AR-on-times or train `final_data` as the literature comparison. Keep PRE / MODEL / POST / METRICS ([PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md)), but add a **beat-grid placement** track and a **256-class selection** track that can swap DDC / DDCL / ITGPT heads. Apply the audio-blind / null-floor hygiene from EXP-20260804-03/05 to any recreation.
+
+**Proposed phases (not yet Current-phase routing).**
+
+0. Freeze protocol: Dataset A = original Fraxtil (DDC/DDCL); Dataset B = expanded Fraxtil (ITGPT); 80/10/10 **song-grouped** split; dual metrics (20 ms peak-pick **and** 48-slot F1; selection top-1/2 + hold acc).
+1. Recreate DDC on A until numbers are in the published ballpark.
+2. Recreate DDCL on A (BPM + 48-slot + ConvLSTM + audio-in-selection).
+3. Recreate ITGPT on B (their `smfiler.py` / `onset.py` / `sym.py` are the reference; port into this repo rather than treating the GitHub as a black box).
+4. Only then incremental PRE/MODEL ablations on B’s frozen test set (MERT vs 80-band mel, hold modeling, larger multi-author data).
+5. Transfer: Fraxtil → ITL/Mizuki as a **generalization** experiment, not the first scoreboard.
+
+**Open.** Whether to change EXPERIMENT_LOG § Current phase from AR-locality wrap-up to this recreation track (user decision). Whether Dataset A split should copy DDC’s unpublished song IDs or a new seed-42 song-grouped split documented in-repo.
+
+**Related.** [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md) · [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · DDC [arxiv:1703.06891](https://arxiv.org/abs/1703.06891) · DDCL [arxiv:2507.01644](https://arxiv.org/abs/2507.01644) · ITGPT [arxiv:2607.14148](https://arxiv.org/abs/2607.14148)
 
 ## Session 2026-08-07 — Content-gap soft-α closed (prior dependence)
 
