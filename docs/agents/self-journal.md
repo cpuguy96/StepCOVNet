@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260815-03: Stop DDC placement eval unless asked
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 14:53:03 |
+| **Category** | convention |
+| **Summary** | User: done with DDC eval for now; move on. Do not stack more placement diagnostics (FP histograms, matched-count, threshold sweeps) on the frozen ckpt. |
+| **Artifact** | skill: `.cursor/skills/whats-next/SKILL.md` (§ No more DDC placement eval unless asked); Current phase primary track → dense `final_data` scoreboard |
+| **Action taken** | what's-next forbids further DDC eval in Now/do-it after T-repro accepted or user says eval is done; Current phase next is 50/100-row dense MERT smoke. No new alwaysApply rule |
+| **Related** | EXP-20260815-03 · EXP-20260815-06 |
+
 ### JRN-20260815-02: Onset/placement only — no DDC step selection unless asked
 
 | Field | Value |

@@ -69,6 +69,15 @@ Literature recreation is **onset / step placement** (`M-ddc-20ms`) until the use
 | Placement F-score_c / F-score_m, peak-pick, null floor, PRE/POST fidelity | Selection top-1 / hold acc, audio-in-selection, 48-slot DDCL as the next gate *because* placement is “close enough” |
 | Selection may appear only under **Alternate** | Treating “placement then selection” as automatic routing after a Partial T-repro |
 
+### No more DDC placement eval unless asked
+
+After Dataset A T-repro is **accepted**, or the user says placement eval is **done**, do **not** put further DDC eval diagnostics in **Now** / **do it**.
+
+| Allowed | Not until asked |
+| ------- | --------------- |
+| Citing logged F-score_c / F-score_m; a placement **train** the user requested | `timing_match`, matched-count, FP histograms, threshold sweeps, last-vs-best on the frozen ckpt |
+| Selection only under **Alternate** | Stacking eval columns because ordered match is at the floor |
+
 ## Answer template
 
 ```markdown

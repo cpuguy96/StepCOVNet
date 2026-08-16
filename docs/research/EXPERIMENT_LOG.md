@@ -11,12 +11,12 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 ## Current phase
 
 **Updated:** 2026-08-15
-**Primary track:** Literature recreation — Dataset A original Fraxtil (`donahue2017ddc`)
-**Status:** DDC C-LSTM placement T-repro **accepted** on `M-ddc-20ms` (val F-score_c **0.652** / F-score_m **0.734** vs paper **0.681** / **0.756**). Raw `timing_match` **0.0024**; matched-count **0.0154** ≈ ioi-shuffle **0.0151** ([EXP-20260815-05](#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill), [EXP-20260815-06](#exp-20260815-06-matched-count-does-not-recover-ddc-timing_match)).
+**Primary track:** Onset scoreboard — `final_data` dense MERT
+**Status:** Dataset A DDC T-repro **accepted**. First `final_data` dense GPU smoke **done**: val micro event F1 **0.666** vs ioi-shuffle **0.294** (skill **+0.371**); `timing_match` **0.0047** vs null **0.0081** ([EXP-20260815-07](#exp-20260815-07-final_data-dense-50t100v-mert-bilstm-smoke)).
 
-**Next action:** Stay on **onset / placement**. Extra peaks are not the ordered-skill hole. Do not retune `M-ddc-20ms` POST. Selection stays deferred.
+**Next action:** Stay on dense `final_data`. Do not compare **0.666** to the **0.686** `data/v2` number (different split). Full-index train only if asked.
 **Blockers:** None — GPU free.
-**Defer:** **DDC/DDCL step selection** until asked; chasing placement PRE/eval fidelity unless asked; retuning `M-ddc-20ms` POST for the internal scoreboard; AR-on-times locality / α / hard-R; ladder scale-up unless asked; `final_data` as the DDC scoreboard; Dataset B.
+**Defer:** **DDC placement eval diagnostics** unless asked; **DDC/DDCL step selection** until asked; chasing the ~**0.03** F1 gap; retuning `M-ddc-20ms` POST; AR-on-times locality / α / hard-R; ladder scale-up unless asked; Dataset B.
 
 ### Dataset prep (PRE ingestion)
 
@@ -26,7 +26,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Onset/placement only. T-repro accepted at **0.652** / **0.734** (`M-ddc-20ms`). Ordered match stays at chance even after dropping extras to `n_gt` ([EXP-20260815-06](#exp-20260815-06-matched-count-does-not-recover-ddc-timing_match)). Not step selection; not another placement retrain unless asked.
+**Recommended next step:** Dense `final_data` smoke is in: event F1 has skill, `timing_match` does not. Full-index MERT train only if asked — not DDC eval, not selection.
 
 ### Onset detection (research track)
 
@@ -35,7 +35,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Dense val best (`data/v2`) | BiLSTM 256u — micro event F1 **0.686** @ thr=0.30 (EXP-20260610-03) |
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
-| Multi-song val on `final_data` | **Unblocked** — awaiting first full GPU dense train + eval |
+| Multi-song val on `final_data` | **Partial** — 50/100-row MERT BiLSTM smoke: event F1 **0.666** (skill **+0.371**); `timing_match` **0.0047** at floor ([EXP-20260815-07](#exp-20260815-07-final_data-dense-50t100v-mert-bilstm-smoke)) |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
 | **AR 10-song smoke** | **PASS** — 5-ep corrected-mask ([EXP-20260723-01](#exp-20260723-01-ar-corrected-mask-10song-smoke)); **50-ep cached** `val_loss` **35.0 → 12.1**, teacher F1 **0.11** ([EXP-20260723-02](#exp-20260723-02-ar-corrected-mask-10song-smoke-50ep)) |
 | **AR 50t/50v scale-up** | **Partial** — 500 ep: best `val_loss` **~20.9 @ ep 65**, then severe overfit; val F1 peaks **~0.22** ([EXP-20260724-01](#exp-20260724-01-ar-corrected-mask-50t50v-500-ep-scale-up)) |
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260815-07 | `train` + `metric` | Does a 50/100-row `final_data` dense MERT BiLSTM beat the ioi-shuffle floor? | **Partial** | Event F1 **0.666** vs null **0.294**; `timing_match` **0.0047** vs **0.0081** |
 | EXP-20260815-06 | `metric` | Does keeping `n_gt` highest-salience peaks recover `timing_match`? | **Not supported** | Matched-count **0.0154** ≈ null **0.0151**; raw **0.0024** |
 | EXP-20260815-05 | `metric` | Do accepted DDC peaks have `timing_match` skill beside F-score_m **0.734**? | **Not supported** | timing_match **0.0024** vs null **0.0109**; F-score_m unchanged **0.734** |
 | EXP-20260815-04 | `train` + `metric` | Do best-`val_loss` weights close the ~0.03 F1 gap to paper? | **Not supported** | Best **0.650** / **0.735** ≈ last **0.652** / **0.734**; gap remains |
@@ -188,6 +189,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260815-07: `final_data` dense 50t/100v MERT BiLSTM smoke
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-15 18:43:16 |
+| **Track** | `train` + `metric` (dense `final_data` scoreboard) |
+| **Question** | Does the first GPU dense MERT BiLSTM on a 50/100-row `final_data` subset clear an ioi-shuffle floor on val event F1 and `timing_match`? |
+| **Setup** | [`final_data_mert_bilstm_scoreboard_50t_100v.json`](../../configs/dense/final_data_mert_bilstm_scoreboard_50t_100v.json): 256u BiLSTM, MERT, seed **42**, 200 ep, ES patience **25** on `val_onset_f1_score`. Manifest `training_index_scoreboard_50t_100v.json` (**49 / 70** songs, **50 / 100** rows). MERT: **17** new + **102** cached. Train `logs/dense_scoreboard_50t_100v_train.log`. TB `http://localhost:6006/`. ~**3.6** h WSL GPU including post-hoc sweep |
+| **Train** | ES @ ep **61** (restored monitor-best ep **36**, `val_onset_f1` **0.7735**). Post-hoc peak-pick sweep exported ep-**7** ckpt (`VAL_ONSET_F1_SCORE-0.49538`) @ thr **0.25** — best micro event F1 **0.666**. Saved `models_wsl/final_data_dense_bilstm_scoreboard_50t_100v/stepcovnet_ONSET-final_data_dense_bilstm_scoreboard_50t_100v.keras` |
+| **Val (100 rows, thr 0.25)** | micro event F1 **0.666**; mean **0.648**; TP **52008** / FP **30617** / FN **21612**. `timing_match` **390 / 82722 = 0.0047**. JSON `eval_val_event_f1.json`. Log `logs/dense_scoreboard_50t_100v_eval.log` |
+| **vs ioi-shuffle** | Event F1 null **0.294**, skill **+0.371**. `timing_match` null **0.0081**, skill **−0.0034** |
+| **vs `data/v2` 0.686** | **Not comparable** — different corpus and split (EXP-20260610-03 was `data/v2` @ thr 0.30) |
+| **Conclusion** | **Partial.** Pipeline works and event F1 is audio-grounded. Ordered `timing_match` is still at the floor (over-count: **82722** pred vs **73620** ref), same pattern as DDC peaks. Do not treat **0.666** as beating **0.686**. Full `final_data` train only if asked |
 
 ### EXP-20260815-06: Matched-count does not recover DDC timing_match
 
