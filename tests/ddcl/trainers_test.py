@@ -23,16 +23,10 @@ def _synthetic_chart(*, memlen: int = 2) -> datasets.DdclChart:
         DdclChart.
     """
     n_beats = 6
-    context = memlen + 1
     n_frames = constants.N_FRAMES_PER_BEAT
     slots = np.zeros((n_beats, constants.N_SLOTS), dtype=np.float32)
     slots[0, 0] = 1.0
     slots[3, 24] = 1.0
-    audio = np.zeros(
-        (n_beats, context, n_frames, constants.N_MELS, constants.N_CHANNELS),
-        dtype=np.float32,
-    )
-    stream = np.zeros((n_beats, context, constants.STREAM_DIM), dtype=np.float32)
     return datasets.DdclChart(
         song_key="bundle/song",
         difficulty="easy",
@@ -43,10 +37,7 @@ def _synthetic_chart(*, memlen: int = 2) -> datasets.DdclChart:
         ),
         stream=np.zeros((n_beats, constants.STREAM_DIM), dtype=np.float32),
         slots=slots,
-        audio_fwd=audio,
-        audio_bwd=audio,
-        stream_fwd=stream,
-        stream_bwd=stream,
+        memlen=memlen,
     )
 
 

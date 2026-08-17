@@ -89,6 +89,15 @@ class DdclFeaturesTest(unittest.TestCase):
         self.assertEqual(windows.shape, (2, 2, 4, 4, 3))
         backward = features.causal_windows(stacked, memlen=1, reverse=True)
         self.assertEqual(backward.shape, windows.shape)
+        for beat_idx in range(stacked.shape[0]):
+            np.testing.assert_array_equal(
+                features.window_at_beat(stacked, 1, beat_idx, reverse=False),
+                windows[beat_idx],
+            )
+            np.testing.assert_array_equal(
+                features.window_at_beat(stacked, 1, beat_idx, reverse=True),
+                backward[beat_idx],
+            )
 
     def test_resample_rejects_bad_rank(self):
         with self.assertRaises(ValueError):

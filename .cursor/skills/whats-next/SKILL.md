@@ -66,7 +66,7 @@ The research goal is **recreate published chart generation, then show an increme
 
 | Now | Not Now |
 | --- | ------- |
-| Recreate **DDCL** on Dataset A (`omalley2025ddcl`): 48-slot/beat placement (`M-slot48`), then their audio-in-selection | `final_data` dense / MERT / AR as the literature scoreboard |
+| Recreate **DDCL** on Dataset A (`omalley2025ddcl`): 48-slot placement has a real `M-slot48` number ([EXP-20260816-02](../../../docs/research/EXPERIMENT_LOG.md#exp-20260816-02-ddcl-48-slot-placement-full-split-on-dataset-a)); next is their audio-in-selection | `final_data` dense / MERT / AR as the literature scoreboard |
 | Then **ITGPT** on Dataset B (`omalley2026itgpt`, expanded Fraxtil) | Mixing `M-ddc-20ms` with `M-slot48` in one table |
 | Cite keys; match the paper’s PRE / metric | Treating ITL/Mizuki as “proper” until C5 |
 

@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+from collections.abc import Iterator
 
 import numpy as np
 
 from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.ddcl import config, features, slots
+from stepcovnet.ddcl import config, constants, features, slots
 
 
 @dataclasses.dataclass
 class DdclChart:
     """One standard-difficulty chart on the 48-slot beat grid.
+
+    Stores per-beat tensors only. Causal ``memlen+1`` windows are built on
+    demand so a full Dataset A split fits in WSL RAM.
 
     Attributes:
         song_key: ``bundle/id`` identifier.
@@ -23,10 +27,7 @@ class DdclChart:
         beat_audio: Z-scored per-beat log-mel ``(n_beats, 32, 80, 3)``.
         stream: Per-beat ``[meter, bpm]`` ``(n_beats, 2)``.
         slots: Binary ``M-slot48`` targets ``(n_beats, 48)``.
-        audio_fwd: Causal windows ``(n_beats, memlen+1, 32, 80, 3)``.
-        audio_bwd: Reverse windows of the same shape.
-        stream_fwd: Causal stream windows ``(n_beats, memlen+1, 2)``.
-        stream_bwd: Reverse stream windows, time-flipped as in DDCL.
+        memlen: Context beats besides the current one (paper: 15).
     """
 
     song_key: str
@@ -35,10 +36,7 @@ class DdclChart:
     beat_audio: np.ndarray
     stream: np.ndarray
     slots: np.ndarray
-    audio_fwd: np.ndarray
-    audio_bwd: np.ndarray
-    stream_fwd: np.ndarray
-    stream_bwd: np.ndarray
+    memlen: int
 
     @property
     def n_beats(self) -> int:
@@ -178,18 +176,13 @@ def load_ddcl_chart(
     )
     if spec is None:
         spec = features.load_or_compute_logmel(audio_path, cache=cache_features)
-    beat_audio = features.zscore_beats(features.beats_to_audio_tensor(spec, beat_times))
+    beat_audio = features.zscore_beats(
+        features.beats_to_audio_tensor(spec, beat_times)
+    )
     stream = slots.stream_features(
         n_beats,
         int(chart_block.summary.meter),
         pack.metadata.bpm_segments,
-    )
-    audio_fwd = features.causal_windows(beat_audio, memlen, reverse=False)
-    audio_bwd = features.causal_windows(beat_audio, memlen, reverse=True)
-    stream_fwd = features.causal_windows(stream, memlen, reverse=False)
-    stream_bwd = np.flip(
-        features.causal_windows(stream, memlen, reverse=True),
-        axis=1,
     )
     return DdclChart(
         song_key=training_index.song_key(
@@ -201,10 +194,7 @@ def load_ddcl_chart(
         beat_audio=beat_audio,
         stream=stream,
         slots=slot_matrix,
-        audio_fwd=audio_fwd,
-        audio_bwd=audio_bwd,
-        stream_fwd=stream_fwd,
-        stream_bwd=stream_bwd,
+        memlen=memlen,
     )
 
 
@@ -212,7 +202,7 @@ def load_split_charts(
     dataset_config: config.DdclDatasetConfig,
     split: str,
 ) -> list[DdclChart]:
-    """Load all charts for one split, sharing per-song log-mel.
+    """Load all charts for one split, sharing per-song log-mel and beat audio.
 
     Args:
         dataset_config: Dataset config.
@@ -223,27 +213,92 @@ def load_split_charts(
     """
     data_root = resolve_data_root(dataset_config)
     entries = list_split_entries(dataset_config, split)
-    charts: list[DdclChart] = []
-    spec_cache: dict[str, np.ndarray] = {}
+    grouped: dict[str, list[training_index.TrainingIndexEntry]] = {}
+    song_order: list[str] = []
     for entry in entries:
-        audio_key = str(pathlib.Path(data_root) / entry.audio_relpath)
-        spec = spec_cache.get(audio_key)
-        if spec is None:
-            spec = features.load_or_compute_logmel(
-                audio_key,
-                cache=dataset_config.cache_features,
+        key = training_index.song_key(entry.normalized_bundle, entry.normalized_id)
+        if key not in grouped:
+            grouped[key] = []
+            song_order.append(key)
+        grouped[key].append(entry)
+    charts: list[DdclChart] = []
+    for song_key in song_order:
+        group = grouped[song_key]
+        audio_key = str(pathlib.Path(data_root) / group[0].audio_relpath)
+        spec = features.load_or_compute_logmel(
+            audio_key,
+            cache=dataset_config.cache_features,
+        )
+        for entry in group:
+            charts.append(
+                load_ddcl_chart(
+                    entry,
+                    data_root,
+                    memlen=dataset_config.memlen,
+                    cache_features=dataset_config.cache_features,
+                    spec=spec,
+                )
             )
-            spec_cache[audio_key] = spec
-        charts.append(
-            load_ddcl_chart(
-                entry,
-                data_root,
-                memlen=dataset_config.memlen,
-                cache_features=dataset_config.cache_features,
-                spec=spec,
+        del spec
+        print(
+            f"loaded {split} {song_key}: {len(group)} charts, "
+            f"{charts[-1].n_beats} beats",
+            flush=True,
+        )
+    print(
+        f"loaded {len(charts)} {split} charts from {len(song_order)} songs",
+        flush=True,
+    )
+    return charts
+
+
+def windows_for_indices(
+    chart: DdclChart,
+    indices: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Build ConvLSTM inputs for selected beats without a full-chart stack.
+
+    Args:
+        chart: Loaded chart.
+        indices: Beat indices, shape ``(batch,)``.
+
+    Returns:
+        Keras input dict with a leading batch axis.
+
+    Raises:
+        ValueError: If ``indices`` is empty.
+    """
+    beat_idxs = np.asarray(indices, dtype=np.int64).reshape(-1)
+    if beat_idxs.size < 1:
+        raise ValueError("indices must contain at least one beat")
+    audio_fwd = []
+    audio_bwd = []
+    stream_fwd = []
+    stream_bwd = []
+    memlen = chart.memlen
+    for beat_idx in beat_idxs:
+        idx = int(beat_idx)
+        audio_fwd.append(
+            features.window_at_beat(chart.beat_audio, memlen, idx, reverse=False)
+        )
+        audio_bwd.append(
+            features.window_at_beat(chart.beat_audio, memlen, idx, reverse=True)
+        )
+        stream_fwd.append(
+            features.window_at_beat(chart.stream, memlen, idx, reverse=False)
+        )
+        stream_bwd.append(
+            np.flip(
+                features.window_at_beat(chart.stream, memlen, idx, reverse=True),
+                axis=0,
             )
         )
-    return charts
+    return {
+        "audio_fwd": np.stack(audio_fwd, axis=0).astype(np.float32),
+        "audio_bwd": np.stack(audio_bwd, axis=0).astype(np.float32),
+        "stream_fwd": np.stack(stream_fwd, axis=0).astype(np.float32),
+        "stream_bwd": np.stack(stream_bwd, axis=0).astype(np.float32),
+    }
 
 
 def chart_model_inputs(chart: DdclChart) -> dict[str, np.ndarray]:
@@ -255,12 +310,32 @@ def chart_model_inputs(chart: DdclChart) -> dict[str, np.ndarray]:
     Returns:
         Keras input dict with a leading batch axis equal to ``n_beats``.
     """
-    return {
-        "audio_fwd": np.asarray(chart.audio_fwd, dtype=np.float32),
-        "audio_bwd": np.asarray(chart.audio_bwd, dtype=np.float32),
-        "stream_fwd": np.asarray(chart.stream_fwd, dtype=np.float32),
-        "stream_bwd": np.asarray(chart.stream_bwd, dtype=np.float32),
-    }
+    return windows_for_indices(chart, np.arange(chart.n_beats, dtype=np.int64))
+
+
+def iter_window_batches(
+    chart: DdclChart,
+    *,
+    batch_size: int = constants.PREDICT_BEAT_BATCH,
+) -> Iterator[np.ndarray]:
+    """Yield beat-index batches for GPU-safe eval.
+
+    Args:
+        chart: Loaded chart.
+        batch_size: Beats per predict call.
+
+    Yields:
+        Integer index arrays.
+
+    Raises:
+        ValueError: If ``batch_size`` is not positive.
+    """
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+    n_beats = chart.n_beats
+    for start in range(0, n_beats, batch_size):
+        end = min(n_beats, start + batch_size)
+        yield np.arange(start, end, dtype=np.int64)
 
 
 def sample_train_batch(
@@ -294,10 +369,11 @@ def sample_train_batch(
     for _ in range(batch_size):
         chart = charts[int(rng.integers(0, len(charts)))]
         beat_idx = int(rng.integers(0, chart.n_beats))
-        audio_fwd.append(chart.audio_fwd[beat_idx])
-        audio_bwd.append(chart.audio_bwd[beat_idx])
-        stream_fwd.append(chart.stream_fwd[beat_idx])
-        stream_bwd.append(chart.stream_bwd[beat_idx])
+        windows = windows_for_indices(chart, np.array([beat_idx], dtype=np.int64))
+        audio_fwd.append(windows["audio_fwd"][0])
+        audio_bwd.append(windows["audio_bwd"][0])
+        stream_fwd.append(windows["stream_fwd"][0])
+        stream_bwd.append(windows["stream_bwd"][0])
         labels.append(chart.slots[beat_idx])
     inputs = {
         "audio_fwd": np.stack(audio_fwd, axis=0),

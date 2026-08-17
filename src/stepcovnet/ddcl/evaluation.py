@@ -171,11 +171,7 @@ def evaluate_slot48(
     pred_parts: list[np.ndarray] = []
     tgt_parts: list[np.ndarray] = []
     for chart in charts:
-        inputs = datasets.chart_model_inputs(chart)
-        pred = np.asarray(model.predict(inputs, verbose=0), dtype=np.float32)
-        if pred.ndim == 1:
-            pred = pred.reshape(1, -1)
-        pred_parts.append(pred)
+        pred_parts.append(predict_chart_slots(model, chart))
         tgt_parts.append(chart.slots)
     pred_all = np.concatenate(pred_parts, axis=0)
     tgt_all = np.concatenate(tgt_parts, axis=0)
@@ -210,8 +206,11 @@ def predict_chart_slots(model: SlotPredictor, chart: datasets.DdclChart) -> np.n
     Returns:
         Probabilities ``(n_beats, 48)``.
     """
-    inputs = datasets.chart_model_inputs(chart)
-    pred = np.asarray(model.predict(inputs, verbose=0), dtype=np.float32)
-    if pred.ndim == 1:
-        pred = pred.reshape(1, -1)
-    return pred
+    parts: list[np.ndarray] = []
+    for beat_idxs in datasets.iter_window_batches(chart):
+        inputs = datasets.windows_for_indices(chart, beat_idxs)
+        pred = np.asarray(model.predict(inputs, verbose=0), dtype=np.float32)
+        if pred.ndim == 1:
+            pred = pred.reshape(1, -1)
+        parts.append(pred)
+    return np.concatenate(parts, axis=0)

@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260816-02: DDCL full-split must not pre-stack memlen windows
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-16 23:41:37 |
+| **Category** | fix |
+| **Summary** | Full-split DDCL train was OOM-killed twice (exit 9, ~14 GiB RSS in ~15 GiB WSL) while `causal_windows` stacked `(n_beats, memlen+1, 32, 80, 3)` for every chart. |
+| **Artifact** | code: `src/stepcovnet/ddcl/datasets.py`, `features.window_at_beat`; skill: `.cursor/skills/wsl-gpu-stepcovnet/SKILL.md` (DDCL train row). No new alwaysApply rule |
+| **Action taken** | Keep per-beat tensors in RAM; build causal windows per sampled/eval beat. Eval predicts in 32-beat chunks |
+| **Related** | EXP-20260816-02 |
+
 ### JRN-20260816-01: Literature chain DDCL then ITGPT, not `final_data`
 
 | Field | Value |

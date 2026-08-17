@@ -39,10 +39,6 @@ def _tiny_chart(slots: np.ndarray) -> datasets.DdclChart:
         DdclChart.
     """
     n_beats = slots.shape[0]
-    memlen = 1
-    context = memlen + 1
-    audio = np.zeros((n_beats, context, 4, 4, 3), dtype=np.float32)
-    stream = np.zeros((n_beats, context, 2), dtype=np.float32)
     beat_audio = np.zeros((n_beats, 4, 4, 3), dtype=np.float32)
     return datasets.DdclChart(
         song_key="pack/song",
@@ -51,10 +47,7 @@ def _tiny_chart(slots: np.ndarray) -> datasets.DdclChart:
         beat_audio=beat_audio,
         stream=np.zeros((n_beats, 2), dtype=np.float32),
         slots=slots.astype(np.float32),
-        audio_fwd=audio,
-        audio_bwd=audio,
-        stream_fwd=stream,
-        stream_bwd=stream,
+        memlen=1,
     )
 
 

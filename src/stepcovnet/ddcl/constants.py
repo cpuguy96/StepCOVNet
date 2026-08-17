@@ -28,6 +28,8 @@ DROPOUT_RATE = 0.2
 ADAM_LR = 1e-4
 ADAM_CLIPNORM = 1.0
 THRESHOLD_05 = 0.5
+# Eval/predict beat chunks — full-chart memlen=15 windows OOM WSL (~15 GiB).
+PREDICT_BEAT_BATCH = 32
 FEATURE_CACHE_SUFFIX = ddc_constants.FEATURE_CACHE_SUFFIX
 LOG_EPS = ddc_constants.LOG_EPS
 # ITGPT Table 2 on *expanded* Fraxtil (D-frax-exp), not Dataset A.

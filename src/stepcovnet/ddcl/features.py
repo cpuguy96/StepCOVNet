@@ -161,4 +161,57 @@ def causal_windows(
     return windows
 
 
+def window_at_beat(
+    values: np.ndarray,
+    memlen: int,
+    beat_idx: int,
+    *,
+    reverse: bool = False,
+) -> np.ndarray:
+    """Return ``causal_windows(...)[beat_idx]`` without allocating all beats.
+
+    Full-split Dataset A cannot keep ``(n_beats, memlen+1, 32, 80, 3)`` for
+    every chart in RAM (WSL OOM at ~14 GiB RSS). Training samples one beat
+    at a time; eval chunks ``PREDICT_BEAT_BATCH`` beats.
+
+    Args:
+        values: Sequence ``(n_beats, ...)``.
+        memlen: Past (or future) beats besides the current one.
+        beat_idx: Integer beat to window.
+        reverse: If True, pad at the end (DDCL ``go_backwards=True``).
+
+    Returns:
+        Array ``(memlen+1, ...)``.
+
+    Raises:
+        ValueError: If ``memlen`` is negative, ``values`` is empty, or
+            ``beat_idx`` is out of range.
+    """
+    if memlen < 0:
+        raise ValueError(f"memlen must be >= 0, got {memlen}")
+    n_beats = int(values.shape[0])
+    if n_beats < 1:
+        raise ValueError("values must contain at least one beat")
+    if beat_idx < 0 or beat_idx >= n_beats:
+        raise ValueError(f"beat_idx {beat_idx} out of range for {n_beats} beats")
+    context = memlen + 1
+    pad_value = np.min(values)
+    out = np.empty((context,) + values.shape[1:], dtype=values.dtype)
+    if reverse:
+        for offset in range(context):
+            src = beat_idx + offset
+            if src < n_beats:
+                out[offset] = values[src]
+            else:
+                out[offset] = pad_value
+    else:
+        for offset in range(context):
+            src = beat_idx - memlen + offset
+            if src < 0:
+                out[offset] = pad_value
+            else:
+                out[offset] = values[src]
+    return out
+
+
 load_or_compute_logmel = ddc_features.load_or_compute_ddc_logmel

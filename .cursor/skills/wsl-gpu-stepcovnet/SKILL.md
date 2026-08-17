@@ -79,7 +79,7 @@ Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
 | `scripts/train_onset.py`                         | Dense onset — use `--training_index_path` for `final_data` |
 | `scripts/train_ddc_placement.py`                 | DDC C-LSTM placement on Dataset A |
 | `scripts/eval_ddc_placement.py`                  | Hamming ±20 ms F-score_c / F-score_m |
-| `scripts/train_ddcl_placement.py`                | DDCL ConvLSTM 48-slot placement on Dataset A |
+| `scripts/train_ddcl_placement.py`                | DDCL ConvLSTM 48-slot placement on Dataset A. Full split: do **not** pre-stack `(n_beats, memlen+1, …)` windows — WSL default ~15 GiB OOM (~14 GiB RSS). On-demand `window_at_beat` in `stepcovnet.ddcl.datasets`. |
 | `scripts/eval_ddcl_placement.py`                 | `M-slot48` F1 @ 0.5 and max-F1 |
 | `scripts/train_arrow.py`                         | Arrow model        |
 | `scripts/extract_mert_features.py --device=cuda` | MERT feature cache |
