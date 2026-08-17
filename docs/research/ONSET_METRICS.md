@@ -24,6 +24,8 @@ Chart onsets are an **ordered sequence in time**. A model that finds the right m
 
 Literature DDC placement uses a **different** POST (`M-ddc-20ms`): Hamming-smoothed 10 ms salience, local maxima, per-difficulty threshold, greedy ±20 ms match, reported as chart-mean F-score_c and micro F-score_m (`stepcovnet.ddc.peak_pick`). `scripts/eval_ddc_placement.py` also writes a parallel `timing_match` column on the same peak times — do not mix that column into F-score_c/m.
 
+DDCL / ITGPT placement uses **`M-slot48`**: a length-48 binary vector per beat, micro F1 at threshold 0.5 and at the max-F1 threshold (`stepcovnet.ddcl.evaluation`). Do not mix `M-slot48` with `M-ddc-20ms`.
+
 ---
 
 ## Definition — `timing_match`

@@ -7,7 +7,7 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 | Directory                                    | Track                                | Contents                                            |
 | -------------------------------------------- | ------------------------------------ | --------------------------------------------------- |
 | [`ar/`](ar/)                                 | Autoregressive onset (`onset_ar/`)   | Champion [`tide_overfit.json`](ar/tide_overfit.json); versioned experiments in [`ar/versions/`](ar/versions/) |
-| [`ddc/`](ddc/)                                 | DDC C-LSTM placement (`donahue2017ddc`) | Fraxtil Dataset A; smoke in `placement_fraxtil_smoke.json` |
+| [`ddc/`](ddc/)                                 | DDC C-LSTM and DDCL ConvLSTM placement | Fraxtil Dataset A; DDC smoke `placement_fraxtil_smoke.json`; DDCL smoke `ddcl_placement_fraxtil_smoke.json` |
 | [`dense/`](dense/)                           | Dense frame onset                    | Baseline, `final_data` scoreboard, mel/MERT compare |
 | [`event/`](event/)                           | K-query event onset                  | Multi-song baseline, single-song overfit            |
 | [`arrow/`](arrow/)                           | Arrow model                          | Baseline, sweep, local dev configs                  |
@@ -20,6 +20,7 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 | Goal                          | Config                                      |
 | ----------------------------- | ------------------------------------------- |
 | DDC placement on original Fraxtil | `configs/ddc/placement_fraxtil.json` → `models_wsl/ddc/placement_fraxtil/` |
+| DDCL placement on original Fraxtil | `configs/ddc/ddcl_placement_fraxtil.json` → `models_wsl/ddc/ddcl_placement_fraxtil/` |
 | AR tide overfit (champion)    | `configs/ar/tide_overfit.json` → `models_wsl/ar/tide_overfit/` |
 | AR tide overfit experiments | `configs/ar/versions/tide_overfit/vN.json` (frozen history) |
 | Dense `final_data` scoreboard | `configs/dense/final_data_mert_bilstm.json` |

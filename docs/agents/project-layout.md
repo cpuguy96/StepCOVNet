@@ -25,7 +25,8 @@ Pre-push CI mirror: `python pre_submit.py` (from repository root).
 
 | Path | Contents |
 | ---- | -------- |
-| `src/stepcovnet/` | Main package (dense onset, arrows, shared utils) |
+| `src/stepcovnet/ddc/` | DDC C-LSTM placement (`donahue2017ddc`, `M-ddc-20ms`) |
+| `src/stepcovnet/ddcl/` | DDCL ConvLSTM placement (`omalley2025ddcl`, `M-slot48`) |
 | `src/stepcovnet/onset_events/` | K-query event onset pipeline (research track) |
 | `src/stepcovnet/onset_ar/` | Autoregressive onset (`gate-tide-overfit` …); design [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md); **Phase 0+1 implemented** — gate failing (EXP-20260627-02) |
 | `src/stepcovnet/dataset_prep/` | Raw simfile → `final_data` preprocessing, `training_index`, `training_loader` (P8–P9) |
