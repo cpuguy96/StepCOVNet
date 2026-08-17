@@ -19,7 +19,7 @@ Also load this skill when the user says **do it**, **go ahead**, **start it**, o
 
    Use `--json` only when merging into another tool.
 
-2. Read [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) § **Current phase** — compact block (**Next action**, **Blockers**, **Defer until**) plus detail tables if needed.
+2. Read [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) § **Current phase** — that compact block is the **live** scoreboard (**Next action**, **Blockers**, numbers). This skill does not store them.
 
 3. If `project_status.py` lists **Missing prerequisites**, fold them into **Before you start** — do not suggest launching a run until blockers are addressed or the user accepts the risk.
 
@@ -45,6 +45,8 @@ If evidence is thin: **Now** = the measurement that would raise confidence; put 
 
 Copying Current phase **Next action** verbatim is wrong when that line is an unproven hypothesis — treat it as a candidate, then verify or demote it.
 
+**Do not** edit this skill to record a new F1, EXP id, config path, or today's Next action. Put those in Current phase (and the EXP entry). This file stays **how to choose**, not **what is current**.
+
 ### No ladder scale-up unless asked
 
 Do **not** put R3+ / more train songs / “scale the ladder” in **Now** or **If you say "do it"** unless the user **explicitly** asks to scale. Prefer fixed-R2 diagnostics, architecture, or objective changes. Scale may appear only under **Alternate** (and only if evidence supports it).
@@ -60,30 +62,19 @@ Hard prev-relative windows (`pointer_local_ce_radius` / force-advance / min_ahea
 
 If the user asks for another hard-mask probe anyway, run it under **Alternate** and label it diagnostic-only.
 
-### Literature chain: DDC → DDCL → ITGPT
+### Literature recreation
 
-The research goal is **recreate published chart generation, then show an increment** on the matching corpus, split, grid, and metric ([NOTE-20260814-01](../../../docs/research/DISCUSSION_NOTES.md#note-20260814-01-literature-recreation-before-incremental-claims)). After Dataset A DDC placement T-repro is **accepted**:
+When Current phase is literature recreation: match the paper’s corpus, split, grid, and metric; cite bibliography keys; do not mix placement metrics in one table. Which paper or stage is current is in Current phase — not here.
 
-| Now | Not Now |
-| --- | ------- |
-| Recreate **DDCL** on Dataset A (`omalley2025ddcl`): 48-slot placement has a real `M-slot48` number ([EXP-20260816-02](../../../docs/research/EXPERIMENT_LOG.md#exp-20260816-02-ddcl-48-slot-placement-full-split-on-dataset-a)); next is their audio-in-selection | `final_data` dense / MERT / AR as the literature scoreboard |
-| Then **ITGPT** on Dataset B (`omalley2026itgpt`, expanded Fraxtil) | Mixing `M-ddc-20ms` with `M-slot48` in one table |
-| Cite keys; match the paper’s PRE / metric | Treating ITL/Mizuki as “proper” until C5 |
+Do **not** put `final_data` dense/MERT/AR trains in **Now** / **do it** as a literature scoreboard unless the user asks. That corpus is transfer/generalization only until shown otherwise.
 
-Do **not** put DDC’s 256-class LSTM selection in **Now** just because C-LSTM placement was close enough. DDCL selection is in scope **as part of DDCL recreation**, after 48-slot placement exists — not as a DDC-peak choreography head.
+### Stay on the user's task
 
-### No `final_data` as literature comparison unless asked
+Do not jump to the next pipeline stage because a number exists (placement F1 does not mean start selection). Stay on the task the user last confirmed until they switch it. A Current phase **Next action** that names a later stage is a candidate, not an order.
 
-Do **not** put subset or full-index `final_data` dense/MERT trains in **Now** / **do it**. That corpus is transfer/generalization only (C4). We have not shown it is a valid stand-in for Fraxtil/ITG.
+### No extra eval on a frozen baseline unless asked
 
-### No more DDC placement eval unless asked
-
-After Dataset A T-repro is **accepted**, or the user says DDC placement eval is **done**, do **not** put further DDC C-LSTM eval diagnostics in **Now** / **do it**.
-
-| Allowed | Not until asked |
-| ------- | --------------- |
-| Citing logged F-score_c / F-score_m; a placement **train** the user requested | `timing_match`, matched-count, FP histograms, threshold sweeps, last-vs-best on the frozen ckpt |
-| Starting **DDCL** 48-slot work | Stacking eval columns because ordered match is at the floor |
+After a recreation is accepted, or the user says eval is done, do not stack new diagnostic columns on that frozen checkpoint unless they ask. Citing logged numbers is fine; a new train they requested is fine.
 
 ## Answer template
 
@@ -137,7 +128,7 @@ Keep prose tight. Link configs and docs with repo-relative paths.
 
 ## Maintenance (agents)
 
-When logging an `EXP-…` that changes routing, update the compact block at the top of § Current phase **in the same turn**:
+When logging an `EXP-…` that changes routing, update the compact block at the top of § Current phase **in the same turn**. Do **not** patch this skill with the new Next action or run numbers.
 
 | Field | When to change |
 | ----- | -------------- |

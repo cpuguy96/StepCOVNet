@@ -42,6 +42,28 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260817-02: Whats-next skill is how to choose, not the scoreboard
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-17 00:25:58 |
+| **Category** | convention |
+| **Summary** | User: do not add specific run numbers / today's Next action to the whats-next skill; it should stay generic about how to operate. |
+| **Artifact** | skill: `.cursor/skills/whats-next/SKILL.md` (live status → Current phase; literature/eval constraints generic); `.cursor/skills/steering-correction-promotion/SKILL.md` (skills ≠ scoreboard). No new alwaysApply rule |
+| **Action taken** | Stripped EXP ids and F1 from whats-next; promotions must write live routing to Current phase only |
+| **Related** | JRN-20260817-01 |
+
+### JRN-20260817-01: Stay on onset — no selection until asked
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-17 00:23:06 |
+| **Category** | convention |
+| **Summary** | User: we are still doing onset detection, not arrow selection. Routing had jumped to DDCL audio-in selection after EXP-16-02. |
+| **Artifact** | skill: `.cursor/skills/whats-next/SKILL.md` (§ Literature chain; restored/broadened § No step selection unless asked); Current phase Next action → longer DDCL placement. No new alwaysApply rule |
+| **Action taken** | what's-next forbids DDC and DDCL selection in Now/do-it unless asked; next gate is a longer Dataset A placement train |
+| **Related** | JRN-20260815-02 · EXP-20260816-02 · `omalley2025ddcl` |
+
 ### JRN-20260816-02: DDCL full-split must not pre-stack memlen windows
 
 | Field | Value |

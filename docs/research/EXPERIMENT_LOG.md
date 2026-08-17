@@ -10,13 +10,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-16
-**Primary track:** Literature recreation — DDCL on Dataset A (`omalley2025ddcl`), then ITGPT on B
-**Status:** Full-split DDCL placement ran 8 ep. Best-`val_loss` val `M-slot48` F1@0.5 **0.601** vs beat-shuffle null **0.397** (skill **+0.204**); max-F1 **0.634** @ 0.40. Not a T-repro vs ITGPT Table 2 **0.70 / 0.76** (expanded Fraxtil). Two WSL OOMs (exit 9) were window preload; on-demand windows fixed it ([EXP-20260816-02](#exp-20260816-02-ddcl-48-slot-placement-full-split-on-dataset-a)).
+**Updated:** 2026-08-17
+**Primary track:** Literature recreation — DDCL **placement** (onset) on Dataset A (`omalley2025ddcl`), then ITGPT placement on B
+**Status:** Full-split DDCL placement ran 8 ep. Best-`val_loss` val `M-slot48` F1@0.5 **0.601** vs beat-shuffle null **0.397** (skill **+0.204**); max-F1 **0.634** @ 0.40. Not a T-repro vs ITGPT Table 2 **0.70 / 0.76** (expanded Fraxtil). 8×100 steps is a thin pass ([EXP-20260816-02](#exp-20260816-02-ddcl-48-slot-placement-full-split-on-dataset-a)).
 
-**Next action:** DDCL audio-in **selection** on Dataset A (48-slot placement now has a real number). Do not train `final_data` for comparison.
-**Blockers:** None — GPU free; placement ckpt `models_wsl/ddc/ddcl_placement_fraxtil/best.keras`.
-**Defer:** `final_data` dense/AR as a literature number; more DDC C-LSTM eval; Dataset B until DDCL-on-A selection exists; AR-on-times locality / ladder scale-up; longer DDCL placement (more steps/epochs) unless asked.
+**Next action:** Longer DDCL placement train on Dataset A (more epochs/steps, same `M-slot48` + null). Stay on onset. Do not start selection.
+**Blockers:** None — GPU free; 8-ep ckpt `models_wsl/ddc/ddcl_placement_fraxtil/best.keras`.
+**Defer:** Step selection (DDC or DDCL) until asked; `final_data` dense/AR as a literature number; more DDC C-LSTM eval; Dataset B until DDCL placement is further along; AR-on-times locality / ladder scale-up.
 
 ### Dataset prep (PRE ingestion)
 
@@ -26,7 +26,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** DDCL audio-in selection on Dataset A. `final_data` is transfer only.
+**Recommended next step:** Longer DDCL placement train on Dataset A (`M-slot48` + null). Selection stays off. `final_data` is transfer only.
 
 ### Onset detection (research track)
 
@@ -56,7 +56,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 - **First, for any track:** report the audio-blind floor beside every number ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). A Hungarian F1 on dense charts is unreadable without it.
 - **Second, for any track:** run the audio-corruption ablation before believing any score ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). A single-song overfit **cannot** detect an audio-blind model — the tide gate passes with the audio reversed.
 - **Track B (AR):** the pointer head is the bug, not the data. Replace `Dense(max_patches)` with a content-based pointer against encoder memory before adding rows or tuning anything else.
-- **Track A (literature):** Recreate DDCL on Dataset A, then ITGPT on B, before any incremental claim. `final_data` is transfer only — not the comparison set.
+- **Track A (literature):** Recreate DDCL **placement** on Dataset A, then ITGPT placement on B, before any incremental claim. Stay on onset. `final_data` is transfer only — not the comparison set.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---

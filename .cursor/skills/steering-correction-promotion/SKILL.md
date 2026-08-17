@@ -16,11 +16,12 @@ Also invoked from [agent-self-improvement](../agent-self-improvement/SKILL.md).
 | ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------ |
 | `alwaysApply: true` rules | **Every turn** — add sparingly; merge or scope when possible | Routing, portable paths, Python env — only what _every_ task needs |
 | `globs` rules             | **When matching files** are in play                          | Script execution, docs schema, test patterns                       |
-| Skills                    | **When task matches** or agent opens skill                   | Procedures, WSL GPU, promotion workflow itself                     |
+| Skills                    | **When task matches** or agent opens skill                   | How to decide or run — not live F1 / EXP ids / today's Next action |
+| Current phase             | Live scoreboard                                              | Next action, blockers, run numbers — [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) |
 | `AGENTS.md`               | **Router only** — stay thin                                  | One index table; no procedure prose                                |
 | Self-journal              | **Receipt** — not loaded every turn                          | Audit trail with **Artifact** path                                 |
 
-**Default:** prefer **skill section** or **scoped rule** over a new `alwaysApply` rule.
+**Default:** prefer **skill section** or **scoped rule** over a new `alwaysApply` rule. Put live experiment state in Current phase, not in the skill body.
 
 ## Decision tree
 
