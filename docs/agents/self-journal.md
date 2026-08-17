@@ -42,7 +42,19 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20260816-01: Literature chain DDCL then ITGPT, not `final_data`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-16 18:16:53 |
+| **Category** | convention |
+| **Summary** | User: do not train `final_data` as the scoreboard — it may not be proper, and the goal is an increment over the last paper. Recreate DDCL, then ITGPT. |
+| **Artifact** | skill: `.cursor/skills/whats-next/SKILL.md` (§ Literature chain; § No `final_data` as literature comparison); `AGENTS.md` DDCL/ITGPT row; Current phase + [NOTE-20260816-01](../research/DISCUSSION_NOTES.md#note-20260816-01-recreate-ddcl-then-itgpt-final_data-is-not-the-paper-set) |
+| **Action taken** | what's-next forbids `final_data` trains as Now/do-it; routes to DDCL 48-slot on Dataset A then ITGPT on B. No new alwaysApply rule |
+| **Related** | NOTE-20260814-01 · NOTE-20260816-01 · EXP-20260815-03 · `omalley2025ddcl` |
+
 ### JRN-20260815-03: Stop DDC placement eval unless asked
+
 
 | Field | Value |
 | ----- | ----- |

@@ -67,7 +67,7 @@ Status: **hypothesis** | **supported** | **not_supported** | **positioning** (no
 | C3 | Literature AR generates arrows given known times; StepCOVNet `onset_ar` generates times — not the same task | positioning | NOTE-20260814-01; [EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer) | Related work / discussion |
 | C4 | `final_data` (ITL / Mizuki / Vocaloid) is not the Fraxtil literature corpus | positioning | [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md) vs DDC/ITGPT pack lists | Methods (data) |
 | C5 | A new method is comparable to DDC/DDCL/ITGPT only on their dataset, split, grid, and metric | hypothesis | NOTE-20260814-01 | Methods (eval) |
-| C6 | Recreated DDC matches published Fraxtil placement/selection numbers | hypothesis | *no EXP yet* | Results |
+| C6 | Recreated DDC matches published Fraxtil placement/selection numbers | hypothesis (placement **Partial**) | Placement T-repro accepted: val **0.652 / 0.734** vs paper **0.681 / 0.756** ([EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). Selection not recreated. | Results |
 | C7 | Recreated DDCL / ITGPT match published numbers on the matching corpus | hypothesis | *no EXP yet* | Results |
 
 Do not put C6–C7 in the abstract until an `EXP-` supports them.
@@ -92,7 +92,7 @@ Record the **actual song IDs in each split** (file under `data/` or a tracked ma
 | ID | Name | Definition | Used by | Notes |
 | -- | ---- | ---------- | ------- | ----- |
 | M-ddc-20ms | Peak-pick F1 @ ±20 ms | Hamming-smoothed 10 ms probs, per-difficulty threshold, ±20 ms match | `donahue2017ddc` | In-repo: `stepcovnet.ddc.peak_pick` / `scripts/eval_ddc_placement.py`. Do not mix with beat-grid F1 |
-| M-slot48 | 48-slot/beat F1 | Binary vector of length 48 per beat; report @ 0.5 and max-F1 | `omalley2025ddcl`, `omalley2026itgpt` | No 20 ms window |
+| M-slot48 | 48-slot/beat F1 | Binary vector of length 48 per beat; report @ 0.5 and max-F1 | `omalley2025ddcl`, `omalley2026itgpt` | In-repo: `stepcovnet.ddcl.evaluation` / `scripts/eval_ddcl_placement.py`. No 20 ms window |
 | M-sel-acc | Selection top-1 / top-2 / hold acc | Teacher-forced next-step over 256 classes | all three | Hold acc is the leftover error in ITGPT vs DDCL |
 | M-timing | `timing_match` @ 20 ms | Ordered match / max(n_pred, n_ref) | current StepCOVNet AR/dense; DDC eval parallel column | Internal until a seconds-list track is in the paper. DDC literature column stays `M-ddc-20ms` ([EXP-20260815-05](EXPERIMENT_LOG.md#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)) |
 | M-null | Audio-blind / chance floor | Same metric with shuffled or silent audio, or density-matched null | EXP-20260804-03/05 | Required beside any number we claim as skill |

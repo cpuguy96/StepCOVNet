@@ -4,7 +4,25 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-16 — Literature chain is Current phase
+
+### NOTE-20260816-01: Recreate DDCL then ITGPT; `final_data` is not the paper set
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-16 18:16:53 |
+| **Topic** | Current-phase routing vs DDC → DDCL → ITGPT |
+
+**Context.** User rejected a full-index `final_data` dense train: that corpus is not known to be a valid literature stand-in, and the goal is an increment over published chart-generation papers (same shape as the Dataset A DDC T-repro). Next work is **DDCL**, then **ITGPT**.
+
+**Discovery.** [NOTE-20260814-01](#note-20260814-01-literature-recreation-before-incremental-claims) already had this protocol; Current phase had drifted to a `final_data` scoreboard after DDC eval closed. DDC placement on A is **accepted**; there is still **no** in-repo 48-slot PRE or `M-slot48` eval.
+
+**Implication.** Current phase is literature recreation: DDCL on Dataset A, then ITGPT on Dataset B, then incremental ablations. `final_data` stays transfer/generalization (C4). Do not mix `M-ddc-20ms` with `M-slot48`.
+
+**Related.** `omalley2025ddcl` · `omalley2026itgpt` · [EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap) · [PAPER_LEDGER.md](PAPER_LEDGER.md)
+
 ## Session 2026-08-15 — Dataset A ingest
+
 
 ### NOTE-20260815-01: Tsunamix III SM5 zip 404; pack reconstructed unpacked
 
@@ -85,7 +103,7 @@ ITGPT training packs (README): Fraxtil’s Arrow Arrangements, Beast Beats, Cute
 4. Only then incremental PRE/MODEL ablations on B’s frozen test set (MERT vs 80-band mel, hold modeling, larger multi-author data).
 5. Transfer: Fraxtil → ITL/Mizuki as a **generalization** experiment, not the first scoreboard.
 
-**Open.** Whether to change EXPERIMENT_LOG § Current phase from AR-locality wrap-up to this recreation track (user decision). Whether Dataset A split should copy DDC’s unpublished song IDs or a new seed-42 song-grouped split documented in-repo.
+**Open.** Dataset A split uses documented seed-42 song-grouped IDs, not DDC’s unpublished 80/10/10. Current phase is this recreation track as of [NOTE-20260816-01](#note-20260816-01-recreate-ddcl-then-itgpt-final_data-is-not-the-paper-set).
 
 **Related.** [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md) · [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · DDC [arxiv:1703.06891](https://arxiv.org/abs/1703.06891) · DDCL [arxiv:2507.01644](https://arxiv.org/abs/2507.01644) · ITGPT [arxiv:2607.14148](https://arxiv.org/abs/2607.14148)
 

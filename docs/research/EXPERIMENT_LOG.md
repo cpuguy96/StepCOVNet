@@ -10,13 +10,13 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-15
-**Primary track:** Onset scoreboard — `final_data` dense MERT
-**Status:** Dataset A DDC T-repro **accepted**. First `final_data` dense GPU smoke **done**: val micro event F1 **0.666** vs ioi-shuffle **0.294** (skill **+0.371**); `timing_match` **0.0047** vs null **0.0081** ([EXP-20260815-07](#exp-20260815-07-final_data-dense-50t100v-mert-bilstm-smoke)).
+**Updated:** 2026-08-16
+**Primary track:** Literature recreation — DDCL on Dataset A (`omalley2025ddcl`), then ITGPT on B
+**Status:** DDCL beat-grid PRE + ConvLSTM + `M-slot48` are in-repo. Dataset A **smoke** (2/1 songs, 1 ep) ran: val F1@0.5 **0.032** vs beat-shuffle null **0.491** (skill **−0.459**) — pipeline works, not a T-repro ([EXP-20260816-01](#exp-20260816-01-ddcl-48-slot-placement-smoke-on-dataset-a)).
 
-**Next action:** Stay on dense `final_data`. Do not compare **0.666** to the **0.686** `data/v2` number (different split). Full-index train only if asked.
-**Blockers:** None — GPU free.
-**Defer:** **DDC placement eval diagnostics** unless asked; **DDC/DDCL step selection** until asked; chasing the ~**0.03** F1 gap; retuning `M-ddc-20ms` POST; AR-on-times locality / α / hard-R; ladder scale-up unless asked; Dataset B.
+**Next action:** Train DDCL placement on the full Dataset A standard split (`configs/ddc/ddcl_placement_fraxtil.json`), then selection. Do not train `final_data` for comparison.
+**Blockers:** None — GPU free; PRE/metric exist.
+**Defer:** `final_data` dense/AR as a literature number; more DDC C-LSTM eval; Dataset B until a real DDCL-on-A number exists; AR-on-times locality / ladder scale-up.
 
 ### Dataset prep (PRE ingestion)
 
@@ -26,7 +26,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Dense `final_data` smoke is in: event F1 has skill, `timing_match` does not. Full-index MERT train only if asked — not DDC eval, not selection.
+**Recommended next step:** Full-split DDCL placement train on Dataset A (`M-slot48` + null). Selection after that. `final_data` is transfer only.
 
 ### Onset detection (research track)
 
@@ -56,7 +56,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 - **First, for any track:** report the audio-blind floor beside every number ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). A Hungarian F1 on dense charts is unreadable without it.
 - **Second, for any track:** run the audio-corruption ablation before believing any score ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). A single-song overfit **cannot** detect an audio-blind model — the tide gate passes with the audio reversed.
 - **Track B (AR):** the pointer head is the bug, not the data. Replace `Dense(max_patches)` with a content-based pointer against encoder memory before adding rows or tuning anything else.
-- **Track A (scoreboard):** Full `final_data` dense MERT (or mel) train/val; recompute the **0.686** `data/v2` best against its own null floor before comparing.
+- **Track A (literature):** Recreate DDCL on Dataset A, then ITGPT on B, before any incremental claim. `final_data` is transfer only — not the comparison set.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260816-01 | `pre` + `model` + `metric` + `train` | Can we run DDCL 48-slot ConvLSTM placement on Dataset A with `M-slot48` + null? | **Partial** | Smoke 1-ep F1@0.5 **0.032** vs null **0.491**; pipeline works, no skill |
 | EXP-20260815-07 | `train` + `metric` | Does a 50/100-row `final_data` dense MERT BiLSTM beat the ioi-shuffle floor? | **Partial** | Event F1 **0.666** vs null **0.294**; `timing_match` **0.0047** vs **0.0081** |
 | EXP-20260815-06 | `metric` | Does keeping `n_gt` highest-salience peaks recover `timing_match`? | **Not supported** | Matched-count **0.0154** ≈ null **0.0151**; raw **0.0024** |
 | EXP-20260815-05 | `metric` | Do accepted DDC peaks have `timing_match` skill beside F-score_m **0.734**? | **Not supported** | timing_match **0.0024** vs null **0.0109**; F-score_m unchanged **0.734** |
@@ -189,6 +190,18 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260816-01: DDCL 48-slot placement smoke on Dataset A
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-16 18:33:28 |
+| **Track** | `pre` + `model` + `metric` + `train` (DDCL placement, `omalley2025ddcl`) |
+| **Question** | Can we port DDCL beat-grid PRE (32 frames/beat, 48 slots) and the branched ConvLSTM onto original Fraxtil and emit `M-slot48` with a null floor? |
+| **Setup** | [`ddcl_placement_fraxtil_smoke.json`](../../configs/ddc/ddcl_placement_fraxtil_smoke.json): 2 train / 1 val songs, memlen **3**, 1 epoch, 4 steps, Adam 1e-4, binary focal loss. Manifest `training_index_standard.json`. Mel reused from DDC `*.ddc_mel.npy` (`donahue2017ddc`). Upstream: [miguelomalley/DDCL](https://github.com/miguelomalley/DDCL) commit `5b1375c`. Train `logs/ddcl_placement_smoke.log`. TB `http://localhost:6007/`. ~**33** s WSL GPU after load |
+| **Val (5 charts, 1420 beats)** | F1@0.5 **0.032** (TP **553** / FP **32555** / FN **1043**); max-F1 **0.046** @ thr **0.05**. Beat-shuffle null F1@0.5 **0.491**; skill **−0.459**. JSON `models_wsl/ddc/ddcl_placement_smoke/eval_val_slot48.json` |
+| **vs published** | **Not comparable** — 1-ep smoke on 1 val song. ITGPT Table 2 DDCL **0.70 / 0.76** is expanded Fraxtil, not this split |
+| **Conclusion** | **Partial.** PRE / ConvLSTM / `M-slot48` run on Dataset A with citations. Untrained sigmoids flood positives, so F1 sits below the beat-shuffle floor. Next is a full-split train, not selection |
 
 ### EXP-20260815-07: `final_data` dense 50t/100v MERT BiLSTM smoke
 

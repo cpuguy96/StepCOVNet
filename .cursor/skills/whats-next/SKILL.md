@@ -60,23 +60,30 @@ Hard prev-relative windows (`pointer_local_ce_radius` / force-advance / min_ahea
 
 If the user asks for another hard-mask probe anyway, run it under **Alternate** and label it diagnostic-only.
 
-### No DDC step selection unless asked
+### Literature chain: DDC → DDCL → ITGPT
 
-Literature recreation is **onset / step placement** (`M-ddc-20ms`) until the user explicitly asks for choreography. Do **not** put DDC/DDCL **step selection** (LSTM arrow patterns, 256-class next-step, hold acc) in **Now** or **If you say "do it"**.
+The research goal is **recreate published chart generation, then show an increment** on the matching corpus, split, grid, and metric ([NOTE-20260814-01](../../../docs/research/DISCUSSION_NOTES.md#note-20260814-01-literature-recreation-before-incremental-claims)). After Dataset A DDC placement T-repro is **accepted**:
 
-| Allowed | Not until asked |
-| ------- | --------------- |
-| Placement F-score_c / F-score_m, peak-pick, null floor, PRE/POST fidelity | Selection top-1 / hold acc, audio-in-selection, 48-slot DDCL as the next gate *because* placement is “close enough” |
-| Selection may appear only under **Alternate** | Treating “placement then selection” as automatic routing after a Partial T-repro |
+| Now | Not Now |
+| --- | ------- |
+| Recreate **DDCL** on Dataset A (`omalley2025ddcl`): 48-slot/beat placement (`M-slot48`), then their audio-in-selection | `final_data` dense / MERT / AR as the literature scoreboard |
+| Then **ITGPT** on Dataset B (`omalley2026itgpt`, expanded Fraxtil) | Mixing `M-ddc-20ms` with `M-slot48` in one table |
+| Cite keys; match the paper’s PRE / metric | Treating ITL/Mizuki as “proper” until C5 |
+
+Do **not** put DDC’s 256-class LSTM selection in **Now** just because C-LSTM placement was close enough. DDCL selection is in scope **as part of DDCL recreation**, after 48-slot placement exists — not as a DDC-peak choreography head.
+
+### No `final_data` as literature comparison unless asked
+
+Do **not** put subset or full-index `final_data` dense/MERT trains in **Now** / **do it**. That corpus is transfer/generalization only (C4). We have not shown it is a valid stand-in for Fraxtil/ITG.
 
 ### No more DDC placement eval unless asked
 
-After Dataset A T-repro is **accepted**, or the user says placement eval is **done**, do **not** put further DDC eval diagnostics in **Now** / **do it**.
+After Dataset A T-repro is **accepted**, or the user says DDC placement eval is **done**, do **not** put further DDC C-LSTM eval diagnostics in **Now** / **do it**.
 
 | Allowed | Not until asked |
 | ------- | --------------- |
 | Citing logged F-score_c / F-score_m; a placement **train** the user requested | `timing_match`, matched-count, FP histograms, threshold sweeps, last-vs-best on the frozen ckpt |
-| Selection only under **Alternate** | Stacking eval columns because ordered match is at the floor |
+| Starting **DDCL** 48-slot work | Stacking eval columns because ordered match is at the floor |
 
 ## Answer template
 
