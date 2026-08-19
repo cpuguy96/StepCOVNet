@@ -127,6 +127,8 @@ class DdclRunConfig(_DictSerializableMixin):
         model_output_dir: Directory for the saved ``.keras`` file.
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
+        resume: If True, ``BackupAndRestore`` continues an interrupted run
+            in ``model_output_dir``.
     """
 
     epoch: int = 8
@@ -138,6 +140,7 @@ class DdclRunConfig(_DictSerializableMixin):
     model_output_dir: str = "models_wsl/ddc/ddcl_placement_fraxtil"
     callback_root_dir: str = "callbacks/ddc/ddcl_placement"
     model_name: str = "ddcl_placement_fraxtil"
+    resume: bool = True
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.

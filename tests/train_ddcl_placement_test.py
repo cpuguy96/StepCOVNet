@@ -22,6 +22,15 @@ class TrainDdclPlacementScriptTest(unittest.TestCase):
             ["--config", "configs/ddc/ddcl_placement_fraxtil_smoke.json"]
         )
         self.assertTrue(args.config.endswith("ddcl_placement_fraxtil_smoke.json"))
+        self.assertFalse(args.fresh)
+        fresh = parser.parse_args(
+            [
+                "--config",
+                "configs/ddc/ddcl_placement_fraxtil_smoke.json",
+                "--fresh",
+            ]
+        )
+        self.assertTrue(fresh.fresh)
 
 
 if __name__ == "__main__":

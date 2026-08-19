@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+import keras
 import numpy as np
 
 from stepcovnet.ddcl import config, constants, datasets, models, trainers
@@ -110,20 +111,83 @@ class DdclTrainersTest(unittest.TestCase):
                 trainers.train_placement(experiment)
             saved = pathlib.Path(tmpdir) / "models" / "smoke.keras"
             best = pathlib.Path(tmpdir) / "models" / "best.keras"
+            last = pathlib.Path(tmpdir) / "models" / "last.keras"
             eval_path = pathlib.Path(tmpdir) / "models" / "eval_val_slot48.json"
             best_eval = pathlib.Path(tmpdir) / "models" / "eval_val_slot48_best.json"
+            state_path = pathlib.Path(tmpdir) / "models" / "train_state.json"
             self.assertTrue(saved.is_file())
             self.assertTrue(best.is_file())
+            self.assertTrue(last.is_file())
             payload = json.loads(eval_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["f1_max"], 0.2)
             self.assertEqual(payload["weights"], "last")
             best_payload = json.loads(best_eval.read_text(encoding="utf-8"))
             self.assertEqual(best_payload["weights"], "best")
             self.assertEqual(mock_eval.call_count, 2)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["epoch"], 1)
             log_root = pathlib.Path(tmpdir) / "callbacks" / "logs"
             run_dirs = [path for path in log_root.iterdir() if path.is_dir()]
             self.assertEqual(len(run_dirs), 1)
             self.assertTrue(run_dirs[0].name.endswith("-smoke"))
+
+    def test_train_placement_resumes_after_interrupt(self):
+        memlen = 2
+        chart = _synthetic_chart(memlen=memlen)
+        report = mock.Mock()
+        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
+
+        class Boom(keras.callbacks.Callback):
+            def on_epoch_begin(self, epoch, logs=None):
+                del logs
+                if epoch == 1:
+                    raise RuntimeError("interrupt")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.DdclExperimentConfig(
+                dataset=config.DdclDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    batch_size=2,
+                    memlen=memlen,
+                ),
+                model=config.DdclModelConfig(
+                    lstm_units=8,
+                    dropout_rate=0.0,
+                    dense_sizes=[16, 8],
+                ),
+                run=config.DdclRunConfig(
+                    epoch=2,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir=str(pathlib.Path(tmpdir) / "callbacks"),
+                    model_name="smoke",
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.ddcl.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.ddcl.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "interrupt"):
+                    trainers.train_placement(
+                        experiment,
+                        extra_callbacks=[Boom()],
+                    )
+                backup = pathlib.Path(tmpdir) / "models" / "backup"
+                self.assertTrue((backup / "latest.weights.h5").is_file())
+                self.assertTrue(
+                    (pathlib.Path(tmpdir) / "models" / "last.keras").is_file()
+                )
+                trainers.train_placement(experiment)
+            saved = pathlib.Path(tmpdir) / "models" / "smoke.keras"
+            self.assertTrue(saved.is_file())
+            self.assertFalse(backup.is_dir())
 
 
 if __name__ == "__main__":

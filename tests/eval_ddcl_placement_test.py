@@ -31,7 +31,13 @@ class EvalDdclPlacementScriptTest(unittest.TestCase):
             experiment.run.model_output_dir = str(model_dir)
             resolved = eval_ddcl_placement._resolve_model_path(experiment, "")
             self.assertTrue(resolved.endswith("a.keras"))
+            (model_dir / "best.keras").write_bytes(b"best")
+            (model_dir / "last.keras").write_bytes(b"last")
+            resolved = eval_ddcl_placement._resolve_model_path(experiment, "")
+            self.assertTrue(resolved.endswith("best.keras"))
             (model_dir / "b.keras").write_bytes(b"y")
+            (model_dir / "best.keras").unlink()
+            (model_dir / "last.keras").unlink()
             with self.assertRaises(FileNotFoundError):
                 eval_ddcl_placement._resolve_model_path(experiment, "")
 

@@ -50,10 +50,20 @@ def _resolve_model_path(
     if model_path:
         return model_path
     model_dir = pathlib.Path(experiment.run.model_output_dir)
+    named = model_dir / f"{experiment.run.model_name}.keras"
+    preferred = (
+        model_dir / "best.keras",
+        named,
+        model_dir / "last.keras",
+    )
+    for candidate in preferred:
+        if candidate.is_file():
+            return str(candidate)
     keras_files = sorted(path.name for path in model_dir.glob("*.keras"))
     if len(keras_files) != 1:
         raise FileNotFoundError(
-            f"expected one .keras in {model_dir}, found {keras_files!r}"
+            f"expected best.keras, {named.name}, last.keras, or one .keras in "
+            f"{model_dir}, found {keras_files!r}"
         )
     return str(model_dir / keras_files[0])
 

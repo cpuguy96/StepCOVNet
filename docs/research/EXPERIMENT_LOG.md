@@ -10,23 +10,23 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-17
-**Primary track:** Literature recreation — DDCL **placement** (onset) on Dataset A (`omalley2025ddcl`), then ITGPT placement on B
-**Status:** Full-split DDCL placement ran 8 ep. Best-`val_loss` val `M-slot48` F1@0.5 **0.601** vs beat-shuffle null **0.397** (skill **+0.204**); max-F1 **0.634** @ 0.40. Not a T-repro vs ITGPT Table 2 **0.70 / 0.76** (expanded Fraxtil). 8×100 steps is a thin pass ([EXP-20260816-02](#exp-20260816-02-ddcl-48-slot-placement-full-split-on-dataset-a)).
+**Updated:** 2026-08-18
+**Primary track:** Literature recreation — DDCL **placement** (onset) on Dataset A (`omalley2025ddcl`) **held**; ITGPT placement on B when asked
+**Status:** Dataset A DDCL placement **held** at 128-ep. Last-epoch val `M-slot48` F1@0.5 **0.680** vs beat-shuffle null **0.397** (skill **+0.283**); max-F1 **0.685** @ 0.45. Best-`val_loss` (ep **102**) F1@0.5 **0.670** / max-F1 **0.688**. No further A train — leftover gap to ITGPT Table 2 **0.70 / 0.76** is corpus (`D-frax-exp`), not epochs. ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a))
 
-**Next action:** Longer DDCL placement train on Dataset A (more epochs/steps, same `M-slot48` + null). Stay on onset. Do not start selection.
-**Blockers:** None — GPU free; 8-ep ckpt `models_wsl/ddc/ddcl_placement_fraxtil/best.keras`.
-**Defer:** Step selection (DDC or DDCL) until asked; `final_data` dense/AR as a literature number; more DDC C-LSTM eval; Dataset B until DDCL placement is further along; AR-on-times locality / ladder scale-up.
+**Next action:** None on Dataset A DDCL. Stay on onset. Do not start selection. Dataset B stays off until asked.
+**Blockers:** None — GPU free; held ckpt `models_wsl/ddc/ddcl_placement_fraxtil_128ep/`.
+**Defer:** Step selection (DDC or DDCL) until asked; `final_data` dense/AR as a literature number; more DDC C-LSTM eval; Dataset B until asked; AR-on-times locality / ladder scale-up.
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
-| **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. Placement 128-ep val **0.652 / 0.734** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). Cite `donahue2017ddc`. |
+| **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. DDC C-LSTM 128-ep val **0.652 / 0.734** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). DDCL placement **held** at 128-ep last F1@0.5 **0.680** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). Cite `donahue2017ddc`, `omalley2025ddcl`. |
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Longer DDCL placement train on Dataset A (`M-slot48` + null). Selection stays off. `final_data` is transfer only.
+**Recommended next step:** Dataset A DDCL placement **held** at 128-ep (`M-slot48` last F1@0.5 **0.680**). No further A train. Selection stays off. Dataset B until asked. `final_data` is transfer only.
 
 ### Onset detection (research track)
 
@@ -56,7 +56,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 - **First, for any track:** report the audio-blind floor beside every number ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). A Hungarian F1 on dense charts is unreadable without it.
 - **Second, for any track:** run the audio-corruption ablation before believing any score ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). A single-song overfit **cannot** detect an audio-blind model — the tide gate passes with the audio reversed.
 - **Track B (AR):** the pointer head is the bug, not the data. Replace `Dense(max_patches)` with a content-based pointer against encoder memory before adding rows or tuning anything else.
-- **Track A (literature):** Recreate DDCL **placement** on Dataset A, then ITGPT placement on B, before any incremental claim. Stay on onset. `final_data` is transfer only — not the comparison set.
+- **Track A (literature):** Dataset A DDCL **placement** is **held** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). Stay on onset. ITGPT placement on B is the next literature step **when asked** — not a current job. `final_data` is transfer only — not the comparison set.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260817-01 | `train` + `metric` | Does 128-ep × 200 steps lift Dataset A DDCL `M-slot48` past the 8-ep thin pass? | **Supported** | Last F1@0.5 **0.680** vs null **0.397** (skill **+0.283**); max-F1 **0.685**; vs 8-ep **+0.079** @ 0.5; not vs ITGPT **0.70 / 0.76** |
 | EXP-20260816-02 | `train` + `metric` | Does full-split DDCL 48-slot ConvLSTM placement on Dataset A beat the beat-shuffle null? | **Partial** | Best F1@0.5 **0.601** vs null **0.397** (skill **+0.204**); max-F1 **0.634**; not vs ITGPT **0.70 / 0.76** |
 | EXP-20260816-01 | `pre` + `model` + `metric` + `train` | Can we run DDCL 48-slot ConvLSTM placement on Dataset A with `M-slot48` + null? | **Partial** | Smoke 1-ep F1@0.5 **0.032** vs null **0.491**; pipeline works, no skill |
 | EXP-20260815-07 | `train` + `metric` | Does a 50/100-row `final_data` dense MERT BiLSTM beat the ioi-shuffle floor? | **Partial** | Event F1 **0.666** vs null **0.294**; `timing_match` **0.0047** vs **0.0081** |
@@ -191,6 +192,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260817-01: DDCL 48-slot placement 128-ep on Dataset A
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-17 03:37:51 |
+| **Track** | `train` + `metric` (DDCL placement, `omalley2025ddcl`) |
+| **Question** | On the Dataset A standard split, does 128 ep × 200 steps lift `M-slot48` past the 8-ep thin pass ([EXP-20260816-02](#exp-20260816-02-ddcl-48-slot-placement-full-split-on-dataset-a))? |
+| **Setup** | [`ddcl_placement_fraxtil_128ep.json`](../../configs/ddc/ddcl_placement_fraxtil_128ep.json): same 81/9 songs, 405/45 charts, memlen **15**, lstm **200**, batch **8**, Adam 1e-4, binary focal loss, seed **42**; 128 ep × 200/20 steps. Train `logs/ddcl_placement_fraxtil_128ep.log`. TB `callbacks/ddc/ddcl_placement/logs` (port **6007**). ~**148** min WSL GPU after load |
+| **Train** | Best `val_loss` **0.00789** @ ep **102**; last ep-128 `val_loss` **0.0140**. Saved `models_wsl/ddc/ddcl_placement_fraxtil_128ep/best.keras` and `ddcl_placement_fraxtil_128ep.keras` |
+| **Val (45 charts, 17523 beats)** | **Last weights:** F1@0.5 **0.680** (TP **11913** / FP **5236** / FN **5955**); max-F1 **0.685** @ thr **0.45**. **Best-`val_loss` weights:** F1@0.5 **0.670** (TP **11244** / FP **4433** / FN **6624**); max-F1 **0.688** @ thr **0.45**. Beat-shuffle null F1@0.5 **0.397**. JSON `eval_val_slot48.json` / `eval_val_slot48_best.json` |
+| **vs 8-ep** | Last F1@0.5 **+0.079** vs 8-ep best **0.601**. Last skill **+0.283** vs 8-ep **+0.204**. Last weights are now usable at 0.5 (8-ep last was **0.221**) |
+| **vs published** | **Not comparable** — ITGPT Table 2 DDCL **0.70 / 0.76** is expanded Fraxtil (`D-frax-exp`), not this 81/9 split |
+| **Conclusion** | **Supported.** Longer train was the binding gap vs the 8-ep thin pass. Hold this Dataset A number; stay on onset. Do not cite **0.680** against **0.70**. Do not start selection |
 
 ### EXP-20260816-02: DDCL 48-slot placement full-split on Dataset A
 

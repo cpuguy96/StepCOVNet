@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
+import shutil
 from collections.abc import Iterator
 from typing import cast
 
@@ -98,8 +99,75 @@ def tensorboard_run_log_dir(callback_root_dir: str, model_name: str) -> pathlib.
 
 
 BEST_CHECKPOINT_FILENAME = "best.keras"
+LAST_CHECKPOINT_FILENAME = "last.keras"
+TRAIN_STATE_FILENAME = "train_state.json"
+BACKUP_DIRNAME = "backup"
 LAST_EVAL_FILENAME = "eval_val_slot48.json"
 BEST_EVAL_FILENAME = "eval_val_slot48_best.json"
+
+
+class TrainStateCallback(keras.callbacks.Callback):
+    """Write completed-epoch count and best ``val_loss`` after each epoch."""
+
+    def __init__(self, path: pathlib.Path, *, total_epochs: int) -> None:
+        """Store the sidecar path.
+
+        Args:
+            path: JSON path under the model output directory.
+            total_epochs: Configured ``fit`` epoch budget.
+        """
+        super().__init__()
+        self.path = path
+        self.total_epochs = int(total_epochs)
+        self.best_val_loss: float | None = None
+        if path.is_file():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                payload = {}
+            raw = payload.get("best_val_loss") if isinstance(payload, dict) else None
+            if raw is not None:
+                self.best_val_loss = float(raw)
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        """Persist resume metadata after the epoch flushes checkpoints.
+
+        Args:
+            epoch: Zero-based epoch index that just finished.
+            logs: Keras metric dict (may include ``val_loss``).
+        """
+        logs = logs or {}
+        val_loss = logs.get("val_loss")
+        if val_loss is not None:
+            current = float(val_loss)
+            if self.best_val_loss is None or current < self.best_val_loss:
+                self.best_val_loss = current
+        payload = {
+            "epoch": int(epoch) + 1,
+            "best_val_loss": self.best_val_loss,
+            "total_epochs": self.total_epochs,
+        }
+        self.path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def load_train_state(path: pathlib.Path) -> dict | None:
+    """Load ``train_state.json`` if present.
+
+    Args:
+        path: Sidecar path.
+
+    Returns:
+        Parsed mapping, or None.
+    """
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
 
 
 def _write_eval_report(
@@ -123,11 +191,17 @@ def _write_eval_report(
 
 def train_placement(
     experiment: config.DdclExperimentConfig,
+    extra_callbacks: list[keras.callbacks.Callback] | None = None,
 ) -> keras.Model:
     """Load Dataset A charts, train the ConvLSTM, and save weights.
 
+    Interrupted runs resume from ``{model_output_dir}/backup`` via Keras
+    ``BackupAndRestore``. ``last.keras`` is rewritten every epoch so a reboot
+    still leaves an evaluable checkpoint beside ``best.keras``.
+
     Args:
         experiment: Placement experiment config.
+        extra_callbacks: Optional Keras callbacks (tests).
 
     Returns:
         Trained Keras model.
@@ -153,15 +227,46 @@ def train_placement(
     )
     output_dir = pathlib.Path(experiment.run.model_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = output_dir / BACKUP_DIRNAME
+    if not experiment.run.resume and backup_dir.exists():
+        shutil.rmtree(backup_dir)
     best_path = output_dir / BEST_CHECKPOINT_FILENAME
+    last_path = output_dir / LAST_CHECKPOINT_FILENAME
+    state_path = output_dir / TRAIN_STATE_FILENAME
+    state = load_train_state(state_path) if experiment.run.resume else None
+    best_threshold = None
+    if state is not None and state.get("best_val_loss") is not None:
+        best_threshold = float(state["best_val_loss"])
+    if not model.built:
+        sample, _ = datasets.sample_train_batch(
+            train_charts,
+            batch_size=1,
+            rng=np.random.default_rng(experiment.run.seed),
+        )
+        model(sample, training=False)
+    if experiment.run.resume and (backup_dir / "latest.weights.h5").is_file():
+        print(f"resuming from {backup_dir}")
     callbacks: list[keras.callbacks.Callback] = [
+        keras.callbacks.BackupAndRestore(
+            backup_dir=str(backup_dir),
+            save_freq="epoch",
+            double_checkpoint=True,
+            delete_checkpoint=True,
+        ),
+        keras.callbacks.ModelCheckpoint(
+            filepath=str(last_path),
+            save_best_only=False,
+            verbose=0,
+        ),
         keras.callbacks.ModelCheckpoint(
             filepath=str(best_path),
             monitor="val_loss",
             mode="min",
             save_best_only=True,
             verbose=1,
-        )
+            initial_value_threshold=best_threshold,
+        ),
+        TrainStateCallback(state_path, total_epochs=experiment.run.epoch),
     ]
     if experiment.run.callback_root_dir:
         log_dir = tensorboard_run_log_dir(
@@ -175,6 +280,8 @@ def train_placement(
                 write_images=False,
             )
         )
+    if extra_callbacks:
+        callbacks.extend(extra_callbacks)
     model.fit(
         _batch_generator(
             train_charts,
