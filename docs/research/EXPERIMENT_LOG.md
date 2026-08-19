@@ -11,22 +11,22 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 ## Current phase
 
 **Updated:** 2026-08-19
-**Primary track:** Literature recreation — ITGPT **placement** (onset) on Dataset B (`omalley2026itgpt`); Dataset A DDCL held
-**Status:** ITGPT 128-ep mixed-fp16 on B **held** at last F1@0.5 **0.735** vs null **0.390** (skill **+0.345**); max-F1 **0.740**. Best-`val_loss` (ep **107**) F1@0.5 **0.725** / max-F1 **0.742**. Vs 8-ep last **+0.073** @ 0.5 ([EXP-20260819-02](#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b)). 8-ep ckpt preserved. Dataset A DDCL held at last F1@0.5 **0.680**.
-**Next action:** 128-ep is the held ITGPT-on-B number. Do not start a 200-ep train. Stay on onset. Do not start selection. Do not cite vs Table 2 **0.78 / 0.80** (short corpus + mixed precision + unpublished split).
-**Blockers:** None — GPU free; ckpt `models_wsl/ddc/itgpt_placement_fraxtil_exp_128ep/`.
-**Defer:** Step selection (DDC or DDCL) until asked; 200-ep paper analog **declined** ([NOTE-20260819-01](DISCUSSION_NOTES.md#note-20260819-01-stop-itgpt-placement-at-128-ep)); citing this short corpus vs **0.78 / 0.80**; `final_data` dense/AR as a literature number; more Dataset A DDCL train; AR-on-times locality / ladder scale-up.
+**Primary track:** Literature recreation — 2-way DDCL vs ITGPT **placement** on Dataset A (`M-slot48`); DDC still `M-ddc-20ms`
+**Status:** Dataset A 128-ep mixed-fp16 ITGPT last F1@0.5 **0.710** vs null **0.397** (skill **+0.313**); max-F1 **0.717**. Best-`val_loss` (ep **51**) F1@0.5 **0.715**. DDCL last **0.680** on the same split ([EXP-20260819-03](#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a)). B 128-ep **0.735** stays a different corpus. DDC A **0.652 / 0.734** is still `M-ddc-20ms`.
+**Next action:** Score frozen DDC peaks with `M-slot48` on Dataset A val so DDC can enter the table. Stay on onset. Do not start selection. Do not grow B. Do not cite vs Table 2 **0.78 / 0.80**.
+**Blockers:** None — GPU free; ITGPT-on-A ckpt `models_wsl/ddc/itgpt_placement_fraxtil_orig_128ep/`.
+**Defer:** Step selection until asked; 200-ep **declined**; Vol. 4 / larger B (**user declined**); citing B **0.735** vs A **0.710** as one table; citing vs **0.78 / 0.80**; `final_data` as a literature number; AR-on-times locality / ladder scale-up.
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
-| **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. DDC C-LSTM 128-ep val **0.652 / 0.734** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). DDCL placement **held** at 128-ep last F1@0.5 **0.680** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). Cite `donahue2017ddc`, `omalley2025ddcl`. |
+| **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. DDC C-LSTM 128-ep val **0.652 / 0.734** (`M-ddc-20ms`, [EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). DDCL 128-ep last F1@0.5 **0.680** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). ITGPT 128-ep last F1@0.5 **0.710** ([EXP-20260819-03](#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a)). Cite `donahue2017ddc`, `omalley2025ddcl`, `omalley2026itgpt`. |
 | **Dataset B (expanded Fraxtil)** | **Partial** — `training_index_standard.json`: **222** songs / **722** standard charts, **201 / 21** train/val. Full index **747** rows (**25** edit). Short of ITGPT **253 / 952** ([EXP-20260818-01](#exp-20260818-01-expanded-fraxtil-dataset-b-ingested)). ITGPT placement **held** at 128-ep last F1@0.5 **0.735** ([EXP-20260819-02](#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b)). Cite `omalley2026itgpt`. |
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Dataset B ITGPT placement **held** at 128-ep mixed-fp16 last F1@0.5 **0.735** (skill **+0.345**). 200-ep **declined**. Stay on onset. Selection stays off. Do not cite vs Table 2 **0.78 / 0.80**. `final_data` is transfer only.
+**Recommended next step:** Dataset A 2-way on `M-slot48`: ITGPT last **0.710** vs DDCL last **0.680**. Next is DDC `M-slot48` so DDC can enter. Stay on onset. Selection stays off. Do not grow B. `final_data` is transfer only.
 
 ### Onset detection (research track)
 
@@ -56,7 +56,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 - **First, for any track:** report the audio-blind floor beside every number ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). A Hungarian F1 on dense charts is unreadable without it.
 - **Second, for any track:** run the audio-corruption ablation before believing any score ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). A single-song overfit **cannot** detect an audio-blind model — the tide gate passes with the audio reversed.
 - **Track B (AR):** the pointer head is the bug, not the data. Replace `Dense(max_patches)` with a content-based pointer against encoder memory before adding rows or tuning anything else.
-- **Track A (literature):** Dataset A DDCL **placement** is **held** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). Dataset B ITGPT 128-ep mixed-fp16 last F1@0.5 **0.735** is **held** ([EXP-20260819-02](#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b)). Stay on onset. `final_data` is transfer only — not the comparison set.
+- **Track A (literature):** Dataset A 2-way `M-slot48`: ITGPT last F1@0.5 **0.710** vs DDCL **0.680** ([EXP-20260819-03](#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a), [EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). DDC is still `M-ddc-20ms` **0.652 / 0.734**. Stay on onset. `final_data` is transfer only — not the comparison set.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260819-03 | `train` + `metric` | Does 128-ep ITGPT on Dataset A beat DDCL **0.680** on the same split and `M-slot48`? | **Supported** (2-way) | Last F1@0.5 **0.710** vs null **0.397** (skill **+0.313**); vs DDCL **+0.030**; 3-way still blocked on DDC metric |
 | EXP-20260819-02 | `train` + `metric` | Does 128-ep × 200 steps lift Dataset B ITGPT `M-slot48` past the 8-ep mixed-fp16 pass? | **Supported** | Last F1@0.5 **0.735** vs null **0.390** (skill **+0.345**); max-F1 **0.740**; vs 8-ep **+0.073** @ 0.5; not vs **0.78 / 0.80** |
 | EXP-20260819-01 | `train` + `metric` | Does paper-width ITGPT placement train on Dataset B on the 8 GB GPU? | **Partial** | fp32 OOM; mixed-fp16 8-ep last F1@0.5 **0.662** vs null **0.390** (skill **+0.272**); not vs **0.78 / 0.80** |
 | EXP-20260818-02 | `model` + `train` + `metric` | Can ITGPT hierarchical placement run on Dataset B with `M-slot48` + null? | **Partial** | Smoke 1-ep F1@0.5 **0.035** vs null **0.307** (skill **−0.272**); pipeline works, no skill |
@@ -196,6 +197,22 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260819-03: ITGPT 48-slot placement 128-ep on Dataset A
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-19 16:40:37 |
+| **Track** | `train` + `metric` (ITGPT placement on Dataset A, `omalley2026itgpt`) |
+| **Question** | On the Dataset A standard split (same 81/9 as DDC/DDCL), does 128-ep mixed-fp16 ITGPT beat DDCL last F1@0.5 **0.680** on `M-slot48` ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a))? |
+| **Setup** | [`itgpt_placement_fraxtil_orig_128ep.json`](../../configs/ddc/itgpt_placement_fraxtil_orig_128ep.json): `d_model` 256, 8 encoder layers, `max_beats` 2000, 405/45 standard charts, AdamW 1e-4 / wd 1e-2 / clip 1.0, seed **42**, `mixed_precision` true, `jit_compile` false. **128** ep × 200/20 steps. `--fresh`. Output `models_wsl/ddc/itgpt_placement_fraxtil_orig_128ep/` (B ckpt not overwritten). Log `logs/itgpt_placement_fraxtil_orig_128ep.log`. TB `http://localhost:6008/` |
+| **Wall** | ~**2 h 45 min** WSL GPU (9902814 ms) including load + full-val `M-slot48` |
+| **Train curve** | Best `val_loss` **0.03902** @ ep **51**; last ep-128 `val_loss` **0.0810**. Earlier saves: ep 7 **0.04376**, ep 20 **0.04295** |
+| **Val (45 charts, 17523 beats)** | **Last weights:** F1@0.5 **0.710** (TP **12391** / FP **4631** / FN **5477**); max-F1 **0.717** @ thr **0.35**. **Best-`val_loss` weights:** F1@0.5 **0.715** (TP **13223** / FP **5897** / FN **4645**); max-F1 **0.715** @ thr **0.50**. Beat-shuffle null F1@0.5 **0.397**. JSON `eval_val_slot48.json` / `eval_val_slot48_best.json` |
+| **vs null** | Last skill **+0.313**. Best-`val_loss` skill **+0.318** |
+| **vs DDCL (same A split, `M-slot48`)** | Last **0.710** vs DDCL last **0.680** (**+0.030**). Best-`val_loss` **0.715** vs DDCL last **0.680** |
+| **vs Dataset B ITGPT / published** | **Not the same table** — B last **0.735** is 222 songs. Table 2 **0.78 / 0.80** is 200-ep fp32 on unpublished expanded Fraxtil **253 / 952** |
+| **Conclusion** | **Supported** for a 2-way on A: ITGPT last **0.710** > DDCL **0.680**. Hold last **0.710** to match DDCL’s last-weight protocol (best-`val_loss` is **0.715**). 3-way still needs DDC on `M-slot48`. Stay on onset. Do not start selection. Do not cite **0.710** against **0.78** or against B **0.735** |
 
 ### EXP-20260819-02: ITGPT 48-slot placement 128-ep on Dataset B
 

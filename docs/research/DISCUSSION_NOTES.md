@@ -4,6 +4,28 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-19 — Three-way DDC / DDCL / ITGPT
+
+### NOTE-20260819-02: Held recreations are not a 3-way table yet
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-19 13:43:05 |
+| **Topic** | Comparing DDC vs DDCL vs ITGPT without a larger corpus |
+
+**Context.** User does not want more Dataset B songs. Question is whether the three held placement recreations can be compared to each other now.
+
+**Discovery.** Two mismatches, either of which blocks a single table:
+
+1. **Corpus.** DDC and DDCL are on Dataset A (90 songs / 450 standard). ITGPT is on Dataset B (222 / 747). ITGPT Table 2 compared all three on **expanded** Fraxtil.
+2. **Metric.** DDC held number is `M-ddc-20ms` F-score_c / F-score_m **0.652 / 0.734**. DDCL and ITGPT are `M-slot48` F1@0.5 / max-F1 (**0.680 / 0.685** on A; **0.735 / 0.740** on B). Those metrics are not interchangeable.
+
+Each model vs its own null (and DDC vs the original DDC paper) is valid. DDC **0.652** vs DDCL **0.680** vs ITGPT **0.735** is not.
+
+**Implication.** Do not hunt Vol. 4 for this goal. Smallest path without growing B: train ITGPT on Dataset A (same 81/9 split as DDC/DDCL) **and** score all three with one metric (`M-slot48` for DDC, or `M-ddc-20ms` for DDCL/ITGPT). Until then there is no 3-way in-repo table.
+
+**Related.** [EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap) · [EXP-20260817-01](EXPERIMENT_LOG.md#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a) · [EXP-20260819-02](EXPERIMENT_LOG.md#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b) · C5 in [PAPER_LEDGER.md](PAPER_LEDGER.md)
+
 ## Session 2026-08-19 — Stop ITGPT placement at 128-ep
 
 ### NOTE-20260819-01: Stop ITGPT placement at 128-ep
