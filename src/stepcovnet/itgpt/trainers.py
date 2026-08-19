@@ -44,7 +44,8 @@ def placement_binary_crossentropy(y_true: object, y_pred: object) -> object:
         Weighted BCE ``(batch, beats)``.
     """
     epsilon = keras.backend.epsilon()
-    y_pred = ops.clip(y_pred, epsilon, 1.0 - epsilon)
+    y_pred = ops.clip(ops.cast(y_pred, "float32"), epsilon, 1.0 - epsilon)
+    y_true = ops.cast(y_true, "float32")
     per_slot = -(y_true * ops.log(y_pred) + (1.0 - y_true) * ops.log(1.0 - y_pred))
     weighted = per_slot * models.grid_importance_weights()
     return ops.mean(weighted, axis=-1)
@@ -93,6 +94,7 @@ def compile_placement_model(
     model.compile(
         optimizer=optimizer,
         loss=placement_binary_crossentropy,
+        jit_compile=run_config.jit_compile,
     )
     return model
 
@@ -158,6 +160,9 @@ def train_placement(
         ValueError: If the train or val split is empty.
     """
     set_seed(experiment.run.seed)
+    if experiment.run.mixed_precision:
+        keras.mixed_precision.set_global_policy("mixed_float16")
+        print("ITGPT training: mixed_float16 policy enabled")
     train_charts = datasets.load_split_charts(
         experiment.dataset,
         "train",

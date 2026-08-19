@@ -141,6 +141,8 @@ class ItgptRunConfig(_DictSerializableMixin):
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
         resume: If True, ``BackupAndRestore`` continues an interrupted run.
+        mixed_precision: If True, use Keras ``mixed_float16`` (8 GB GPU).
+        jit_compile: If True, XLA-compile ``fit`` (can spike allocator workspace).
     """
 
     epoch: int = 8
@@ -154,6 +156,8 @@ class ItgptRunConfig(_DictSerializableMixin):
     callback_root_dir: str = "callbacks/ddc/itgpt_placement"
     model_name: str = "itgpt_placement_fraxtil_exp"
     resume: bool = True
+    mixed_precision: bool = False
+    jit_compile: bool = False
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.

@@ -15,7 +15,7 @@
     "dropout_rate": 0.1
   },
   "run": {
-    "epoch": 8,
+    "epoch": 128,
     "steps_per_epoch": 200,
     "validation_steps": 20,
     "learning_rate": 0.0001,
@@ -24,8 +24,8 @@
     "seed": 42,
     "mixed_precision": true,
     "jit_compile": false,
-    "model_output_dir": "models_wsl/ddc/itgpt_placement_fraxtil_exp",
+    "model_output_dir": "models_wsl/ddc/itgpt_placement_fraxtil_exp_128ep",
     "callback_root_dir": "callbacks/ddc/itgpt_placement",
-    "model_name": "itgpt_placement_fraxtil_exp"
+    "model_name": "itgpt_placement_fraxtil_exp_128ep"
   }
 }

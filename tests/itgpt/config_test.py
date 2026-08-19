@@ -26,6 +26,8 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.dataset.max_beats, 64)
         self.assertEqual(loaded.model.d_model, 32)
         self.assertEqual(loaded.model.n_heads, 4)
+        self.assertFalse(loaded.run.mixed_precision)
+        self.assertFalse(loaded.run.jit_compile)
 
     def test_rejects_heads_not_dividing_width(self):
         with self.assertRaises(ValueError):

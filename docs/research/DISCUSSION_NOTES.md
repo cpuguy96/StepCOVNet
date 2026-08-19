@@ -4,6 +4,23 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-19 — Stop ITGPT placement at 128-ep
+
+### NOTE-20260819-01: Stop ITGPT placement at 128-ep
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-19 13:27:16 |
+| **Topic** | Dataset B ITGPT epoch budget |
+
+**Context.** After [EXP-20260819-02](EXPERIMENT_LOG.md#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b), the paper analog was 200 epochs. User chose to stop at 128 because the curve was not still improving.
+
+**Discovery.** Best `val_loss` **0.03983** @ ep **107**; last ep-128 `val_loss` **0.0669**. Last F1@0.5 **0.735** still beat best-`val_loss` F1@0.5 **0.725**, but `val_loss` had already turned up. Extra epochs would be a paper-budget check on an already-risen val curve, not a likely skill gain.
+
+**Implication.** Hold 128-ep last **0.735**. Do not start a 200-ep train unless asked again. Still do not cite vs Table 2 **0.78 / 0.80**. Stay on onset; selection stays off.
+
+**Related.** [EXP-20260819-02](EXPERIMENT_LOG.md#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b) · `omalley2026itgpt`
+
 ## Session 2026-08-18 — Dataset B ingest
 
 ### NOTE-20260818-01: SAHS Vol. 4 SM5 zip 404; 10 dumpstream songs skipped

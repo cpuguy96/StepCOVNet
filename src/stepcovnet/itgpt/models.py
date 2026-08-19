@@ -531,8 +531,12 @@ class ItgptPlacementModel(keras.Model):
             for index in range(n_enc_layers)
         ]
         self.conv_head = ItgptConvHead(d_model, dropout_rate, name="conv_head")
-        self.onset_head = keras.layers.Dense(constants.N_SLOTS, name="onset_head")
-        self.onset_probs = keras.layers.Activation("sigmoid", name="onset_probs")
+        self.onset_head = keras.layers.Dense(
+            constants.N_SLOTS, name="onset_head", dtype="float32"
+        )
+        self.onset_probs = keras.layers.Activation(
+            "sigmoid", name="onset_probs", dtype="float32"
+        )
 
     def call(self, inputs: dict[str, Any], training: bool | None = None) -> Any:
         """Run the hierarchical encoder.
