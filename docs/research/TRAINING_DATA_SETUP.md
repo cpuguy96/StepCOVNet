@@ -1,14 +1,15 @@
-# Training data setup — download to `final_data`
+# Training data setup — raw packs to prepared corpora
 
-**Purpose:** Recreate the multi-song **`data/final_data`** corpus used for dense / AR training (`training_index.json`, **1942** chart rows after prep).
+**Purpose:** Recreate the literature Fraxtil corpora (Dataset A / B) and the multi-song **`data/final_data`** transfer set (`training_index.json`, **1942** chart rows after prep).
 
-**Related:** [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) (prep design) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase · [PAPER_LEDGER.md](PAPER_LEDGER.md) (`donahue2017ddc`, D-frax-orig)
+**Related:** [DATASET_PREP_PIPELINE.md](DATASET_PREP_PIPELINE.md) (prep design) · [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) § Current phase · [PAPER_LEDGER.md](PAPER_LEDGER.md) (`donahue2017ddc`, `omalley2026itgpt`)
 
-Two separate corpora — **do not mix** them under one `raw_data` root.
+Three separate corpora — **do not mix** them under one `raw_data` root.
 
 | Corpus | Raw root | Prepared root | Paper use |
 | ------ | -------- | ------------- | --------- |
 | **Dataset A — original Fraxtil** | `data/raw_literature/` | `data/literature_fraxtil_orig/` | Recreate DDC / DDCL (`donahue2017ddc`) |
+| **Dataset B — expanded Fraxtil** | `data/raw_literature_exp/` | `data/literature_fraxtil_exp/` | Recreate ITGPT (`omalley2026itgpt`) |
 | **Transfer — `final_data`** | `data/raw_data/` | `data/final_data/` | ITL / Mizuki / Vocaloid; not the literature scoreboard |
 
 ---
@@ -67,6 +68,65 @@ venv\Scripts\python.exe scripts/build_training_index_standard.py `
 That writes `data/literature_fraxtil_orig/training_index_standard.json`: **81 / 9** songs, **405 / 45** standard charts (`stratified_song_v1+standard_v1`).
 
 **Measured 2026-08-15** ([EXP-20260815-01](EXPERIMENT_LOG.md#exp-20260815-01-original-fraxtil-dataset-a-ingested-90-songs)): **90** songs, **463** chart rows (**450** standard + **13** edit); train/val **81 / 9** songs, **417 / 46** rows. Record stays in [PAPER_LEDGER.md](PAPER_LEDGER.md) D-frax-orig.
+
+---
+
+## Literature Dataset B — expanded Fraxtil (`omalley2026itgpt`)
+
+ITGPT training packs ([README](https://github.com/miguelomalley/ITGPT)): Dataset A plus Cute Charts and Sweet Arrows and Hella Steps vols 1–4. Published size: **253 songs / 952 charts**. Use SM5 from [fra.xtil.net](https://fra.xtil.net/simfiles/), not ITG-offset mirrors.
+
+Keep Dataset A packs in `data/raw_literature/`. Junction or copy them into `data/raw_literature_exp/` so a Dataset A re-prep does not pick up the extra packs.
+
+| Pack | Songs (raw folders) | How we obtained SM5 |
+| ---- | ------------------- | -------------------- |
+| Dataset A (3 packs) | 90 | Junction from `data/raw_literature/` |
+| Fraxtil's Cute Charts | 20 | https://fra.xtil.net/simfiles/data/cutecharts/Fraxtil's%20Cute%20Charts%20[SM5].zip |
+| Sweet Arrows And Hella Steps Vol. 1 | 34 | https://fra.xtil.net/simfiles/data/sweetarrows/1/Sweet%20Arrows%20And%20Hella%20Steps%20Vol.%201%20[SM5].zip |
+| Sweet Arrows And Hella Steps Vol. 2 | 52 | https://fra.xtil.net/simfiles/data/sweetarrows/2/Sweet%20Arrows%20And%20Hella%20Steps%20Vol.%202%20[SM5].zip |
+| Sweet Arrows And Hella Steps Vol. 3 | 36 | https://fra.xtil.net/simfiles/data/sweetarrows/3/Sweet%20Arrows%20And%20Hella%20Steps%20Vol.%203%20[SM5].zip |
+| Sweet Arrows And Hella Steps Vol. 4 | — | Official `[SM5].zip` is **404** on fra.xtil.net (2026-08-18). No pack page at `/simfiles/sweetarrows/4/`. |
+
+Expected layout:
+
+```text
+data/raw_literature_exp/
+  Tsunamix III/                          ← junction to Dataset A
+  Fraxtil's Arrow Arrangements/          ← junction to Dataset A
+  Fraxtil's Beast Beats/                 ← junction to Dataset A
+  Fraxtil's Cute Charts/
+  Sweet Arrows And Hella Steps Vol. 1/
+  Sweet Arrows And Hella Steps Vol. 2/
+  Sweet Arrows And Hella Steps Vol. 3/
+```
+
+Prep (Windows CPU, from repo root). `--allow-over-cap` is required: SAHS dumpstreams exceed the default 2048-step skip used for `final_data`.
+
+```powershell
+venv\Scripts\python.exe scripts/preprocess_dataset.py `
+  --input-dir data/raw_literature_exp `
+  --output-dir data/literature_fraxtil_exp `
+  --dry-run
+
+venv\Scripts\python.exe scripts/preprocess_dataset.py `
+  --input-dir data/raw_literature_exp `
+  --output-dir data/literature_fraxtil_exp `
+  --workers 8 `
+  --allow-over-cap
+
+venv\Scripts\python.exe scripts/build_training_index.py `
+  --output-dir data/literature_fraxtil_exp `
+  --val-fraction 0.1 `
+  --seed 42 `
+  --overwrite
+
+venv\Scripts\python.exe scripts/build_training_index_standard.py `
+  --source data/literature_fraxtil_exp/training_index.json `
+  --overwrite
+```
+
+That writes `data/literature_fraxtil_exp/training_index_standard.json` (`stratified_song_v1+standard_v1`, seed 42). Documented in-repo 90/10, not ITGPT’s unpublished split.
+
+**Measured 2026-08-18** ([EXP-20260818-01](EXPERIMENT_LOG.md#exp-20260818-01-expanded-fraxtil-dataset-b-ingested)): **232** raw song folders, **222** exported songs / **747** chart rows (**722** standard + **25** edit); train/val **201 / 21** songs, **653 / 69** standard charts. Ten SAHS songs skipped (no `dance-single` or no exportable charts). Short of ITGPT **253 / 952** mainly from missing Vol. 4.
 
 ---
 
@@ -201,9 +261,13 @@ Extract to `data/v2/` (`train/`, `val/`, `test/` with `tide.ogg` / `tide.txt` un
 | Step | Artifact |
 | ---- | -------- |
 | Download Dataset A (Fraxtil SM5) | `data/raw_literature/{Tsunamix III,Fraxtil's Arrow Arrangements,Fraxtil's Beast Beats}/` |
-| `preprocess_dataset.py` (literature) | `data/literature_fraxtil_orig/` — 90 songs / 463 charts |
-| `build_training_index.py` (literature) | `data/literature_fraxtil_orig/training_index.json` (81/9 songs) |
-| `build_training_index_standard.py` | `data/literature_fraxtil_orig/training_index_standard.json` (405/45 standard charts) |
+| `preprocess_dataset.py` (literature A) | `data/literature_fraxtil_orig/` — 90 songs / 463 charts |
+| `build_training_index.py` (literature A) | `data/literature_fraxtil_orig/training_index.json` (81/9 songs) |
+| `build_training_index_standard.py` (A) | `data/literature_fraxtil_orig/training_index_standard.json` (405/45 standard charts) |
+| Download Dataset B extras (Cute Charts + SAHS 1–3) | `data/raw_literature_exp/` (A packs junctioned) |
+| `preprocess_dataset.py` (literature B, `--allow-over-cap`) | `data/literature_fraxtil_exp/` — 222 songs / 747 charts |
+| `build_training_index.py` (literature B) | `data/literature_fraxtil_exp/training_index.json` (201/21 songs) |
+| `build_training_index_standard.py` (B) | `data/literature_fraxtil_exp/training_index_standard.json` (653/69 standard charts) |
 | Download 3 SMO packs | `data/raw_data/{ITL Online 2026,Mizuki's Simfiles,Vocaloid Project Pad Pack 4th}/` |
 | `preprocess_dataset.py` | `data/final_data/{bundle}/{id}/` + reports |
 | `build_training_index.py` | `data/final_data/training_index.json` |

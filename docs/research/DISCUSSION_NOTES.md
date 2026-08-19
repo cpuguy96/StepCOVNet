@@ -4,6 +4,23 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-18 — Dataset B ingest
+
+### NOTE-20260818-01: SAHS Vol. 4 SM5 zip 404; 10 dumpstream songs skipped
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-18 22:23:43 |
+| **Topic** | Dataset B ingest caveat |
+
+**Context.** ITGPT README lists Sweet Arrows and Hella Steps vols **1–4**. Official fra.xtil.net has pack pages and SM5 zips for vols 1–3 only; `/simfiles/sweetarrows/4/` is 404.
+
+**Discovery.** Raw folders: **232** (90 Dataset A + 20 Cute Charts + 34+52+36 SAHS). Prep exported **222** songs / **747** charts. Ten SAHS songs have no exportable `dance-single` (doubles-only, mines emptying the chart, or custom difficulties). Paper size is **253 / 952**.
+
+**Implication.** Dataset B is usable for ITGPT **placement** with a documented shortfall. Do not treat **222 / 747** as a T-repro corpus vs Table 2. Vol. 4 remains unresolved.
+
+**Related.** [EXP-20260818-01](EXPERIMENT_LOG.md#exp-20260818-01-expanded-fraxtil-dataset-b-ingested) · [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md) · `omalley2026itgpt`
+
 ## Session 2026-08-16 — Literature chain is Current phase
 
 ### NOTE-20260816-01: Recreate DDCL then ITGPT; `final_data` is not the paper set
