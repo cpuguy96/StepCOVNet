@@ -1,0 +1,29 @@
+{
+  "dataset": {
+    "training_index_path": "data/literature_fraxtil_exp/training_index_standard.json",
+    "batch_size": 1,
+    "max_train_songs": -1,
+    "max_val_songs": -1,
+    "cache_features": true,
+    "max_beats": 2000
+  },
+  "model": {
+    "d_model": 256,
+    "n_heads": 8,
+    "n_enc_layers": 8,
+    "cnn_hidden": 32,
+    "dropout_rate": 0.1
+  },
+  "run": {
+    "epoch": 8,
+    "steps_per_epoch": 200,
+    "validation_steps": 20,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "clipnorm": 1.0,
+    "seed": 42,
+    "model_output_dir": "models_wsl/ddc/itgpt_placement_fraxtil_exp",
+    "callback_root_dir": "callbacks/ddc/itgpt_placement",
+    "model_name": "itgpt_placement_fraxtil_exp"
+  }
+}

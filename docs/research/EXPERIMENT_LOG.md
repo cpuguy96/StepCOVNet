@@ -11,22 +11,22 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 ## Current phase
 
 **Updated:** 2026-08-18
-**Primary track:** Literature recreation — DDCL **placement** (onset) on Dataset A (`omalley2025ddcl`) **held**; ITGPT placement on B when asked
-**Status:** Dataset A DDCL placement **held** at 128-ep. Last-epoch val `M-slot48` F1@0.5 **0.680** vs beat-shuffle null **0.397** (skill **+0.283**); max-F1 **0.685** @ 0.45. Best-`val_loss` (ep **102**) F1@0.5 **0.670** / max-F1 **0.688**. No further A train — leftover gap to ITGPT Table 2 **0.70 / 0.76** is corpus (`D-frax-exp`), not epochs. ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a))
-
-**Next action:** None on Dataset A DDCL. Stay on onset. Do not start selection. Dataset B stays off until asked.
-**Blockers:** None — GPU free; held ckpt `models_wsl/ddc/ddcl_placement_fraxtil_128ep/`.
-**Defer:** Step selection (DDC or DDCL) until asked; `final_data` dense/AR as a literature number; more DDC C-LSTM eval; Dataset B until asked; AR-on-times locality / ladder scale-up.
+**Primary track:** Literature recreation — ITGPT **placement** (onset) on Dataset B (`omalley2026itgpt`); Dataset A DDCL held
+**Status:** ITGPT smoke **PASS** ([EXP-20260818-02](#exp-20260818-02-itgpt-48-slot-placement-smoke-on-dataset-b)): 1-ep F1@0.5 **0.035** vs null **0.307** (skill **−0.272**; no skill, expected). Dataset B **222** songs / **747** charts vs paper **253 / 952**. Dataset A DDCL held at last F1@0.5 **0.680** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)).
+**Next action:** Paper-sized ITGPT **placement** train on Dataset B (`configs/ddc/itgpt_placement_fraxtil_exp.json`, `M-slot48`). Stay on onset. Do not start selection.
+**Blockers:** None — GPU free; smoke ckpt `models_wsl/ddc/itgpt_placement_smoke/`.
+**Defer:** Step selection (DDC or DDCL) until asked; citing this short corpus vs Table 2 **0.78 / 0.80**; `final_data` dense/AR as a literature number; more Dataset A DDCL train; AR-on-times locality / ladder scale-up.
 
 ### Dataset prep (PRE ingestion)
 
 | Phase | Status |
 | ----- | ------ |
 | **Dataset A (Fraxtil)** | **Done** — `training_index_standard.json`: **90** songs / **450** standard charts, **81 / 9** train/val. DDC C-LSTM 128-ep val **0.652 / 0.734** ([EXP-20260815-03](#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). DDCL placement **held** at 128-ep last F1@0.5 **0.680** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). Cite `donahue2017ddc`, `omalley2025ddcl`. |
+| **Dataset B (expanded Fraxtil)** | **Partial** — `training_index_standard.json`: **222** songs / **722** standard charts, **201 / 21** train/val. Full index **747** rows (**25** edit). Short of ITGPT **253 / 952** ([EXP-20260818-01](#exp-20260818-01-expanded-fraxtil-dataset-b-ingested)). Cite `omalley2026itgpt`. |
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Dataset A DDCL placement **held** at 128-ep (`M-slot48` last F1@0.5 **0.680**). No further A train. Selection stays off. Dataset B until asked. `final_data` is transfer only.
+**Recommended next step:** Paper-sized ITGPT **placement** on Dataset B (`M-slot48` + null). Stay on onset. Selection stays off. Do not cite vs Table 2 **0.78 / 0.80** on this short corpus. `final_data` is transfer only.
 
 ### Onset detection (research track)
 
@@ -56,7 +56,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 - **First, for any track:** report the audio-blind floor beside every number ([EXP-20260804-03](#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)). A Hungarian F1 on dense charts is unreadable without it.
 - **Second, for any track:** run the audio-corruption ablation before believing any score ([EXP-20260804-05](#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)). A single-song overfit **cannot** detect an audio-blind model — the tide gate passes with the audio reversed.
 - **Track B (AR):** the pointer head is the bug, not the data. Replace `Dense(max_patches)` with a content-based pointer against encoder memory before adding rows or tuning anything else.
-- **Track A (literature):** Dataset A DDCL **placement** is **held** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). Stay on onset. ITGPT placement on B is the next literature step **when asked** — not a current job. `final_data` is transfer only — not the comparison set.
+- **Track A (literature):** Dataset A DDCL **placement** is **held** ([EXP-20260817-01](#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)). Dataset B ingest + ITGPT smoke are done ([EXP-20260818-01](#exp-20260818-01-expanded-fraxtil-dataset-b-ingested), [EXP-20260818-02](#exp-20260818-02-itgpt-48-slot-placement-smoke-on-dataset-b)). Next is paper-sized ITGPT **placement** on B. Stay on onset. `final_data` is transfer only — not the comparison set.
 - **Event track (optional):** Continue K-query probes on `data/v2` in parallel if not blocking Track A.
 
 ---
@@ -67,6 +67,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260818-02 | `model` + `train` + `metric` | Can ITGPT hierarchical placement run on Dataset B with `M-slot48` + null? | **Partial** | Smoke 1-ep F1@0.5 **0.035** vs null **0.307** (skill **−0.272**); pipeline works, no skill |
+| EXP-20260818-01 | `pre` | Can we ingest expanded Fraxtil (ITGPT Dataset B) with measured song/chart counts? | **Partial** | **222** songs / **747** charts vs paper **253 / 952**; Vol. 4 404; 10 SAHS skipped; split **201 / 21** |
 | EXP-20260817-01 | `train` + `metric` | Does 128-ep × 200 steps lift Dataset A DDCL `M-slot48` past the 8-ep thin pass? | **Supported** | Last F1@0.5 **0.680** vs null **0.397** (skill **+0.283**); max-F1 **0.685**; vs 8-ep **+0.079** @ 0.5; not vs ITGPT **0.70 / 0.76** |
 | EXP-20260816-02 | `train` + `metric` | Does full-split DDCL 48-slot ConvLSTM placement on Dataset A beat the beat-shuffle null? | **Partial** | Best F1@0.5 **0.601** vs null **0.397** (skill **+0.204**); max-F1 **0.634**; not vs ITGPT **0.70 / 0.76** |
 | EXP-20260816-01 | `pre` + `model` + `metric` + `train` | Can we run DDCL 48-slot ConvLSTM placement on Dataset A with `M-slot48` + null? | **Partial** | Smoke 1-ep F1@0.5 **0.032** vs null **0.491**; pipeline works, no skill |
@@ -192,6 +194,34 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260818-02: ITGPT 48-slot placement smoke on Dataset B
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-18 23:46:18 |
+| **Track** | `model` + `train` + `metric` (ITGPT placement, `omalley2026itgpt`) |
+| **Question** | Can we port ITGPT hierarchical transformer placement onto Dataset B and emit `M-slot48` with a beat-shuffle null? |
+| **Setup** | [`itgpt_placement_fraxtil_exp_smoke.json`](../../configs/ddc/itgpt_placement_fraxtil_exp_smoke.json): 2 train / 1 val songs, `max_beats` **64**, `d_model` **32**, `n_heads` **4**, `n_enc_layers` **1**, `cnn_hidden` **8**, 1 ep × 2/1 steps, AdamW 1e-4 / wd 1e-2 / clip 1.0. Manifest `data/literature_fraxtil_exp/training_index_standard.json`. PRE reused from DDCL `*.ddc_mel.npy`. Upstream: [miguelomalley/ITGPT](https://github.com/miguelomalley/ITGPT) `onset.py`; diagnostic nets omitted (`--lambda_diag` default 0). Train `logs/itgpt_placement_smoke.log`. TB `http://localhost:6008/` (`callbacks/ddc/itgpt_placement/logs`). ~**63** s WSL GPU after load |
+| **Train** | `val_loss` **0.614**. Saved `models_wsl/ddc/itgpt_placement_smoke/best.keras` and `itgpt_placement_smoke.keras`. Last and best `M-slot48` match after a layer-name fix (leading-underscore Keras class names were invalid XLA root scopes on the first GPU launch) |
+| **Val (5 charts, 320 beats)** | Charts truncated to `max_beats=64`. F1@0.5 **0.035** (TP **123** / FP **6760** / FN **14**); max-F1 **0.039** @ thr **0.6**. Beat-shuffle null F1@0.5 **0.307**; skill **−0.272**. JSON `eval_val_slot48.json` / `eval_val_slot48_best.json` |
+| **vs published** | **Not comparable** — 1-ep smoke on 1 val song, truncated 64-beat windows, width 32. Table 2 ITGPT **0.78 / 0.80** is full expanded Fraxtil |
+| **Conclusion** | **Partial.** Hierarchical CNN + attention placement, `M-slot48`, and null floor run on Dataset B. Untrained heads flood positives, so F1 sits below the beat-shuffle floor. Next is the paper-sized train (`configs/ddc/itgpt_placement_fraxtil_exp.json`), not selection, and not a cite vs **0.78 / 0.80** |
+
+### EXP-20260818-01: Expanded Fraxtil Dataset B ingested
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-18 22:23:43 |
+| **Track** | `pre` (literature Dataset B, `omalley2026itgpt`) |
+| **Question** | Can the ITGPT expanded-Fraxtil SM5 packs be prepared in-repo with a documented song-grouped split? |
+| **Setup** | Raw `data/raw_literature_exp/` (Dataset A packs junctioned from `data/raw_literature/`). Cute Charts + SAHS vols 1–3 from official SM5 zips. SAHS Vol. 4 zip **404** on fra.xtil.net. Prep `--allow-over-cap`. `logs/literature_fraxtil_exp_dryrun.log`, `logs/literature_fraxtil_exp_prep.log`, `logs/literature_fraxtil_exp_index.log` |
+| **Prep** | **232** song folders discovered, **222** exported, **10** skipped, 0 errors. Charts: **747** = **722** standard + **25** `edit` |
+| **Per pack (exported)** | Arrow Arrangements 20/104; Beast Beats 20/104; Tsunamix III 50/255; Cute Charts 20/101; SAHS v1 34/58; v2 48/87; v3 30/38 |
+| **Skipped** | 10 SAHS songs: no `dance-single` or no exportable charts after mines/custom diffs (even with `--allow-over-cap`) |
+| **Split** | `stratified_song_v1` seed **42**, val_fraction **0.1**: **201 / 21** songs, **676 / 71** rows; 0 song overlap. Standard-only **653 / 69**. Not ITGPT’s unpublished split |
+| **vs ITGPT table** | Paper: 253 songs / 952 charts. Short **31** songs / **205** charts — missing Vol. 4 plus the 10 skipped SAHS files |
+| **Conclusion** | **Partial.** Dataset B is on disk for ITGPT **placement**. Do not cite a number from this split against Table 2 **0.78 / 0.80** until the corpus gap is closed or accepted as a documented deviation. Stay on onset. Do not start selection |
 
 ### EXP-20260817-01: DDCL 48-slot placement 128-ep on Dataset A
 

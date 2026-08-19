@@ -208,6 +208,8 @@ scripts/*
 !scripts/train_ddc_placement.py
 !scripts/eval_ddcl_placement.py
 !scripts/train_ddcl_placement.py
+!scripts/eval_itgpt_placement.py
+!scripts/train_itgpt_placement.py
 !scripts/audio_ablation_ar_onset.py
 !scripts/graduate_ar_tide_overfit.py
 !scripts/ar_tide_iter/

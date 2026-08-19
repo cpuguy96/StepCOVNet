@@ -55,6 +55,8 @@ Runs of one **stage** share a `callback_root_dir`, so every run lands in the sam
 | ----- | ------------------- | ---------- |
 | AR scaling ladder (all rungs + SS variants) | `callbacks/ar/ladder` | `callbacks/ar/ladder/logs` |
 | DDC placement | `callbacks/ddc/placement` | `callbacks/ddc/placement/logs` |
+| DDCL placement | `callbacks/ddc/ddcl_placement` | `callbacks/ddc/ddcl_placement/logs` |
+| ITGPT placement | `callbacks/ddc/itgpt_placement` | `callbacks/ddc/itgpt_placement/logs` |
 | Everything AR | — | `callbacks/ar` |
 
 Keras TensorBoard must log to `logs/{YYYYMMDD-HHMMSS}-{run}/`, not the stage `logs/` root. A root `logs/train` folder overwrites prior curves and forces a new `callback_root_dir` per experiment, which makes overlay in TensorBoard ugly. Do not invent `placement_128ep`-style stage trees to preserve curves.
