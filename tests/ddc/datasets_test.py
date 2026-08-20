@@ -10,6 +10,7 @@ from unittest import mock
 import numpy as np
 
 from stepcovnet.dataset_prep import constants, training_index
+from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.ddc import config, datasets
 
 
@@ -149,6 +150,11 @@ class DdcDatasetsTest(unittest.TestCase):
         spec = np.zeros((40, 80, 3), dtype=np.float32)
         times = np.array([0.10, 0.30], dtype=np.float64)
         entry = _entry("train", "song_a")
+        pack = mock.Mock()
+        pack.metadata.offset_sec = 0.0
+        pack.metadata.bpm_segments = [
+            prep_models.BpmSegment(start_beat=0.0, bpm=120.0)
+        ]
         with (
             mock.patch(
                 "stepcovnet.ddc.datasets.features.load_or_compute_ddc_logmel",
@@ -158,6 +164,10 @@ class DdcDatasetsTest(unittest.TestCase):
                 "stepcovnet.ddc.datasets.training_loader.load_chart_times_sec",
                 return_value=times,
             ),
+            mock.patch(
+                "stepcovnet.ddc.datasets.prep_models.load_parsed_song",
+                return_value=pack,
+            ),
         ):
             chart = datasets.load_placement_chart(
                 entry, "/tmp/data", cache_features=False
@@ -165,9 +175,17 @@ class DdcDatasetsTest(unittest.TestCase):
         self.assertEqual(chart.n_frames, 40)
         self.assertEqual(chart.difficulty, "easy")
         self.assertGreater(chart.target.sum(), 0)
+        self.assertEqual(chart.offset_sec, 0.0)
+        self.assertEqual(len(chart.bpm_segments), 1)
+        self.assertEqual(chart.gt_times.dtype, np.float64)
 
     def test_load_placement_chart_rejects_empty_onsets(self):
         spec = np.zeros((10, 80, 3), dtype=np.float32)
+        pack = mock.Mock()
+        pack.metadata.offset_sec = 0.0
+        pack.metadata.bpm_segments = [
+            prep_models.BpmSegment(start_beat=0.0, bpm=120.0)
+        ]
         with (
             mock.patch(
                 "stepcovnet.ddc.datasets.features.load_or_compute_ddc_logmel",
@@ -176,6 +194,10 @@ class DdcDatasetsTest(unittest.TestCase):
             mock.patch(
                 "stepcovnet.ddc.datasets.training_loader.load_chart_times_sec",
                 return_value=np.array([99.0]),
+            ),
+            mock.patch(
+                "stepcovnet.ddc.datasets.prep_models.load_parsed_song",
+                return_value=pack,
             ),
             self.assertRaises(ValueError),
         ):

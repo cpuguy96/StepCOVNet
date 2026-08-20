@@ -6,6 +6,21 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-08-19 — Three-way DDC / DDCL / ITGPT
 
+### NOTE-20260819-03: DDC peak-snap has no M-slot48 skill
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-19 18:45:33 |
+| **Topic** | Frozen DDC Hamming peaks on the Dataset A slot grid |
+
+**Context.** After ITGPT-on-A ([EXP-20260819-03](EXPERIMENT_LOG.md#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a)), the remaining 3-way block was metric: DDC still `M-ddc-20ms`. User asked to score frozen DDC peaks with `M-slot48` (no new train, no larger B).
+
+**Discovery.** The first snap used float32 `gt_times`. That moved 48-slot labels: n_beats **17555** vs DDCL **17523**, null **0.208** vs **0.397**. Storing float64 times and keeping the GT beat span restored the DDCL grid (null **0.397** exactly). On that grid, Hamming-peak snap F1@0.5 is **0.364** (skill **−0.033**).
+
+**Implication.** DDC can share the Dataset A `M-slot48` **grid** without sharing **skill**. Peak-snap **0.364** is POST, not DDC trained with slot BCE. The comparable trained-slot pair stays ITGPT **0.710** vs DDCL **0.680**. Do not put **0.364** next to those as a 3-way method table.
+
+**Related.** [EXP-20260819-04](EXPERIMENT_LOG.md#exp-20260819-04-ddc-hamming-peak-snap-onto-m-slot48-on-dataset-a) · [NOTE-20260819-02](#note-20260819-02-held-recreations-are-not-a-3-way-table-yet) · `donahue2017ddc`
+
 ### NOTE-20260819-02: Held recreations are not a 3-way table yet
 
 | Field | Value |

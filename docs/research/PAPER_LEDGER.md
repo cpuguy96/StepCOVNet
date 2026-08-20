@@ -68,7 +68,7 @@ Status: **hypothesis** | **supported** | **not_supported** | **positioning** (no
 | C4 | `final_data` (ITL / Mizuki / Vocaloid) is not the Fraxtil literature corpus | positioning | [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md) vs DDC/ITGPT pack lists | Methods (data) |
 | C5 | A new method is comparable to DDC/DDCL/ITGPT only on their dataset, split, grid, and metric | hypothesis | NOTE-20260814-01 | Methods (eval) |
 | C6 | Recreated DDC matches published Fraxtil placement/selection numbers | hypothesis (placement **Partial**) | Placement T-repro accepted: val **0.652 / 0.734** vs paper **0.681 / 0.756** ([EXP-20260815-03](EXPERIMENT_LOG.md#exp-20260815-03-ddc-128-ep-placement-closes-most-of-the-paper-gap)). Selection not recreated. | Results |
-| C7 | Recreated DDCL / ITGPT match published numbers on the matching corpus | hypothesis (ITGPT vs DDCL on A **Partial**) | Dataset A 128-ep ITGPT last F1@0.5 **0.710** vs DDCL **0.680** on `M-slot48` ([EXP-20260819-03](EXPERIMENT_LOG.md#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a)). Dataset B last **0.735** is a different corpus ([EXP-20260819-02](EXPERIMENT_LOG.md#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b)). Not vs Table 2 **0.78 / 0.80**. DDC still `M-ddc-20ms`. | Results |
+| C7 | Recreated DDCL / ITGPT match published numbers on the matching corpus | hypothesis (ITGPT vs DDCL on A **Partial**) | Dataset A 128-ep ITGPT last F1@0.5 **0.710** vs DDCL **0.680** on `M-slot48` ([EXP-20260819-03](EXPERIMENT_LOG.md#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a)). Frozen DDC Hamming-peak snap F1@0.5 **0.364** vs null **0.397** (no slot skill) ([EXP-20260819-04](EXPERIMENT_LOG.md#exp-20260819-04-ddc-hamming-peak-snap-onto-m-slot48-on-dataset-a)). Dataset B last **0.735** is a different corpus ([EXP-20260819-02](EXPERIMENT_LOG.md#exp-20260819-02-itgpt-48-slot-placement-128-ep-on-dataset-b)). Not vs Table 2 **0.78 / 0.80**. DDC literature column stays `M-ddc-20ms` **0.652 / 0.734**. | Results |
 
 Do not put C6–C7 in the abstract until an `EXP-` supports them.
 
@@ -92,7 +92,7 @@ Record the **actual song IDs in each split** (file under `data/` or a tracked ma
 | ID | Name | Definition | Used by | Notes |
 | -- | ---- | ---------- | ------- | ----- |
 | M-ddc-20ms | Peak-pick F1 @ ±20 ms | Hamming-smoothed 10 ms probs, per-difficulty threshold, ±20 ms match | `donahue2017ddc` | In-repo: `stepcovnet.ddc.peak_pick` / `scripts/eval_ddc_placement.py`. Do not mix with beat-grid F1 |
-| M-slot48 | 48-slot/beat F1 | Binary vector of length 48 per beat; report @ 0.5 and max-F1 | `omalley2025ddcl`, `omalley2026itgpt` | In-repo: `stepcovnet.ddcl.evaluation` / `scripts/eval_ddcl_placement.py` / `scripts/eval_itgpt_placement.py`. No 20 ms window |
+| M-slot48 | 48-slot/beat F1 | Binary vector of length 48 per beat; report @ 0.5 and max-F1 | `omalley2025ddcl`, `omalley2026itgpt` | In-repo: `stepcovnet.ddcl.evaluation` / `scripts/eval_ddcl_placement.py` / `scripts/eval_itgpt_placement.py`. DDC POST snap: `scripts/eval_ddc_placement.py --slot48` ([EXP-20260819-04](EXPERIMENT_LOG.md#exp-20260819-04-ddc-hamming-peak-snap-onto-m-slot48-on-dataset-a)). No 20 ms window |
 | M-sel-acc | Selection top-1 / top-2 / hold acc | Teacher-forced next-step over 256 classes | all three | Hold acc is the leftover error in ITGPT vs DDCL |
 | M-timing | `timing_match` @ 20 ms | Ordered match / max(n_pred, n_ref) | current StepCOVNet AR/dense; DDC eval parallel column | Internal until a seconds-list track is in the paper. DDC literature column stays `M-ddc-20ms` ([EXP-20260815-05](EXPERIMENT_LOG.md#exp-20260815-05-accepted-ddc-peaks-have-no-ordered-timing_match-skill)) |
 | M-null | Audio-blind / chance floor | Same metric with shuffled or silent audio, or density-matched null | EXP-20260804-03/05 | Required beside any number we claim as skill |
@@ -132,6 +132,7 @@ Published numbers in T-related are citations, not our results. T-repro is the fi
 
 | Date | Change |
 | ---- | ------ |
+| 2026-08-19 | Dataset A DDC Hamming-peak snap `M-slot48` F1@0.5 **0.364** vs null **0.397** (skill **−0.033**). EXP-20260819-04. |
 | 2026-08-19 | Dataset A ITGPT 128-ep last F1@0.5 **0.710** vs DDCL **0.680** (`M-slot48`). EXP-20260819-03. |
 | 2026-08-19 | Dataset B ITGPT 128-ep last F1@0.5 **0.735** / max-F1 **0.740** vs null **0.390**. Not vs Table 2 **0.78 / 0.80**. EXP-20260819-02. |
 | 2026-08-15 | DDC best-val vs last: **0.650** / **0.735** ≈ last **0.652** / **0.734**. EXP-20260815-04. |

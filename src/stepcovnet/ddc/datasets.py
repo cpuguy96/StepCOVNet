@@ -7,6 +7,7 @@ import pathlib
 
 import numpy as np
 
+from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.dataset_prep import training_index, training_loader
 from stepcovnet.ddc import config, constants, features
 
@@ -20,9 +21,11 @@ class PlacementChart:
         difficulty: Lowercase DDR difficulty label.
         spec: Z-scored log-mel, shape ``(time, 80, 3)``.
         target: Binary onset frames, shape ``(time,)``.
-        gt_times: Ground-truth onset times in seconds.
+        gt_times: Ground-truth onset times in seconds (float64).
         first_onset: Inclusive first labeled frame.
         last_onset: Inclusive last labeled frame.
+        offset_sec: Simfile ``#OFFSET`` (for ``M-slot48`` peak snap).
+        bpm_segments: BPM ladder (for ``M-slot48`` peak snap).
     """
 
     song_key: str
@@ -32,6 +35,8 @@ class PlacementChart:
     gt_times: np.ndarray
     first_onset: int
     last_onset: int
+    offset_sec: float = 0.0
+    bpm_segments: tuple[prep_models.BpmSegment, ...] = ()
 
     @property
     def n_frames(self) -> int:
@@ -162,6 +167,11 @@ def load_placement_chart(
         str(chart_path),
         entry.chart_index,
     )
+    pack = prep_models.load_parsed_song(
+        data_root,
+        entry.normalized_bundle,
+        entry.normalized_id,
+    )
     target = features.times_to_frame_target(gt_times, spec.shape[0])
     onset_frames = np.flatnonzero(target >= 0.5)
     if onset_frames.size == 0:
@@ -177,9 +187,11 @@ def load_placement_chart(
         difficulty=entry.difficulty.lower(),
         spec=spec,
         target=target,
-        gt_times=np.asarray(gt_times, dtype=np.float32),
+        gt_times=np.asarray(gt_times, dtype=np.float64),
         first_onset=int(onset_frames[0]),
         last_onset=int(onset_frames[-1]),
+        offset_sec=float(pack.metadata.offset_sec),
+        bpm_segments=tuple(pack.metadata.bpm_segments),
     )
 
 
