@@ -4,6 +4,28 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-08-24 — Dense TCN ladder A/B
+
+### NOTE-20260824-01: `val_skill_event_f1` ranks dense checkpoints; `onset_density` does not help
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-24 19:46:51 |
+| **Topic** | Dense ladder selection metric and chart-oracle density A/B |
+
+**Context.** [NOTE-20260808-04](#note-20260808-04-ar-learnings-that-transfer-to-the-dense-track) item 4 named ordered `timing_match` as the dense primary. Windowed TCN training on ladder 50t/50v showed that metric sits at the chance floor (~0.003–0.007) across the whole threshold sweep, even when Hungarian F1 has skill. A single inserted or dropped peak desynchronizes ranks, so it cannot rank partially-correct checkpoints.
+
+**Discovery.**
+
+- In-train selection now sweeps thresholds and ranks on **`val_skill_event_f1`** (Hungarian F1 minus the audio-blind floor at that threshold's peak count). `val_timing_match` stays a diagnostic.
+- Windowed TCN (1024 frames × 16 windows/song, batch 32) early-stops at epoch **61**, best epoch **11**. Offline on the 50-song val set: skill_event_f1 **0.414** @ τ=0.25 (micro F1 **0.569**). Shuffle corruption collapses skill; zeros is ~0 — the model reads audio.
+- Chart-oracle `onset_density` (1025 input channels) is a wash: skill **0.412** @ τ=0.20, micro F1 **0.571**. Same early-stop pattern (best epoch 11).
+- Post-hoc export under a shared `callback_root_dir` can load a 1024-channel checkpoint while scoring 1025-channel features and write a corrupt `.keras`. Eval the callback checkpoint directly.
+
+**Implication.** Keep `checkpoint_metric: val_skill_event_f1` on multi-song dense val. Do not treat density conditioning as a win. Beat-phase work stays deferred; exclude variable-BPM rows if it starts. Literature recreation remains Current phase.
+
+**Related.** [EXP-20260824-01](EXPERIMENT_LOG.md#exp-20260824-01-windowed-tcn-on-ladder-50t50v--onset_density-is-a-wash) · [NOTE-20260808-02](#note-20260808-02-whole-design-review--ar-formulation-is-the-plateau-dense-is-the-ship-path)
+
 ## Session 2026-08-19 — Three-way DDC / DDCL / ITGPT
 
 ### NOTE-20260819-03: DDC peak-snap has no M-slot48 skill
@@ -177,6 +199,90 @@ ITGPT training packs (README): Fraxtil’s Arrow Arrangements, Beast Beats, Cute
 **Open.** Dataset A split uses documented seed-42 song-grouped IDs, not DDC’s unpublished 80/10/10. Current phase is this recreation track as of [NOTE-20260816-01](#note-20260816-01-recreate-ddcl-then-itgpt-final_data-is-not-the-paper-set).
 
 **Related.** [TRAINING_DATA_SETUP.md](TRAINING_DATA_SETUP.md) · [PIPELINE_ARCHITECTURE.md](PIPELINE_ARCHITECTURE.md) · DDC [arxiv:1703.06891](https://arxiv.org/abs/1703.06891) · DDCL [arxiv:2507.01644](https://arxiv.org/abs/2507.01644) · ITGPT [arxiv:2607.14148](https://arxiv.org/abs/2607.14148)
+
+## Session 2026-08-08 — Design review: pivot prediction to dense track
+
+### NOTE-20260808-04: AR learnings that transfer to the dense track
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-08 20:51:33 |
+| **Topic** | Carrying AR-era methodology into dense so the same mistakes are not repeated |
+
+The AR track's most durable output was **methodology**, not architecture. These carry over:
+
+| # | AR finding | Dense transfer | Status |
+| - | ---------- | -------------- | ------ |
+| 1 | Raw F1 unreadable without a chance floor ([EXP-20260804-03](EXPERIMENT_LOG.md#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)) | `eval_dense_val_event_f1` reports `null_floors` + `skill_*`. **`data/v2` 0.686 has never been floor-checked** | **Done** (harness) |
+| 2 | Single-song overfit cannot detect an audio-blind model — tide passed with reversed audio ([EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)) | Dense tide ~98% (EXP-20260606-12) proves nothing about grounding; `--corruption {shuffle,zeros}` added | **Done** (harness) |
+| 3 | Fixing prediction **count** ≠ fixing **timing**; density conditioning rode the null curve ([EXP-20260803-03](EXPERIMENT_LOG.md#exp-20260803-03-onset_density-beats-meter-density-on-r2-free-run) retracted) | **Threshold sweep is the dense analogue** — lowering threshold changes peak count and moves the floor. Sweep now selects on `skill_timing_match`, keeps `raw_f1_best_threshold` for contrast | **Done** (harness) |
+| 4 | `timing_match` floor ≈ 0 vs Hungarian F1 floor **0.225–0.336** | `timing_match` is the honest primary for dense; F1 stays auxiliary/comparable to history | **Done** (selection default) |
+| 5 | Checkpoint-selection defects: `val_loss` best was **32×** worse on F1 ([EXP-20260725-02](EXPERIMENT_LOG.md#exp-20260725-01-ladder-r0-are-local-mert-features-and-the-tide-champion-still-good)); ptrloss vs patch-acc ([EXP-20260807-02](EXPERIMENT_LOG.md#exp-20260807-02-ckpt-on-val_pointer_loss-picks-ep-2)) | Dense has the same defect on record: post-hoc **0.671** vs frame-F1 ckpt **0.654** (EXP-20260609-11). Keep `post_hoc_event_f1_export`; selection must be null-aware | **Partial** — post-hoc export on |
+| 6 | Scale is not monotonic — R3 (200) scored **below** R2 (50) ([EXP-20260802-02](EXPERIMENT_LOG.md#exp-20260802-02-ladder-r3-does-200-train-rows-beat-r2s-0227-on-the-frozen-val-set)) | Dense runs use the **same frozen `ladder_v1_*_50v`** val set and nested rungs | **Done** (configs) |
+| 7 | Local rebuilds did not reproduce logged runs ([EXP-20260724-04](EXPERIMENT_LOG.md#exp-20260724-04-does-a-local-50t50v-rebuild-reproduce-the-early-eos-free-run-collapse)) | Seed every dense run; treat cross-machine numbers as unverified | **Open** |
+| 8 | Class weights need a co-tuned loss recipe ([NOTE-20260703-01](#note-20260703-01-class-weights-need-co-tuned-loss-recipe-deferred)) | Do not drop class weights onto dense Gaussian targets without co-tuning | **Advisory** |
+
+**Not transferable.** Teacher-forcing vs free-run gap, EOS/termination, scheduled sampling, pointer/QK-LN work — all AR-decoder-specific.
+
+**Open data question.** Every AR multi-song failure was on `final_data`; the dense **0.686** was on `data/v2`. `final_data` audio↔chart alignment at 20 ms has never been independently confirmed. The dense ladder run is the discriminator: a good dense score clears the data, a floor-level score implicates prep.
+
+**Related.** [NOTE-20260808-02](#note-20260808-02-whole-design-review--ar-formulation-is-the-plateau-dense-is-the-ship-path) · [NOTE-20260808-03](#note-20260808-03-windowed-dense-training--measured-epoch-cost)
+
+
+### NOTE-20260808-03: Windowed dense training — measured epoch cost
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-08 20:51:33 |
+| **Topic** | Why dense epochs were slow, and what windowing actually bought |
+
+**Problem.** Whole-song dense training is batch-1 over 9k–28.6k MERT frames (p50 **12.5k**) through 2 stacked BiLSTM layers. Measured **~500 s/epoch** on ladder 50t.
+
+**Measured breakdown (whole-song → first windowed attempt, 4096 frames × batch 8):**
+
+| Phase | Cost | Cause |
+| ----- | ---- | ----- |
+| Shuffle buffer refill | ~140 s/epoch | 200 buffered windows × 16.8 MB = **3.4 GB**, refilled each epoch |
+| Train (25 steps) | ~100 s | 4096 sequential LSTM timesteps per step |
+| Validation | **~260 s** | all 50 val songs, whole-song, batch 1 |
+
+**Fixes.** Shuffle buffer capped to a few batches; window **1024** × batch **32** (RNN wall-clock scales with *sequence length*, batch is parallel — same audio, ¼ the sequential depth); in-train `val_take_count: 15` (full 50-song scoring stays post-hoc in `eval_dense_onset.py`).
+
+**Result.** Epoch **500 s → 163 s** steady-state (~**3×**), train portion 100 s → ~50 s. **Validation still ~110 s of the 163 s** — it remains the dominant cost because whole-song BiLSTM inference is sequential.
+
+**Config surface.** `OnsetDatasetConfig.train_window_frames` / `train_windows_per_song`; validation is always whole-song and forced to batch 1 when windowing is on.
+
+**Caveat for future measurements.** Epoch 1 includes one-time feature caching from `/mnt/c` (386 s windowed). **Do not compare an epoch-1 step time against another run's steady-state step time** — measure at epoch ≥ 2.
+
+**Next levers.** `validation_freq` (amortize the 110 s); TCN backbone (parallel over time, historically **0.664** vs BiLSTM **0.677**, EXP-20260610-01).
+
+**Related.** [NOTE-20260808-02](#note-20260808-02-whole-design-review--ar-formulation-is-the-plateau-dense-is-the-ship-path)
+
+### NOTE-20260808-02: Whole-design review — AR formulation is the plateau; dense is the ship path
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-08 19:53:44 |
+| **Topic** | Why onset prediction plateaued, and what replaces it |
+
+**Question.** All AR attempts feel plateaued — is the problem the prediction design, and what different method would properly do prediction + validation for onset generation?
+
+**Diagnosis (from the log, not new runs).**
+
+| Evidence | Implication |
+| -------- | ----------- |
+| No AR rung clears an audio-blind baseline on the frozen val set ([EXP-20260804-03](EXPERIMENT_LOG.md#exp-20260804-03-every-ladder-rung-is-at-or-below-an-audio-blind-baseline--the-metric-not-the-data-is-what-broke)) | Multi-song AR has never demonstrated skill |
+| Original pointer head never read the audio ([EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)); after content fixes, every localization mechanism is prior-dependent or near-floor ([NOTE-20260808-01](#note-20260808-01-soft-α--hard-r-locality-path--closed)) | Open-set localization inside the AR decoder is an unsolved research problem, not a tuning gap |
+| Dense frame classifier: **0.686** micro event F1 on `data/v2` ([EXP-20260610-03](EXPERIMENT_LOG.md#exp-20260610-03-bilstm-256u-50-train-200ep-scale-up)); ~98% event F1 tide overfit (EXP-20260606-12) | The dense formulation already does the required prediction; it was never scaled to `final_data` |
+| Dense model's only input is audio features → per-frame probs | Cannot be audio-blind the way the AR decoder (which can lean on token history/position priors) can; corruption probe still added as proof |
+
+**Decision.** Prediction pivots to the dense track (MERT → BiLSTM frame probs → peak-pick → onset list). AR stays a research track only; `gate-val-vs-dense` is effectively being run now with dense as the incumbent.
+
+**Validation contract (new, in-harness).** `eval_dense_onset.py` / `dense_overfit_eval.eval_dense_val_event_f1` now report audio-blind **null floors** (`onset_null_baseline`, same convention as the AR offline harness) and **skill_over_null** beside every score, plus a `--corruption {none,shuffle,zeros}` grounding ablation. Dense runs use the **ladder frozen val set** (`training_index_ladder_v1_*_50v.json`) so dense and AR numbers are directly comparable.
+
+**First run.** Dense BiLSTM-256 MERT on ladder 50t/50v ([`configs/dense/ladder_v1_50t_50v_mert_bilstm.json`](../../configs/dense/ladder_v1_50t_50v_mert_bilstm.json)) — same data budget as AR R2. MERT coverage verified: 50t and 200t subsets complete; 300t missing 57 files (extract before an R4-scale dense run).
+
+**Related.** [NOTE-20260808-01](#note-20260808-01-soft-α--hard-r-locality-path--closed) · [AR_SCALING_LADDER.md](AR_SCALING_LADDER.md) § dense-track reuse · EXP entry to follow after the run
 
 ## Session 2026-08-07 — Content-gap soft-α closed (prior dependence)
 

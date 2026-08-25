@@ -35,7 +35,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Dense val best (`data/v2`) | BiLSTM 256u — micro event F1 **0.686** @ thr=0.30 (EXP-20260610-03) |
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
-| Multi-song val on `final_data` | **Partial** — 50/100-row MERT BiLSTM smoke: event F1 **0.666** (skill **+0.371**); `timing_match` **0.0047** at floor ([EXP-20260815-07](#exp-20260815-07-final_data-dense-50t100v-mert-bilstm-smoke)) |
+| Multi-song val on `final_data` | **Partial** — ladder 50t/50v windowed TCN: skill_event_f1 **0.414** (micro F1 **0.569**); `onset_density` **0.412** (wash); `timing_match` still at floor ([EXP-20260824-01](#exp-20260824-01-windowed-tcn-on-ladder-50t50v--onset_density-is-a-wash)). Earlier 50/100-row BiLSTM smoke: event F1 **0.666** (skill **+0.371**) ([EXP-20260815-07](#exp-20260815-07-final_data-dense-50t100v-mert-bilstm-smoke)) |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
 | **AR 10-song smoke** | **PASS** — 5-ep corrected-mask ([EXP-20260723-01](#exp-20260723-01-ar-corrected-mask-10song-smoke)); **50-ep cached** `val_loss` **35.0 → 12.1**, teacher F1 **0.11** ([EXP-20260723-02](#exp-20260723-02-ar-corrected-mask-10song-smoke-50ep)) |
 | **AR 50t/50v scale-up** | **Partial** — 500 ep: best `val_loss` **~20.9 @ ep 65**, then severe overfit; val F1 peaks **~0.22** ([EXP-20260724-01](#exp-20260724-01-ar-corrected-mask-50t50v-500-ep-scale-up)) |
@@ -67,6 +67,7 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20260824-01 | `train` + `metric` | Does windowed TCN on ladder 50t/50v beat the audio-blind floor, and does `onset_density` help? | **Partial** | Skill **0.414** vs density **0.412** (wash); `timing_match` still at floor; select on `val_skill_event_f1` |
 | EXP-20260819-04 | `post` + `metric` | Does snapping frozen DDC Hamming peaks onto `M-slot48` give a Dataset A 3-way number? | **Partial** | Peak-snap F1@0.5 **0.364** vs null **0.397** (skill **−0.033**); 45 charts / **17523** beats match DDCL; not slot-trained DDC |
 | EXP-20260819-03 | `train` + `metric` | Does 128-ep ITGPT on Dataset A beat DDCL **0.680** on the same split and `M-slot48`? | **Supported** (2-way) | Last F1@0.5 **0.710** vs null **0.397** (skill **+0.313**); vs DDCL **+0.030**; DDC peak-snap has no slot skill |
 | EXP-20260819-02 | `train` + `metric` | Does 128-ep × 200 steps lift Dataset B ITGPT `M-slot48` past the 8-ep mixed-fp16 pass? | **Supported** | Last F1@0.5 **0.735** vs null **0.390** (skill **+0.345**); max-F1 **0.740**; vs 8-ep **+0.073** @ 0.5; not vs **0.78 / 0.80** |
@@ -198,6 +199,20 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20260824-01: Windowed TCN on ladder 50t/50v — onset_density is a wash
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-08-24 19:46:51 |
+| **Track** | `train` + `metric` (dense ladder 50t/50v, windowed TCN) |
+| **Question** | On the frozen ladder 50t/50v val set, does windowed MERT-TCN clear an audio-blind floor on peak-pick F1, and does chart-oracle `onset_density` raise `skill_event_f1`? |
+| **Setup** | Baseline [`ladder_v1_50t_50v_mert_tcn_windowed.json`](../../configs/dense/ladder_v1_50t_50v_mert_tcn_windowed.json): TCN 64-filter × 4 blocks, window **1024** × **16**/song, batch **32**, `checkpoint_metric: val_skill_event_f1`, `val_take_count: -1`, seed **42**. Density twin [`ladder_v1_50t_50v_mert_tcn_windowed_density.json`](../../configs/dense/ladder_v1_50t_50v_mert_tcn_windowed_density.json) appends one constant channel (`onset_density` = onsets/sec ÷ 15). Offline from best callback ckpts, not the exported `.keras`. JSON `models_wsl/dense/ladder_v1_50t_50v_tcn_density/offline_ab_vs_baseline.json`. Logs `logs/dense_ladder_r5_tcn_skill.log`, `logs/dense_ladder_r5_tcn_density_train.log` |
+| **Train** | Both runs ES @ ep **61**, restore ep **11**. Callback best `val_skill_event_f1`: baseline **0.3907**, density **0.3903**. Density post-hoc export failed (1025-ch features vs a 1024-ch checkpoint under the shared `callback_root_dir`) |
+| **Val (50 songs, skill-selected threshold)** | Baseline @ **0.25**: micro event F1 **0.569**, skill_event_f1 **0.414**, `timing_match` **0.004**. Density @ **0.20**: micro **0.571**, skill **0.412**, `timing_match` **0.005**. Δ skill **−0.001**, Δ micro **+0.002** |
+| **Corruption @ 0.25 (baseline)** | none skill **+0.413**; shuffle skill **−0.035**; zeros **0.000** — model reads audio |
+| **vs `timing_match` selection** | Ordered match stays ~**0.003–0.007** (ioi-shuffle floor ~**0.006**) across the threshold sweep. It cannot rank checkpoints; `val_skill_event_f1` can |
+| **Conclusion** | **Partial.** Windowed TCN has Hungarian-F1 skill on ladder val and is audio-grounded. Ordered `timing_match` is still at the floor. Chart-oracle `onset_density` is a wash — do not keep it as a default. Beat-phase stays deferred. Literature recreation remains Current phase |
 
 ### EXP-20260819-04: DDC Hamming-peak snap onto M-slot48 on Dataset A
 
