@@ -19,20 +19,36 @@ class OnsetF1Metric(keras.metrics.Metric):
     Handles y_true/y_pred shapes (batch_size, time_steps) or with trailing
     dimensions (e.g. ..., 1) or (..., 1, 1).
 
+    Gaussian-smeared targets spread each onset over ``2 * int(3 * sigma) + 1``
+    nonzero frames, so treating any nonzero target as an onset would inflate the
+    positive class several-fold and reward a model for smearing probability mass
+    instead of placing onsets precisely. ``target_threshold`` keeps only the
+    kernel peak, which leaves binary targets unchanged.
+
     Attributes:
         tolerance: Time steps allowed on either side of a true onset for a
             prediction to count as correct (default 1).
         threshold: Probability threshold for binary predictions (default 0.5).
+        target_threshold: Minimum target value counted as a true onset frame
+            (default 1.0, the Gaussian kernel peak).
         window_size: Full window size used internally (2 * tolerance + 1).
         true_positives: Accumulated true positive count (Keras weight).
         false_positives: Accumulated false positive count (Keras weight).
         false_negatives: Accumulated false negative count (Keras weight).
     """
 
-    def __init__(self, tolerance=1, threshold=0.5, name="onset_f1_score", **kwargs):
+    def __init__(
+        self,
+        tolerance=1,
+        threshold=0.5,
+        name="onset_f1_score",
+        target_threshold=1.0,
+        **kwargs,
+    ):
         super().__init__(name=name, **kwargs)
         self.tolerance = tolerance
         self.threshold = threshold
+        self.target_threshold = target_threshold
         # Calculate the full window size for convolution
         self.window_size = 2 * self.tolerance + 1
 
@@ -81,6 +97,11 @@ class OnsetF1Metric(keras.metrics.Metric):
         )
         # Set a general shape hint after reshaping
         y_true_conv.set_shape([None, None, 1])
+        # Keep only kernel peaks so Gaussian tails are not counted as onsets.
+        y_true_conv = tf.cast(
+            y_true_conv >= self.target_threshold - keras.backend.epsilon(),
+            tf.float32,
+        )
 
         # Reshape y_pred
         rank_pred = tf.rank(y_pred)
@@ -216,6 +237,7 @@ class OnsetF1Metric(keras.metrics.Metric):
             {
                 "tolerance": self.tolerance,
                 "threshold": self.threshold,
+                "target_threshold": self.target_threshold,
             }
         )
         return config

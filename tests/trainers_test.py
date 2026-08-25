@@ -561,6 +561,78 @@ class TrainersTest(unittest.TestCase):
         self.assertIn("val_dense_event_onset_f1", logs)
         self.assertEqual(logs["val_dense_event_onset_f1"], 1.0)
 
+    def test_dense_val_event_f1_callback_sweeps_past_flooded_low_threshold(self):
+        """A low threshold floods peaks; the sweep must find the clean operating point.
+
+        Weak spurious peaks that clear a 0.05 threshold become false positives
+        and sink event F1 even when every real onset is predicted exactly.
+        """
+        n_frames = 1200
+        features = np.zeros((1, n_frames, 128), dtype=np.float32)
+        y_true = np.zeros((1, n_frames, 1), dtype=np.float32)
+        y_pred = np.zeros((1, n_frames, 1), dtype=np.float32)
+        # Irregular gaps: evenly spaced onsets are reproduced exactly by the
+        # audio-blind interval-shuffling null, which saturates the floor at 1.0.
+        rng = np.random.default_rng(0)
+        gaps = rng.integers(14, 30, size=80)
+        onset_frames = 20 + np.cumsum(gaps)
+        frames = onset_frames[onset_frames < n_frames - 20]
+        for frame in frames:
+            y_true[0, frame, 0] = 1.0
+            y_pred[0, frame, 0] = 0.9
+        # 10 ms hop, 50 ms min gap: spurious peaks must stay 5+ frames clear.
+        for start, end in zip(frames[:-1], frames[1:], strict=True):
+            mid = (start + end) // 2
+            if mid - start >= 6 and end - mid >= 6:
+                y_pred[0, mid, 0] = 0.06
+
+        stub_model = _keras_model_stub(predict_return_value=y_pred)
+        val_ds = tf.data.Dataset.from_tensor_slices((features, y_true)).batch(1)
+        callback = dense_overfit_eval.DenseValEventF1Callback(
+            val_ds,
+            confidence_threshold=0.05,
+        )
+        callback.set_model(stub_model)
+        logs: dict[str, float] = {}
+        callback.on_epoch_end(0, logs)
+
+        flooded = callback._summary_at([(y_true, y_pred)], 0.05)
+        clean = callback._summary_at([(y_true, y_pred)], 0.3)
+        self.assertLess(flooded["event_f1"], clean["event_f1"])
+        self.assertLess(flooded["skill_event_f1"], clean["skill_event_f1"])
+
+        self.assertEqual(logs["val_dense_event_onset_f1"], 1.0)
+        self.assertGreater(logs["val_timing_match_threshold"], 0.05)
+        self.assertGreater(logs["val_skill_event_f1"], 0.0)
+
+    def test_dense_val_event_f1_callback_selects_on_skill_not_raw_f1(self):
+        """Selection must discount the audio-blind floor, not just maximize F1."""
+        n_frames = 400
+        features = np.zeros((1, n_frames, 128), dtype=np.float32)
+        y_true = np.zeros((1, n_frames, 1), dtype=np.float32)
+        y_pred = np.zeros((1, n_frames, 1), dtype=np.float32)
+        for frame in range(20, n_frames - 20, 8):
+            y_true[0, frame, 0] = 1.0
+            y_pred[0, frame, 0] = 0.9
+
+        stub_model = _keras_model_stub(predict_return_value=y_pred)
+        val_ds = tf.data.Dataset.from_tensor_slices((features, y_true)).batch(1)
+        callback = dense_overfit_eval.DenseValEventF1Callback(
+            val_ds,
+            confidence_threshold=0.05,
+        )
+        callback.set_model(stub_model)
+        logs: dict[str, float] = {}
+        callback.on_epoch_end(0, logs)
+
+        self.assertIn("val_skill_event_f1", logs)
+        self.assertIn("val_skill_event_f1_floor", logs)
+        self.assertLessEqual(logs["val_skill_event_f1"], 1.0)
+        self.assertLessEqual(
+            logs["val_skill_event_f1"],
+            logs["val_dense_event_onset_f1"],
+        )
+
     def test_get_callbacks_adds_early_stopping_when_patience_set(self):
         callbacks, _ = trainers._get_callbacks(
             "/tmp/cb",

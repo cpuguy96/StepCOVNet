@@ -45,6 +45,25 @@ class OnsetF1MetricTest(unittest.TestCase):
         result = self.metric.result()
         self.assertAlmostEqual(result.numpy(), 0.0)
 
+    def test_gaussian_target_scores_peak_not_tails(self):
+        # Gaussian sigma=1.0 targets spread one onset over 7 nonzero frames.
+        # Only the peak is a real onset, so an exact spike must beat a blob.
+        y_true = np.array([[0.0, 0.011, 0.135, 0.607, 1.0, 0.607, 0.135, 0.011, 0.0]])
+        spike = np.array([[0.0, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0, 0.0, 0.0]])
+        blob = np.array([[0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.0]])
+
+        spike_metric = metrics.OnsetF1Metric(tolerance=1, threshold=0.5)
+        spike_metric.update_state(y_true, spike)
+        blob_metric = metrics.OnsetF1Metric(tolerance=1, threshold=0.5)
+        blob_metric.update_state(y_true, blob)
+
+        self.assertAlmostEqual(spike_metric.result().numpy(), 1.0, places=5)
+        self.assertLess(blob_metric.result().numpy(), spike_metric.result().numpy())
+
+    def test_target_threshold_is_serialized(self):
+        metric = metrics.OnsetF1Metric(tolerance=2, threshold=0.4, target_threshold=0.5)
+        self.assertEqual(metric.get_config()["target_threshold"], 0.5)
+
     def test_update_state_rank_2_input(self):
         # Shape (batch, time)
         y_true = np.array([[0, 1, 0]])

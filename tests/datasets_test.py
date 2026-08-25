@@ -116,6 +116,51 @@ class DatasetsTest(unittest.TestCase):
 
         self.assertEqual(int(np.sum(targets[0])), 384)
 
+    def test_random_crop_frames_long_and_short_inputs(self):
+        features = tf.reshape(
+            tf.range(200 * 4, dtype=tf.float32),
+            (200, 4),
+        )
+        target = tf.ones((200, 1), dtype=tf.float32)
+        cropped_features, cropped_target = datasets._random_crop_frames(
+            features,
+            target,
+            window_frames=64,
+        )
+        self.assertEqual(cropped_features.shape, (64, 4))
+        self.assertEqual(cropped_target.shape, (64, 1))
+
+        short_features = tf.ones((10, 4), dtype=tf.float32)
+        short_target = tf.ones((10, 1), dtype=tf.float32)
+        padded_features, padded_target = datasets._random_crop_frames(
+            short_features,
+            short_target,
+            window_frames=64,
+        )
+        self.assertEqual(padded_features.shape, (64, 4))
+        self.assertEqual(padded_target.shape, (64, 1))
+        self.assertEqual(float(tf.reduce_sum(padded_target)), 10.0)
+
+    def test_create_dataset_windowed_batches_fixed_shapes(self):
+        ds = datasets.create_dataset(
+            TEST_DATA_DIR,
+            batch_size=2,
+            window_frames=64,
+            windows_per_song=4,
+        )
+        features, targets = _first_batch(ds)
+        self.assertEqual(features.shape, (2, 64, 128))
+        self.assertEqual(targets.shape, (2, 64, 1))
+
+    def test_create_dataset_windowed_rejects_waveform(self):
+        with self.assertRaises(ValueError):
+            datasets.create_dataset(
+                TEST_DATA_DIR,
+                feature_source=config.FeatureSource.WAVEFORM,
+                n_features=32,
+                window_frames=64,
+            )
+
     def test_create_dataset_with_empty_directory_raises_error(self):
         for create_fn in (datasets.create_dataset, datasets.create_arrow_dataset):
             with (
@@ -1028,6 +1073,48 @@ class DatasetsTest(unittest.TestCase):
         self.assertEqual(target.ndim, 2)
         self.assertEqual(target.shape[1], 1)
         self.assertGreater(int(np.sum(target > 0)), 0)
+
+    def test_load_and_preprocess_paths_normalizes_without_augment(self):
+        # Normalization must live in the load path: the augment map is skipped
+        # when augmentation is off, and inference normalizes unconditionally,
+        # so training would otherwise see a different scale than eval.
+        audio_path, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)
+        assert audio_path is not None and chart_path is not None
+        features, _ = datasets._load_and_preprocess_paths(
+            audio_path,
+            chart_path,
+            use_gaussian_target=False,
+            gaussian_sigma=1.0,
+            feature_source=config.FeatureSource.MEL,
+            mert_features_dir="",
+            data_root="",
+        )
+        np.testing.assert_allclose(features.mean(axis=0), 0.0, atol=1e-4)
+        np.testing.assert_allclose(features.std(axis=0), 1.0, atol=1e-3)
+
+    def test_onset_density_scalar_matches_ar_scale(self):
+        # 15 onsets/sec maps to 1.0, matching onset_ar.compute_density_scalar.
+        self.assertAlmostEqual(datasets.onset_density_scalar(150, 10.0), 1.0)
+        self.assertAlmostEqual(datasets.onset_density_scalar(75, 10.0), 0.5)
+        self.assertAlmostEqual(datasets.onset_density_scalar(0, 10.0), 0.0)
+        self.assertAlmostEqual(datasets.onset_density_scalar(999, 10.0), 1.0)
+        self.assertAlmostEqual(datasets.onset_density_scalar(10, 0.0), 0.0)
+
+    def test_append_density_channel_survives_normalization_order(self):
+        # A constant channel has zero variance, so per-bin normalization would
+        # erase it; the channel must be appended after normalizing.
+        features = np.random.randn(50, 8).astype(np.float32)
+        out = datasets.append_density_channel(features, 0.42)
+        self.assertEqual(out.shape, (50, 9))
+        np.testing.assert_allclose(out[:, -1], 0.42, atol=1e-6)
+        np.testing.assert_allclose(out[:, :-1], features, atol=1e-6)
+
+    def test_onset_frame_indices_round_to_nearest_frame(self):
+        # Truncation would bias every target early by up to one hop.
+        times = np.array([0.0, 0.004, 0.006, 0.014, 0.016])
+        np.testing.assert_array_equal(
+            datasets._onset_frame_indices(times), np.array([0, 0, 1, 1, 2])
+        )
 
     def test_load_and_preprocess_paths_gaussian(self):
         audio_path, chart_path = _get_one_audio_chart_pair(TEST_DATA_DIR)

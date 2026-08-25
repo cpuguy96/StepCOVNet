@@ -15,6 +15,38 @@ from typing import Any, get_args, get_origin, get_type_hints
 
 from stepcovnet import constants
 
+# Dense difficulty conditioning modes. ``onset_density`` mirrors the AR track's
+# winning choice: a measured onsets-per-second rate rather than the simfile
+# difficulty label, which is unreliable (see NOTE-20260803-01).
+DENSITY_CONDITIONING_NONE = "none"
+DENSITY_CONDITIONING_ONSET = "onset_density"
+DENSITY_CONDITIONING_MODES = frozenset(
+    {DENSITY_CONDITIONING_NONE, DENSITY_CONDITIONING_ONSET}
+)
+
+# Onsets-per-second that maps to a conditioning value of 1.0; matches
+# ``onset_ar.config.compute_density_scalar`` so both tracks share a scale.
+DENSITY_ONSET_HZ_NORM = 15.0
+
+# Peak-picked event metrics; selecting on these requires the dense event
+# validation callback, which runs an extra predict pass over the val split.
+EVENT_CHECKPOINT_METRICS = frozenset(
+    {
+        "val_timing_match",
+        "val_dense_event_onset_f1",
+        "val_skill_event_f1",
+    }
+)
+
+# Every validation metric allowed to drive checkpointing and early stopping.
+CHECKPOINT_METRICS = EVENT_CHECKPOINT_METRICS | frozenset(
+    {
+        "val_onset_f1_score",
+        "val_pr_auc",
+        "val_loss",
+    }
+)
+
 
 class IntervalEncoding(enum.StrEnum):
     """How to encode inter-step interval as model input.
@@ -102,6 +134,12 @@ class OnsetDatasetConfig(_DictSerializableMixin):
             are optional.
         data_root: Prepared output root for nested MERT paths; inferred from the manifest
             when ``training_index_path`` is set.
+        train_window_frames: When > 0, train on fixed-length random crops of this
+            many feature frames instead of whole songs. Enables uniform shapes and
+            real batching; validation always stays whole-song. Not supported with
+            ``feature_source=WAVEFORM``.
+        train_windows_per_song: Random crops drawn per song per epoch when
+            ``train_window_frames`` > 0.
     """
 
     data_dir: str
@@ -116,6 +154,9 @@ class OnsetDatasetConfig(_DictSerializableMixin):
     max_train_songs: int = -1
     training_index_path: str = ""
     data_root: str = ""
+    train_window_frames: int = 0
+    train_windows_per_song: int = 1
+    density_conditioning: str = DENSITY_CONDITIONING_NONE
 
     def __post_init__(self) -> None:
         """Normalize feature_source from string to enum when loaded from dict/JSON."""
@@ -127,6 +168,35 @@ class OnsetDatasetConfig(_DictSerializableMixin):
             raise ValueError(
                 "max_train_songs must be -1 (all songs) or at least 1, "
                 f"got {self.max_train_songs}"
+            )
+        if self.train_window_frames < 0:
+            raise ValueError(
+                f"train_window_frames must be >= 0, got {self.train_window_frames}"
+            )
+        if self.train_windows_per_song < 1:
+            raise ValueError(
+                "train_windows_per_song must be >= 1, "
+                f"got {self.train_windows_per_song}"
+            )
+        if (
+            self.train_window_frames > 0
+            and self.feature_source == FeatureSource.WAVEFORM
+        ):
+            raise ValueError(
+                "train_window_frames requires a frame feature source (mel/mert)"
+            )
+        if self.density_conditioning not in DENSITY_CONDITIONING_MODES:
+            raise ValueError(
+                "density_conditioning must be one of "
+                f"{sorted(DENSITY_CONDITIONING_MODES)}, "
+                f"got {self.density_conditioning!r}"
+            )
+        if (
+            self.density_conditioning != DENSITY_CONDITIONING_NONE
+            and self.feature_source == FeatureSource.WAVEFORM
+        ):
+            raise ValueError(
+                "density_conditioning requires a frame feature source (mel/mert)"
             )
 
     def as_dict(self) -> dict:
@@ -307,11 +377,19 @@ def uses_waveform_model_input(dataset_config: OnsetDatasetConfig) -> bool:
     return dataset_config.feature_source == FeatureSource.WAVEFORM
 
 
+def density_conditioning_channels(dataset_config: OnsetDatasetConfig) -> int:
+    """Return the number of extra input channels added by density conditioning."""
+    return 1 if dataset_config.density_conditioning != DENSITY_CONDITIONING_NONE else 0
+
+
 def resolve_onset_input_features(
     dataset_config: OnsetDatasetConfig,
     model_config: OnsetModelConfig,
 ) -> int:
     """Resolve U-Net input feature width from dataset and model config.
+
+    Density conditioning appends one constant channel per frame, so it widens
+    the model input by one.
 
     Args:
         dataset_config: Onset dataset configuration (feature source).
@@ -320,13 +398,14 @@ def resolve_onset_input_features(
     Returns:
         Number of feature channels per time step for the onset model.
     """
+    extra = density_conditioning_channels(dataset_config)
     if model_config.input_features is not None:
-        return model_config.input_features
+        return model_config.input_features + extra
     if dataset_config.feature_source == FeatureSource.MERT:
-        return constants.MERT_HIDDEN_SIZE
+        return constants.MERT_HIDDEN_SIZE + extra
     if dataset_config.feature_source == FeatureSource.WAVEFORM:
         return model_config.waveform_frontend_filters
-    return constants.N_MELS
+    return constants.N_MELS + extra
 
 
 class ArrowParamsBase(_DictSerializableMixin):
@@ -633,6 +712,14 @@ class RunConfig(_DictSerializableMixin):
             (instead of the frame-F1 monitor's best checkpoint) and export it as the model.
         post_hoc_event_f1_thresholds: Confidence thresholds swept per checkpoint during the
             post-hoc event-F1 selection. Each value must be in [0, 1].
+        checkpoint_metric: Validation metric driving checkpoint selection and early
+            stopping. Empty uses the default frame metric. The members of
+            :data:`EVENT_CHECKPOINT_METRICS` are peak-picked event metrics and enable
+            the dense event validation callback that produces them. Prefer
+            ``val_skill_event_f1`` on multi-song dense val: it discounts the
+            audio-blind floor, which raw F1 does not, and unlike
+            ``val_timing_match`` it is not pinned near chance for a partially
+            correct model.
     """
 
     epoch: int
@@ -648,6 +735,7 @@ class RunConfig(_DictSerializableMixin):
     tolerance_sec: float = 0.02
     min_onset_distance_ms: float = 50.0
     early_stopping_patience: int = 25
+    checkpoint_metric: str = ""
     post_hoc_event_f1_export: bool = False
     post_hoc_event_f1_thresholds: list[float] = dataclasses.field(
         default_factory=lambda: [
@@ -698,6 +786,11 @@ class RunConfig(_DictSerializableMixin):
             raise ValueError(
                 "early_stopping_patience must be non-negative, "
                 f"got {self.early_stopping_patience}"
+            )
+        if self.checkpoint_metric and self.checkpoint_metric not in CHECKPOINT_METRICS:
+            raise ValueError(
+                "checkpoint_metric must be one of "
+                f"{sorted(CHECKPOINT_METRICS)}, got {self.checkpoint_metric!r}"
             )
         if self.post_hoc_event_f1_export and not self.post_hoc_event_f1_thresholds:
             raise ValueError(

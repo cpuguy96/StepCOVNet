@@ -58,6 +58,18 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
             output_path = pathlib.Path(tmpdir) / "eval.json"
             fake_report = {
                 "eval_split": "data/v2/val",
+                "corruption": "none",
+                "null_floors": {
+                    "by_kind": {},
+                    "strongest": {
+                        "event_f1": "ioi_shuffle",
+                        "timing_match": "ioi_shuffle",
+                    },
+                    "event_f1_floor": 0.25,
+                    "timing_match_floor": 0.01,
+                    "skill_event_f1": 0.4,
+                    "skill_timing_match": 0.89,
+                },
                 "num_songs": 2,
                 "mean_event_f1": 0.5,
                 "micro_event_f1": 0.55,

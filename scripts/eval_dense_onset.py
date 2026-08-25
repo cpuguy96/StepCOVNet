@@ -61,6 +61,13 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="JSON report path; default is <model_output_dir>/eval_val_event_f1.json.",
     )
+    parser.add_argument(
+        "--corruption",
+        type=str,
+        default="none",
+        choices=dense_overfit_eval.CORRUPTION_KINDS,
+        help="Audio grounding ablation applied to features before prediction.",
+    )
     args = parser.parse_args(argv)
     wsl_gpu.guard_tensorflow_gpu_job(__file__)
 
@@ -81,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         confidence_threshold=threshold,
         min_onset_distance_ms=experiment.run.min_onset_distance_ms,
         tolerance_sec=experiment.run.tolerance_sec,
+        corruption=args.corruption,
     )
     report["model_path"] = model_path
     report["config_path"] = args.config
@@ -93,12 +101,24 @@ def main(argv: list[str] | None = None) -> int:
     print(f"wrote {output_path}")
     print(
         f"  songs={report['num_songs']} "
+        f"corruption={report['corruption']} "
         f"mean_event_f1={report['mean_event_f1']:.4f} "
         f"micro_event_f1={report['micro_event_f1']:.4f} "
         f"micro_timing_match={report['micro_timing_match']:.4f} "
-        f"({int(report['timing_match_n_matched'])}/{int(report['timing_match_n_denom'])}) "
+        f"({report['timing_match_n_matched']:.0f}/{report['timing_match_n_denom']:.0f}) "
         f"@ threshold={threshold}",
     )
+    null_floors = report.get("null_floors")
+    if isinstance(null_floors, dict) and null_floors:
+        strongest = null_floors["strongest"]
+        print(
+            f"  null floors: event_f1={null_floors['event_f1_floor']:.4f} "
+            f"({strongest['event_f1']}) "
+            f"timing_match={null_floors['timing_match_floor']:.4f} "
+            f"({strongest['timing_match']}) | "
+            f"skill_event_f1={null_floors['skill_event_f1']:+.4f} "
+            f"skill_timing_match={null_floors['skill_timing_match']:+.4f}",
+        )
     return 0
 
 

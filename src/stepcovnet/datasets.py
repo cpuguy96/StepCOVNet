@@ -645,11 +645,28 @@ def _apply_spec_augment(
     return spec_augmented
 
 
+def _onset_frame_indices(times: np.ndarray) -> np.ndarray:
+    """Snap onset times to their nearest frame on the hop grid.
+
+    Rounding rather than truncating matters because peak-picking reports a
+    predicted time of ``frame * HOP_COEFF``: truncation would bias every target
+    early by up to a full hop (measured ~4.2 ms mean on ladder charts, a fifth
+    of the 20 ms match tolerance), while rounding is unbiased and halves the
+    worst-case error.
+
+    Args:
+        times: Onset times in seconds.
+
+    Returns:
+        Integer frame indices on the ``HOP_COEFF`` grid.
+    """
+    return np.rint(np.asarray(times, dtype=np.float64) / HOP_COEFF).astype(int)
+
+
 def _create_target(times: np.ndarray, cols: np.ndarray, spec_length: int) -> np.ndarray:
     """Create target vector from step times and columns."""
     target = np.zeros((spec_length, _N_TARGET), dtype=np.float32)
-    for time, col in zip(times, cols, strict=False):
-        frame_idx = int(time / HOP_COEFF)
+    for frame_idx, col in zip(_onset_frame_indices(times), cols, strict=False):
         if frame_idx < spec_length:
             target[frame_idx, col] = 1.0
     return target
@@ -667,7 +684,7 @@ def _create_target_gaussian(
     if times.size == 0:
         return target
 
-    frame_indices = (times / HOP_COEFF).astype(int)
+    frame_indices = _onset_frame_indices(times)
 
     kernel_width = int(3 * sigma)
     x = np.arange(-kernel_width, kernel_width + 1)
@@ -689,6 +706,45 @@ def _create_target_gaussian(
     return target
 
 
+def onset_density_scalar(n_onsets: int, duration_sec: float) -> float:
+    """Map an onset count and duration to a unit density conditioning value.
+
+    Matches ``onset_ar.config.compute_density_scalar`` in ``onset_density`` mode
+    so both tracks condition on the same scale. The AR track chose measured
+    density over the simfile difficulty label because those labels are partly
+    wrong (NOTE-20260803-01).
+
+    Args:
+        n_onsets: Ground-truth onset count for the chart.
+        duration_sec: Audio duration in seconds.
+
+    Returns:
+        Density scalar clipped to ``[0, 1]``.
+    """
+    if duration_sec <= 0.0:
+        return 0.0
+    hz = float(n_onsets) / float(duration_sec)
+    return float(np.clip(hz / config.DENSITY_ONSET_HZ_NORM, 0.0, 1.0))
+
+
+def append_density_channel(features: np.ndarray, density: float) -> np.ndarray:
+    """Append a constant density channel to frame features.
+
+    Appended after normalization on purpose: per-bin normalization divides by
+    the standard deviation across time, which is zero for a constant channel
+    and would erase the conditioning signal.
+
+    Args:
+        features: Frame features of shape ``(T, n_features)``.
+        density: Density scalar broadcast across every frame.
+
+    Returns:
+        Features of shape ``(T, n_features + 1)``.
+    """
+    channel = np.full((features.shape[0], 1), density, dtype=np.float32)
+    return np.concatenate([features.astype(np.float32), channel], axis=1)
+
+
 def _load_and_preprocess_paths(
     audio_path: str,
     chart_path: str,
@@ -699,6 +755,7 @@ def _load_and_preprocess_paths(
     data_root: str,
     *,
     chart_index: int = 0,
+    density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load audio and chart, build features and target (pure Python, no TF)."""
     features = load_onset_features(
@@ -710,6 +767,10 @@ def _load_and_preprocess_paths(
     if feature_source == config.FeatureSource.WAVEFORM:
         spec_length = features.size // constants.WAVEFORM_SAMPLES_PER_FRAME
     else:
+        # Normalize here, not in the augment map: the augment map is skipped
+        # when no augmentation is enabled, and inference normalizes too, so
+        # doing it there would train on a different scale than eval scores.
+        features = normalize_onset_spectrogram(features)
         spec_length = features.shape[0]
     times, cols = _parse_step_chart(
         chart_path,
@@ -721,6 +782,11 @@ def _load_and_preprocess_paths(
         if use_gaussian_target
         else _create_target(times, cols, spec_length)
     )
+    if density_conditioning != config.DENSITY_CONDITIONING_NONE:
+        features = append_density_channel(
+            features,
+            onset_density_scalar(int(np.size(times)), spec_length * HOP_COEFF),
+        )
     return features.astype(np.float32), target.astype(np.float32)
 
 
@@ -733,6 +799,7 @@ def _load_and_preprocess_py_callback(
     feature_source: config.FeatureSource,
     mert_features_dir: str,
     data_root: str,
+    density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decode paths and delegate to _load_and_preprocess_paths (for tf.py_function)."""
     audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
@@ -747,6 +814,7 @@ def _load_and_preprocess_py_callback(
         mert_features_dir,
         data_root,
         chart_index=chart_index,
+        density_conditioning=density_conditioning,
     )
 
 
@@ -760,6 +828,7 @@ def _load_and_preprocess_tf_map(
     mert_features_dir: str,
     data_root: str,
     n_features: int,
+    density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
 ) -> tuple[tf.Tensor, tf.Tensor]:
     """Map one (audio_path, chart_path, chart_index) to (features, target) tensors."""
     features, target = tf.py_function(  # type: ignore[misc]
@@ -772,6 +841,7 @@ def _load_and_preprocess_tf_map(
             feature_source,
             mert_features_dir,
             data_root,
+            density_conditioning,
         ),
         [audio_path_t, chart_path_t, chart_index_t],
         (tf.float32, tf.float32),
@@ -807,7 +877,11 @@ def _augment_features_numpy(
     should_apply_spec_augment: bool,
     n_features: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Apply optional temporal/spec augmentation and normalize (pure Python)."""
+    """Apply optional temporal/spec augmentation (pure Python).
+
+    Normalization happens in the load path so it applies whether or not
+    augmentation runs; see :func:`_load_and_preprocess_paths`.
+    """
     if features.ndim == 1:
         return features.astype(np.float32), target.astype(np.float32)
     spec_py = np.transpose(features[:, :n_features])
@@ -816,7 +890,6 @@ def _augment_features_numpy(
         spec_py, combined_labels = _temporal_augment_scipy(
             spec_py, combined_labels, n_features
         )
-    spec_py = normalize_onset_spectrogram(spec_py.T).T
     if should_apply_spec_augment:
         spec_py = _apply_spec_augment(spec_py, max_freq_mask=int(0.2 * n_features))
     final_target = combined_labels[:, :_N_TARGET]
@@ -1286,6 +1359,38 @@ def _process_arrow_pair_tf_map(
     return times, cols
 
 
+def _random_crop_frames(
+    features: tf.Tensor,
+    target: tf.Tensor,
+    window_frames: int,
+) -> tuple[tf.Tensor, tf.Tensor]:
+    """Crop a random fixed-length window from one (features, target) song pair.
+
+    Songs shorter than the window are zero-padded to the window length first,
+    so the output shape is always ``(window_frames, ...)``.
+
+    Args:
+        features: Frame features of shape ``(T, n_features)``.
+        target: Frame targets of shape ``(T, 1)``.
+        window_frames: Fixed crop length in frames.
+
+    Returns:
+        Cropped ``(features, target)`` pair with static length ``window_frames``.
+    """
+    n_frames = tf.shape(features)[0]
+    pad = tf.maximum(0, window_frames - n_frames)
+    paddings = tf.stack([tf.stack([0, pad]), tf.constant([0, 0])])
+    features = tf.pad(features, paddings)
+    target = tf.pad(target, paddings)
+    max_start = tf.shape(features)[0] - window_frames
+    start = tf.random.uniform([], 0, max_start + 1, dtype=tf.int32)
+    features = features[start : start + window_frames]
+    target = target[start : start + window_frames]
+    features = tf.ensure_shape(features, (window_frames, None))
+    target = tf.ensure_shape(target, (window_frames, 1))
+    return features, target
+
+
 def create_dataset(
     data_dir: str,
     batch_size: int = 1,
@@ -1300,11 +1405,19 @@ def create_dataset(
     song_selection_seed: int | None = None,
     split: str | None = None,
     data_root: str = "",
+    window_frames: int = 0,
+    windows_per_song: int = 1,
+    density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
 ) -> tf.data.Dataset:
     """
     Creates a TensorFlow dataset pipeline with a proper caching strategy.
     Deterministic preprocessing is cached, while random augmentations are applied
     on the fly in each epoch.
+
+    When ``window_frames`` > 0, each epoch yields ``windows_per_song`` random
+    fixed-length crops per song (shuffled across songs) instead of whole songs,
+    which gives uniform shapes and efficient batching for training. Requires a
+    frame feature source (not WAVEFORM).
     """
     if n_features is None:
         if feature_source == config.FeatureSource.MERT:
@@ -1340,21 +1453,60 @@ def create_dataset(
             mert_features_dir,
             root,
             n_features,
+            density_conditioning,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
     ds = ds.cache()
-    ds = ds.map(
-        lambda features, target: _apply_augmentations_tf_map(
+
+    # The augmentation map is a tf.py_function: it holds the GIL, so
+    # num_parallel_calls buys no real parallelism, and every call copies the
+    # whole tensor into Python and back. With augmentation disabled it is a
+    # no-op that still pays that cost once per element per epoch, so skip it.
+    augment_enabled = apply_temporal_augment or should_apply_spec_augment
+
+    def _augment(features: tf.Tensor, target: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
+        return _apply_augmentations_tf_map(
             features,
             target,
             apply_temporal_augment,
             should_apply_spec_augment,
             n_features,
             feature_source,
-        ),
-        num_parallel_calls=tf.data.AUTOTUNE,
-    )
+        )
+
+    if window_frames > 0:
+        if feature_source == config.FeatureSource.WAVEFORM:
+            raise ValueError("window_frames requires a frame feature source (mel/mert)")
+        if windows_per_song > 1:
+            # Repeat the song list rather than each song in place: every epoch
+            # still draws windows_per_song crops per song, but they are spread
+            # across the epoch instead of arriving in consecutive runs.
+            ds = ds.repeat(windows_per_song)
+        ds = ds.map(
+            lambda features, target: _random_crop_frames(
+                features,
+                target,
+                window_frames,
+            ),
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
+        # Augment after cropping: the py_function then handles one window
+        # instead of a whole song, and each crop gets independent noise.
+        if augment_enabled:
+            ds = ds.map(_augment, num_parallel_calls=tf.data.AUTOTUNE)
+        # Each buffered element is a full window (window_frames x n_features), so a
+        # large buffer costs GBs of RAM and refills at every epoch boundary. A few
+        # batches' worth is enough to break up song ordering after the crop.
+        total_windows = len(samples) * windows_per_song
+        shuffle_buffer = max(batch_size * 4, 32)
+        ds = ds.shuffle(buffer_size=min(total_windows, shuffle_buffer))
+        ds = ds.batch(batch_size, drop_remainder=total_windows >= batch_size)
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+        return ds
+
+    if augment_enabled:
+        ds = ds.map(_augment, num_parallel_calls=tf.data.AUTOTUNE)
 
     if batch_size > 1:
         feature_pad_shape = (

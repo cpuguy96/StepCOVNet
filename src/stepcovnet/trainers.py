@@ -481,6 +481,11 @@ def _fit_and_save_model(
         Training history object from model.fit.
     """
     val_data = val_dataset.take(run_config.val_take_count)
+    if run_config.val_take_count != -1:
+        # Taking a prefix of an already-cached dataset leaves that cache
+        # partially filled, so tf.data discards it and re-reads features every
+        # epoch. Cache the truncated subset instead.
+        val_data = val_data.cache()
     train_history = model.fit(
         train_dataset.take(run_config.take_count),
         epochs=run_config.epoch,
@@ -617,11 +622,19 @@ def run_train_from_config(
         song_selection_seed=run_config.seed,
         split=train_split,
         data_root=data_root,
+        window_frames=dataset_config.train_window_frames,
+        windows_per_song=dataset_config.train_windows_per_song,
+        density_conditioning=dataset_config.density_conditioning,
     )
 
+    # Validation always evaluates whole songs; windowed training would otherwise
+    # inherit the (larger) train batch size and skew frame metrics via padding.
+    val_batch_size = (
+        1 if dataset_config.train_window_frames > 0 else dataset_config.batch_size
+    )
     val_dataset = datasets.create_dataset(
         data_dir=val_ref,
-        batch_size=dataset_config.batch_size,
+        batch_size=val_batch_size,
         apply_temporal_augment=False,
         should_apply_spec_augment=False,
         use_gaussian_target=False,
@@ -630,6 +643,7 @@ def run_train_from_config(
         n_features=config.resolve_onset_input_features(dataset_config, model_config),
         split=val_split,
         data_root=data_root,
+        density_conditioning=dataset_config.density_conditioning,
     )
 
     experiment_name = _get_onset_experiment_name(
@@ -677,22 +691,20 @@ def run_train_from_config(
     experiment_config = config.OnsetExperimentConfig(
         dataset=dataset_config, model=model_config, run=run_config
     )
+    monitor_metric = run_config.checkpoint_metric or ONSET_CHECKPOINT_MONITOR
     training_callbacks = _build_experiment_callbacks(
         run_config=run_config,
         experiment_name=experiment_name,
-        monitor_metric=ONSET_CHECKPOINT_MONITOR,
-        monitor_mode="max",
+        monitor_metric=monitor_metric,
+        monitor_mode="min" if monitor_metric.endswith("loss") else "max",
         experiment_config=experiment_config,
     )
-    # DenseValEventF1Callback runs an extra full val pass with model.predict each epoch
-    # (~30-45 s/epoch on 100-train; ~1.6x wall time vs frame-F1-only). Disabled for
-    # faster scaling runs; report peak-pick event F1 post-hoc via eval_dense_onset.py.
-    # val_data = val_dataset.take(run_config.val_take_count)
-    # event_f1_callback = _build_dense_val_event_f1_callback(val_data, run_config)
-    # if training_callbacks:
-    #     training_callbacks.insert(1, event_f1_callback)
-    # else:
-    #     training_callbacks = [event_f1_callback]
+    # Peak-picked event metrics come from an extra predict pass over the val
+    # split, so only pay for it when one of them drives selection.
+    if monitor_metric in config.EVENT_CHECKPOINT_METRICS:
+        val_data = val_dataset.take(run_config.val_take_count)
+        event_f1_callback = _build_dense_val_event_f1_callback(val_data, run_config)
+        training_callbacks.insert(0, event_f1_callback)
 
     train_history = _fit_and_save_model(
         model=model,
@@ -700,7 +712,7 @@ def run_train_from_config(
         val_dataset=val_dataset,
         run_config=run_config,
         callbacks=training_callbacks,
-        monitor_metric=ONSET_CHECKPOINT_MONITOR,
+        monitor_metric=monitor_metric,
     )
 
     if run_config.post_hoc_event_f1_export and run_config.callback_root_dir:
@@ -709,7 +721,7 @@ def run_train_from_config(
             dataset_config,
             model_config,
             run_config,
-            monitor_metric=ONSET_CHECKPOINT_MONITOR,
+            monitor_metric=monitor_metric,
         )
 
     saved_path = pathlib.Path(run_config.model_output_dir) / f"{model.name}.keras"
