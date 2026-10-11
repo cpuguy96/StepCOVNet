@@ -65,6 +65,20 @@ class DdclSlotsTest(unittest.TestCase):
         self.assertAlmostEqual(float(stream[0, 1]), 120.0)
         self.assertAlmostEqual(float(stream[2, 1]), 180.0)
 
+    def test_occupied_center_times_stay_inside_20ms(self):
+        segments = _constant_bpm(120.0)
+        times = np.array([0.0, 0.25, 0.5])
+        matrix = slots.times_to_slot_matrix(times, 0.0, segments)
+        decoded = slots.occupied_center_times(matrix, 0.0, segments)
+        self.assertEqual(decoded.shape, times.shape)
+        self.assertTrue(np.all(np.abs(decoded - times) <= 0.02))
+        empty = slots.occupied_center_times(
+            np.zeros((2, 48), dtype=np.float32),
+            0.0,
+            segments,
+        )
+        self.assertEqual(empty.size, 0)
+
     def test_rejects_empty_times(self):
         with self.assertRaises(ValueError):
             slots.times_to_slot_matrix(np.array([]), 0.0, _constant_bpm())

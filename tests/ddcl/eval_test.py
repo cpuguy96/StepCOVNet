@@ -6,7 +6,8 @@ import unittest
 
 import numpy as np
 
-from stepcovnet.ddcl import datasets, evaluation
+from stepcovnet.dataset_prep import models as prep_models
+from stepcovnet.ddcl import datasets, evaluation, slots
 
 
 class _StubModel:
@@ -64,6 +65,30 @@ class DdclEvalTest(unittest.TestCase):
         self.assertAlmostEqual(report.f1_max, 1.0)
         self.assertLess(report.null_f1_at_05, 1.0)
         self.assertEqual(report.as_dict()["metric"], "M-slot48")
+
+    def test_slot_centers_match_chart_times(self):
+        segments = (prep_models.BpmSegment(start_beat=0.0, bpm=120.0),)
+        times = np.array([0.0, 0.25, 0.5], dtype=np.float64)
+        matrix = slots.times_to_slot_matrix(times, 0.0, segments)
+        chart = _tiny_chart(matrix)
+        chart = datasets.DdclChart(
+            song_key=chart.song_key,
+            difficulty=chart.difficulty,
+            meter=chart.meter,
+            beat_audio=chart.beat_audio,
+            stream=chart.stream,
+            slots=chart.slots,
+            memlen=chart.memlen,
+            offset_sec=0.0,
+            bpm_segments=segments,
+            gt_times_sec=times,
+        )
+        report = evaluation.timing_match_from_predictions([chart], [matrix])
+        self.assertEqual(report.as_dict()["metric"], "timing_match")
+        self.assertAlmostEqual(report.micro_timing_match, 1.0)
+        self.assertEqual(report.n_matched, 3)
+        with self.assertRaises(ValueError):
+            evaluation.timing_match_from_predictions([_tiny_chart(matrix)], [matrix])
 
     def test_counts_at_threshold(self):
         pred = np.array([[0.9, 0.1, 0.0]])

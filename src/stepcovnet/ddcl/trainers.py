@@ -104,18 +104,19 @@ TRAIN_STATE_FILENAME = "train_state.json"
 BACKUP_DIRNAME = "backup"
 LAST_EVAL_FILENAME = "eval_val_slot48.json"
 BEST_EVAL_FILENAME = "eval_val_slot48_best.json"
+LAST_TIMING_FILENAME = "eval_val_timing_match.json"
+BEST_TIMING_FILENAME = "eval_val_timing_match_best.json"
 
 
 class TrainStateCallback(keras.callbacks.Callback):
-    """Write completed-epoch count and best ``val_loss`` after each epoch."""
+    """Write completed-epoch count and best ``val_loss`` after each epoch.
+
+    Args:
+        path: JSON path under the model output directory.
+        total_epochs: Configured ``fit`` epoch budget.
+    """
 
     def __init__(self, path: pathlib.Path, *, total_epochs: int) -> None:
-        """Store the sidecar path.
-
-        Args:
-            path: JSON path under the model output directory.
-            total_epochs: Configured ``fit`` epoch budget.
-        """
         super().__init__()
         self.path = path
         self.total_epochs = int(total_epochs)
@@ -187,6 +188,37 @@ def _write_eval_report(
     payload["weights"] = weights
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(payload, indent=2))
+
+
+def _write_timing_report(
+    report: evaluation.DecodedTimingReport,
+    path: pathlib.Path,
+    *,
+    weights: str,
+) -> None:
+    """Write decoded ``timing_match`` beside the slot-F1 JSON.
+
+    Args:
+        report: Micro timing report.
+        path: Output JSON path.
+        weights: ``last`` or ``best``.
+    """
+    payload = report.as_dict()
+    payload["weights"] = weights
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(payload, indent=2))
+
+
+def _charts_have_timing(charts: list[datasets.DdclChart]) -> bool:
+    """Return whether every chart can decode slots back to seconds.
+
+    Args:
+        charts: Loaded val charts.
+
+    Returns:
+        True when each chart has a BPM ladder.
+    """
+    return bool(charts) and all(chart.bpm_segments for chart in charts)
 
 
 def train_placement(
@@ -313,6 +345,16 @@ def train_placement(
         output_dir / LAST_EVAL_FILENAME,
         weights="last",
     )
+    if _charts_have_timing(val_charts):
+        last_timing = evaluation.evaluate_decoded_timing(
+            cast(evaluation.SlotPredictor, model),
+            val_charts,
+        )
+        _write_timing_report(
+            last_timing,
+            output_dir / LAST_TIMING_FILENAME,
+            weights="last",
+        )
     if best_path.is_file():
         best_model = keras.models.load_model(best_path)
         best_report = evaluation.evaluate_slot48(
@@ -325,5 +367,15 @@ def train_placement(
             output_dir / BEST_EVAL_FILENAME,
             weights="best",
         )
+        if _charts_have_timing(val_charts):
+            best_timing = evaluation.evaluate_decoded_timing(
+                cast(evaluation.SlotPredictor, best_model),
+                val_charts,
+            )
+            _write_timing_report(
+                best_timing,
+                output_dir / BEST_TIMING_FILENAME,
+                weights="best",
+            )
         print(f"saved {best_path}")
     return model

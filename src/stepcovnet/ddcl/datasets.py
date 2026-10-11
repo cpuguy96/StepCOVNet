@@ -28,6 +28,9 @@ class DdclChart:
         stream: Per-beat ``[meter, bpm]`` ``(n_beats, 2)``.
         slots: Binary ``M-slot48`` targets ``(n_beats, 48)``.
         memlen: Context beats besides the current one (paper: 15).
+        offset_sec: Simfile ``#OFFSET`` for decoding slot centers to seconds.
+        bpm_segments: BPM ladder aligned with ``slots``.
+        gt_times_sec: Chart onset times in seconds, sorted.
     """
 
     song_key: str
@@ -37,6 +40,11 @@ class DdclChart:
     stream: np.ndarray
     slots: np.ndarray
     memlen: int
+    offset_sec: float = 0.0
+    bpm_segments: tuple[prep_models.BpmSegment, ...] = ()
+    gt_times_sec: np.ndarray = dataclasses.field(
+        default_factory=lambda: np.zeros(0, dtype=np.float64)
+    )
 
     @property
     def n_beats(self) -> int:
@@ -105,6 +113,18 @@ def list_split_entries(
         else dataset_config.max_val_songs
     )
     entries = _limit_songs(entries, cap)
+    excluded = {
+        song_id.strip()
+        for song_id in dataset_config.exclude_normalized_ids
+        if str(song_id).strip()
+    }
+    if excluded:
+        before = len(entries)
+        entries = [entry for entry in entries if entry.normalized_id not in excluded]
+        print(
+            f"excluded {before - len(entries)} {split} rows ({sorted(excluded)})",
+            flush=True,
+        )
     if not entries:
         raise ValueError(f"no {split} rows in {index_path}")
     return entries
@@ -176,9 +196,7 @@ def load_ddcl_chart(
     )
     if spec is None:
         spec = features.load_or_compute_logmel(audio_path, cache=cache_features)
-    beat_audio = features.zscore_beats(
-        features.beats_to_audio_tensor(spec, beat_times)
-    )
+    beat_audio = features.zscore_beats(features.beats_to_audio_tensor(spec, beat_times))
     stream = slots.stream_features(
         n_beats,
         int(chart_block.summary.meter),
@@ -195,6 +213,9 @@ def load_ddcl_chart(
         stream=stream,
         slots=slot_matrix,
         memlen=memlen,
+        offset_sec=float(pack.metadata.offset_sec),
+        bpm_segments=tuple(pack.metadata.bpm_segments),
+        gt_times_sec=np.sort(times),
     )
 
 
@@ -325,7 +346,7 @@ def iter_window_batches(
         batch_size: Beats per predict call.
 
     Yields:
-        Integer index arrays.
+        np.ndarray: Integer beat indices of shape ``(batch,)``.
 
     Raises:
         ValueError: If ``batch_size`` is not positive.

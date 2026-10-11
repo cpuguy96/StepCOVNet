@@ -10,11 +10,11 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 
 ## Current phase
 
-**Updated:** 2026-08-19
-**Primary track:** Literature recreation — 2-way DDCL vs ITGPT **placement** on Dataset A (`M-slot48`); DDC peak-snap is POST, no slot skill
-**Status:** Dataset A 128-ep mixed-fp16 ITGPT last F1@0.5 **0.710** vs DDCL last **0.680** (null **0.397**). Frozen DDC Hamming-peak snap F1@0.5 **0.364** vs the same null **0.397** (skill **−0.033**) on 45 charts / **17523** beats ([EXP-20260819-04](#exp-20260819-04-ddc-hamming-peak-snap-onto-m-slot48-on-dataset-a)). DDC literature number stays `M-ddc-20ms` **0.652 / 0.734**. B 128-ep **0.735** stays a different corpus.
-**Next action:** Hold the trained-slot 2-way. Do not put peak-snap **0.364** in the same column as DDCL/ITGPT. Stay on onset. Do not start selection. Do not grow B. Do not cite vs Table 2 **0.78 / 0.80**.
-**Blockers:** None — GPU free.
+**Updated:** 2026-10-10
+**Primary track:** Beat-slot onset on ladder 50t/50v. Literature Dataset A 2-way stays held (ITGPT **0.710** vs DDCL **0.680** on `M-slot48`).
+**Status:** Ladder 128-ep DDCL best-`val_loss` slot F1@0.5 **0.717** vs null **0.579** (skill **+0.138**); decoded `timing_match` **0.0053** ([EXP-20261010-02](#exp-20261010-02-ladder-48-slot-head-has-slot-skill-and-timing_match-at-the-floor)). Oracle ceiling on the same rows is **0.999972** ([EXP-20261010-01](#exp-20261010-01-48-slot-oracle-clears-timing_match-on-ladder-val)). Dataset A ITGPT **0.710** vs DDCL **0.680** stays a different corpus and null.
+**Next action:** On the saved ladder checkpoint, measure whether false slots are what break ordered time. No new train. Literature 2-way stays held. Do not start selection. Do not grow B.
+**Blockers:** `news_39` still excluded (BPM **−132.001**). GPU free.
 **Defer:** Step selection until asked; 200-ep **declined**; Vol. 4 / larger B (**user declined**); citing B **0.735** vs A **0.710** as one table; citing vs **0.78 / 0.80**; `final_data` as a literature number; AR-on-times locality / ladder scale-up.
 
 ### Dataset prep (PRE ingestion)
@@ -26,7 +26,7 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | P0–P9 (`final_data`) | **Done** — **1942** chart rows; `training_index.json` (`stratified_song_v1`: **1010** / **110** songs, **1745** / **197** chart rows train/val). **Drift:** the untracked copy on this clone reports **1009** / **110** songs and **1755** / **186** rows ([NOTE-20260725-02](DISCUSSION_NOTES.md#note-20260725-02-subset-sampling-gives-every-train-size-a-different-val-set)) |
 | MERT subset | **Done** for scale-up — `training_index_300t_50v.json` (314 unique audio); `training_index_200t_50v.json` / `50t_50v` subsets |
 
-**Recommended next step:** Hold Dataset A 2-way on `M-slot48`: ITGPT last **0.710** vs DDCL last **0.680**. DDC peak-snap **0.364** is below null — POST, not slot-trained. Stay on onset. Selection stays off. Do not grow B. `final_data` is transfer only.
+**Recommended next step:** Diagnose the ladder 48-slot checkpoint: slot F1 has skill and decoded `timing_match` is still ~**0.005** ([EXP-20261010-02](#exp-20261010-02-ladder-48-slot-head-has-slot-skill-and-timing_match-at-the-floor)). No new train until that gap is measured. Dataset A 2-way stays held. Selection stays off.
 
 ### Onset detection (research track)
 
@@ -36,6 +36,8 @@ Promote selected findings to [PAPER_OUTLINE.md](PAPER_OUTLINE.md) only when draf
 | Event tide formulation (`data/v2`) | ~27–30% F1 plateau; oracle ~31% (EXP-20260606-11) — formulation ceiling for K-query slots |
 | `final_data` training hookup | **Done** — dense + event trainers accept `--training_index_path`; 10-song CPU smoke **10/10** batches (EXP-20260624-01/02) |
 | Multi-song val on `final_data` | **Partial** — ladder 50t/50v windowed TCN: skill_event_f1 **0.414** (micro F1 **0.569**); `onset_density` **0.412** (wash); `timing_match` still at floor ([EXP-20260824-01](#exp-20260824-01-windowed-tcn-on-ladder-50t50v--onset_density-is-a-wash)). Earlier 50/100-row BiLSTM smoke: event F1 **0.666** (skill **+0.371**) ([EXP-20260815-07](#exp-20260815-07-final_data-dense-50t100v-mert-bilstm-smoke)) |
+| **48-slot oracle on ladder val** | **Supported** — GT times decoded at slot centers: micro `timing_match` **0.999972** on **48/50** rows; 0 collapses. `news_39` unscored (BPM **−132.001**) ([EXP-20261010-01](#exp-20261010-01-48-slot-oracle-clears-timing_match-on-ladder-val)) |
+| **48-slot head on ladder 50t/50v** | **Partial** — DDCL 128-ep best slot F1@0.5 **0.717** vs null **0.579**; decoded `timing_match` **0.0053** ([EXP-20261010-02](#exp-20261010-02-ladder-48-slot-head-has-slot-skill-and-timing_match-at-the-floor)) |
 | **AR tide perfect overfit** | **PASS** — scratch **iter175** / champion **v8**: teacher + free-run **634/634** ordered @ 20 ms vs **`target_times`** ([EXP-20260630-01](#exp-20260630-01-ar-tide-scratch-perfect-overfit-iter175--v8-champion)) |
 | **AR 10-song smoke** | **PASS** — 5-ep corrected-mask ([EXP-20260723-01](#exp-20260723-01-ar-corrected-mask-10song-smoke)); **50-ep cached** `val_loss` **35.0 → 12.1**, teacher F1 **0.11** ([EXP-20260723-02](#exp-20260723-02-ar-corrected-mask-10song-smoke-50ep)) |
 | **AR 50t/50v scale-up** | **Partial** — 500 ep: best `val_loss` **~20.9 @ ep 65**, then severe overfit; val F1 peaks **~0.22** ([EXP-20260724-01](#exp-20260724-01-ar-corrected-mask-50t50v-500-ep-scale-up)) |
@@ -67,6 +69,8 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 
 | ID | Stage tag | Question | Status | One-line outcome |
 | -- | --------- | -------- | ------ | ---------------- |
+| EXP-20261010-02 | `train` + `metric` | Does a trained 48-slot head on ladder 50t/50v clear decoded `timing_match` as well as slot F1? | **Partial** | Best slot F1 **0.717** vs null **0.579** (skill **+0.138**); `timing_match` **0.0053** |
+| EXP-20261010-01 | `metric` | Does a perfect 48-slot mask, decoded at slot centers, clear `timing_match` @ 20 ms on ladder val? | **Supported** | Micro **0.999972** on **48/50** rows (**35122/35123**); 0 collapses; `news_39` unscored (BPM **−132**) |
 | EXP-20260824-01 | `train` + `metric` | Does windowed TCN on ladder 50t/50v beat the audio-blind floor, and does `onset_density` help? | **Partial** | Skill **0.414** vs density **0.412** (wash); `timing_match` still at floor; select on `val_skill_event_f1` |
 | EXP-20260819-04 | `post` + `metric` | Does snapping frozen DDC Hamming peaks onto `M-slot48` give a Dataset A 3-way number? | **Partial** | Peak-snap F1@0.5 **0.364** vs null **0.397** (skill **−0.033**); 45 charts / **17523** beats match DDCL; not slot-trained DDC |
 | EXP-20260819-03 | `train` + `metric` | Does 128-ep ITGPT on Dataset A beat DDCL **0.680** on the same split and `M-slot48`? | **Supported** (2-way) | Last F1@0.5 **0.710** vs null **0.397** (skill **+0.313**); vs DDCL **+0.030**; DDC peak-snap has no slot skill |
@@ -199,6 +203,34 @@ Newest first. Stage tags: `pre` | `model` | `post` | `metric` | `train`. Discuss
 ## Experiment entries
 
 Full write-ups below; prepend new entries here after each measurable run. Per-run configs: `configs/`, `callbacks/`.
+
+### EXP-20261010-02: Ladder 48-slot head has slot skill and timing_match at the floor
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-10-10 22:18:08 |
+| **Track** | `train` + `metric` (DDCL ConvLSTM, ladder 50t/50v, `omalley2025ddcl`) |
+| **Question** | On the frozen ladder split, does a trained 48-slot head beat a beat-shuffle null on `M-slot48` and clear decoded `timing_match` @ 20 ms? |
+| **Setup** | [`ddcl_placement_ladder_50t_50v.json`](../../configs/ddc/ddcl_placement_ladder_50t_50v.json): same ConvLSTM as Dataset A (lstm 200, memlen 15, focal loss, Adam 1e-4), **128** ep × 200/20 steps, seed **42**, `--fresh`. Index `data/final_data/training_index_ladder_v1_50t_50v.json`. `news_39` excluded (negative BPM). Beat-aligned log-mel, not MERT. Output `models_wsl/ddc/ddcl_placement_ladder_50t_50v/`. Log `logs/ddcl_placement_ladder_50t_50v.log`. TB `http://localhost:6007/` |
+| **Train** | Finished 128 ep. Best `val_loss` **0.0147** (checkpoint `best.keras`, written early). Last weights saved at the end of the run |
+| **Val slots (48 charts, 38 songs, 16487 beats)** | **Last:** F1@0.5 **0.687** (TP **26205** / FP **14990** / FN **8918**); max-F1 **0.694** @ **0.35**. **Best-`val_loss`:** F1@0.5 **0.717** (TP **24477** / FP **8688** / FN **10646**); max-F1 **0.726** @ **0.45**. Beat-shuffle null **0.579**. Skill **+0.108** last, **+0.138** best. JSON `eval_val_slot48.json` / `eval_val_slot48_best.json` |
+| **Val timing @ 0.5** | **Last:** `timing_match` **0.0035** (**144** matched; **41195** pred / **35123** ref). **Best-`val_loss`:** **0.0053** (**187** matched; **33165** pred / **35123** ref). JSON `eval_val_timing_match.json` / `eval_val_timing_match_best.json` |
+| **vs oracle** | Perfect slot centers on these rows are **0.999972** ([EXP-20261010-01](#exp-20261010-01-48-slot-oracle-clears-timing_match-on-ladder-val)). The grid can represent the times. This mask does not |
+| **vs Dataset A DDCL** | Not the same table. A null was **0.397** on Fraxtil; this null is **0.579**. Do not cite **0.717** against **0.680** |
+| **Conclusion** | **Partial.** The head has slot-F1 skill. Decoded ordered time stays at the dense floor (~**0.004**). Thousands of wrong slots are enough to scramble `timing_match` even when most slot bits are right. Next is a no-retrain look at those errors, not another architecture |
+
+### EXP-20261010-01: 48-slot oracle clears timing_match on ladder val
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-10-10 00:04:56 |
+| **Track** | `metric` (ladder 50t/50v val, no train) |
+| **Question** | If every ground-truth step is placed on the correct 48-slot beat cell and decoded at the slot center, does `timing_match` @ 20 ms clear the dense floor (~**0.004**) on the frozen ladder val set? |
+| **Setup** | Manifest `data/final_data/training_index_ladder_v1_50t_50v.json`, val split only (**50** rows). Labels via `times_to_slot_matrix`; centers via `beat_to_time_sec(beat_index + (slot + 0.5) / 48)` (`stepcovnet.ddcl.slots`). Score `timing_match` @ **0.02** s against sorted chart `times_sec`. Log `logs/slot48_oracle_timing_ladder50v.log` |
+| **Val (48 scored rows, 38 songs, 35123 steps)** | Micro `timing_match` **0.999972** (**35122 / 35123**). Collapsed steps **0**. Steps before beat 0 **0**. The single miss is `12ueue12` beginner (**755 / 756**) |
+| **Unscored** | `news_39` easy and beginner (**2** rows). BPM ladder includes **−132.001**; `time_to_beat` raises. Other segments on that song are positive |
+| **vs dense floor** | Windowed TCN `timing_match` on this val set is ~**0.004** ([EXP-20260824-01](#exp-20260824-01-windowed-tcn-on-ladder-50t50v--onset_density-is-a-wash)). The slot grid’s own quantization is not that floor |
+| **Conclusion** | **Supported.** A trained 48-slot head can still meet the 20 ms bar on this split. The grid does not collapse distinct steps here. Next is the head, not another peak-picker. Leave `news_39` out until negative BPM converts. Literature 2-way stays held |
 
 ### EXP-20260824-01: Windowed TCN on ladder 50t/50v — onset_density is a wash
 

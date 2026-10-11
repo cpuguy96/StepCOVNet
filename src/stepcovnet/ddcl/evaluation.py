@@ -11,8 +11,9 @@ from typing import Protocol
 
 import numpy as np
 
+from stepcovnet import timing_match
 from stepcovnet.ddc import peak_pick
-from stepcovnet.ddcl import constants, datasets
+from stepcovnet.ddcl import constants, datasets, slots
 
 DEFAULT_THRESHOLDS = tuple(round(0.05 * step, 2) for step in range(1, 20))
 
@@ -193,6 +194,132 @@ def evaluate_slot48(
         n_charts=len(charts),
         n_beats=int(tgt_all.shape[0]),
         counts_at_05=counts_05,
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class DecodedTimingReport:
+    """Ordered ``timing_match`` of slot-center times. Not ``M-slot48`` F1.
+
+    Attributes:
+        micro_timing_match: ``n_matched / max(n_pred, n_ref)``.
+        tolerance_sec: Match window in seconds.
+        threshold: Occupancy cutoff used to decode slots.
+        n_matched: Ordered pairs inside the window.
+        n_pred: Decoded onset count.
+        n_ref: Chart onset count.
+        n_charts: Charts pooled.
+    """
+
+    micro_timing_match: float
+    tolerance_sec: float
+    threshold: float
+    n_matched: int
+    n_pred: int
+    n_ref: int
+    n_charts: int
+
+    def as_dict(self) -> dict[str, float | int | str]:
+        """Serialize for JSON.
+
+        Returns:
+            JSON-serializable mapping.
+        """
+        return {
+            "metric": "timing_match",
+            "tolerance_sec": self.tolerance_sec,
+            "threshold": self.threshold,
+            "micro_timing_match": self.micro_timing_match,
+            "n_matched": self.n_matched,
+            "n_pred": self.n_pred,
+            "n_ref": self.n_ref,
+            "n_charts": self.n_charts,
+        }
+
+
+def timing_match_from_predictions(
+    charts: list[datasets.DdclChart],
+    predictions: list[np.ndarray],
+    *,
+    threshold: float = constants.THRESHOLD_05,
+    tolerance_sec: float = timing_match.DEFAULT_TOLERANCE_SEC,
+) -> DecodedTimingReport:
+    """Score slot-center times against chart onset times.
+
+    Args:
+        charts: Charts with BPM segments and ``gt_times_sec``.
+        predictions: Slot probabilities aligned with ``charts``.
+        threshold: Occupancy cutoff for decoding.
+        tolerance_sec: Ordered-match window.
+
+    Returns:
+        Micro ``timing_match`` and pooled counts. This is not ``M-slot48`` F1.
+
+    Raises:
+        ValueError: If ``charts`` is empty, lengths differ, or BPM is missing.
+    """
+    if not charts:
+        raise ValueError("charts must be non-empty")
+    if len(predictions) != len(charts):
+        raise ValueError("predictions must align with charts")
+    total_matched = 0
+    total_pred = 0
+    total_ref = 0
+    for chart, pred in zip(charts, predictions, strict=True):
+        if not chart.bpm_segments:
+            raise ValueError(f"missing BPM segments for {chart.song_key}")
+        decoded = slots.occupied_center_times(
+            pred,
+            chart.offset_sec,
+            chart.bpm_segments,
+            threshold=threshold,
+        )
+        ref = np.asarray(chart.gt_times_sec, dtype=np.float64).reshape(-1)
+        n_matched, n_ref = timing_match.timing_match_counts_numpy(
+            decoded,
+            ref,
+            tolerance_sec=tolerance_sec,
+        )
+        total_matched += n_matched
+        total_pred += int(decoded.size)
+        total_ref += n_ref
+    denom = timing_match.timing_match_denom(total_pred, total_ref)
+    micro = float(total_matched) / float(denom) if denom else 0.0
+    return DecodedTimingReport(
+        micro_timing_match=micro,
+        tolerance_sec=float(tolerance_sec),
+        threshold=float(threshold),
+        n_matched=total_matched,
+        n_pred=total_pred,
+        n_ref=total_ref,
+        n_charts=len(charts),
+    )
+
+
+def evaluate_decoded_timing(
+    model: SlotPredictor,
+    charts: list[datasets.DdclChart],
+    *,
+    threshold: float = constants.THRESHOLD_05,
+    tolerance_sec: float = timing_match.DEFAULT_TOLERANCE_SEC,
+) -> DecodedTimingReport:
+    """Predict slots and score decoded times with ``timing_match``.
+
+    Args:
+        model: Keras model with DDCL placement inputs.
+        charts: Loaded beat-grid charts with BPM and onset times.
+        threshold: Occupancy cutoff for decoding.
+        tolerance_sec: Ordered-match window.
+
+    Returns:
+        Micro ``timing_match`` report.
+    """
+    predictions = [predict_chart_slots(model, chart) for chart in charts]
+    return timing_match_from_predictions(
+        charts,
+        predictions,
+        threshold=threshold,
+        tolerance_sec=tolerance_sec,
     )
 
 

@@ -4,6 +4,40 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-10-10 — Ladder 48-slot head
+
+### NOTE-20261010-02: Slot F1 skill does not produce ordered times
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-10-10 22:18:08 |
+| **Topic** | Trained 48-slot mask versus decoded `timing_match` |
+
+**Context.** The oracle showed a perfect 48-slot mask decodes to `timing_match` **0.999972** on this val set. The next run trained the existing DDCL ConvLSTM on the same ladder split.
+
+**Discovery.** Best-`val_loss` slot F1@0.5 is **0.717** against a beat-shuffle null of **0.579** (skill **+0.138**). Decoded `timing_match` at the same 0.5 cutoff is **0.0053** (**187 / 35123**). Last weights are weaker on both (**0.687** slot F1, `timing_match` **0.0035**) and emit **41195** times against **35123** chart steps. Best weights still have **8688** false slots and **10646** misses.
+
+**Implication.** Slot F1 and ordered time answer different questions. A slot can be right in the grid and the sorted time list can still be wrong as soon as extra or missing slots appear. Do not train another head until a no-retrain count of those errors shows whether they are what drops `timing_match` from the oracle to the floor.
+
+**Related.** [EXP-20261010-02](EXPERIMENT_LOG.md#exp-20261010-02-ladder-48-slot-head-has-slot-skill-and-timing_match-at-the-floor) · [EXP-20261010-01](EXPERIMENT_LOG.md#exp-20261010-01-48-slot-oracle-clears-timing_match-on-ladder-val)
+
+## Session 2026-10-10 — 48-slot oracle on ladder val
+
+### NOTE-20261010-01: Slot-center quantization clears the 20 ms bar
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-10-10 00:04:56 |
+| **Topic** | Whether a perfect 48-slot mask can meet ordered `timing_match` |
+
+**Context.** Dense peak models sit near `timing_match` **0.004** while event F1 has skill. DDCL and ITGPT show skill only when the 48-slot mask is trained. The open question was whether that mask, decoded at slot centers, is already coarser than 20 ms on the ladder val set.
+
+**Discovery.** On 48 of 50 val rows the reconstruction matches **35122 / 35123** steps (**0.999972**). No two steps share a slot. `news_39` (2 rows) has a BPM segment of **−132.001**, and `time_to_beat` refuses non-positive BPM.
+
+**Implication.** The next onset change is a beat-slot head on this split, scored with decoded `timing_match` and slot F1. Quantization is not the binding failure. `news_39` stays out of that train until the converter accepts a negative BPM segment. The Dataset A 2-way stays held.
+
+**Related.** [EXP-20261010-01](EXPERIMENT_LOG.md#exp-20261010-01-48-slot-oracle-clears-timing_match-on-ladder-val) · [EXP-20260824-01](EXPERIMENT_LOG.md#exp-20260824-01-windowed-tcn-on-ladder-50t50v--onset_density-is-a-wash)
+
 ## Session 2026-08-24 — Dense TCN ladder A/B
 
 ### NOTE-20260824-01: `val_skill_event_f1` ranks dense checkpoints; `onset_density` does not help

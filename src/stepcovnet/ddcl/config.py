@@ -61,6 +61,8 @@ class DdclDatasetConfig(_DictSerializableMixin):
         max_train_songs: Cap unique train songs (-1 for all).
         max_val_songs: Cap unique val songs (-1 for all).
         cache_features: Write ``*.ddc_mel.npy`` beside audio.
+        exclude_normalized_ids: Song slugs dropped before load (for example
+            charts whose BPM ladder the slot converter rejects).
     """
 
     training_index_path: str
@@ -70,6 +72,7 @@ class DdclDatasetConfig(_DictSerializableMixin):
     max_train_songs: int = -1
     max_val_songs: int = -1
     cache_features: bool = True
+    exclude_normalized_ids: list[str] = dataclasses.field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.

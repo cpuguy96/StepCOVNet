@@ -246,6 +246,40 @@ def times_to_slot_matrix(
     return slots
 
 
+def occupied_center_times(
+    matrix: np.ndarray,
+    offset_sec: float,
+    segments: Sequence[prep_models.BpmSegment],
+    *,
+    threshold: float = 0.5,
+) -> np.ndarray:
+    """Return sorted times at the center of each occupied slot.
+
+    Args:
+        matrix: Occupancy or probabilities ``(n_beats, n_slots)``.
+        offset_sec: Simfile ``#OFFSET``.
+        segments: BPM ladder.
+        threshold: Cells at or above this value are occupied.
+
+    Returns:
+        Float64 times in seconds. Empty when no cell passes ``threshold``.
+
+    Raises:
+        ValueError: If ``matrix`` is not rank-2 or has no slot axis.
+    """
+    grid = np.asarray(matrix, dtype=np.float64)
+    if grid.ndim != 2 or grid.shape[1] < 1:
+        raise ValueError(f"matrix must be (n_beats, n_slots), got {grid.shape}")
+    n_slots = int(grid.shape[1])
+    times: list[float] = []
+    for beat_idx, slot in np.argwhere(grid >= float(threshold)):
+        beat = float(beat_idx) + (float(slot) + 0.5) / float(n_slots)
+        times.append(beat_to_time_sec(beat, offset_sec, segments))
+    if not times:
+        return np.zeros(0, dtype=np.float64)
+    return np.sort(np.asarray(times, dtype=np.float64))
+
+
 def beat_times_sec(
     n_beats: int,
     offset_sec: float,
