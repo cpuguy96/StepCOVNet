@@ -4,6 +4,105 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-11-19 — Beat-slot audio-grounding audit
+
+### NOTE-20261119-05: MERT triples audio transfer (**33.6%** vs **11.6%**), leaving a clear ep-20→128 overfitting gap to close with regularization + `val_slot_f1` checkpointing
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-19 21:33:49 |
+| **Topic** | Quantifying MERT train→val transfer ratio and post-epoch-20 overfitting on ladder `48t/48v` |
+
+**Context.** `EXP-20261119-04` showed beat-aligned MERT `last.keras` reached **0.7647** val F1 (**+0.0782** `shuffle` lift) even though `val_loss` had drifted from **0.01383** at epoch 20 to **0.0300** at epoch 128 (`loss = 0.0037`). We ran `--diagnose_grounding --split train` on MERT `last.keras` to measure how much audio signal is still memorized on the 48 training songs.
+
+**Discovery.**
+
+- On train, MERT `last.keras` hits **0.9622** F1 with **+0.2324** `shuffle` audio lift (`0.9622 → 0.7298`, `1 − IoU = 0.424`) and collapses to **0.1484** under `zeros` (`1 − IoU = 0.919`).
+- Across the matched 48t/48v split, MERT transfers **33.6%** of its train audio lift to val (`+0.0782 / +0.2324`) versus **11.6%** for raw log-mel (`+0.0230 / +0.1989`) — a **2.9×** improvement in audio generalization — while still memorizing **66.4%** of its train audio lift over epochs 21–128.
+
+**Implication.** Before switching architectures (e.g. Transformer/ITGPT) or adding songs, the highest-ROI fixed-`48t/48v` experiment is fixing the two obvious training bottlenecks revealed by ep 20→128: (1) track and checkpoint **periodic full-val `M-slot48` F1** (rather than early `val_loss` at ep 20 or overfit `last` at ep 128), and (2) add **`AdamW` weight decay + stronger dropout** to curb memorization (`loss = 0.0037`).
+
+**Related.** [EXP-20261119-05](EXPERIMENT_LOG.md#exp-20261119-05-mert-train-grounding-shows-29x-better-audio-transfer-than-log-mel-with-66-overfit-headroom-left) · [EXP-20261119-04](EXPERIMENT_LOG.md#exp-20261119-04-beat-aligned-mert-lifts-ladder-48-slot-f1-to-0765-and-triples-val-audio-grounding-at-9x-speed) · [EXP-20261119-03](EXPERIMENT_LOG.md#exp-20261119-03-train-split-grounding-proves-raw-log-mel-overfitting-not-a-meter-bpm-shortcut-causes-the-weak-val-audio-lift)
+
+### NOTE-20261119-04: Beat-aligned MERT turns ladder 48-slot placement into a genuinely audio-grounded model (**3.4×** `shuffle` lift, **0.771** max-F1, **9×** faster)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-19 21:25:28 |
+| **Topic** | Single-knob log-mel → beat-aligned MERT comparison on fixed ladder `48t/48v` |
+
+**Context.** `EXP-20261119-03` proved scratch raw log-mel DDCL memorized the 48 training songs (**+0.199** train `shuffle` lift) and lost **88%** of its audio signal on val (**+0.023**). To fix the audio frontend without touching split, metadata, downstream LSTM/dense widths, loss, or seed, we built `build_mert_placement_model` (16 sub-beat MERT frames × 1024 → shared 4D `LN → Dense(128) → Dropout → Conv2D(64, (1,3)) → AvgPool2D(1,2)` → identical bidirectional LSTM(200) + `[meter, bpm]` + Dense(512, 256) + 48-slot sigmoid).
+
+**Discovery.**
+
+- **Genuinely audio-grounded on val:** On `last.keras`, distribution-preserving `shuffle` drops `M-slot48` F1@0.5 by **−0.0782** (**0.7647 → 0.6866**, **3.4×** raw log-mel's **−0.0230**) and decoded ±20 ms `skill_event_f1` by **−0.1085** (**3.6×** raw log-mel's **−0.0301**). Zeroing `beat_audio` (`zeros`) collapses predictions by **92%** (`36,416 → 3,007` steps, F1 **0.1296**, `1 − IoU = 0.928`), showing MERT learned that silence produces no steps.
+- **Even `best_val_loss` (`best.keras`) is now grounded:** `best.keras` improves `val_loss` (`0.01383` vs `0.01592`), lifts F1@0.5 to **0.7626** (**+0.0354**), and increases `shuffle` drop **6.5×** (**−0.0314** vs log-mel **−0.0048**).
+- **Large speed + quality gain:** 128 epochs ran in **~20 min** (8 s/ep vs ~3 hr for `ConvLSTM2D`), lifting val `max-F1` to **0.7712** @ `0.35` (**+4.0 pp** over log-mel).
+
+**Implication.** Beat-aligned MERT is now the clear active frontend for fixed-ladder 48-slot placement. Because `last.keras` continued gaining audio grounding (`−0.031 → −0.078` `shuffle` drop) even as `val_loss` rose from `0.0138 → 0.0300`, run a 15-second `--diagnose_grounding --split train` check on MERT `last.keras` next to measure remaining train→val overfitting before deciding between `val_slot_f1` checkpointing / stronger regularization vs a beat-aligned MERT Transformer head.
+
+**Related.** [EXP-20261119-04](EXPERIMENT_LOG.md#exp-20261119-04-beat-aligned-mert-lifts-ladder-48-slot-f1-to-0765-and-triples-val-audio-grounding-at-9x-speed) · [EXP-20261119-03](EXPERIMENT_LOG.md#exp-20261119-03-train-split-grounding-proves-raw-log-mel-overfitting-not-a-meter-bpm-shortcut-causes-the-weak-val-audio-lift)
+
+### NOTE-20261119-03: Train-split grounding rules out `[meter, bpm]` shortcutting — raw log-mel audio lift collapses **8.6×** from train (`+0.199`) to val (`+0.023`)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-19 20:46:09 |
+| **Topic** | Train vs val audio-corruption grounding on `last.keras` and justification for beat-aligned MERT features |
+
+**Context.** `EXP-20261119-02` showed epoch-128 `last.keras` moved **30.2%** of predicted val steps under `shuffle`, yet gained only **+0.0230** val F1 over `shuffle`. That left two competing causes: `[meter, bpm]` starving gradients into the ConvLSTM audio branch, versus scratch raw log-mel overfitting 48 diverse `final_data` songs.
+
+**Discovery.**
+
+- On the **48 train charts**, `last.keras` scores **0.9392** `M-slot48` F1 (`skill_event_f1` **+0.8983**) with real audio and drops sharply to **0.7404** under `shuffle` (**−0.1989** F1, **−0.3203** `skill_event_f1`, `1 − IoU = 0.401`) and **0.7397** under `zeros` (**−0.1995** F1).
+- Comparing train vs val separates the two branches cleanly: the metadata/grid prior (`shuffle`) generalizes (`0.7404` train → `0.7077` val), while the learned raw-log-mel audio signal loses **88%** of its lift (`+0.1989` train → `+0.0230` val; **8.6×** F1 drop, **10.6×** `skill_event_f1` drop).
+- As a bonus confirmation of `NOTE-20261118-01`, even on train at **0.9392** F1 (`39,089` TP / `2,720` FP / `2,337` FN), rank-indexed `micro_timing_match` is still only **0.0512**.
+
+**Implication.** Do **not** remove `[meter, bpm]` or tune focal/threshold hyperparameters to chase audio grounding — the ConvLSTM already uses `beat_audio` heavily on train. The single highest-leverage, evidence-backed change on fixed ladder `48t/48v` is replacing scratch raw log-mel with **beat-aligned pretrained MERT features** (already cached as `*.mert.npy` on disk for all 48t/48v songs and proven to generalize with **+0.414** genuine audio skill on this exact split in `EXP-20260824-01`).
+
+**Related.** [EXP-20261119-03](EXPERIMENT_LOG.md#exp-20261119-03-train-split-grounding-proves-raw-log-mel-overfitting-not-a-meter-bpm-shortcut-causes-the-weak-val-audio-lift) · [EXP-20261119-02](EXPERIMENT_LOG.md#exp-20261119-02-epoch-128-lastkeras-reads-beat_audio-75x-more-than-bestkeras-but-val-lift-over-shuffle-is-only-0023) · [EXP-20260824-01](EXPERIMENT_LOG.md#exp-20260824-01-windowed-tcn-on-ladder-50t50v--onset_density-is-a-wash)
+
+### NOTE-20261119-02: Epoch-128 `last.keras` reads audio (`1 − IoU = 0.30`), but val F1 lift over `shuffle` is only `+0.023`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-19 20:25:27 |
+| **Topic** | Separating early `val_loss` audio-blindness (`best.keras`) from epoch-128 audio generalization (`last.keras`) |
+
+**Context.** `EXP-20261119-01` showed early `best.keras` was nearly audio-blind (`1 − IoU = 0.042`, F1 drop `0.0055`). Because `best.keras` was written ~10 min into the 3-hour run, we ran the identical `--diagnose_grounding` check on epoch-128 `last.keras`.
+
+**Discovery.**
+
+- **Checkpoint-selection effect confirmed:** `last.keras` moves **30.2%** of predicted steps under `shuffle` and **30.7%** under `zeros` (**7.5×** more than `best.keras`'s `4.0% / 4.2%`). Early `val_loss` selection froze `best.keras` in the metadata-prior phase before the ConvLSTM started using `beat_audio`.
+- **Two distinct failure mechanisms on `zeros` vs `shuffle`:** Under `zeros`, `last.keras` over-fires (**68,228** steps vs **37,617** GT), dropping F1@0.5 by **−0.0624** (**0.7307 → 0.6683**); however, re-thresholding `zeros` to τ=**0.90** recovers `max-F1` **0.7220** (identical to `best.keras` `zeros` **0.7217**). Distribution-preserving `shuffle` avoids that threshold shift (`n_pred` **44,779** vs **47,438**) and shows the true unshifted val audio lift is **+0.0230** F1 (**0.7307** vs **0.7077**) — only **+0.0090** above an audio-blind template (**0.7217**).
+
+**Implication.** Moving off `best_val_loss` is necessary (it selects an audio-blind epoch), but epoch-128 DDCL on raw log-mel still gets very little val F1 out of `beat_audio` (**+0.023** over `shuffle`). Before changing features (e.g. MERT beat features) or ablating `[meter, bpm]`, run `--diagnose_grounding --split train` on `last.keras`: a large train audio drop proves raw log-mel is overfitting 48 diverse songs (generalization bottleneck), whereas a tiny train audio drop proves the `[meter, bpm]` shortcut / ConvLSTM isn't extracting audio even on train.
+
+**Related.** [EXP-20261119-02](EXPERIMENT_LOG.md#exp-20261119-02-epoch-128-lastkeras-reads-beat_audio-75x-more-than-bestkeras-but-val-lift-over-shuffle-is-only-0023) · [EXP-20261119-01](EXPERIMENT_LOG.md#exp-20261119-01-ladder-ddcl-bestkeras-is-almost-entirely-audio-blind--958-of-steps-survive-zeroed-audio) · [NOTE-20261119-01](#note-20261119-01-beat-grid--meter-bpm-prior-accounts-for-987-of-ladder-ddcl-bestkerass-0616-event-f1-skill)
+
+### NOTE-20261119-01: Beat-grid + `[meter, bpm]` prior accounts for 98.7% of ladder DDCL `best.keras`'s `+0.616` event-F1 skill
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-19 18:23:08 |
+| **Topic** | Audio-corruption grounding failure on ladder `best.keras` and why `ioi_shuffle` is not an audio-blind floor for beat-grid models |
+
+**Context.** `EXP-20261118-01` showed ladder DDCL `best.keras` reached `M-slot48` F1 **0.727** and decoded ±20 ms `skill_event_f1` **+0.616** over `ioi_shuffle` (**0.291**), seemingly beating windowed MERT-TCN (**+0.414**). Per the grounding rule (`EXP-20260804-05`), we ran `--diagnose_grounding` (`none`, `shuffle`, `zeros` on `beat_audio` with `[meter, bpm]` unchanged) before believing the score or training ITGPT on ladder `48t/48v`.
+
+**Discovery.**
+
+- Replacing all beat spectrograms with **zeros** leaves `M-slot48` F1@0.5 at **0.7217** (vs **0.7272** real audio, drop **0.0055**) and decoded ±20 ms `skill_event_f1` at **+0.6077** (vs **+0.6155**, drop **0.0078**). **95.8%** of occupied slots (`1 − IoU = 0.0421`) are identical without audio.
+- Permuting `beat_audio` across beats (`shuffle`) gives almost the same result: F1@0.5 **0.7224** (drop **0.0048**), **96.0%** identical steps (`1 − IoU = 0.0402`), `mean_abs_prob_delta = 0.0109`.
+- Comparing `zeros` (**0.7217**) to beat-shuffle GT null (**0.6007**) and `ioi_shuffle` (**0.2906**) reveals a metric trap: a deterministic meter/BPM-conditioned metric-grid template (always emitting high-prior subdivisions on the known `#OFFSET` / `#BPMS` beat grid) beats beat-shuffled GT by **+0.121** and beats grid-blind `ioi_shuffle` by **+0.608** headroom skill with **zero** audio input.
+
+**Implication.**
+
+- **Retract** any claim that ladder DDCL `best.keras` beat windowed MERT-TCN on onset skill — MERT-TCN's **+0.414** (`EXP-20260824-01`) collapsed to ~0 under audio corruption, whereas `best.keras`'s genuine audio lift is **+0.0055** slot F1 / **+0.0078** event skill.
+- Never read `skill_event_f1` vs `ioi_shuffle` or `M-slot48` vs beat-shuffle alone as audio skill for a beat-grid + `[meter, bpm]` model; the true audio-blind baseline is the model's own **`zeros`/`shuffle` audio-corrupted score**.
+- Next: run `--diagnose_grounding` on the saved 128-ep `last.keras` (no retrain) to check whether early `best_val_loss` checkpointing simply froze `best.keras` in the metric-prior phase before the ConvLSTM began using audio, or whether epoch-128 DDCL is audio-blind too.
+
+**Related.** [EXP-20261119-01](EXPERIMENT_LOG.md#exp-20261119-01-ladder-ddcl-bestkeras-is-almost-entirely-audio-blind--958-of-steps-survive-zeroed-audio) · [EXP-20261118-01](EXPERIMENT_LOG.md#exp-20261118-01-counterfactual-slot-masks-prove-rank-drift-breaks-timing_match-while-decoded-slot-times-beat-dense-tcn) · [EXP-20260804-05](EXPERIMENT_LOG.md#exp-20260804-05-the-ar-pointer-never-reads-the-audio--the-head-is-absolute-index-classification-not-a-pointer)
+
 ## Session 2026-11-18 — Counterfactual 48-slot timing diagnostic
 
 ### NOTE-20261118-01: Neither FP removal nor FN filling rescues rank-indexed `timing_match` — decoded 48-slot times already beat dense TCN on ±20 ms skill
