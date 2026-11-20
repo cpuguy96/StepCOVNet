@@ -7,7 +7,11 @@
     "max_train_songs": -1,
     "max_val_songs": -1,
     "cache_features": true,
-    "exclude_normalized_ids": ["news_39"]
+    "exclude_normalized_ids": [
+      "hold_release_rakshasa_and_carcasses",
+      "news_39",
+      "viva_happy"
+    ]
   },
   "model": {
     "lstm_units": 200,

@@ -4,6 +4,27 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-11-18 — Counterfactual 48-slot timing diagnostic
+
+### NOTE-20261118-01: Neither FP removal nor FN filling rescues rank-indexed `timing_match` — decoded 48-slot times already beat dense TCN on ±20 ms skill
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-18 05:23:02 |
+| **Topic** | Why `timing_match` collapses to **0.007** on a **0.727**-F1 48-slot mask, and what metric actually measures decoded timing quality |
+
+**Context.** `EXP-20261010-01` showed an oracle 48-slot mask decodes to `timing_match` **0.999972**, while `EXP-20261010-02` showed a trained DDCL ConvLSTM (`M-slot48` F1 **0.717**) drops to `timing_match` **0.0053**. Before changing losses or architectures, we ran a seeded 128-ep local rebuild (`best.keras` F1@0.5 **0.727** vs null **0.601** on 48t/48v) and scored six counterfactual masks plus a threshold sweep via `--diagnose_timing`.
+
+**Discovery.**
+
+- **Decoded slot centers already have strong ±20 ms timing skill:** At τ=0.5, raw decoded times hit bipartite Hungarian ±20 ms `micro_event_f1` **0.727** (**0.745** @ τ=0.45) against an `ioi_shuffle` floor of **0.291**, giving **`skill_event_f1` = +0.616** — well ahead of windowed MERT-TCN on the same ladder split (**+0.414** skill, **0.569** micro F1 in `EXP-20260824-01`). Every single slot TP (**26,036**) lands within ±20 ms of its GT step (`event_tp == slot_tp`).
+- **False slots alone are not the culprit:** Stripping all **7,949** false positives (`fp_removed`, 100% precision) lifts `timing_match` only from **0.0072 → 0.0536** because the **11,581** missed steps shift subsequent rank indices by **112.0** steps on average. Restoring all **11,581** misses (`fn_filled`, 100% recall) lifts `timing_match` only to **0.0408** (mean drift **86.1** steps).
+- **Even oracle chart count fails; zeroing cross-beat drift restores 0.834:** Selecting exact `n_ref` slots per chart (`chart_top_k`) still scores **0.0201** (`20.5`-step mid-chart rank excursions), whereas selecting the oracle step count *within each beat* (`beat_top_k`, zero cross-beat cumulative `FP - FN`) jumps **116×** to **`timing_match` 0.8338** (`skill_timing_match` **+0.832**). No global threshold τ ∈ `[0.05, 0.95]` exceeds **0.0105**.
+
+**Implication.** Just as `NOTE-20260824-01` established for dense peak-picking, rank-paired `|pred[i] - ref[i]| <= 0.02` cannot rank any imperfect multi-song onset model because one unpaired FP or FN shifts every later index. Do **not** add precision hacks or threshold tweaks trying to raise `timing_match` directly. Score multi-song beat-slot onset heads on `M-slot48` skill + decoded ±20 ms `skill_event_f1` (keep `timing_match` as an exact-sequence diagnostic), and run the audio-corruption grounding check on `best.keras` before comparing ITGPT vs DDCL on ladder 48t/48v.
+
+**Related.** [EXP-20261118-01](EXPERIMENT_LOG.md#exp-20261118-01-counterfactual-slot-masks-prove-rank-drift-breaks-timing_match-while-decoded-slot-times-beat-dense-tcn) · [EXP-20261010-02](EXPERIMENT_LOG.md#exp-20261010-02-ladder-48-slot-head-has-slot-skill-and-timing_match-at-the-floor) · [NOTE-20260824-01](#note-20260824-01-val_skill_event_f1-ranks-dense-checkpoints-onset_density-does-not-help)
+
 ## Session 2026-10-10 — Ladder 48-slot head
 
 ### NOTE-20261010-02: Slot F1 skill does not produce ordered times
