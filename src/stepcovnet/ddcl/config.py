@@ -63,6 +63,9 @@ class DdclDatasetConfig(_DictSerializableMixin):
         cache_features: Write ``*.ddc_mel.npy`` beside audio.
         exclude_normalized_ids: Song slugs dropped before load (for example
             charts whose BPM ladder the slot converter rejects).
+        audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
+        n_frames_per_beat: Sub-beat frames resampled per beat (32 for logmel,
+            16 recommended for MERT).
     """
 
     training_index_path: str
@@ -73,27 +76,41 @@ class DdclDatasetConfig(_DictSerializableMixin):
     max_val_songs: int = -1
     cache_features: bool = True
     exclude_normalized_ids: list[str] = dataclasses.field(default_factory=list)
+    audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL
+    n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.
 
         Raises:
-            ValueError: If ``batch_size`` is not positive or ``memlen`` is negative.
+            ValueError: If ``batch_size``, ``memlen``, ``n_frames_per_beat``,
+                or ``audio_feature_type`` is invalid.
         """
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {self.batch_size}")
         if self.memlen < 0:
             raise ValueError(f"memlen must be >= 0, got {self.memlen}")
+        if self.audio_feature_type not in constants.AUDIO_FEATURE_TYPES:
+            raise ValueError(
+                f"audio_feature_type must be one of {constants.AUDIO_FEATURE_TYPES}, "
+                f"got {self.audio_feature_type!r}"
+            )
+        if self.n_frames_per_beat < 1:
+            raise ValueError(
+                f"n_frames_per_beat must be at least 1, got {self.n_frames_per_beat}"
+            )
 
 
 @dataclasses.dataclass
 class DdclModelConfig(_DictSerializableMixin):
-    """ConvLSTM hyperparameters from DDCL ``get_onset_model``.
+    """Placement model hyperparameters for log-mel ConvLSTM or MERT LSTM.
 
     Attributes:
         lstm_units: Hidden size per LSTM layer.
         dropout_rate: Dropout on LSTM and dense layers.
         dense_sizes: Fully-connected hidden widths.
+        mert_proj_dim: Per-frame projection width for MERT beat encoder.
+        mert_conv_filters: Sub-beat 1D conv width for MERT beat encoder.
     """
 
     lstm_units: int = constants.LSTM_UNITS
@@ -101,6 +118,8 @@ class DdclModelConfig(_DictSerializableMixin):
     dense_sizes: list[int] = dataclasses.field(
         default_factory=lambda: list(constants.DENSE_SIZES)
     )
+    mert_proj_dim: int = constants.MERT_PROJ_DIM
+    mert_conv_filters: int = constants.MERT_CONV_FILTERS
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.
@@ -114,6 +133,14 @@ class DdclModelConfig(_DictSerializableMixin):
             raise ValueError(f"dropout_rate must be in [0, 1), got {self.dropout_rate}")
         if not self.dense_sizes or any(width < 1 for width in self.dense_sizes):
             raise ValueError("dense_sizes must be a non-empty list of positive ints")
+        if self.mert_proj_dim < 1:
+            raise ValueError(
+                f"mert_proj_dim must be at least 1, got {self.mert_proj_dim}"
+            )
+        if self.mert_conv_filters < 1:
+            raise ValueError(
+                f"mert_conv_filters must be at least 1, got {self.mert_conv_filters}"
+            )
 
 
 @dataclasses.dataclass

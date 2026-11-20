@@ -154,6 +154,8 @@ def load_ddcl_chart(
     memlen: int,
     cache_features: bool = True,
     spec: np.ndarray | None = None,
+    audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL,
+    n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
 ) -> DdclChart:
     """Load beat-grid features and ``M-slot48`` targets for one chart.
 
@@ -162,13 +164,15 @@ def load_ddcl_chart(
         data_root: Prepared output root.
         memlen: Context length for windows.
         cache_features: Write/read ``*.ddc_mel.npy`` beside audio.
-        spec: Optional precomputed log-mel shared across difficulties.
+        spec: Optional precomputed audio features shared across difficulties.
+        audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
+        n_frames_per_beat: Sub-beat frames resampled per beat.
 
     Returns:
         In-memory chart example.
 
     Raises:
-        ValueError: If the chart has no onsets.
+        ValueError: If the chart has no onsets or ``audio_feature_type`` is invalid.
     """
     root = pathlib.Path(data_root)
     audio_path = root / entry.audio_relpath
@@ -194,9 +198,26 @@ def load_ddcl_chart(
         pack.metadata.offset_sec,
         pack.metadata.bpm_segments,
     )
-    if spec is None:
-        spec = features.load_or_compute_logmel(audio_path, cache=cache_features)
-    beat_audio = features.zscore_beats(features.beats_to_audio_tensor(spec, beat_times))
+    if audio_feature_type == constants.AUDIO_FEATURE_MERT:
+        if spec is None:
+            spec = features.load_mert_features(audio_path)
+        beat_audio = features.beats_to_mert_tensor(
+            spec,
+            beat_times,
+            n_frames=n_frames_per_beat,
+        )
+    elif audio_feature_type == constants.AUDIO_FEATURE_LOGMEL:
+        if spec is None:
+            spec = features.load_or_compute_logmel(audio_path, cache=cache_features)
+        beat_audio = features.zscore_beats(
+            features.beats_to_audio_tensor(
+                spec,
+                beat_times,
+                n_frames=n_frames_per_beat,
+            )
+        )
+    else:
+        raise ValueError(f"unsupported audio_feature_type: {audio_feature_type!r}")
     stream = slots.stream_features(
         n_beats,
         int(chart_block.summary.meter),
@@ -223,7 +244,7 @@ def load_split_charts(
     dataset_config: config.DdclDatasetConfig,
     split: str,
 ) -> list[DdclChart]:
-    """Load all charts for one split, sharing per-song log-mel and beat audio.
+    """Load all charts for one split, sharing per-song audio features.
 
     Args:
         dataset_config: Dataset config.
@@ -246,10 +267,13 @@ def load_split_charts(
     for song_key in song_order:
         group = grouped[song_key]
         audio_key = str(pathlib.Path(data_root) / group[0].audio_relpath)
-        spec = features.load_or_compute_logmel(
-            audio_key,
-            cache=dataset_config.cache_features,
-        )
+        if dataset_config.audio_feature_type == constants.AUDIO_FEATURE_MERT:
+            spec = features.load_mert_features(audio_key)
+        else:
+            spec = features.load_or_compute_logmel(
+                audio_key,
+                cache=dataset_config.cache_features,
+            )
         for entry in group:
             charts.append(
                 load_ddcl_chart(
@@ -258,6 +282,8 @@ def load_split_charts(
                     memlen=dataset_config.memlen,
                     cache_features=dataset_config.cache_features,
                     spec=spec,
+                    audio_feature_type=dataset_config.audio_feature_type,
+                    n_frames_per_beat=dataset_config.n_frames_per_beat,
                 )
             )
         del spec
@@ -277,7 +303,7 @@ def windows_for_indices(
     chart: DdclChart,
     indices: np.ndarray,
 ) -> dict[str, np.ndarray]:
-    """Build ConvLSTM inputs for selected beats without a full-chart stack.
+    """Build placement inputs for selected beats without a full-chart stack.
 
     Args:
         chart: Loaded chart.
@@ -297,13 +323,26 @@ def windows_for_indices(
     stream_fwd = []
     stream_bwd = []
     memlen = chart.memlen
+    audio_pad = 0.0 if chart.beat_audio.ndim == 3 else None
     for beat_idx in beat_idxs:
         idx = int(beat_idx)
         audio_fwd.append(
-            features.window_at_beat(chart.beat_audio, memlen, idx, reverse=False)
+            features.window_at_beat(
+                chart.beat_audio,
+                memlen,
+                idx,
+                reverse=False,
+                pad_value=audio_pad,
+            )
         )
         audio_bwd.append(
-            features.window_at_beat(chart.beat_audio, memlen, idx, reverse=True)
+            features.window_at_beat(
+                chart.beat_audio,
+                memlen,
+                idx,
+                reverse=True,
+                pad_value=audio_pad,
+            )
         )
         stream_fwd.append(
             features.window_at_beat(chart.stream, memlen, idx, reverse=False)

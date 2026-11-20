@@ -14,7 +14,7 @@ import numpy as np
 import tensorflow as tf
 
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.ddcl import config, datasets, evaluation, models
+from stepcovnet.ddcl import config, constants, datasets, evaluation, models
 
 
 def set_seed(seed: int) -> None:
@@ -247,16 +247,29 @@ def train_placement(
         experiment.dataset,
         training_index.SPLIT_VAL,
     )
-    model = compile_placement_model(
-        models.build_convlstm_placement_model(
+    if experiment.dataset.audio_feature_type == constants.AUDIO_FEATURE_MERT:
+        feature_dim = int(train_charts[0].beat_audio.shape[-1])
+        uncompiled = models.build_mert_placement_model(
             memlen=experiment.dataset.memlen,
+            n_frames=experiment.dataset.n_frames_per_beat,
+            feature_dim=feature_dim,
+            proj_dim=experiment.model.mert_proj_dim,
+            conv_filters=experiment.model.mert_conv_filters,
             lstm_units=experiment.model.lstm_units,
             dropout_rate=experiment.model.dropout_rate,
             dense_sizes=tuple(experiment.model.dense_sizes),
             model_name=experiment.run.model_name,
-        ),
-        experiment.run,
-    )
+        )
+    else:
+        uncompiled = models.build_convlstm_placement_model(
+            memlen=experiment.dataset.memlen,
+            n_frames=experiment.dataset.n_frames_per_beat,
+            lstm_units=experiment.model.lstm_units,
+            dropout_rate=experiment.model.dropout_rate,
+            dense_sizes=tuple(experiment.model.dense_sizes),
+            model_name=experiment.run.model_name,
+        )
+    model = compile_placement_model(uncompiled, experiment.run)
     output_dir = pathlib.Path(experiment.run.model_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     backup_dir = output_dir / BACKUP_DIRNAME

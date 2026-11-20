@@ -149,3 +149,155 @@ def build_convlstm_placement_model(
         outputs=outputs,
         name=model_name,
     )
+
+
+def build_mert_placement_model(
+    *,
+    memlen: int = constants.MEMLEN,
+    n_frames: int = constants.MERT_FRAMES_PER_BEAT,
+    feature_dim: int = constants.MERT_FEATURE_DIM,
+    proj_dim: int = constants.MERT_PROJ_DIM,
+    conv_filters: int = constants.MERT_CONV_FILTERS,
+    lstm_units: int = constants.LSTM_UNITS,
+    dropout_rate: float = constants.DROPOUT_RATE,
+    dense_sizes: tuple[int, ...] = constants.DENSE_SIZES,
+    model_name: str = "ddcl_mert_placement",
+) -> keras.Model:
+    """Build a beat-aligned MERT placement model matching DDCL's downstream head.
+
+    Replaces the scratch 2D log-mel ConvLSTM frontend with a shared per-beat
+    sub-beat encoder (``LayerNormalization -> Dense -> Dropout -> Conv1D ->
+    AveragePooling1D -> Flatten``) applied across ``memlen+1`` beats. Forward
+    and backward audio LSTMs align with ``stream_fwd`` / ``stream_bwd``
+    (``[meter, bpm]``) before the same second LSTM, dense stack, and 48-way
+    sigmoid output.
+
+    Args:
+        memlen: Context beats besides the current one (paper: 15).
+        n_frames: Sub-beat MERT frames per beat (default: 16).
+        feature_dim: MERT embedding width (default: 1024).
+        proj_dim: Per-frame linear projection width (default: 128).
+        conv_filters: Sub-beat 1D conv filters (default: 64).
+        lstm_units: Hidden width per LSTM layer (paper: 200).
+        dropout_rate: Dropout rate on projection, LSTM, and dense layers.
+        dense_sizes: Fully-connected hidden widths (paper: 512, 256).
+        model_name: Keras model name.
+
+    Returns:
+        Uncompiled Keras model with identical input dict keys as DDCL.
+
+    Raises:
+        ValueError: If any dimension hyperparameter is invalid.
+    """
+    if memlen < 0:
+        raise ValueError(f"memlen must be >= 0, got {memlen}")
+    if n_frames < 1:
+        raise ValueError(f"n_frames must be at least 1, got {n_frames}")
+    if feature_dim < 1:
+        raise ValueError(f"feature_dim must be at least 1, got {feature_dim}")
+    if proj_dim < 1:
+        raise ValueError(f"proj_dim must be at least 1, got {proj_dim}")
+    if conv_filters < 1:
+        raise ValueError(f"conv_filters must be at least 1, got {conv_filters}")
+    if lstm_units < 1:
+        raise ValueError(f"lstm_units must be at least 1, got {lstm_units}")
+
+    context = memlen + 1
+    audio_fwd = keras.Input(
+        shape=(context, n_frames, feature_dim),
+        name="audio_fwd",
+    )
+    audio_bwd = keras.Input(
+        shape=(context, n_frames, feature_dim),
+        name="audio_bwd",
+    )
+    stream_fwd = keras.Input(
+        shape=(context, constants.STREAM_DIM),
+        name="stream_fwd",
+    )
+    stream_bwd = keras.Input(
+        shape=(context, constants.STREAM_DIM),
+        name="stream_bwd",
+    )
+
+    mert_ln = keras.layers.LayerNormalization(axis=-1, name="mert_ln")
+    mert_proj = keras.layers.Dense(proj_dim, activation="gelu", name="mert_proj")
+    mert_drop = keras.layers.Dropout(dropout_rate, name="mert_proj_dropout")
+    mert_conv = keras.layers.Conv2D(
+        conv_filters,
+        kernel_size=(1, 3),
+        padding="same",
+        activation="gelu",
+        name="mert_conv",
+    )
+    mert_pool = (
+        keras.layers.AveragePooling2D(pool_size=(1, 2), name="mert_pool")
+        if n_frames >= 2
+        else None
+    )
+
+    def _encode_mert(audio: object, *, name: str) -> object:
+        x = mert_ln(audio)
+        x = mert_proj(x)
+        x = mert_drop(x)
+        x = mert_conv(x)
+        if mert_pool is not None:
+            x = mert_pool(x)
+        return keras.layers.Reshape((context, -1), name=f"{name}_flat")(x)
+
+    audio_out_fwd = _encode_mert(audio_fwd, name="fwd")
+    audio_out_bwd = _encode_mert(audio_bwd, name="bwd")
+    fwd_audio_seq = keras.layers.LSTM(
+        lstm_units,
+        return_sequences=True,
+        go_backwards=False,
+        dropout=dropout_rate,
+        name="fwd_lstm0",
+    )(audio_out_fwd)
+    bwd_audio_seq = keras.layers.LSTM(
+        lstm_units,
+        return_sequences=True,
+        go_backwards=True,
+        dropout=dropout_rate,
+        name="bwd_lstm0",
+    )(audio_out_bwd)
+    merge = keras.layers.Concatenate(axis=-1, name="fwd_merge")(
+        [fwd_audio_seq, stream_fwd]
+    )
+    merge_b = keras.layers.Concatenate(axis=-1, name="bwd_merge")(
+        [bwd_audio_seq, stream_bwd]
+    )
+    note = keras.layers.LSTM(
+        lstm_units,
+        dropout=dropout_rate,
+        name="fwd_lstm1",
+    )(merge)
+    note_b = keras.layers.LSTM(
+        lstm_units,
+        dropout=dropout_rate,
+        name="bwd_lstm1",
+    )(merge_b)
+    combined = keras.layers.Concatenate(axis=1, name="branch_concat")([note, note_b])
+    dense = combined
+    for dnn_idx, width in enumerate(dense_sizes):
+        dense = keras.layers.Dense(
+            width,
+            activation="leaky_relu",
+            name=f"dnn_{dnn_idx}",
+        )(dense)
+        dense = keras.layers.Dropout(dropout_rate, name=f"dnn_dropout_{dnn_idx}")(dense)
+    outputs = keras.layers.Dense(
+        constants.N_SLOTS,
+        activation="sigmoid",
+        name="slots",
+    )(dense)
+    return keras.Model(
+        inputs={
+            "audio_fwd": audio_fwd,
+            "audio_bwd": audio_bwd,
+            "stream_fwd": stream_fwd,
+            "stream_bwd": stream_bwd,
+        },
+        outputs=outputs,
+        name=model_name,
+    )

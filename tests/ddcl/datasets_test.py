@@ -10,7 +10,7 @@ import numpy as np
 
 from stepcovnet.dataset_prep import constants as prep_constants
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.ddcl import config, constants, datasets
+from stepcovnet.ddcl import config, constants, datasets, features
 
 
 def _chart() -> datasets.DdclChart:
@@ -96,6 +96,26 @@ class DdclDatasetsTest(unittest.TestCase):
         rng = np.random.default_rng(0)
         with self.assertRaises(ValueError):
             datasets.sample_train_batch([], batch_size=1, rng=rng)
+
+    def test_mert_beat_resampling_and_zero_padding(self):
+        mert = np.arange(200 * 4, dtype=np.float32).reshape(200, 4) - 500.0
+        beat_times = np.array([0.0, 0.5, 1.0, 1.5], dtype=np.float64)
+        beat_mert = features.beats_to_mert_tensor(mert, beat_times, n_frames=8)
+        self.assertEqual(beat_mert.shape, (3, 8, 4))
+        chart = datasets.DdclChart(
+            song_key="b/s",
+            difficulty="hard",
+            meter=8,
+            beat_audio=beat_mert,
+            stream=np.zeros((3, constants.STREAM_DIM), dtype=np.float32),
+            slots=np.zeros((3, constants.N_SLOTS), dtype=np.float32),
+            memlen=2,
+        )
+        windows = datasets.windows_for_indices(chart, np.array([0], dtype=np.int64))
+        self.assertEqual(windows["audio_fwd"].shape, (1, 3, 8, 4))
+        # Past padding beats for MERT use 0.0 instead of negative outlier min().
+        np.testing.assert_array_equal(windows["audio_fwd"][0, 0], np.zeros((8, 4)))
+        np.testing.assert_array_equal(windows["audio_fwd"][0, 2], beat_mert[0])
 
 
 if __name__ == "__main__":
