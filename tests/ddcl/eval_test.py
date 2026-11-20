@@ -52,6 +52,27 @@ def _tiny_chart(slots: np.ndarray) -> datasets.DdclChart:
     )
 
 
+class _AudioReadingModel:
+    """Stub model whose slot prediction depends directly on ``audio``."""
+
+    def predict(self, inputs, verbose=0):
+        """Predict slot 0 from the current beat's mean forward audio energy.
+
+        Args:
+            inputs: Dict with ``audio_fwd`` window ``(batch, memlen+1, 4, 4, 3)``.
+            verbose: Unused Keras flag.
+
+        Returns:
+            Slot probabilities ``(batch, 48)``.
+        """
+        del verbose
+        audio = np.asarray(inputs["audio_fwd"], dtype=np.float32)
+        current_energy = audio[:, -1].mean(axis=(1, 2, 3))
+        out = np.zeros((audio.shape[0], 48), dtype=np.float32)
+        out[:, 0] = np.clip(current_energy, 0.0, 1.0)
+        return out
+
+
 class DdclEvalTest(unittest.TestCase):
     def test_perfect_prediction_beats_null(self):
         target = np.zeros((8, 48), dtype=np.float32)
@@ -177,6 +198,82 @@ class DdclEvalTest(unittest.TestCase):
             evaluation.diagnose_timing_from_predictions([chart], [])
         with self.assertRaises(ValueError):
             evaluation.diagnose_timing_from_predictions([base], [pred])
+
+    def test_corrupt_chart_audio_preserves_stream_and_targets(self):
+        target = np.zeros((6, 48), dtype=np.float32)
+        target[[0, 2, 4], 0] = 1.0
+        chart = _tiny_chart(target)
+        audio = np.arange(6 * 4 * 4 * 3, dtype=np.float32).reshape(6, 4, 4, 3)
+        stream = np.full((6, 2), 9.0, dtype=np.float32)
+        chart = datasets.DdclChart(
+            song_key=chart.song_key,
+            difficulty=chart.difficulty,
+            meter=chart.meter,
+            beat_audio=audio,
+            stream=stream,
+            slots=chart.slots,
+            memlen=chart.memlen,
+        )
+
+        same = evaluation.corrupt_chart_audio(chart, "none", seed=0)
+        self.assertIs(same, chart)
+
+        zeroed = evaluation.corrupt_chart_audio(chart, "zeros", seed=0)
+        np.testing.assert_array_equal(zeroed.beat_audio, np.zeros_like(audio))
+        np.testing.assert_array_equal(zeroed.stream, stream)
+        np.testing.assert_array_equal(zeroed.slots, target)
+
+        shuffled = evaluation.corrupt_chart_audio(chart, "shuffle", seed=123)
+        self.assertFalse(np.array_equal(shuffled.beat_audio, audio))
+        np.testing.assert_array_equal(shuffled.stream, stream)
+        np.testing.assert_array_equal(shuffled.slots, target)
+
+        with self.assertRaises(ValueError):
+            evaluation.corrupt_chart_audio(chart, "reverse", seed=0)
+
+    def test_evaluate_audio_grounding_detects_audio_dependence(self):
+        segments = (prep_models.BpmSegment(start_beat=0.0, bpm=120.0),)
+        times = np.array([0.0, 1.0, 2.0, 3.0], dtype=np.float64)
+        matrix = slots.times_to_slot_matrix(times, 0.0, segments)
+        n_beats = matrix.shape[0]
+        audio = np.zeros((n_beats, 4, 4, 3), dtype=np.float32)
+        for beat_idx in range(n_beats):
+            if matrix[beat_idx, 0] > 0.5:
+                audio[beat_idx] = 0.9
+        chart = datasets.DdclChart(
+            song_key="pack/song",
+            difficulty="challenge",
+            meter=9,
+            beat_audio=audio,
+            stream=np.full((n_beats, 2), 9.0, dtype=np.float32),
+            slots=matrix,
+            memlen=1,
+            offset_sec=0.0,
+            bpm_segments=segments,
+            gt_times_sec=times,
+        )
+
+        report = evaluation.evaluate_audio_grounding(
+            _AudioReadingModel(),
+            [chart],
+            threshold=0.5,
+            thresholds=(0.3, 0.5, 0.7),
+            seed=42,
+        )
+        payload = report.as_dict()
+        self.assertEqual(payload["metric"], "audio_grounding_ablation")
+        self.assertAlmostEqual(report.conditions["none"].slot_f1_at_05, 1.0)
+        self.assertAlmostEqual(report.conditions["none"].mean_abs_prob_delta, 0.0)
+        self.assertAlmostEqual(report.conditions["none"].slot_flip_rate, 0.0)
+        self.assertAlmostEqual(report.conditions["zeros"].slot_f1_at_05, 0.0)
+        self.assertAlmostEqual(report.slot_f1_drop_zeros, 1.0)
+        self.assertGreater(report.slot_f1_drop_shuffle, 0.0)
+        self.assertGreater(report.conditions["zeros"].occupied_jaccard_distance, 0.99)
+
+        with self.assertRaises(ValueError):
+            evaluation.grounding_report_from_predictions([], {})
+        with self.assertRaises(ValueError):
+            evaluation.grounding_report_from_predictions([chart], {"none": []})
 
 
 if __name__ == "__main__":

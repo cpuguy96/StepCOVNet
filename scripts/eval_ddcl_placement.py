@@ -29,7 +29,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=training_index.SPLIT_VAL,
         help="Manifest split to score (default: val)",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--diagnose_timing",
         action="store_true",
         help=(
@@ -37,11 +38,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "timing_match."
         ),
     )
+    mode.add_argument(
+        "--diagnose_grounding",
+        action="store_true",
+        help=(
+            "Run none/shuffle/zeros beat-audio corruption grounding ablation "
+            "while keeping [meter, bpm] intact."
+        ),
+    )
     parser.add_argument(
         "--threshold",
         type=float,
         default=0.5,
-        help="Slot occupancy cutoff for --diagnose_timing (default: 0.5).",
+        help="Slot occupancy cutoff for diagnostic modes (default: 0.5).",
     )
     return parser
 
@@ -95,15 +104,28 @@ def main(argv: list[str] | None = None) -> int:
     wsl_gpu.guard_tensorflow_gpu_job(__file__)
     experiment = config.DdclExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment, args.model_path)
-    default_filename = (
-        "eval_val_timing_diag.json" if args.diagnose_timing else "eval_val_slot48.json"
-    )
+    if args.diagnose_grounding:
+        default_filename = "eval_val_grounding.json"
+    elif args.diagnose_timing:
+        default_filename = "eval_val_timing_diag.json"
+    else:
+        default_filename = "eval_val_slot48.json"
     output_path = args.output or str(
         pathlib.Path(experiment.run.model_output_dir) / default_filename
     )
     model = tf.keras.models.load_model(model_path, compile=False)
     charts = datasets.load_split_charts(experiment.dataset, args.split)
-    if args.diagnose_timing:
+    if args.diagnose_grounding:
+        grounding_report = evaluation.evaluate_audio_grounding(
+            model,
+            charts,
+            threshold=args.threshold,
+            seed=experiment.run.seed,
+        )
+        payload = grounding_report.as_dict()
+        payload["model_path"] = model_path
+        payload["config_path"] = args.config
+    elif args.diagnose_timing:
         diag_report = evaluation.diagnose_decoded_timing(
             model,
             charts,

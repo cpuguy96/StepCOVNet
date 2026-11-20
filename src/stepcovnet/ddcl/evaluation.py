@@ -17,6 +17,7 @@ from stepcovnet.ddcl import constants, datasets, slots
 from stepcovnet.onset_events import metrics
 
 DEFAULT_THRESHOLDS = tuple(round(0.05 * step, 2) for step in range(1, 20))
+CORRUPTION_KINDS = ("none", "shuffle", "zeros")
 DIAGNOSTIC_CONDITIONS = (
     "oracle",
     "raw",
@@ -878,6 +879,334 @@ def diagnose_decoded_timing(
     return diagnose_timing_from_predictions(
         charts,
         predictions,
+        threshold=threshold,
+        thresholds=thresholds,
+        tolerance_sec=tolerance_sec,
+        seed=seed,
+    )
+
+
+def corrupt_chart_audio(
+    chart: datasets.DdclChart,
+    corruption: str,
+    *,
+    seed: int = onset_null_baseline.DEFAULT_SEED,
+) -> datasets.DdclChart:
+    """Return a chart copy with ``beat_audio`` corrupted and ``stream`` intact.
+
+    Args:
+        chart: Source beat-grid chart.
+        corruption: One of :data:`CORRUPTION_KINDS` (``none``, ``shuffle``, ``zeros``).
+        seed: RNG seed used when ``corruption == "shuffle"``.
+
+    Returns:
+        Chart with modified ``beat_audio`` and identical metadata/targets.
+
+    Raises:
+        ValueError: If ``corruption`` is not supported.
+    """
+    if corruption == "none":
+        return chart
+    if corruption == "zeros":
+        return dataclasses.replace(
+            chart,
+            beat_audio=np.zeros_like(chart.beat_audio),
+        )
+    if corruption == "shuffle":
+        rng = np.random.default_rng(seed)
+        order = rng.permutation(chart.beat_audio.shape[0])
+        return dataclasses.replace(
+            chart,
+            beat_audio=chart.beat_audio[order].copy(),
+        )
+    raise ValueError(f"unsupported corruption kind: {corruption!r}")
+
+
+@dataclasses.dataclass(frozen=True)
+class AudioGroundingConditionReport:
+    """Slot, decoded ±20 ms, and prediction-shift metrics for one corruption mode.
+
+    Attributes:
+        corruption: Corruption kind from :data:`CORRUPTION_KINDS`.
+        slot_f1_at_05: Micro ``M-slot48`` F1 at ``threshold``.
+        slot_f1_max: Best micro ``M-slot48`` F1 over the threshold sweep.
+        slot_best_threshold: Threshold achieving ``slot_f1_max``.
+        slot_null_f1_at_05: Beat-shuffled GT ``M-slot48`` F1 at ``threshold``.
+        slot_skill_f1_at_05: Raw ``slot_f1_at_05 - slot_null_f1_at_05``.
+        slot_tp: Pooled slot true positives at ``threshold``.
+        slot_fp: Pooled slot false positives at ``threshold``.
+        slot_fn: Pooled slot false negatives at ``threshold``.
+        micro_event_f1: Bipartite Hungarian ±20 ms event F1 of decoded slot centers.
+        null_event_f1: Strongest audio-blind bipartite event-F1 floor.
+        null_event_kind: Baseline kind achieving ``null_event_f1``.
+        skill_event_f1: Headroom-normalized skill over ``null_event_f1``.
+        micro_timing_match: Rank-indexed ``timing_match`` of decoded slot centers.
+        n_pred: Pooled decoded onset count at ``threshold``.
+        n_ref: Pooled ground-truth onset count.
+        mean_abs_prob_delta: Mean ``|p_corrupt - p_none|`` across all beat slots.
+        slot_flip_rate: Fraction of binary slot decisions changed vs ``none``.
+        occupied_jaccard_distance: ``1 - IoU`` of occupied slots vs ``none``.
+    """
+
+    corruption: str
+    slot_f1_at_05: float
+    slot_f1_max: float
+    slot_best_threshold: float
+    slot_null_f1_at_05: float
+    slot_skill_f1_at_05: float
+    slot_tp: int
+    slot_fp: int
+    slot_fn: int
+    micro_event_f1: float
+    null_event_f1: float
+    null_event_kind: str
+    skill_event_f1: float
+    micro_timing_match: float
+    n_pred: int
+    n_ref: int
+    mean_abs_prob_delta: float
+    slot_flip_rate: float
+    occupied_jaccard_distance: float
+
+    def as_dict(self) -> dict[str, float | int | str]:
+        """Serialize grounding condition metrics for JSON."""
+        return dataclasses.asdict(self)
+
+
+@dataclasses.dataclass(frozen=True)
+class AudioGroundingReport:
+    """Audio-corruption grounding report across ``none``, ``shuffle``, ``zeros``.
+
+    Attributes:
+        threshold: Occupancy cutoff applied to slot probabilities.
+        tolerance_sec: Time match window in seconds.
+        n_charts: Charts evaluated.
+        n_beats: Pooled integer beats across ``n_charts``.
+        conditions: Mapping from corruption kind to its condition report.
+        slot_f1_drop_shuffle: ``none.slot_f1_at_05 - shuffle.slot_f1_at_05``.
+        slot_f1_drop_zeros: ``none.slot_f1_at_05 - zeros.slot_f1_at_05``.
+        event_skill_drop_shuffle: ``none.skill_event_f1 - shuffle.skill_event_f1``.
+        event_skill_drop_zeros: ``none.skill_event_f1 - zeros.skill_event_f1``.
+    """
+
+    threshold: float
+    tolerance_sec: float
+    n_charts: int
+    n_beats: int
+    conditions: dict[str, AudioGroundingConditionReport]
+    slot_f1_drop_shuffle: float
+    slot_f1_drop_zeros: float
+    event_skill_drop_shuffle: float
+    event_skill_drop_zeros: float
+
+    def as_dict(self) -> dict[str, object]:
+        """Serialize full audio-grounding report for JSON."""
+        return {
+            "metric": "audio_grounding_ablation",
+            "threshold": self.threshold,
+            "tolerance_sec": self.tolerance_sec,
+            "n_charts": self.n_charts,
+            "n_beats": self.n_beats,
+            "slot_f1_drop_shuffle": self.slot_f1_drop_shuffle,
+            "slot_f1_drop_zeros": self.slot_f1_drop_zeros,
+            "event_skill_drop_shuffle": self.event_skill_drop_shuffle,
+            "event_skill_drop_zeros": self.event_skill_drop_zeros,
+            "conditions": {
+                name: cond.as_dict() for name, cond in self.conditions.items()
+            },
+        }
+
+
+def _prediction_shift_stats(
+    baseline_preds: list[np.ndarray],
+    other_preds: list[np.ndarray],
+    *,
+    threshold: float,
+) -> tuple[float, float, float]:
+    """Compare corrupted slot probabilities and binary decisions against ``none``.
+
+    Args:
+        baseline_preds: Uncorrupted ``(n_beats, 48)`` probability arrays.
+        other_preds: Corrupted probability arrays aligned with ``baseline_preds``.
+        threshold: Occupancy cutoff for binary decisions.
+
+    Returns:
+        Tuple ``(mean_abs_prob_delta, slot_flip_rate, occupied_jaccard_distance)``.
+    """
+    base_all = np.concatenate(
+        [np.asarray(arr, dtype=np.float64) for arr in baseline_preds],
+        axis=0,
+    )
+    other_all = np.concatenate(
+        [np.asarray(arr, dtype=np.float64) for arr in other_preds],
+        axis=0,
+    )
+    mean_abs_delta = float(np.mean(np.abs(other_all - base_all)))
+    base_bin = base_all >= float(threshold)
+    other_bin = other_all >= float(threshold)
+    flip_rate = float(np.mean(base_bin != other_bin))
+    union = int(np.logical_or(base_bin, other_bin).sum())
+    if union == 0:
+        jaccard_dist = 0.0
+    else:
+        intersection = int(np.logical_and(base_bin, other_bin).sum())
+        jaccard_dist = 1.0 - float(intersection) / float(union)
+    return mean_abs_delta, flip_rate, jaccard_dist
+
+
+def grounding_report_from_predictions(
+    charts: list[datasets.DdclChart],
+    predictions_by_corruption: dict[str, list[np.ndarray]],
+    *,
+    threshold: float = constants.THRESHOLD_05,
+    thresholds: tuple[float, ...] = DEFAULT_THRESHOLDS,
+    tolerance_sec: float = timing_match.DEFAULT_TOLERANCE_SEC,
+    seed: int = onset_null_baseline.DEFAULT_SEED,
+) -> AudioGroundingReport:
+    """Score precomputed ``none`` / ``shuffle`` / ``zeros`` slot predictions.
+
+    Args:
+        charts: Loaded charts with BPM segments and ``gt_times_sec``.
+        predictions_by_corruption: Mapping from each kind in :data:`CORRUPTION_KINDS`
+            to per-chart ``(n_beats, 48)`` predicted probabilities.
+        threshold: Occupancy cutoff for slot F1, decoded timing, and flip rates.
+        thresholds: Sweep for ``slot_f1_max``.
+        tolerance_sec: Match window in seconds.
+        seed: Base RNG seed for beat-shuffle and audio-blind null baselines.
+
+    Returns:
+        Audio-grounding ablation report.
+
+    Raises:
+        ValueError: If ``charts`` is empty, BPM is missing, or predictions are missing.
+    """
+    if not charts:
+        raise ValueError("charts must be non-empty")
+    for chart in charts:
+        if not chart.bpm_segments:
+            raise ValueError(f"missing BPM segments for {chart.song_key}")
+    for kind in CORRUPTION_KINDS:
+        preds = predictions_by_corruption.get(kind)
+        if preds is None or len(preds) != len(charts):
+            raise ValueError(
+                f"predictions_by_corruption[{kind!r}] must align with charts"
+            )
+
+    tgt_all = np.concatenate([chart.slots for chart in charts], axis=0)
+    rng = np.random.default_rng(seed)
+    null_pred = shuffle_slot_null(tgt_all, rng)
+    slot_null_f1 = counts_at_threshold(null_pred, tgt_all, float(threshold)).f_score
+
+    baseline_preds = predictions_by_corruption["none"]
+    conditions: dict[str, AudioGroundingConditionReport] = {}
+    for kind in CORRUPTION_KINDS:
+        preds = predictions_by_corruption[kind]
+        pred_all = np.concatenate(preds, axis=0)
+        counts_primary = counts_at_threshold(pred_all, tgt_all, float(threshold))
+        best_threshold = float(threshold)
+        best_f1 = counts_primary.f_score
+        for tau in thresholds:
+            score = counts_at_threshold(pred_all, tgt_all, float(tau)).f_score
+            if score > best_f1:
+                best_f1 = score
+                best_threshold = float(tau)
+
+        masks = [
+            (np.asarray(pred, dtype=np.float64) >= float(threshold)).astype(np.float64)
+            for pred in preds
+        ]
+        timing_cond = _score_binary_masks(
+            kind,
+            charts,
+            masks,
+            tolerance_sec=tolerance_sec,
+            seed=seed,
+        )
+        mean_abs_delta, flip_rate, jaccard_dist = _prediction_shift_stats(
+            baseline_preds,
+            preds,
+            threshold=threshold,
+        )
+        conditions[kind] = AudioGroundingConditionReport(
+            corruption=kind,
+            slot_f1_at_05=counts_primary.f_score,
+            slot_f1_max=best_f1,
+            slot_best_threshold=best_threshold,
+            slot_null_f1_at_05=slot_null_f1,
+            slot_skill_f1_at_05=counts_primary.f_score - slot_null_f1,
+            slot_tp=counts_primary.true_positives,
+            slot_fp=counts_primary.false_positives,
+            slot_fn=counts_primary.false_negatives,
+            micro_event_f1=timing_cond.micro_event_f1,
+            null_event_f1=timing_cond.null_event_f1,
+            null_event_kind=timing_cond.null_event_kind,
+            skill_event_f1=timing_cond.skill_event_f1,
+            micro_timing_match=timing_cond.micro_timing_match,
+            n_pred=timing_cond.n_pred,
+            n_ref=timing_cond.n_ref,
+            mean_abs_prob_delta=mean_abs_delta,
+            slot_flip_rate=flip_rate,
+            occupied_jaccard_distance=jaccard_dist,
+        )
+
+    none_cond = conditions["none"]
+    shuffle_cond = conditions["shuffle"]
+    zeros_cond = conditions["zeros"]
+    n_beats = int(tgt_all.shape[0])
+    return AudioGroundingReport(
+        threshold=float(threshold),
+        tolerance_sec=float(tolerance_sec),
+        n_charts=len(charts),
+        n_beats=n_beats,
+        conditions=conditions,
+        slot_f1_drop_shuffle=none_cond.slot_f1_at_05 - shuffle_cond.slot_f1_at_05,
+        slot_f1_drop_zeros=none_cond.slot_f1_at_05 - zeros_cond.slot_f1_at_05,
+        event_skill_drop_shuffle=(
+            none_cond.skill_event_f1 - shuffle_cond.skill_event_f1
+        ),
+        event_skill_drop_zeros=none_cond.skill_event_f1 - zeros_cond.skill_event_f1,
+    )
+
+
+def evaluate_audio_grounding(
+    model: SlotPredictor,
+    charts: list[datasets.DdclChart],
+    *,
+    threshold: float = constants.THRESHOLD_05,
+    thresholds: tuple[float, ...] = DEFAULT_THRESHOLDS,
+    tolerance_sec: float = timing_match.DEFAULT_TOLERANCE_SEC,
+    seed: int = onset_null_baseline.DEFAULT_SEED,
+) -> AudioGroundingReport:
+    """Run ``none``, ``shuffle``, and ``zeros`` audio-corruption grounding checks.
+
+    Corrupts ``beat_audio`` while leaving ``stream`` (``[meter, bpm]``) intact to
+    measure how much slot and decoded ±20 ms skill depends on audio rather than
+    metric templates.
+
+    Args:
+        model: Keras model with DDCL placement inputs.
+        charts: Loaded beat-grid charts with BPM and onset times.
+        threshold: Occupancy cutoff for slot F1, decoded timing, and flip rates.
+        thresholds: Sweep for ``slot_f1_max``.
+        tolerance_sec: Match window in seconds.
+        seed: Base RNG seed for shuffling and null baselines.
+
+    Returns:
+        Audio-grounding ablation report across all corruption modes.
+    """
+    predictions_by_corruption: dict[str, list[np.ndarray]] = {}
+    for kind in CORRUPTION_KINDS:
+        corrupted_preds = [
+            predict_chart_slots(
+                model,
+                corrupt_chart_audio(chart, kind, seed=seed + idx),
+            )
+            for idx, chart in enumerate(charts)
+        ]
+        predictions_by_corruption[kind] = corrupted_preds
+    return grounding_report_from_predictions(
+        charts,
+        predictions_by_corruption,
         threshold=threshold,
         thresholds=thresholds,
         tolerance_sec=tolerance_sec,
