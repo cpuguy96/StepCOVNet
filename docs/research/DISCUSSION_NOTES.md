@@ -4,6 +4,28 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-11-23 — Beat-aligned ITGPT-MERT hierarchical Transformer on ladder 48t/48v
+
+### NOTE-20261123-01: Beat-aligned ITGPT-MERT sets a new ladder champion (**0.772** F1, **−0.085** `shuffle` drop) and saturates the 48-song split (**0.993** train F1)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-23 15:31:42 |
+| **Topic** | Full-song hierarchical Transformer + beat-aligned MERT vs MERT-LSTM on fixed ladder `48t/48v`, why `shuffle` beats `zeros` as the architecture-agnostic grounding test, and the 48-song data ceiling |
+
+**Context.** `EXP-20261119-06` showed heavy regularization (`AdamW wd=0.01`, `dropout=0.4`, `noise=0.05`) hurt both val F1 and audio grounding on MERT-LSTM by starving the 1024-dim MERT pathway relative to `[meter, bpm]`. We kept light regularization (`Adam 1e-4`, `dropout=0.1`, zero audio noise) and swapped the LSTM head for ITGPT's full-song hierarchical Transformer (`level1..level6`) fed by `ItgptBeatMertEncoder` at 24 sub-beat MERT frames/beat (`EXP-20261123-01`).
+
+**Discovery.**
+
+- **Beats MERT-LSTM on both placement F1 and `shuffle` audio grounding:** `best_slot_f1.keras` (ep 32, right near the ep-29 `val_loss` minimum) achieves **0.7719** val F1@0.5 (`0.7728` in-train fp16), **0.7728** max-F1 (`0.7735` fp16), and **+0.6695** decoded ±20 ms `skill_event_f1` — ahead of MERT-LSTM (**0.7647** / **0.7712** / **+0.6656**). Training to epoch 128 (`last.keras`) trades just **−0.0017** clean val F1 (**0.7702**) for the strongest distribution-preserving val audio grounding measured yet: **−0.0848** `shuffle` F1 drop (**3.7×** log-mel, beating MERT-LSTM's **−0.0782**), **−0.1226** `skill_event_f1` drop, and **`1 − IoU = 0.407`**.
+- **`shuffle` is the true architecture-agnostic grounding probe (not `zeros`):** On ITGPT-MERT `last.keras`, `zeros` drops F1 only **−0.0412** (**0.7290**) while `shuffle` drops F1 **−0.0848** (**0.6854**). Because `ItgptRmsNorm` + residual connections + `diff_tok`/`bpm_tok`/`level6_pos` gracefully degrade to a difficulty/BPM/position template on zeroed inputs (rather than shifting biases off-manifold like MERT-LSTM's `0.1296` collapse), `zeros` measures out-of-distribution sensitivity whereas `shuffle` cleanly isolates in-distribution audio steering.
+- **48 training songs are now completely saturated:** `last.keras` reaches **0.9928** train F1 (`41,055` TP / `227` FP / `371` FN; `loss = 0.0027`, `val_loss = 0.2884`) with **−0.2649** train `shuffle` drop and **32.0%** train→val audio transfer (virtually identical to MERT-LSTM's **33.6%**). Both MERT architectures now extract ~1/3 of their learned audio lift on unseen val songs from just 48 training charts; **~68%** of the remaining gap is small-N training memorization.
+- **Harness hardening:** Switching ITGPT `model.fit` from a raw Python generator to `tf.data.Dataset.from_generator` with an explicit `output_signature` (`shape=(1, None, ...)`) permanently eliminates Keras 3 `GeneratorDataAdapter` shape-locking crashes when two initial charts share the same 64-beat padded bucket.
+
+**Implication.** On fixed `48t/48v`, beat-aligned **ITGPT-MERT** is the clear active champion and has hit the 48-song data saturation ceiling (**0.9928** train F1). The highest-leverage next step is unlocking the next ladder rung (`training_index_200t_50v.json` / `300t_50v`, where `*.mert.npy` is already cached on disk — awaiting user approval to scale the ladder), or optionally running one light fixed-`48t/48v` `AdamW(wd=0.01)` (`dropout=0.1`, no audio noise) ablation first.
+
+**Related.** [EXP-20261123-01](EXPERIMENT_LOG.md#exp-20261123-01-beat-aligned-itgpt-mert-beats-mert-lstm-on-both-val-f1-0772-and-shuffle-grounding-0085) · [EXP-20261119-06](EXPERIMENT_LOG.md#exp-20261119-06-heavy-regularization-hurts-both-mert-val-f1-and-audio-grounding-by-pushing-back-onto-meter-bpm) · [EXP-20261119-04](EXPERIMENT_LOG.md#exp-20261119-04-beat-aligned-mert-lifts-ladder-48-slot-f1-to-0765-and-triples-val-audio-grounding-at-9x-speed) · [NOTE-20261119-06](#note-20261119-06-heavy-mert-regularization-pushes-the-head-back-onto-meter-bpm--keep-light-regularization-and-move-to-an-attentiontransformer-head)
+
 ## Session 2026-11-19 — Beat-slot audio-grounding audit
 
 ### NOTE-20261119-06: Heavy MERT regularization pushes the head back onto `[meter, bpm]` — keep light regularization and move to an attention/Transformer head
