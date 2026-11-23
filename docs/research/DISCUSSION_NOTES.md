@@ -6,6 +6,24 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-19 — Beat-slot audio-grounding audit
 
+### NOTE-20261119-06: Heavy MERT regularization pushes the head back onto `[meter, bpm]` — keep light regularization and move to an attention/Transformer head
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-19 23:25:11 |
+| **Topic** | Why `AdamW(0.01) + dropout(0.4) + noise(0.05)` hurt both val F1 and audio grounding on MERT 48-slot placement |
+
+**Context.** `EXP-20261119-05` showed MERT `last.keras` overfit train (`0.9622`) vs val (`0.7647`, `val_loss` `0.0138 → 0.0300`). We tested stronger regularization (`AdamW wd=0.01`, `dropout=0.4`, `mert_noise_std=0.05`) plus periodic `val_slot_f1` checkpointing (`eval_slot_f1_every=4`).
+
+**Discovery.**
+
+- **Regularization asymmetry against the audio branch:** Compared to unregularized MERT (`EXP-20261119-04`), `best_slot_f1.keras` (ep 96) scored *lower* with real audio (**0.7612** vs **0.7647**; `max-F1` **0.7612** vs **0.7712**) while scoring *higher* with shuffled audio (**0.7079** vs **0.6866**) and zeroed audio (**0.5232** vs **0.1296**). Heavy noise/dropout selectively degrades the 1024-dim MERT pathway while leaving the 2-dim `[meter, bpm]` pathway clean, shifting predictions back toward the metadata template (`shuffle` drop fell **−0.0782 → −0.0533**).
+- **`ValSlot48CheckpointCallback` works as designed:** Live val `M-slot48` rose steadily from ep 4 (**0.722**) to peak at ep 96 (**0.7612**), beating both early `val_loss` (`best.keras` **0.7580**) and late overfit (`last.keras` **0.7557**). Use `eval_slot_f1_every=16` (instead of `4`) to keep eval overhead low (~10 min vs ~45 min).
+
+**Implication.** Do not stack stronger noise/dropout/weight-decay on the MERT+LSTM head — it starves audio reliance in favor of `[meter, bpm]`. Keep `Adam(1e-4)` + `dropout=0.2` + `noise=0.0` as the base recipe, and test replacing the LSTM beat-context head with a beat-aligned **MERT hierarchical Transformer (ITGPT-style)** head on fixed ladder `48t/48v` (ITGPT beat DDCL by **+0.030** on Dataset A in `EXP-20260819-03`).
+
+**Related.** [EXP-20261119-06](EXPERIMENT_LOG.md#exp-20261119-06-heavy-regularization-hurts-both-mert-val-f1-and-audio-grounding-by-pushing-back-onto-meter-bpm) · [EXP-20261119-04](EXPERIMENT_LOG.md#exp-20261119-04-beat-aligned-mert-lifts-ladder-48-slot-f1-to-0765-and-triples-val-audio-grounding-at-9x-speed) · [EXP-20260819-03](EXPERIMENT_LOG.md#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a)
+
 ### NOTE-20261119-05: MERT triples audio transfer (**33.6%** vs **11.6%**), leaving a clear ep-20→128 overfitting gap to close with regularization + `val_slot_f1` checkpointing
 
 | Field | Value |
