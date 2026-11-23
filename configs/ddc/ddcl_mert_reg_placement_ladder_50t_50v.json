@@ -1,0 +1,40 @@
+{
+  "dataset": {
+    "training_index_path": "data/final_data/training_index_ladder_v1_50t_50v.json",
+    "data_root": "data/final_data",
+    "batch_size": 8,
+    "memlen": 15,
+    "max_train_songs": -1,
+    "max_val_songs": -1,
+    "cache_features": true,
+    "audio_feature_type": "mert",
+    "n_frames_per_beat": 16,
+    "exclude_normalized_ids": [
+      "hold_release_rakshasa_and_carcasses",
+      "news_39",
+      "viva_happy"
+    ]
+  },
+  "model": {
+    "lstm_units": 200,
+    "dropout_rate": 0.4,
+    "dense_sizes": [512, 256],
+    "mert_proj_dim": 128,
+    "mert_conv_filters": 64,
+    "mert_noise_std": 0.05
+  },
+  "run": {
+    "epoch": 128,
+    "steps_per_epoch": 200,
+    "validation_steps": 20,
+    "learning_rate": 0.0001,
+    "clipnorm": 1.0,
+    "weight_decay": 0.01,
+    "eval_slot_f1_every": 4,
+    "seed": 42,
+    "model_output_dir": "models_wsl/ddc/ddcl_mert_reg_placement_ladder_50t_50v",
+    "callback_root_dir": "callbacks/ddc/ddcl_placement",
+    "model_name": "ddcl_mert_reg_placement_ladder_50t_50v",
+    "resume": false
+  }
+}

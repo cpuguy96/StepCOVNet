@@ -499,7 +499,11 @@ class MaskTimingConditionReport:
     mean_abs_beat_rank_drift: float
 
     def as_dict(self) -> dict[str, float | int | str]:
-        """Serialize condition metrics for JSON."""
+        """Serialize condition metrics for JSON.
+
+        Returns:
+            JSON-serializable mapping.
+        """
         return dataclasses.asdict(self)
 
 
@@ -530,7 +534,11 @@ class ThresholdTimingRow:
     mean_abs_beat_rank_drift: float
 
     def as_dict(self) -> dict[str, float | int]:
-        """Serialize threshold row for JSON."""
+        """Serialize threshold row for JSON.
+
+        Returns:
+            JSON-serializable mapping.
+        """
         return dataclasses.asdict(self)
 
 
@@ -555,7 +563,11 @@ class DecodedTimingDiagnosticReport:
     threshold_sweep: tuple[ThresholdTimingRow, ...]
 
     def as_dict(self) -> dict[str, object]:
-        """Serialize full diagnostic report for JSON."""
+        """Serialize full diagnostic report for JSON.
+
+        Returns:
+            JSON-serializable mapping.
+        """
         return {
             "metric": "timing_match_diagnostic",
             "threshold": self.threshold,
@@ -969,7 +981,11 @@ class AudioGroundingConditionReport:
     occupied_jaccard_distance: float
 
     def as_dict(self) -> dict[str, float | int | str]:
-        """Serialize grounding condition metrics for JSON."""
+        """Serialize grounding condition metrics for JSON.
+
+        Returns:
+            JSON-serializable mapping.
+        """
         return dataclasses.asdict(self)
 
 
@@ -1000,7 +1016,11 @@ class AudioGroundingReport:
     event_skill_drop_zeros: float
 
     def as_dict(self) -> dict[str, object]:
-        """Serialize full audio-grounding report for JSON."""
+        """Serialize full audio-grounding report for JSON.
+
+        Returns:
+            JSON-serializable mapping.
+        """
         return {
             "metric": "audio_grounding_ablation",
             "threshold": self.threshold,

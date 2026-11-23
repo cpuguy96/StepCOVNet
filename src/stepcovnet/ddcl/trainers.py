@@ -31,23 +31,31 @@ def compile_placement_model(
     model: keras.Model,
     run_config: config.DdclRunConfig,
 ) -> keras.Model:
-    """Compile with DDCL Adam + binary focal loss.
+    """Compile with DDCL Adam/AdamW + binary focal loss.
 
     Matches ``get_onset_model`` in
     https://github.com/miguelomalley/DDCL/blob/5b1375c642bb708b3c66baf5d880fbf865b85097/models.py
-    (Adam ``1e-4``, ``clipnorm=1``, ``BinaryFocalCrossentropy``).
+    (Adam ``1e-4``, ``clipnorm=1``, ``BinaryFocalCrossentropy``), switching to
+    ``AdamW`` when ``run_config.weight_decay > 0``.
 
     Args:
-        model: Uncompiled ConvLSTM.
+        model: Uncompiled placement model.
         run_config: Optimizer settings.
 
     Returns:
         The same model, compiled in place.
     """
-    optimizer = keras.optimizers.Adam(
-        learning_rate=run_config.learning_rate,
-        clipnorm=run_config.clipnorm,
-    )
+    if run_config.weight_decay > 0.0:
+        optimizer: keras.optimizers.Optimizer = keras.optimizers.AdamW(
+            learning_rate=run_config.learning_rate,
+            weight_decay=run_config.weight_decay,
+            clipnorm=run_config.clipnorm,
+        )
+    else:
+        optimizer = keras.optimizers.Adam(
+            learning_rate=run_config.learning_rate,
+            clipnorm=run_config.clipnorm,
+        )
     model.compile(
         optimizer=optimizer,
         loss=keras.losses.BinaryFocalCrossentropy(from_logits=False),
@@ -99,13 +107,89 @@ def tensorboard_run_log_dir(callback_root_dir: str, model_name: str) -> pathlib.
 
 
 BEST_CHECKPOINT_FILENAME = "best.keras"
+BEST_SLOT_F1_CHECKPOINT_FILENAME = "best_slot_f1.keras"
 LAST_CHECKPOINT_FILENAME = "last.keras"
 TRAIN_STATE_FILENAME = "train_state.json"
 BACKUP_DIRNAME = "backup"
 LAST_EVAL_FILENAME = "eval_val_slot48.json"
 BEST_EVAL_FILENAME = "eval_val_slot48_best.json"
+BEST_SLOT_F1_EVAL_FILENAME = "eval_val_slot48_best_f1.json"
 LAST_TIMING_FILENAME = "eval_val_timing_match.json"
 BEST_TIMING_FILENAME = "eval_val_timing_match_best.json"
+BEST_SLOT_F1_TIMING_FILENAME = "eval_val_timing_match_best_f1.json"
+
+
+class ValSlot48CheckpointCallback(keras.callbacks.Callback):
+    """Evaluate full-val ``M-slot48`` periodically, log scalars, and save best.
+
+    Must appear before ``TensorBoard`` in the callback list so ``val_slot_f1_at_05``
+    and ``val_slot_f1_max`` are written to TensorBoard event files.
+
+    Args:
+        val_charts: Full validation chart split.
+        filepath: Destination ``.keras`` checkpoint path.
+        eval_every: Epoch interval for full-val evaluation.
+        total_epochs: Configured epoch budget (always evaluates final epoch).
+        seed: RNG seed for beat-shuffle null.
+    """
+
+    def __init__(
+        self,
+        val_charts: list[datasets.DdclChart],
+        filepath: pathlib.Path,
+        *,
+        eval_every: int,
+        total_epochs: int,
+        seed: int = 42,
+    ) -> None:
+        super().__init__()
+        self.val_charts = val_charts
+        self.filepath = filepath
+        self.eval_every = int(eval_every)
+        self.total_epochs = int(total_epochs)
+        self.seed = int(seed)
+        self.best_f1: float | None = None
+        self.best_epoch: int | None = None
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        """Score full val split on schedule and checkpoint best ``f1_at_05``.
+
+        Args:
+            epoch: Zero-based completed epoch index.
+            logs: Mutable Keras metric dictionary for TensorBoard.
+        """
+        step_epoch = int(epoch) + 1
+        if (
+            self.eval_every < 1
+            or (step_epoch % self.eval_every != 0 and step_epoch != self.total_epochs)
+        ):
+            return
+        report = evaluation.evaluate_slot48(
+            cast(evaluation.SlotPredictor, self.model),
+            self.val_charts,
+            seed=self.seed,
+        )
+        if logs is not None:
+            logs["val_slot_f1_at_05"] = float(report.f1_at_05)
+            logs["val_slot_f1_max"] = float(report.f1_max)
+        if self.best_f1 is None or report.f1_at_05 > self.best_f1:
+            prev = "None" if self.best_f1 is None else f"{self.best_f1:.5f}"
+            self.best_f1 = float(report.f1_at_05)
+            self.best_epoch = step_epoch
+            self.model.save(self.filepath)
+            print(
+                f"\nEpoch {step_epoch}: val_slot_f1_at_05 improved from {prev} to "
+                f"{report.f1_at_05:.5f} (f1_max={report.f1_max:.5f} @ "
+                f"{report.best_threshold:.2f}), saving model to {self.filepath}",
+                flush=True,
+            )
+        else:
+            print(
+                f"\nEpoch {step_epoch}: val_slot_f1_at_05={report.f1_at_05:.5f} "
+                f"(f1_max={report.f1_max:.5f}; best={self.best_f1:.5f} @ "
+                f"ep {self.best_epoch})",
+                flush=True,
+            )
 
 
 class TrainStateCallback(keras.callbacks.Callback):
@@ -255,6 +339,7 @@ def train_placement(
             feature_dim=feature_dim,
             proj_dim=experiment.model.mert_proj_dim,
             conv_filters=experiment.model.mert_conv_filters,
+            noise_std=experiment.model.mert_noise_std,
             lstm_units=experiment.model.lstm_units,
             dropout_rate=experiment.model.dropout_rate,
             dense_sizes=tuple(experiment.model.dense_sizes),
@@ -276,6 +361,7 @@ def train_placement(
     if not experiment.run.resume and backup_dir.exists():
         shutil.rmtree(backup_dir)
     best_path = output_dir / BEST_CHECKPOINT_FILENAME
+    best_slot_f1_path = output_dir / BEST_SLOT_F1_CHECKPOINT_FILENAME
     last_path = output_dir / LAST_CHECKPOINT_FILENAME
     state_path = output_dir / TRAIN_STATE_FILENAME
     state = load_train_state(state_path) if experiment.run.resume else None
@@ -313,6 +399,16 @@ def train_placement(
         ),
         TrainStateCallback(state_path, total_epochs=experiment.run.epoch),
     ]
+    if experiment.run.eval_slot_f1_every > 0:
+        callbacks.append(
+            ValSlot48CheckpointCallback(
+                val_charts,
+                best_slot_f1_path,
+                eval_every=experiment.run.eval_slot_f1_every,
+                total_epochs=experiment.run.epoch,
+                seed=experiment.run.seed,
+            )
+        )
     if experiment.run.callback_root_dir:
         log_dir = tensorboard_run_log_dir(
             experiment.run.callback_root_dir,
@@ -391,4 +487,27 @@ def train_placement(
                 weights="best",
             )
         print(f"saved {best_path}")
+    if best_slot_f1_path.is_file():
+        best_f1_model = keras.models.load_model(best_slot_f1_path)
+        best_f1_report = evaluation.evaluate_slot48(
+            cast(evaluation.SlotPredictor, best_f1_model),
+            val_charts,
+            seed=experiment.run.seed,
+        )
+        _write_eval_report(
+            best_f1_report,
+            output_dir / BEST_SLOT_F1_EVAL_FILENAME,
+            weights="best_slot_f1",
+        )
+        if _charts_have_timing(val_charts):
+            best_f1_timing = evaluation.evaluate_decoded_timing(
+                cast(evaluation.SlotPredictor, best_f1_model),
+                val_charts,
+            )
+            _write_timing_report(
+                best_f1_timing,
+                output_dir / BEST_SLOT_F1_TIMING_FILENAME,
+                weights="best_slot_f1",
+            )
+        print(f"saved {best_slot_f1_path}")
     return model

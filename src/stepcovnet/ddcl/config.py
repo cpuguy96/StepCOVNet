@@ -111,6 +111,8 @@ class DdclModelConfig(_DictSerializableMixin):
         dense_sizes: Fully-connected hidden widths.
         mert_proj_dim: Per-frame projection width for MERT beat encoder.
         mert_conv_filters: Sub-beat 1D conv width for MERT beat encoder.
+        mert_noise_std: Optional Gaussian noise stddev after MERT LayerNorm
+            during training (0.0 disables).
     """
 
     lstm_units: int = constants.LSTM_UNITS
@@ -120,12 +122,13 @@ class DdclModelConfig(_DictSerializableMixin):
     )
     mert_proj_dim: int = constants.MERT_PROJ_DIM
     mert_conv_filters: int = constants.MERT_CONV_FILTERS
+    mert_noise_std: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.
 
         Raises:
-            ValueError: If widths or dropout are out of range.
+            ValueError: If widths, dropout, or noise stddev are out of range.
         """
         if self.lstm_units < 1:
             raise ValueError(f"lstm_units must be at least 1, got {self.lstm_units}")
@@ -141,6 +144,10 @@ class DdclModelConfig(_DictSerializableMixin):
             raise ValueError(
                 f"mert_conv_filters must be at least 1, got {self.mert_conv_filters}"
             )
+        if self.mert_noise_std < 0.0:
+            raise ValueError(
+                f"mert_noise_std must be >= 0, got {self.mert_noise_std}"
+            )
 
 
 @dataclasses.dataclass
@@ -151,8 +158,11 @@ class DdclRunConfig(_DictSerializableMixin):
         epoch: Number of training epochs (DDCL default 100–300).
         steps_per_epoch: Train batches per epoch.
         validation_steps: Val batches per epoch.
-        learning_rate: Adam learning rate (DDCL: 1e-4).
+        learning_rate: Adam / AdamW learning rate (DDCL: 1e-4).
         clipnorm: Global gradient clip (DDCL: 1.0).
+        weight_decay: Decoupled AdamW weight decay (0.0 keeps plain Adam).
+        eval_slot_f1_every: Evaluate full-val ``M-slot48`` every N epochs to log
+            ``val_slot_f1_at_05`` and save ``best_slot_f1.keras`` (0 disables).
         seed: Reproducibility seed.
         model_output_dir: Directory for the saved ``.keras`` file.
         callback_root_dir: TensorBoard / checkpoint root.
@@ -166,6 +176,8 @@ class DdclRunConfig(_DictSerializableMixin):
     validation_steps: int = 20
     learning_rate: float = constants.ADAM_LR
     clipnorm: float = constants.ADAM_CLIPNORM
+    weight_decay: float = 0.0
+    eval_slot_f1_every: int = 0
     seed: int = 42
     model_output_dir: str = "models_wsl/ddc/ddcl_placement_fraxtil"
     callback_root_dir: str = "callbacks/ddc/ddcl_placement"
@@ -176,13 +188,22 @@ class DdclRunConfig(_DictSerializableMixin):
         """Validate run hyperparameters.
 
         Raises:
-            ValueError: If ``epoch`` is not positive.
+            ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``, or
+                ``eval_slot_f1_every`` is invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
         if self.learning_rate <= 0.0:
             raise ValueError(
                 f"learning_rate must be positive, got {self.learning_rate}"
+            )
+        if self.weight_decay < 0.0:
+            raise ValueError(
+                f"weight_decay must be >= 0, got {self.weight_decay}"
+            )
+        if self.eval_slot_f1_every < 0:
+            raise ValueError(
+                f"eval_slot_f1_every must be >= 0, got {self.eval_slot_f1_every}"
             )
 
 

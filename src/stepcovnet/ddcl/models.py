@@ -158,6 +158,7 @@ def build_mert_placement_model(
     feature_dim: int = constants.MERT_FEATURE_DIM,
     proj_dim: int = constants.MERT_PROJ_DIM,
     conv_filters: int = constants.MERT_CONV_FILTERS,
+    noise_std: float = 0.0,
     lstm_units: int = constants.LSTM_UNITS,
     dropout_rate: float = constants.DROPOUT_RATE,
     dense_sizes: tuple[int, ...] = constants.DENSE_SIZES,
@@ -166,11 +167,11 @@ def build_mert_placement_model(
     """Build a beat-aligned MERT placement model matching DDCL's downstream head.
 
     Replaces the scratch 2D log-mel ConvLSTM frontend with a shared per-beat
-    sub-beat encoder (``LayerNormalization -> Dense -> Dropout -> Conv1D ->
-    AveragePooling1D -> Flatten``) applied across ``memlen+1`` beats. Forward
-    and backward audio LSTMs align with ``stream_fwd`` / ``stream_bwd``
-    (``[meter, bpm]``) before the same second LSTM, dense stack, and 48-way
-    sigmoid output.
+    sub-beat encoder (``LayerNormalization -> [GaussianNoise] -> Dense ->
+    Dropout -> Conv2D(1, 3) -> AveragePooling2D(1, 2) -> Reshape``) applied
+    across ``memlen+1`` beats. Forward and backward audio LSTMs align with
+    ``stream_fwd`` / ``stream_bwd`` (``[meter, bpm]``) before the same second
+    LSTM, dense stack, and 48-way sigmoid output.
 
     Args:
         memlen: Context beats besides the current one (paper: 15).
@@ -178,6 +179,7 @@ def build_mert_placement_model(
         feature_dim: MERT embedding width (default: 1024).
         proj_dim: Per-frame linear projection width (default: 128).
         conv_filters: Sub-beat 1D conv filters (default: 64).
+        noise_std: Optional Gaussian noise stddev after LayerNorm during train.
         lstm_units: Hidden width per LSTM layer (paper: 200).
         dropout_rate: Dropout rate on projection, LSTM, and dense layers.
         dense_sizes: Fully-connected hidden widths (paper: 512, 256).
@@ -199,6 +201,8 @@ def build_mert_placement_model(
         raise ValueError(f"proj_dim must be at least 1, got {proj_dim}")
     if conv_filters < 1:
         raise ValueError(f"conv_filters must be at least 1, got {conv_filters}")
+    if noise_std < 0.0:
+        raise ValueError(f"noise_std must be >= 0, got {noise_std}")
     if lstm_units < 1:
         raise ValueError(f"lstm_units must be at least 1, got {lstm_units}")
 
@@ -221,6 +225,11 @@ def build_mert_placement_model(
     )
 
     mert_ln = keras.layers.LayerNormalization(axis=-1, name="mert_ln")
+    mert_noise = (
+        keras.layers.GaussianNoise(noise_std, name="mert_noise")
+        if noise_std > 0.0
+        else None
+    )
     mert_proj = keras.layers.Dense(proj_dim, activation="gelu", name="mert_proj")
     mert_drop = keras.layers.Dropout(dropout_rate, name="mert_proj_dropout")
     mert_conv = keras.layers.Conv2D(
@@ -238,6 +247,8 @@ def build_mert_placement_model(
 
     def _encode_mert(audio: object, *, name: str) -> object:
         x = mert_ln(audio)
+        if mert_noise is not None:
+            x = mert_noise(x)
         x = mert_proj(x)
         x = mert_drop(x)
         x = mert_conv(x)

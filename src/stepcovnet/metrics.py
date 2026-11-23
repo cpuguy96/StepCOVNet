@@ -509,11 +509,10 @@ def compute_chart_validity_violations(
                         examples.append((i, c, "unmatched_3"))
                 else:
                     run -= 1
-            elif d == 1:
-                if run_prev >= 1:
-                    violations += 1
-                    if len(examples) < max_examples:
-                        examples.append((i, c, "tap_during_hold"))
+            elif d == 1 and run_prev >= 1:
+                violations += 1
+                if len(examples) < max_examples:
+                    examples.append((i, c, "tap_during_hold"))
         if run > 0:
             violations += 1
             if len(examples) < max_examples:

@@ -189,6 +189,88 @@ class DdclTrainersTest(unittest.TestCase):
             self.assertTrue(saved.is_file())
             self.assertFalse(backup.is_dir())
 
+    def test_mert_adamw_and_val_slot_f1_checkpoint(self):
+        memlen = 2
+        n_frames = 8
+        feature_dim = 16
+        n_beats = 6
+        slots = np.zeros((n_beats, constants.N_SLOTS), dtype=np.float32)
+        slots[0, 0] = 1.0
+        slots[3, 24] = 1.0
+        chart = datasets.DdclChart(
+            song_key="bundle/song",
+            difficulty="easy",
+            meter=5,
+            beat_audio=np.ones((n_beats, n_frames, feature_dim), dtype=np.float32),
+            stream=np.zeros((n_beats, constants.STREAM_DIM), dtype=np.float32),
+            slots=slots,
+            memlen=memlen,
+        )
+        report = mock.Mock()
+        report.f1_at_05 = 0.75
+        report.f1_max = 0.78
+        report.best_threshold = 0.45
+        report.as_dict.return_value = {"f1_at_05": 0.75, "f1_max": 0.78}
+        seen_logs: list[dict] = []
+
+        class CaptureLogs(keras.callbacks.Callback):
+            def on_epoch_end(self, epoch, logs=None):
+                del epoch
+                seen_logs.append(dict(logs or {}))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.DdclExperimentConfig(
+                dataset=config.DdclDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    batch_size=2,
+                    memlen=memlen,
+                    audio_feature_type=constants.AUDIO_FEATURE_MERT,
+                    n_frames_per_beat=n_frames,
+                ),
+                model=config.DdclModelConfig(
+                    lstm_units=8,
+                    dropout_rate=0.4,
+                    dense_sizes=[16, 8],
+                    mert_proj_dim=12,
+                    mert_conv_filters=8,
+                    mert_noise_std=0.05,
+                ),
+                run=config.DdclRunConfig(
+                    epoch=1,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    weight_decay=0.01,
+                    eval_slot_f1_every=1,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir=str(pathlib.Path(tmpdir) / "callbacks"),
+                    model_name="mert_reg_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.ddcl.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.ddcl.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+            ):
+                model = trainers.train_placement(
+                    experiment,
+                    extra_callbacks=[CaptureLogs()],
+                )
+            self.assertIsInstance(model.optimizer, keras.optimizers.AdamW)
+            best_f1_ckpt = pathlib.Path(tmpdir) / "models" / "best_slot_f1.keras"
+            best_f1_eval = (
+                pathlib.Path(tmpdir) / "models" / "eval_val_slot48_best_f1.json"
+            )
+            self.assertTrue(best_f1_ckpt.is_file())
+            self.assertTrue(best_f1_eval.is_file())
+            self.assertAlmostEqual(seen_logs[-1]["val_slot_f1_at_05"], 0.75)
+            self.assertAlmostEqual(seen_logs[-1]["val_slot_f1_max"], 0.78)
+
 
 if __name__ == "__main__":
     unittest.main()
