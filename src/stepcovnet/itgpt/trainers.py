@@ -13,6 +13,8 @@ import numpy as np
 import tensorflow as tf
 from keras import ops
 
+from stepcovnet.ddcl import constants as ddcl_constants
+from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import evaluation as ddcl_eval
 from stepcovnet.itgpt import config, datasets, evaluation, models
 
@@ -73,11 +75,12 @@ def compile_placement_model(
     model: keras.Model,
     run_config: config.ItgptRunConfig,
 ) -> keras.Model:
-    """Compile with ITGPT AdamW + slot-weighted binary cross-entropy.
+    """Compile with Adam/AdamW + slot-weighted binary cross-entropy.
 
     Upstream uses ``BCEWithLogitsLoss`` times grid weights. The Keras port
     emits probabilities; grid weights live in the loss and the beat mask is
-    ``sample_weight``.
+    ``sample_weight``. Uses ``AdamW`` when ``weight_decay > 0`` and ``Adam``
+    when ``weight_decay == 0``.
 
     Args:
         model: Uncompiled placement model.
@@ -86,11 +89,17 @@ def compile_placement_model(
     Returns:
         The same model, compiled in place.
     """
-    optimizer = keras.optimizers.AdamW(
-        learning_rate=run_config.learning_rate,
-        weight_decay=run_config.weight_decay,
-        clipnorm=run_config.clipnorm,
-    )
+    if run_config.weight_decay > 0.0:
+        optimizer: keras.optimizers.Optimizer = keras.optimizers.AdamW(
+            learning_rate=run_config.learning_rate,
+            weight_decay=run_config.weight_decay,
+            clipnorm=run_config.clipnorm,
+        )
+    else:
+        optimizer = keras.optimizers.Adam(
+            learning_rate=run_config.learning_rate,
+            clipnorm=run_config.clipnorm,
+        )
     model.compile(
         optimizer=optimizer,
         loss=placement_binary_crossentropy,
@@ -117,10 +126,88 @@ def tensorboard_run_log_dir(callback_root_dir: str, model_name: str) -> pathlib.
 
 
 BEST_CHECKPOINT_FILENAME = "best.keras"
+BEST_SLOT_F1_CHECKPOINT_FILENAME = "best_slot_f1.keras"
 LAST_CHECKPOINT_FILENAME = "last.keras"
 BACKUP_DIRNAME = "backup"
 LAST_EVAL_FILENAME = "eval_val_slot48.json"
 BEST_EVAL_FILENAME = "eval_val_slot48_best.json"
+BEST_SLOT_F1_EVAL_FILENAME = "eval_val_slot48_best_f1.json"
+
+
+class ItgptValSlot48CheckpointCallback(keras.callbacks.Callback):
+    """Evaluate full-val ``M-slot48`` periodically and save best-F1 weights.
+
+    Place before :class:`keras.callbacks.TensorBoard` so
+    ``val_slot_f1_at_05`` and ``val_slot_f1_max`` are recorded in event logs.
+
+    Args:
+        val_charts: Loaded validation charts scored on schedule.
+        filepath: Destination ``.keras`` checkpoint for best ``f1_at_05``.
+        eval_every: Epoch cadence (positive integer).
+        total_epochs: Total epochs in ``fit`` so the final epoch is scored.
+        max_beats: Pad cap passed to ``evaluation.evaluate_slot48``.
+        seed: RNG seed passed to ``evaluation.evaluate_slot48``.
+    """
+
+    def __init__(
+        self,
+        val_charts: list[ddcl_datasets.DdclChart],
+        filepath: pathlib.Path,
+        *,
+        eval_every: int,
+        total_epochs: int,
+        max_beats: int,
+        seed: int = 42,
+    ) -> None:
+        super().__init__()
+        self.val_charts = val_charts
+        self.filepath = pathlib.Path(filepath)
+        self.eval_every = int(eval_every)
+        self.total_epochs = int(total_epochs)
+        self.max_beats = int(max_beats)
+        self.seed = int(seed)
+        self.best_f1: float | None = None
+        self.best_epoch: int | None = None
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        """Score full val split on schedule and checkpoint best ``f1_at_05``.
+
+        Args:
+            epoch: Zero-based completed epoch index.
+            logs: Mutable Keras metric dictionary for TensorBoard.
+        """
+        step_epoch = int(epoch) + 1
+        if self.eval_every < 1 or (
+            step_epoch % self.eval_every != 0 and step_epoch != self.total_epochs
+        ):
+            return
+        report = evaluation.evaluate_slot48(
+            cast(ddcl_eval.SlotPredictor, self.model),
+            self.val_charts,
+            seed=self.seed,
+            max_beats=self.max_beats,
+        )
+        if logs is not None:
+            logs["val_slot_f1_at_05"] = float(report.f1_at_05)
+            logs["val_slot_f1_max"] = float(report.f1_max)
+        if self.best_f1 is None or report.f1_at_05 > self.best_f1:
+            prev = "None" if self.best_f1 is None else f"{self.best_f1:.5f}"
+            self.best_f1 = float(report.f1_at_05)
+            self.best_epoch = step_epoch
+            self.model.save(self.filepath)
+            print(
+                f"\nEpoch {step_epoch}: val_slot_f1_at_05 improved from {prev} to "
+                f"{report.f1_at_05:.5f} (f1_max={report.f1_max:.5f} @ "
+                f"{report.best_threshold:.2f}), saving model to {self.filepath}",
+                flush=True,
+            )
+        else:
+            print(
+                f"\nEpoch {step_epoch}: val_slot_f1_at_05={report.f1_at_05:.5f} "
+                f"(f1_max={report.f1_max:.5f}; best={self.best_f1:.5f} @ "
+                f"ep {self.best_epoch})",
+                flush=True,
+            )
 
 
 def _write_eval_report(
@@ -175,7 +262,12 @@ def train_placement(
         raise ValueError("train split is empty")
     if not val_charts:
         raise ValueError("val split is empty")
-    model = build_and_compile(experiment)
+    feature_dim = (
+        int(train_charts[0].beat_audio.shape[-1])
+        if experiment.dataset.audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT
+        else ddcl_constants.MERT_FEATURE_DIM
+    )
+    model = build_and_compile(experiment, feature_dim=feature_dim)
     dummy_inputs, _, _ = datasets.pack_chart(
         train_charts[0], max_beats=experiment.dataset.max_beats
     )
@@ -186,6 +278,7 @@ def train_placement(
     if not experiment.run.resume and backup_dir.exists():
         shutil.rmtree(backup_dir)
     best_path = output_dir / BEST_CHECKPOINT_FILENAME
+    best_slot_f1_path = output_dir / BEST_SLOT_F1_CHECKPOINT_FILENAME
     last_path = output_dir / LAST_CHECKPOINT_FILENAME
     callbacks: list[keras.callbacks.Callback] = [
         keras.callbacks.BackupAndRestore(
@@ -207,6 +300,17 @@ def train_placement(
             verbose=1,
         ),
     ]
+    if experiment.run.eval_slot_f1_every > 0:
+        callbacks.append(
+            ItgptValSlot48CheckpointCallback(
+                val_charts,
+                best_slot_f1_path,
+                eval_every=experiment.run.eval_slot_f1_every,
+                total_epochs=experiment.run.epoch,
+                max_beats=experiment.dataset.max_beats,
+                seed=experiment.run.seed,
+            )
+        )
     if experiment.run.callback_root_dir:
         log_dir = tensorboard_run_log_dir(
             experiment.run.callback_root_dir,
@@ -223,14 +327,14 @@ def train_placement(
     if extra_callbacks:
         callbacks.extend(extra_callbacks)
     model.fit(
-        datasets.batch_generator(
+        datasets.tf_dataset(
             train_charts,
             max_beats=experiment.dataset.max_beats,
             seed=experiment.run.seed,
         ),
         epochs=experiment.run.epoch,
         steps_per_epoch=max(1, experiment.run.steps_per_epoch),
-        validation_data=datasets.batch_generator(
+        validation_data=datasets.tf_dataset(
             val_charts,
             max_beats=experiment.dataset.max_beats,
             seed=experiment.run.seed + 1,
@@ -260,14 +364,33 @@ def train_placement(
         )
         _write_eval_report(best_report, output_dir / BEST_EVAL_FILENAME, weights="best")
         print(f"saved {best_path}")
+    if best_slot_f1_path.is_file():
+        best_f1_model = load_placement_model(best_slot_f1_path)
+        best_f1_report = evaluation.evaluate_slot48(
+            cast(ddcl_eval.SlotPredictor, best_f1_model),
+            val_charts,
+            seed=experiment.run.seed,
+            max_beats=experiment.dataset.max_beats,
+        )
+        _write_eval_report(
+            best_f1_report,
+            output_dir / BEST_SLOT_F1_EVAL_FILENAME,
+            weights="best_slot_f1",
+        )
+        print(f"saved {best_slot_f1_path}")
     return model
 
 
-def build_and_compile(experiment: config.ItgptExperimentConfig) -> keras.Model:
+def build_and_compile(
+    experiment: config.ItgptExperimentConfig,
+    *,
+    feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
+) -> keras.Model:
     """Build and compile the placement model.
 
     Args:
         experiment: Experiment config.
+        feature_dim: Per-frame feature width when ``audio_feature_type == "mert"``.
 
     Returns:
         Compiled Keras model.
@@ -279,6 +402,9 @@ def build_and_compile(experiment: config.ItgptExperimentConfig) -> keras.Model:
         cnn_hidden=experiment.model.cnn_hidden,
         dropout_rate=experiment.model.dropout_rate,
         max_beats=experiment.dataset.max_beats,
+        audio_feature_type=experiment.dataset.audio_feature_type,
+        n_frames_per_beat=experiment.dataset.n_frames_per_beat,
+        feature_dim=feature_dim,
         model_name=experiment.run.model_name,
     )
     return compile_placement_model(model, experiment.run)

@@ -4,30 +4,35 @@ from __future__ import annotations
 
 import numpy as np
 
+from stepcovnet import onset_null_baseline, timing_match
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import evaluation as ddcl_eval
 from stepcovnet.itgpt import constants, datasets
 
 
 def predict_chart_slots(
-    model: ddcl_eval.SlotPredictor, chart: ddcl_datasets.DdclChart
+    model: ddcl_eval.SlotPredictor,
+    chart: ddcl_datasets.DdclChart,
+    *,
+    max_beats: int | None = None,
 ) -> np.ndarray:
     """Return slot probabilities for one chart (true beats only).
 
     Args:
         model: Keras ITGPT placement model.
         chart: Loaded beat-grid chart.
+        max_beats: Optional pad cap used at train time. Defaults to the
+            chart's chunk-aligned length.
 
     Returns:
         Probabilities ``(n_beats, 48)``.
     """
-    max_beats = max(
-        datasets.pad_length(chart.n_beats, chart.n_beats), constants.CHUNK_ALIGN
+    cap = (
+        max(datasets.pad_length(chart.n_beats, chart.n_beats), constants.CHUNK_ALIGN)
+        if max_beats is None
+        else max(int(max_beats), constants.CHUNK_ALIGN)
     )
-    # Use a cap large enough for this chart; trainers pass the config cap.
-    inputs, _, mask = datasets.pack_chart(
-        chart, max_beats=max(max_beats, constants.CHUNK_ALIGN)
-    )
+    inputs, _, mask = datasets.pack_chart(chart, max_beats=cap)
     pred = np.asarray(model.predict(inputs, verbose=0), dtype=np.float32)
     if pred.ndim == 2:
         pred = pred[None, ...]
@@ -112,3 +117,62 @@ def report_as_dict(report: ddcl_eval.Slot48EvalReport, *, weights: str) -> dict:
     payload["published_f1_max_expanded_fraxtil"] = constants.PUBLISHED_F1_MAX_EXPANDED
     payload["weights"] = weights
     return payload
+
+
+def evaluate_audio_grounding(
+    model: ddcl_eval.SlotPredictor,
+    charts: list[ddcl_datasets.DdclChart],
+    *,
+    threshold: float = constants.THRESHOLD_05,
+    thresholds: tuple[float, ...] = ddcl_eval.DEFAULT_THRESHOLDS,
+    tolerance_sec: float = timing_match.DEFAULT_TOLERANCE_SEC,
+    max_beats: int = constants.MAX_BEATS,
+    seed: int = onset_null_baseline.DEFAULT_SEED,
+) -> ddcl_eval.AudioGroundingReport:
+    """Run ``none``, ``shuffle``, and ``zeros`` beat-audio grounding checks.
+
+    Corrupts ``beat_audio`` while leaving scalar ``bpm``, ``difficulty``, and
+    positional embeddings intact to measure how much ITGPT's slot and decoded
+    ±20 ms skill relies on audio rather than priors.
+
+    Args:
+        model: Keras ITGPT placement model.
+        charts: Loaded beat-grid charts with BPM segments and onset times.
+        threshold: Occupancy cutoff for slot F1, decoded timing, and flip rates.
+        thresholds: Sweep for ``slot_f1_max``.
+        tolerance_sec: Match window in seconds.
+        max_beats: Pad cap used at train time.
+        seed: Base RNG seed for shuffling and null baselines.
+
+    Returns:
+        Audio-grounding ablation report across all corruption modes.
+
+    Raises:
+        ValueError: If ``charts`` is empty or any chart exceeds ``max_beats``.
+    """
+    if not charts:
+        raise ValueError("charts must be non-empty")
+    for chart in charts:
+        if chart.n_beats > max_beats:
+            raise ValueError(
+                f"chart {chart.song_key} has {chart.n_beats} beats > "
+                f"max_beats={max_beats}"
+            )
+    predictions_by_corruption: dict[str, list[np.ndarray]] = {}
+    for kind in ddcl_eval.CORRUPTION_KINDS:
+        predictions_by_corruption[kind] = [
+            predict_chart_slots(
+                model,
+                ddcl_eval.corrupt_chart_audio(chart, kind, seed=seed + idx),
+                max_beats=max_beats,
+            )
+            for idx, chart in enumerate(charts)
+        ]
+    return ddcl_eval.grounding_report_from_predictions(
+        charts,
+        predictions_by_corruption,
+        threshold=threshold,
+        thresholds=thresholds,
+        tolerance_sec=tolerance_sec,
+        seed=seed,
+    )

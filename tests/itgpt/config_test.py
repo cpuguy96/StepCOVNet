@@ -16,16 +16,28 @@ class ItgptConfigTest(unittest.TestCase):
             dataset=config.ItgptDatasetConfig(
                 training_index_path="data/literature_fraxtil_exp/training_index_standard.json",
                 max_beats=64,
+                exclude_normalized_ids=["bad_song"],
+                audio_feature_type="mert",
+                n_frames_per_beat=24,
             ),
             model=config.ItgptModelConfig(d_model=32, n_heads=4, n_enc_layers=1),
+            run=config.ItgptRunConfig(
+                weight_decay=0.0,
+                eval_slot_f1_every=16,
+            ),
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             path = pathlib.Path(tmpdir) / "cfg.json"
             path.write_text(json.dumps(experiment.as_dict()), encoding="utf-8")
             loaded = config.ItgptExperimentConfig.from_json(path)
         self.assertEqual(loaded.dataset.max_beats, 64)
+        self.assertEqual(loaded.dataset.exclude_normalized_ids, ["bad_song"])
+        self.assertEqual(loaded.dataset.audio_feature_type, "mert")
+        self.assertEqual(loaded.dataset.n_frames_per_beat, 24)
         self.assertEqual(loaded.model.d_model, 32)
         self.assertEqual(loaded.model.n_heads, 4)
+        self.assertEqual(loaded.run.weight_decay, 0.0)
+        self.assertEqual(loaded.run.eval_slot_f1_every, 16)
         self.assertFalse(loaded.run.mixed_precision)
         self.assertFalse(loaded.run.jit_compile)
 
@@ -50,6 +62,20 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptModelConfig(cnn_hidden=0)
         with self.assertRaises(ValueError):
             config.ItgptModelConfig(dropout_rate=1.0)
+        with self.assertRaises(ValueError):
+            config.ItgptDatasetConfig(
+                training_index_path="x.json", audio_feature_type="invalid"
+            )
+        with self.assertRaises(ValueError):
+            config.ItgptDatasetConfig(
+                training_index_path="x.json",
+                audio_feature_type="mert",
+                n_frames_per_beat=16,
+            )
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(weight_decay=-0.1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(eval_slot_f1_every=-1)
 
 
 if __name__ == "__main__":

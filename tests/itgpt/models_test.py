@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+import tempfile
 import unittest
 
 import numpy as np
@@ -55,6 +57,57 @@ class ItgptModelsTest(unittest.TestCase):
             models.build_itgpt_placement_model(d_model=32, n_heads=3)
         with self.assertRaises(ValueError):
             models.build_itgpt_placement_model(n_enc_layers=0)
+
+    def test_mert_forward_train_and_keras_save_reload_round_trip(self):
+        trainers.set_seed(0)
+        n_beats = constants.CHUNK_ALIGN
+        feature_dim = 16
+        model = trainers.compile_placement_model(
+            models.build_itgpt_placement_model(
+                d_model=32,
+                n_heads=4,
+                n_enc_layers=1,
+                dropout_rate=0.1,
+                max_beats=n_beats,
+                audio_feature_type="mert",
+                n_frames_per_beat=constants.CNN_FRAMES_OUT,
+                feature_dim=feature_dim,
+                model_name="itgpt_mert_test",
+            ),
+            config.ItgptRunConfig(
+                learning_rate=1e-4,
+                weight_decay=0.0,
+                clipnorm=1.0,
+            ),
+        )
+        rng = np.random.default_rng(7)
+        inputs = {
+            "audio": rng.standard_normal(
+                (1, n_beats, constants.CNN_FRAMES_OUT, feature_dim)
+            ).astype(np.float32),
+            "bpm": np.array([[140.0]], dtype=np.float32),
+            "difficulty": np.array([[8.0]], dtype=np.float32),
+        }
+        labels = np.zeros((1, n_beats, constants.N_SLOTS), dtype=np.float32)
+        labels[0, 0, 0] = 1.0
+        pred_before = np.asarray(model(inputs, training=False))
+        self.assertEqual(pred_before.shape, (1, n_beats, constants.N_SLOTS))
+        loss = model.train_on_batch(inputs, labels)
+        self.assertTrue(np.isfinite(loss))
+        pred_trained = np.asarray(model(inputs, training=False))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = pathlib.Path(tmpdir) / "mert_roundtrip.keras"
+            model.save(ckpt)
+            reloaded = trainers.load_placement_model(ckpt)
+            pred_reloaded = np.asarray(reloaded(inputs, training=False))
+        np.testing.assert_allclose(pred_trained, pred_reloaded, atol=1e-5)
+        with self.assertRaises(ValueError):
+            models.build_itgpt_placement_model(
+                d_model=32,
+                n_heads=4,
+                audio_feature_type="mert",
+                n_frames_per_beat=16,
+            )
 
 
 if __name__ == "__main__":

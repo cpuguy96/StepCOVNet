@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import numpy as np
+import tensorflow as tf
 
 from stepcovnet.ddcl import config as ddcl_config
 from stepcovnet.ddcl import datasets as ddcl_datasets
@@ -48,13 +49,7 @@ def pack_chart(
     padded = pad_length(n_beats, max_beats)
     usable = min(n_beats, padded)
     audio = np.zeros(
-        (
-            1,
-            padded,
-            constants.N_FRAMES_PER_BEAT,
-            constants.N_MELS,
-            constants.N_CHANNELS,
-        ),
+        (1, padded) + chart.beat_audio.shape[1:],
         dtype=np.float32,
     )
     slots = np.zeros((1, padded, constants.N_SLOTS), dtype=np.float32)
@@ -76,7 +71,7 @@ def load_split_charts(
     dataset_config: config.ItgptDatasetConfig,
     split: str,
 ) -> list[ddcl_datasets.DdclChart]:
-    """Load Dataset B charts via the DDCL beat-grid loader.
+    """Load charts via the DDCL beat-grid loader (log-mel or MERT).
 
     Args:
         dataset_config: ITGPT dataset config.
@@ -93,6 +88,9 @@ def load_split_charts(
         max_train_songs=dataset_config.max_train_songs,
         max_val_songs=dataset_config.max_val_songs,
         cache_features=dataset_config.cache_features,
+        exclude_normalized_ids=list(dataset_config.exclude_normalized_ids),
+        audio_feature_type=dataset_config.audio_feature_type,
+        n_frames_per_beat=dataset_config.n_frames_per_beat,
     )
     return ddcl_datasets.load_split_charts(ddcl_dataset, split)
 
@@ -138,3 +136,44 @@ def batch_generator(
         chart = charts[int(rng.integers(0, len(charts)))]
         inputs, slots, mask = pack_chart(chart, max_beats=max_beats)
         yield inputs, slots, mask
+
+
+def tf_dataset(
+    charts: list[ddcl_datasets.DdclChart],
+    *,
+    max_beats: int,
+    seed: int,
+) -> tf.data.Dataset:
+    """Return an infinite ``tf.data.Dataset`` with dynamic beat length.
+
+    Uses an explicit ``output_signature`` with ``None`` on the beat axis so
+    Keras 3 never locks the sequence length when two initial charts share the
+    same 64-beat padded bucket.
+
+    Args:
+        charts: Loaded split (non-empty).
+        max_beats: Pad cap.
+        seed: RNG seed.
+
+    Returns:
+        ``tf.data.Dataset`` yielding ``(inputs, slots, beat_mask)`` batches.
+
+    Raises:
+        ValueError: If ``charts`` is empty.
+    """
+    if not charts:
+        raise ValueError("charts must be non-empty")
+    audio_tail = tuple(int(dim) for dim in charts[0].beat_audio.shape[1:])
+    signature = (
+        {
+            "audio": tf.TensorSpec(shape=(1, None, *audio_tail), dtype=tf.float32),
+            "bpm": tf.TensorSpec(shape=(1, 1), dtype=tf.float32),
+            "difficulty": tf.TensorSpec(shape=(1, 1), dtype=tf.float32),
+        },
+        tf.TensorSpec(shape=(1, None, constants.N_SLOTS), dtype=tf.float32),
+        tf.TensorSpec(shape=(1, None), dtype=tf.float32),
+    )
+    return tf.data.Dataset.from_generator(
+        lambda: batch_generator(charts, max_beats=max_beats, seed=seed),
+        output_signature=signature,
+    )

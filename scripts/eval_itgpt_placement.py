@@ -27,6 +27,20 @@ def _build_parser() -> argparse.ArgumentParser:
         default=training_index.SPLIT_VAL,
         help="Manifest split to score (default: val)",
     )
+    parser.add_argument(
+        "--diagnose_grounding",
+        action="store_true",
+        help=(
+            "Run none/shuffle/zeros beat-audio corruption grounding ablation "
+            "while keeping scalar bpm/difficulty intact."
+        ),
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Slot occupancy cutoff for diagnostic mode (default: 0.5).",
+    )
     return parser
 
 
@@ -81,17 +95,33 @@ def main(argv: list[str] | None = None) -> int:
     model_path = _resolve_model_path(experiment, args.model_path)
     model = trainers.load_placement_model(model_path)
     charts = datasets.load_split_charts(experiment.dataset, args.split)
-    report = evaluation.evaluate_slot48(
-        model,
-        charts,
-        seed=experiment.run.seed,
-        max_beats=experiment.dataset.max_beats,
-    )
-    payload = evaluation.report_as_dict(report, weights="eval")
+    if args.diagnose_grounding:
+        grounding_report = evaluation.evaluate_audio_grounding(
+            model,
+            charts,
+            threshold=args.threshold,
+            max_beats=experiment.dataset.max_beats,
+            seed=experiment.run.seed,
+        )
+        payload = grounding_report.as_dict()
+        payload["model_path"] = model_path
+        payload["config_path"] = args.config
+        default_filename = "eval_val_grounding.json"
+    else:
+        report = evaluation.evaluate_slot48(
+            model,
+            charts,
+            seed=experiment.run.seed,
+            max_beats=experiment.dataset.max_beats,
+        )
+        payload = evaluation.report_as_dict(report, weights="eval")
+        default_filename = "eval_val_slot48.json"
     output = args.output or str(
-        pathlib.Path(experiment.run.model_output_dir) / "eval_val_slot48.json"
+        pathlib.Path(experiment.run.model_output_dir) / default_filename
     )
-    pathlib.Path(output).write_text(
+    output_file = pathlib.Path(output)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(
         json.dumps(payload, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps(payload, indent=2))

@@ -6,6 +6,7 @@ import dataclasses
 import json
 import pathlib
 
+from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.itgpt import constants
 
 
@@ -61,6 +62,9 @@ class ItgptDatasetConfig(_DictSerializableMixin):
         max_val_songs: Cap unique val songs (-1 for all).
         cache_features: Write ``*.ddc_mel.npy`` beside audio.
         max_beats: Pad/truncate integer beats to a multiple of 64, capped here.
+        exclude_normalized_ids: Song slugs dropped before load.
+        audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
+        n_frames_per_beat: Sub-beat frames per beat (32 for logmel, 24 for MERT).
     """
 
     training_index_path: str
@@ -70,18 +74,38 @@ class ItgptDatasetConfig(_DictSerializableMixin):
     max_val_songs: int = -1
     cache_features: bool = True
     max_beats: int = constants.MAX_BEATS
+    exclude_normalized_ids: list[str] = dataclasses.field(default_factory=list)
+    audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL
+    n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.
 
         Raises:
-            ValueError: If sizes are invalid.
+            ValueError: If sizes or ``audio_feature_type`` are invalid.
         """
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {self.batch_size}")
         if self.max_beats < constants.CHUNK_ALIGN:
             raise ValueError(
                 f"max_beats must be >= {constants.CHUNK_ALIGN}, got {self.max_beats}"
+            )
+        if self.audio_feature_type not in ddcl_constants.AUDIO_FEATURE_TYPES:
+            raise ValueError(
+                "audio_feature_type must be one of "
+                f"{ddcl_constants.AUDIO_FEATURE_TYPES}, got {self.audio_feature_type!r}"
+            )
+        if self.n_frames_per_beat < 1:
+            raise ValueError(
+                f"n_frames_per_beat must be at least 1, got {self.n_frames_per_beat}"
+            )
+        if (
+            self.audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT
+            and self.n_frames_per_beat != constants.CNN_FRAMES_OUT
+        ):
+            raise ValueError(
+                "MERT ITGPT requires n_frames_per_beat == "
+                f"{constants.CNN_FRAMES_OUT}, got {self.n_frames_per_beat}"
             )
 
 
@@ -143,6 +167,8 @@ class ItgptRunConfig(_DictSerializableMixin):
         resume: If True, ``BackupAndRestore`` continues an interrupted run.
         mixed_precision: If True, use Keras ``mixed_float16`` (8 GB GPU).
         jit_compile: If True, XLA-compile ``fit`` (can spike allocator workspace).
+        eval_slot_f1_every: Evaluate full-val ``M-slot48`` every N epochs to log
+            ``val_slot_f1_at_05`` and save ``best_slot_f1.keras`` (0 disables).
     """
 
     epoch: int = 8
@@ -158,18 +184,28 @@ class ItgptRunConfig(_DictSerializableMixin):
     resume: bool = True
     mixed_precision: bool = False
     jit_compile: bool = False
+    eval_slot_f1_every: int = 0
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
 
         Raises:
-            ValueError: If ``epoch`` or learning rate are invalid.
+            ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``, or
+                ``eval_slot_f1_every`` is invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
         if self.learning_rate <= 0.0:
             raise ValueError(
                 f"learning_rate must be positive, got {self.learning_rate}"
+            )
+        if self.weight_decay < 0.0:
+            raise ValueError(
+                f"weight_decay must be >= 0, got {self.weight_decay}"
+            )
+        if self.eval_slot_f1_every < 0:
+            raise ValueError(
+                f"eval_slot_f1_every must be >= 0, got {self.eval_slot_f1_every}"
             )
 
 

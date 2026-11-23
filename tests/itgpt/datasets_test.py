@@ -70,6 +70,30 @@ class ItgptDatasetsTest(unittest.TestCase):
         )
         self.assertEqual(len(batch), 3)
 
+    def test_pack_chart_mert_audio_shape(self):
+        n_beats = 6
+        slots = np.zeros((n_beats, constants.N_SLOTS), dtype=np.float32)
+        slots[0, 0] = 1.0
+        stream = np.zeros((n_beats, ddcl_constants.STREAM_DIM), dtype=np.float32)
+        stream[:, 1] = 150.0
+        mert_chart = ddcl_datasets.DdclChart(
+            song_key="bundle/mert_song",
+            difficulty="hard",
+            meter=9,
+            beat_audio=np.ones((n_beats, 24, 16), dtype=np.float32),
+            stream=stream,
+            slots=slots,
+            memlen=0,
+        )
+        inputs, packed_slots, mask = datasets.pack_chart(
+            mert_chart, max_beats=constants.CHUNK_ALIGN
+        )
+        self.assertEqual(inputs["audio"].shape, (1, constants.CHUNK_ALIGN, 24, 16))
+        self.assertEqual(float(inputs["audio"][0, 0, 0, 0]), 1.0)
+        self.assertEqual(float(inputs["audio"][0, n_beats, 0, 0]), 0.0)
+        self.assertEqual(int(mask.sum()), n_beats)
+        self.assertEqual(float(packed_slots[0, 0, 0]), 1.0)
+
     def test_load_split_charts_forwards_to_ddcl(self):
         chart = _chart()
         dataset_config = config.ItgptDatasetConfig(
@@ -79,6 +103,9 @@ class ItgptDatasetsTest(unittest.TestCase):
             max_val_songs=1,
             cache_features=False,
             max_beats=constants.CHUNK_ALIGN,
+            exclude_normalized_ids=["bad_song"],
+            audio_feature_type="mert",
+            n_frames_per_beat=24,
         )
         with mock.patch(
             "stepcovnet.itgpt.datasets.ddcl_datasets.load_split_charts",
@@ -90,6 +117,20 @@ class ItgptDatasetsTest(unittest.TestCase):
         self.assertEqual(ddcl_cfg.training_index_path, "missing.json")
         self.assertEqual(ddcl_cfg.memlen, 0)
         self.assertEqual(ddcl_cfg.max_train_songs, 2)
+        self.assertEqual(ddcl_cfg.exclude_normalized_ids, ["bad_song"])
+        self.assertEqual(ddcl_cfg.audio_feature_type, "mert")
+        self.assertEqual(ddcl_cfg.n_frames_per_beat, 24)
+
+    def test_tf_dataset_yields_variable_beat_lengths(self):
+        short_chart = _chart(n_beats=6)
+        long_chart = _chart(n_beats=70)
+        ds = datasets.tf_dataset([short_chart, long_chart], max_beats=128, seed=0)
+        seen_lengths = {
+            int(batch[0]["audio"].shape[1]) for batch in ds.take(12)
+        }
+        self.assertEqual(seen_lengths, {64, 128})
+        with self.assertRaises(ValueError):
+            datasets.tf_dataset([], max_beats=128, seed=0)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from typing import Any
 import keras
 from keras import ops
 
+from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.itgpt import constants
 
 
@@ -362,6 +363,51 @@ class ItgptBeatCNNEncoder(keras.layers.Layer):
         return self.proj1(self.proj0(hidden))
 
 
+class ItgptBeatMertEncoder(keras.layers.Layer):
+    """Beat-aligned MERT encoder producing ``(batch * beats, 24, d_model)``.
+
+    Replaces :class:`ItgptBeatCNNEncoder` when ``audio_feature_type == "mert"``
+    so pretrained MERT beat frames plug directly into ITGPT's hierarchical
+    attention stack.
+
+    Args:
+        d_model: Projected width.
+        dropout_rate: Dropout after the first linear projection.
+        **kwargs: Keras layer kwargs.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        dropout_rate: float = constants.DROPOUT_RATE,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        self.dropout_rate = dropout_rate
+        self.norm = ItgptRmsNorm()
+        self.proj0 = keras.layers.Dense(d_model, activation="gelu")
+        self.drop = keras.layers.Dropout(dropout_rate)
+        self.conv = keras.layers.Conv1D(
+            d_model, kernel_size=3, padding="same", activation="gelu"
+        )
+        self.proj1 = keras.layers.Dense(d_model)
+
+    def call(self, inputs: Any, training: bool | None = None) -> Any:
+        """Encode each beat's MERT frame sequence.
+
+        Args:
+            inputs: ``(batch * beats, n_frames_per_beat, feature_dim)``.
+            training: Keras training flag.
+
+        Returns:
+            ``(batch * beats, n_frames_per_beat, d_model)``.
+        """
+        hidden = self.drop(self.proj0(self.norm(inputs)), training=training)
+        hidden = self.conv(hidden)
+        return self.proj1(hidden)
+
+
 class ItgptConvHead(keras.layers.Layer):
     """ITGPT ``ConvHead`` residual depthwise/pointwise conv over beats.
 
@@ -444,7 +490,14 @@ class ItgptPlacementModel(keras.Model):
         cnn_hidden: Beat CNN base channels.
         dropout_rate: Dropout.
         max_beats: Positional table length.
+        audio_feature_type: Beat audio frontend (``"logmel"`` or ``"mert"``).
+        n_frames_per_beat: Input frames per beat (``32`` for log-mel, ``24``
+            for MERT).
+        feature_dim: Per-frame feature width when ``audio_feature_type == "mert"``.
         **kwargs: Keras model kwargs.
+
+    Raises:
+        ValueError: If frontend arguments are invalid.
     """
 
     def __init__(
@@ -456,16 +509,44 @@ class ItgptPlacementModel(keras.Model):
         cnn_hidden: int = constants.CNN_HIDDEN,
         dropout_rate: float = constants.DROPOUT_RATE,
         max_beats: int = constants.MAX_BEATS,
+        audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL,
+        n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
+        feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        if audio_feature_type not in ddcl_constants.AUDIO_FEATURE_TYPES:
+            raise ValueError(
+                "audio_feature_type must be one of "
+                f"{ddcl_constants.AUDIO_FEATURE_TYPES}, got {audio_feature_type!r}"
+            )
+        if (
+            audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT
+            and n_frames_per_beat != constants.CNN_FRAMES_OUT
+        ):
+            raise ValueError(
+                "MERT ITGPT requires n_frames_per_beat == "
+                f"{constants.CNN_FRAMES_OUT}, got {n_frames_per_beat}"
+            )
+        if feature_dim < 1:
+            raise ValueError(f"feature_dim must be positive, got {feature_dim}")
         self.d_model = d_model
         self.n_heads = n_heads
         self.n_enc_layers = n_enc_layers
         self.cnn_hidden = cnn_hidden
         self.dropout_rate = dropout_rate
         self.max_beats = max_beats
-        self.beat_cnn = ItgptBeatCNNEncoder(d_model, cnn_hidden, name="beat_cnn")
+        self.audio_feature_type = audio_feature_type
+        self.n_frames_per_beat = n_frames_per_beat
+        self.feature_dim = feature_dim
+        self.beat_cnn: ItgptBeatCNNEncoder | None = None
+        self.beat_mert: ItgptBeatMertEncoder | None = None
+        if audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
+            self.beat_mert = ItgptBeatMertEncoder(
+                d_model, dropout_rate=dropout_rate, name="beat_mert"
+            )
+        else:
+            self.beat_cnn = ItgptBeatCNNEncoder(d_model, cnn_hidden, name="beat_cnn")
         self.diff_proj = ItgptConditionProj(
             d_model,
             constants.MIN_DIFFICULTY,
@@ -547,21 +628,35 @@ class ItgptPlacementModel(keras.Model):
 
         Returns:
             Slot probabilities ``(batch, beats, 48)``.
+
+        Raises:
+            RuntimeError: If the active beat encoder was not initialized.
         """
         audio = inputs["audio"]
         batch_size = ops.shape(audio)[0]  # type: ignore[index]
         n_beats = ops.shape(audio)[1]  # type: ignore[index]
         n_beat_rows = ops.multiply(batch_size, n_beats)
-        conv_in = ops.reshape(
-            audio,
-            (
-                n_beat_rows,
-                constants.N_FRAMES_PER_BEAT,
-                constants.N_MELS,
-                constants.N_CHANNELS,
-            ),
-        )
-        hidden = self.beat_cnn(conv_in)
+        if self.audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
+            if self.beat_mert is None:
+                raise RuntimeError("beat_mert encoder is not initialized")
+            mert_in = ops.reshape(
+                audio,
+                (n_beat_rows, self.n_frames_per_beat, self.feature_dim),
+            )
+            hidden = self.beat_mert(mert_in, training=training)
+        else:
+            if self.beat_cnn is None:
+                raise RuntimeError("beat_cnn encoder is not initialized")
+            conv_in = ops.reshape(
+                audio,
+                (
+                    n_beat_rows,
+                    constants.N_FRAMES_PER_BEAT,
+                    constants.N_MELS,
+                    constants.N_CHANNELS,
+                ),
+            )
+            hidden = self.beat_cnn(conv_in)
         hidden = self.level1(
             hidden, batch_size=batch_size, n_beats=n_beats, training=training
         )
@@ -610,6 +705,9 @@ class ItgptPlacementModel(keras.Model):
                 "cnn_hidden": self.cnn_hidden,
                 "dropout_rate": self.dropout_rate,
                 "max_beats": self.max_beats,
+                "audio_feature_type": self.audio_feature_type,
+                "n_frames_per_beat": self.n_frames_per_beat,
+                "feature_dim": self.feature_dim,
             }
         )
         return config
@@ -623,13 +721,17 @@ def build_itgpt_placement_model(
     cnn_hidden: int = constants.CNN_HIDDEN,
     dropout_rate: float = constants.DROPOUT_RATE,
     max_beats: int = constants.MAX_BEATS,
+    audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL,
+    n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
+    feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
     model_name: str = "itgpt_placement",
 ) -> keras.Model:
     """Build the ITGPT placement network.
 
-    Inputs are a padded beat tensor ``audio`` ``(T, 32, 80, 3)`` with
-    ``T % 64 == 0``, plus scalar ``bpm`` / ``difficulty``. Output is a
-    48-way sigmoid per beat (padded tail included; mask it in the loss).
+    Inputs are a padded beat tensor ``audio`` (``(T, 32, 80, 3)`` for log-mel
+    or ``(T, 24, feature_dim)`` for MERT) with ``T % 64 == 0``, plus scalar
+    ``bpm`` / ``difficulty``. Output is a 48-way sigmoid per beat (padded tail
+    included; mask it in the loss).
 
     Args:
         d_model: Transformer width.
@@ -638,13 +740,16 @@ def build_itgpt_placement_model(
         cnn_hidden: Beat CNN base channels.
         dropout_rate: Dropout.
         max_beats: Maximum padded beat length.
+        audio_feature_type: Beat audio frontend (``"logmel"`` or ``"mert"``).
+        n_frames_per_beat: Input frames per beat.
+        feature_dim: Per-frame width when ``audio_feature_type == "mert"``.
         model_name: Keras model name.
 
     Returns:
         Uncompiled Keras model.
 
     Raises:
-        ValueError: If sizes are invalid.
+        ValueError: If sizes or frontend parameters are invalid.
     """
     if d_model < 1 or n_heads < 1 or d_model % n_heads != 0:
         raise ValueError(f"n_heads must divide d_model, got {n_heads}, {d_model}")
@@ -657,5 +762,8 @@ def build_itgpt_placement_model(
         cnn_hidden=cnn_hidden,
         dropout_rate=dropout_rate,
         max_beats=max_beats,
+        audio_feature_type=audio_feature_type,
+        n_frames_per_beat=n_frames_per_beat,
+        feature_dim=feature_dim,
         name=model_name,
     )

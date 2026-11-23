@@ -137,6 +137,75 @@ class ItgptTrainersTest(unittest.TestCase):
             ):
                 trainers.train_placement(experiment)
 
+    def test_train_placement_mert_and_periodic_slot_f1_checkpoint(self):
+        n_beats = 6
+        slots = np.zeros((n_beats, constants.N_SLOTS), dtype=np.float32)
+        slots[0, 0] = 1.0
+        stream = np.zeros((n_beats, ddcl_constants.STREAM_DIM), dtype=np.float32)
+        stream[:, 1] = 140.0
+        mert_chart = ddcl_datasets.DdclChart(
+            song_key="bundle/mert",
+            difficulty="easy",
+            meter=5,
+            beat_audio=np.zeros((n_beats, 24, 16), dtype=np.float32),
+            stream=stream,
+            slots=slots,
+            memlen=0,
+        )
+        report = mock.Mock()
+        report.f1_at_05 = 0.55
+        report.f1_max = 0.60
+        report.best_threshold = 0.45
+        report.as_dict.return_value = {"f1_at_05": 0.55, "f1_max": 0.60}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                    audio_feature_type="mert",
+                    n_frames_per_beat=24,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    dropout_rate=0.1,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    weight_decay=0.0,
+                    eval_slot_f1_every=1,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="mert_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[mert_chart],
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ) as mock_eval,
+            ):
+                model = trainers.train_placement(experiment)
+            self.assertEqual(model.optimizer.__class__.__name__, "Adam")
+            best_f1 = pathlib.Path(tmpdir) / "models" / "best_slot_f1.keras"
+            best_f1_eval = (
+                pathlib.Path(tmpdir) / "models" / "eval_val_slot48_best_f1.json"
+            )
+            self.assertTrue(best_f1.is_file())
+            self.assertTrue(best_f1_eval.is_file())
+            payload = json.loads(best_f1_eval.read_text(encoding="utf-8"))
+            self.assertEqual(payload["weights"], "best_slot_f1")
+            # 1 periodic callback eval + 3 final evals (last, best, best_slot_f1)
+            self.assertEqual(mock_eval.call_count, 4)
+
 
 if __name__ == "__main__":
     unittest.main()
