@@ -6,6 +6,25 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-23 — Beat-aligned ITGPT-MERT hierarchical Transformer on ladder 48t/48v & Dataset A
 
+### NOTE-20261123-03: Dataset A 2×2 factorization proves representation (+4.2 to +7.1 pp) dominates architecture (+0.1 to +0.8 pp under MERT) and explains ITGPT's original log-mel lead as a 6.6× audio-grounding gap
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-23 22:16:44 |
+| **Topic** | Completing the Dataset A **Log-mel vs MERT × DDCL vs ITGPT** 2×2 matrix with matched audio-grounding ablations |
+
+**Context.** To separate the effect of pretrained MERT representations from ITGPT's hierarchical Transformer on the standard Fraxtil Dataset A benchmark (`81/9` songs, `45` val charts), we trained `DDCL-MERT` (`EXP-20261123-03`) as a strict single-knob swap over `EXP-20260817-01` and ran `--diagnose_grounding` on both `DDCL-MERT` and baseline log-mel `DDCL` (`ddcl_placement_fraxtil_128ep.keras`).
+
+**Discovery.**
+
+- **Explains why log-mel ITGPT beat log-mel DDCL:** On Dataset A, log-mel DDCL (`0.6804`) had almost zero distribution-preserving audio grounding (`shuffle` drop **−0.0181**, `event_skill` drop **−0.0331**) — just like on `final_data` (`−0.0230`), the scratch ConvLSTM2D under-extracted audio relative to `[meter, bpm]`. Log-mel ITGPT (`0.7104`) had **6.6×** stronger `shuffle` grounding (**−0.1192**, `event_skill` **−0.1827**).
+- **MERT closes almost the entire architecture gap on Dataset A:** Giving DDCL beat-aligned MERT lifts F1@0.5 by **+7.07 pp** (`0.6804 → 0.7511`), ±20 ms `skill_event_f1` by **+9.53 pp** (`+0.5670 → +0.6623`), increases `shuffle` drop **7.3×** (`−0.0181 → −0.1312`), and achieves **100% silence suppression** (`0` predicted steps under `zeros`) — all in **~34 min** (~4.5× faster than ITGPT-MERT). Under MERT, ITGPT's lead over DDCL narrows from **+3.00 pp** to **+0.08 pp** F1@0.5 (**0.7519** vs **0.7511**) and **+0.79 pp** max-F1 (**0.7633** vs **0.7554**).
+- **Cross-dataset interaction with pack diversity:** On single-author/homogeneous Fraxtil Dataset A (81 train songs, 5 charts/song), DDCL-MERT nearly ties ITGPT-MERT at τ=0.5 (**0.7511** vs **0.7519**), though ITGPT-MERT peaks higher in max-F1 (**0.7633** vs **0.7554**) and much earlier (ep 38 vs ep 128). On the harder, multi-pack, 1-chart/song `48t/48v` `final_data` ladder (`EXP-20261123-01` vs `EXP-20261119-04`), ITGPT-MERT's full-song attention opens a clearer lead (**0.7719 / −0.0848** vs **0.7647 / −0.0782**).
+
+**Implication.** This 2×2 matrix is a clean, self-contained, publishable centerpiece for StepCOVNet's onset placement section. Ready to either fold it into `PAPER_OUTLINE.md` / `PAPER_LEDGER.md`, scale ITGPT-MERT up the `final_data` ladder (`200t/50v` → `300t/50v`), or start Stage 2 step selection.
+
+**Related.** [EXP-20261123-03](EXPERIMENT_LOG.md#exp-20261123-03-ddcl-mert-completes-dataset-a-2x2-matrix--71-pp-and-73x-audio-grounding-over-log-mel-ddcl) · [EXP-20261123-02](EXPERIMENT_LOG.md#exp-20261123-02-itgpt-mert-single-knob-swap-lifts-dataset-a-fraxtil-42-pp-over-paper-faithful-itgpt-0752-vs-0710) · [EXP-20260819-03](EXPERIMENT_LOG.md#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a) · [EXP-20260817-01](EXPERIMENT_LOG.md#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a)
+
 ### NOTE-20261123-02: Single-knob MERT swap lifts Dataset A (Fraxtil) ITGPT by **+4.2 pp** F1@0.5 (**+4.7 pp** max-F1, **+5.5 pp** ±20 ms event skill) with stronger audio grounding
 
 | Field | Value |
