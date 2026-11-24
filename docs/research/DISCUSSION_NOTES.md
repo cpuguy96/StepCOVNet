@@ -4,6 +4,27 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-11-24 — ITGPT-MERT ladder scaling (`200t/50v`)
+
+### NOTE-20261124-01: Scaling ITGPT-MERT 4× (`48t → 197t`) delivers **+4.6 pp** purely from generalized audio grounding (**0.818** val F1, **42.3%** audio transfer)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-24 00:26:44 |
+| **Topic** | `final_data` ladder scaling (`48t → 197t`) on frozen 48 val charts: separating audio-grounding scaling from prior scaling |
+
+**Context.** On `48t/48v`, ITGPT-MERT hit **0.9928** train F1 vs **0.7719** val F1 with **32.0%** train→val audio transfer (`EXP-20261123-01`), pointing to the 48-song training budget as the binding bottleneck. We scaled to `training_index_ladder_v1_200t_50v.json` (`197` valid train charts / `187` songs, exact same frozen `48` val charts) with `AdamW(wd=0.01)` and matched per-chart passes (`128` ep × `200` steps).
+
+**Discovery.**
+
+- **100% of the +4.62 pp scaling lift is audio generalization:** Val `M-slot48` F1@0.5 jumped from **0.7719 → 0.8181** (`best_slot_f1`, ep 64; **0.8192** max-F1 @ `0.55`; decoded ±20 ms `skill_event_f1` **+0.6695 → +0.7330**, **+6.35 pp**). Meanwhile the `shuffle` prior floor stayed completely flat (**0.7100 → 0.7088** on `best_slot_f1`, **0.7048** on `last`), meaning every point of gain came from stronger generalized audio steering (`shuffle` drop **−0.0619 → −0.1092** `best_slot_f1`, **−0.0848 → −0.1103** `last`, **4.8×** log-mel DDCL).
+- **Audio transfer climbs +10.3 pp:** Train→val audio transfer (`val shuffle drop / train shuffle drop`) climbed cleanly from **11.6%** (log-mel `48t`) → **32.0%** (ITGPT-MERT `48t`) → **42.3%** (ITGPT-MERT `197t`).
+- **Substantial headroom still remains:** Even at 197 train charts, `last.keras` still hits **0.9875** train F1 (`57.7%` of train audio lift still un-transferred), showing the model is far from capacity-limited — `300t/50v` or full `final_data` (~1,750 train charts) has clear runway to climb further.
+
+**Implication.** Beat-aligned **ITGPT-MERT** scales cleanly and predictably with data: more songs directly convert memorized train audio lift into val audio grounding without inflating the non-audio prior. Ready to either scale further (`300t/50v` / full `final_data`), update `PAPER_OUTLINE.md` / `PAPER_LEDGER.md`, or freeze this **0.818** onset head for Stage 2 step selection.
+
+**Related.** [EXP-20261124-01](EXPERIMENT_LOG.md#exp-20261124-01-scaling-itgpt-mert-to-200t50v-shatters-080-with-0818-val-f1-and-423-audio-transfer) · [EXP-20261123-01](EXPERIMENT_LOG.md#exp-20261123-01-beat-aligned-itgpt-mert-beats-mert-lstm-on-both-val-f1-0772-and-shuffle-grounding-0085) · [EXP-20261123-03](EXPERIMENT_LOG.md#exp-20261123-03-ddcl-mert-completes-dataset-a-2x2-matrix--71-pp-and-73x-audio-grounding-over-log-mel-ddcl)
+
 ## Session 2026-11-23 — Beat-aligned ITGPT-MERT hierarchical Transformer on ladder 48t/48v & Dataset A
 
 ### NOTE-20261123-03: Dataset A 2×2 factorization proves representation (+4.2 to +7.1 pp) dominates architecture (+0.1 to +0.8 pp under MERT) and explains ITGPT's original log-mel lead as a 6.6× audio-grounding gap
