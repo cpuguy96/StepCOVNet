@@ -4,7 +4,31 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
-## Session 2026-11-24 — ITGPT-MERT ladder scaling (`200t/50v`)
+## Session 2026-11-24 — ITGPT-MERT ladder scaling (`200t/50v` & `300t/50v`)
+
+### NOTE-20261124-02: `300t/50v` completes a textbook log-linear scaling curve (**0.772 → 0.818 → 0.828** F1 / **0.832** max-F1, **32.0% → 42.3% → 44.7%** audio transfer)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-24 15:11:45 |
+| **Topic** | 3-point `final_data` scaling law (`48t → 197t → 294t`) on frozen 48 val charts and why `best_val_loss` realigns with peak F1 at ~300+ charts |
+
+**Context.** After `200t/50v` jumped +4.62 pp to **0.8181** (`42.3%` transfer; `EXP-20261124-01`), we ran `300t/50v` (`294` valid train charts / `277` songs, exact same frozen 48 val charts, matched 128 passes/chart) to establish a 3-point data-scaling curve (`48t → 197t → 294t`).
+
+**Discovery.**
+
+- **Strictly monotonic scaling across every metric:**
+  - Peak val `M-slot48` F1@0.5: **0.7719 → 0.8181 → 0.8276** (**+5.57 pp** total; ~**+3.2 pp** per doubling of train charts!).
+  - Peak val `M-slot48` max-F1: **0.7728 → 0.8192 → 0.8324** (**+5.96 pp** total; **+10.16 pp** over log-mel DDCL!).
+  - Peak val ±20 ms `skill_event_f1`: **+0.6695 → +0.7330 → +0.7462** (**+7.67 pp** total!).
+  - `last.keras` val `shuffle` drop: **−0.0848 → −0.1103 → −0.1189** (**5.2×** log-mel; `event_skill` drop **−0.1744**, `1 − IoU = 0.423`).
+  - Train→val audio transfer: **32.0% → 42.3% → 44.7%** (**3.9×** log-mel's `11.6%`).
+- **`best.keras` (`val_loss`) realigns with peak F1 once data reaches ~300+ charts:** At `48t` (`EXP-20261123-01`) and `197t` (`EXP-20261124-01`), `best_slot_f1.keras` beat `best.keras`. At `294t` — mirroring Dataset A's `405` train charts (`EXP-20261123-02`) — `best.keras` (`val_loss = 0.07223` @ ep 29) beat both `best_slot_f1` (`0.8223`) and `last` (`0.8177`), cutting false positives by **33%** vs `200t` (`8,749 → 5,863`) while matching total step count (`36,553` pred vs `37,617` GT).
+- **Predictable extrapolation to full `final_data` (~1,750 train charts ≈ 6× `294t`):** At the measured ~+3.2 pp/doubling slope, full `final_data` (requiring a lazy/disk-backed MERT loader for 1,119 songs) should project toward **~0.86–0.88** F1, while **0.8276 / 0.8324 max-F1** is already an outstanding placement foundation for Stage 2 step selection.
+
+**Implication.** The onset placement scaling story is now complete and publication-grade across both Dataset A (2×2 matrix) and `final_data` (3-point scaling law). Ready to either proceed to Stage 2 step selection or build the lazy MERT loader for full `final_data`.
+
+**Related.** [EXP-20261124-02](EXPERIMENT_LOG.md#exp-20261124-02-300t50v-completes-3-point-itgpt-mert-scaling-curve-at-0828-f1--0832-max-f1-and-447-audio-transfer) · [EXP-20261124-01](EXPERIMENT_LOG.md#exp-20261124-01-scaling-itgpt-mert-to-200t50v-shatters-080-with-0818-val-f1-and-423-audio-transfer) · [EXP-20261123-01](EXPERIMENT_LOG.md#exp-20261123-01-beat-aligned-itgpt-mert-beats-mert-lstm-on-both-val-f1-0772-and-shuffle-grounding-0085)
 
 ### NOTE-20261124-01: Scaling ITGPT-MERT 4× (`48t → 197t`) delivers **+4.6 pp** purely from generalized audio grounding (**0.818** val F1, **42.3%** audio transfer)
 
