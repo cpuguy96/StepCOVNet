@@ -4,7 +4,28 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
-## Session 2026-11-23 — Beat-aligned ITGPT-MERT hierarchical Transformer on ladder 48t/48v
+## Session 2026-11-23 — Beat-aligned ITGPT-MERT hierarchical Transformer on ladder 48t/48v & Dataset A
+
+### NOTE-20261123-02: Single-knob MERT swap lifts Dataset A (Fraxtil) ITGPT by **+4.2 pp** F1@0.5 (**+4.7 pp** max-F1, **+5.5 pp** ±20 ms event skill) with stronger audio grounding
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-23 19:00:34 |
+| **Topic** | Publishable Dataset A literature comparison: ITGPT-MERT vs paper-faithful log-mel ITGPT vs DDCL |
+
+**Context.** After ITGPT-MERT won on the `final_data` `48t/48v` ladder (`EXP-20261123-01`), we ran a strict single-knob ablation on Dataset A (original Fraxtil, **90** songs / **450** standard charts, **81 / 9** split): keeping every hyperparameter identical to `EXP-20260819-03` (`AdamW 1e-4, wd=0.01`, `dropout=0.1`, `128 × 200`, `seed=42`) and swapping only `ItgptBeatCNNEncoder` (log-mel) → `ItgptBeatMertEncoder` (`24` sub-beat MERT frames).
+
+**Discovery.**
+
+- **Large, clean Dataset A headline jump:** On the exact same 45 val charts (`17,523` beats), ITGPT-MERT `best.keras` (ep 38) hits **0.7519** F1@0.5 (**+0.0415** over log-mel ITGPT **0.7104**, **+0.0719** over DDCL **0.680**), **0.7633** max-F1 @ `0.35` (**+0.0467**), and **+0.6638** decoded ±20 ms `skill_event_f1` (**+0.0553** over log-mel's **+0.6085**). Even `last.keras` (ep 128) holds **0.7421** (**+0.0317**), and ITGPT-MERT already passed ep-128 log-mel (`0.7103`) by **epoch 16** (`0.7146`).
+- **Beats 2.5× larger Dataset B log-mel with 81 songs:** ITGPT-MERT on 81 Dataset A songs (**0.7519 / 0.7633** max-F1) exceeds our 201-song Dataset B log-mel ITGPT (**0.735 / 0.740**, `EXP-20260819-02`), demonstrating that pretrained music-foundation representations substitute for substantial raw chart volume.
+- **Stronger audio grounding across both perturbations:** Compared to baseline log-mel ITGPT `last.keras`, ITGPT-MERT `best.keras` widens `shuffle` drop (**−0.1296** vs **−0.1192** F1; **−0.1965** vs **−0.1827** `skill_event_f1`) and nearly quadruples `zeros` drop (**−0.2692** vs **−0.0713** F1; `n_pred 16,587 → 9,622`, `1 − IoU = 0.566`).
+- **Light `AdamW(wd=0.01)` + `dropout=0.1` works well without audio noise:** Unlike DDCL's heavy regularization (`dropout=0.4 + noise=0.05`, `EXP-20261119-06`), paper `AdamW(wd=0.01)` with zero audio noise prevented the severe `val_loss` explosion seen on `48t/48v` and let `best.keras` (`val_loss = 0.0496` @ ep 38) achieve peak val F1, max-F1, and grounding simultaneously.
+- **Zero-copy per-song MERT sharing (`src/stepcovnet/ddcl/datasets.py`):** Sharing one read-only beat-aligned MERT array per song across difficulty charts (`[:n_beats]` views) cut Dataset A RAM ~5× (~17 GB → ~3.4 GB), keeping multi-difficulty training comfortable on WSL.
+
+**Implication.** We now have a strong, clean, single-knob Dataset A literature result (**DDCL 0.680 → ITGPT 0.710 → ITGPT-MERT 0.752 / 0.763 max-F1**) backed by audio-grounding ablations on both Dataset A and `final_data` `48t/48v`. Next choices: scale ITGPT-MERT up the `final_data` ladder (`200t/50v` → `300t/50v`), update `PAPER_OUTLINE.md` / `PAPER_LEDGER.md`, or start Stage 2 step selection.
+
+**Related.** [EXP-20261123-02](EXPERIMENT_LOG.md#exp-20261123-02-itgpt-mert-single-knob-swap-lifts-dataset-a-fraxtil-42-pp-over-paper-faithful-itgpt-0752-vs-0710) · [EXP-20260819-03](EXPERIMENT_LOG.md#exp-20260819-03-itgpt-48-slot-placement-128-ep-on-dataset-a) · [EXP-20260817-01](EXPERIMENT_LOG.md#exp-20260817-01-ddcl-48-slot-placement-128-ep-on-dataset-a) · [EXP-20261123-01](EXPERIMENT_LOG.md#exp-20261123-01-beat-aligned-itgpt-mert-beats-mert-lstm-on-both-val-f1-0772-and-shuffle-grounding-0085)
 
 ### NOTE-20261123-01: Beat-aligned ITGPT-MERT sets a new ladder champion (**0.772** F1, **−0.085** `shuffle` drop) and saturates the 48-song split (**0.993** train F1)
 
