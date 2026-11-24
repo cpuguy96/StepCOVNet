@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ import unittest
 import numpy as np
 
 from stepcovnet.dataset_prep import constants as prep_constants
+from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.dataset_prep import training_index
 from stepcovnet.ddcl import config, constants, datasets, features
 
@@ -116,6 +118,119 @@ class DdclDatasetsTest(unittest.TestCase):
         # Past padding beats for MERT use 0.0 instead of negative outlier min().
         np.testing.assert_array_equal(windows["audio_fwd"][0, 0], np.zeros((8, 4)))
         np.testing.assert_array_equal(windows["audio_fwd"][0, 2], beat_mert[0])
+
+    def test_load_split_charts_shares_mert_tensor_across_difficulties(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            song_dir = root / "bundle" / "song"
+            song_dir.mkdir(parents=True)
+            audio_path = song_dir / "song.ogg"
+            audio_path.write_bytes(b"")
+            mert = np.arange(400 * 4, dtype=np.float32).reshape(400, 4)
+            np.save(song_dir / "song.mert.npy", mert)
+            pack = prep_models.ParsedSongPack(
+                schema_version=prep_constants.SCHEMA_VERSION,
+                normalized_bundle="bundle",
+                normalized_id="song",
+                source_pack_relpath="bundle/song",
+                source_simfile="song.sm",
+                metadata=prep_models.SimfileMetadata(
+                    title="Song",
+                    artist="Artist",
+                    subtitle="",
+                    music_filename="song.ogg",
+                    offset_sec=0.0,
+                    initial_bpm=120.0,
+                    bpm_segments=[prep_models.BpmSegment(start_beat=0.0, bpm=120.0)],
+                    selectable=True,
+                ),
+                charts=[
+                    prep_models.ParsedChart(
+                        summary=prep_models.ChartSummary(
+                            stepstype="dance-single",
+                            difficulty="challenge",
+                            difficulty_kind="standard",
+                            meter=10,
+                            chart_name="",
+                            credit="",
+                            num_steps=4,
+                        ),
+                        times_sec=[0.0, 0.5, 1.0, 1.5],
+                        arrow_rows=["1000", "0100", "0010", "0001"],
+                        column_codes=[64, 16, 4, 1],
+                    ),
+                    prep_models.ParsedChart(
+                        summary=prep_models.ChartSummary(
+                            stepstype="dance-single",
+                            difficulty="easy",
+                            difficulty_kind="standard",
+                            meter=4,
+                            chart_name="",
+                            credit="",
+                            num_steps=2,
+                        ),
+                        times_sec=[0.0, 0.5],
+                        arrow_rows=["1000", "0100"],
+                        column_codes=[64, 16],
+                    ),
+                ],
+                default_chart_index=0,
+                available_charts=[],
+                audio_filename="song.ogg",
+                audio_source="music_tag",
+                audio_resolved_relpath="song.ogg",
+                warnings=[],
+            )
+            (song_dir / "song.chart.json").write_text(
+                json.dumps(pack.as_dict()), encoding="utf-8"
+            )
+            entries = [
+                training_index.TrainingIndexEntry(
+                    split="train",
+                    normalized_bundle="bundle",
+                    normalized_id="song",
+                    chart_index=idx,
+                    output_relpath="bundle/song",
+                    difficulty=diff,
+                    meter=meter,
+                    num_steps=n_steps,
+                    audio_relpath="bundle/song/song.ogg",
+                    chart_relpath="bundle/song/song.chart.json",
+                )
+                for idx, diff, meter, n_steps in (
+                    (0, "challenge", 10, 4),
+                    (1, "easy", 4, 2),
+                )
+            ]
+            index = training_index.TrainingIndex(
+                schema_version=prep_constants.SCHEMA_VERSION,
+                output_dir=str(root),
+                split_policy=training_index.SPLIT_POLICY_STRATIFIED_SONG_V1,
+                split_seed=42,
+                val_fraction=0.0,
+                created_at="2026-11-23T00:00:00Z",
+                counts=training_index.TrainingIndexCounts(
+                    songs={"train": 1, "val": 0},
+                    rows={"train": 2, "val": 0},
+                ),
+                entries=entries,
+            )
+            idx_path = root / "training_index.json"
+            training_index.save_training_index(index, idx_path)
+            cfg = config.DdclDatasetConfig(
+                training_index_path=str(idx_path),
+                data_root=str(root),
+                audio_feature_type="mert",
+                n_frames_per_beat=8,
+                memlen=0,
+            )
+            loaded = datasets.load_split_charts(cfg, "train")
+            self.assertEqual(len(loaded), 2)
+            self.assertTrue(np.shares_memory(loaded[0].beat_audio, loaded[1].beat_audio))
+            np.testing.assert_array_equal(
+                loaded[1].beat_audio,
+                loaded[0].beat_audio[: loaded[1].n_beats],
+            )
 
 
 if __name__ == "__main__":

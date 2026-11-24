@@ -154,6 +154,8 @@ def load_ddcl_chart(
     memlen: int,
     cache_features: bool = True,
     spec: np.ndarray | None = None,
+    shared_beat_audio: np.ndarray | None = None,
+    pack: prep_models.ParsedSongPack | None = None,
     audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL,
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
 ) -> DdclChart:
@@ -165,6 +167,9 @@ def load_ddcl_chart(
         memlen: Context length for windows.
         cache_features: Write/read ``*.ddc_mel.npy`` beside audio.
         spec: Optional precomputed audio features shared across difficulties.
+        shared_beat_audio: Optional per-song beat-aligned MERT tensor sliced
+            zero-copy to ``[:n_beats]`` across difficulties of the same song.
+        pack: Optional preloaded parsed song metadata/charts.
         audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
         n_frames_per_beat: Sub-beat frames resampled per beat.
 
@@ -176,11 +181,12 @@ def load_ddcl_chart(
     """
     root = pathlib.Path(data_root)
     audio_path = root / entry.audio_relpath
-    pack = prep_models.load_parsed_song(
-        data_root,
-        entry.normalized_bundle,
-        entry.normalized_id,
-    )
+    if pack is None:
+        pack = prep_models.load_parsed_song(
+            data_root,
+            entry.normalized_bundle,
+            entry.normalized_id,
+        )
     if entry.chart_index < 0 or entry.chart_index >= len(pack.charts):
         raise ValueError(
             f"chart_index {entry.chart_index} out of range for {entry.output_relpath}"
@@ -199,13 +205,16 @@ def load_ddcl_chart(
         pack.metadata.bpm_segments,
     )
     if audio_feature_type == constants.AUDIO_FEATURE_MERT:
-        if spec is None:
-            spec = features.load_mert_features(audio_path)
-        beat_audio = features.beats_to_mert_tensor(
-            spec,
-            beat_times,
-            n_frames=n_frames_per_beat,
-        )
+        if shared_beat_audio is not None and shared_beat_audio.shape[0] >= n_beats:
+            beat_audio = shared_beat_audio[:n_beats]
+        else:
+            if spec is None:
+                spec = features.load_mert_features(audio_path)
+            beat_audio = features.beats_to_mert_tensor(
+                spec,
+                beat_times,
+                n_frames=n_frames_per_beat,
+            )
     elif audio_feature_type == constants.AUDIO_FEATURE_LOGMEL:
         if spec is None:
             spec = features.load_or_compute_logmel(audio_path, cache=cache_features)
@@ -267,8 +276,39 @@ def load_split_charts(
     for song_key in song_order:
         group = grouped[song_key]
         audio_key = str(pathlib.Path(data_root) / group[0].audio_relpath)
+        pack = prep_models.load_parsed_song(
+            data_root,
+            group[0].normalized_bundle,
+            group[0].normalized_id,
+        )
+        shared_beat_audio: np.ndarray | None = None
         if dataset_config.audio_feature_type == constants.AUDIO_FEATURE_MERT:
             spec = features.load_mert_features(audio_key)
+            max_n_beats = 0
+            for entry in group:
+                if 0 <= entry.chart_index < len(pack.charts):
+                    chart_times = np.asarray(
+                        pack.charts[entry.chart_index].times_sec,
+                        dtype=np.float64,
+                    )
+                    if chart_times.size > 0:
+                        n_beats_i = slots.times_to_slot_matrix(
+                            chart_times,
+                            pack.metadata.offset_sec,
+                            pack.metadata.bpm_segments,
+                        ).shape[0]
+                        max_n_beats = max(max_n_beats, n_beats_i)
+            if max_n_beats > 0:
+                shared_beat_audio = features.beats_to_mert_tensor(
+                    spec,
+                    slots.beat_times_sec(
+                        max_n_beats,
+                        pack.metadata.offset_sec,
+                        pack.metadata.bpm_segments,
+                    ),
+                    n_frames=dataset_config.n_frames_per_beat,
+                )
+                shared_beat_audio.setflags(write=False)
         else:
             spec = features.load_or_compute_logmel(
                 audio_key,
@@ -282,6 +322,8 @@ def load_split_charts(
                     memlen=dataset_config.memlen,
                     cache_features=dataset_config.cache_features,
                     spec=spec,
+                    shared_beat_audio=shared_beat_audio,
+                    pack=pack,
                     audio_feature_type=dataset_config.audio_feature_type,
                     n_frames_per_beat=dataset_config.n_frames_per_beat,
                 )
