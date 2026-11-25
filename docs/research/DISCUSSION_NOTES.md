@@ -4,7 +4,27 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
-## Session 2026-11-25 — Early FiLM ablation & 3-knob scorecard
+## Session 2026-11-25 — Early FiLM ablation, 3-knob scorecard & Dataset A Cosine-64
+
+### NOTE-20261125-02: Cosine-64 generalizes to Dataset A (**0.7580** F1 / **+0.6752** ±20 ms skill / `last` **0.7562**, **−0.1402** `shuffle`)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 03:01:17 |
+| **Topic** | Cross-dataset confirmation of 64-ep Cosine LR on Dataset A (`81/9` Fraxtil) |
+
+**Context.** After Cosine-64 delivered `+1.12 pp` on `final_data` `300t/50v` (`EXP-20261124-03`), we ran the exact same single-knob LR swap (`64` ep, `warmup=4`, `1e-4 → 1e-6`) on Dataset A (`EXP-20261125-02`) against `EXP-20261123-02` (`const128`: `best` `0.7519`, `last` `0.7421`, `skill_event_f1 +0.6638`).
+
+**Discovery.**
+
+- **Clean cross-dataset win in half the epochs (~85 min):**
+  - `best_slot_f1.keras` (ep 24, fp32): **0.7580** F1@0.5 (**+0.61 pp** over `const128`, **+4.76 pp** over paper-faithful log-mel ITGPT `0.7104`), **+0.6752** ±20 ms `skill_event_f1` (**+1.14 pp**), and **−0.5243** `zeros` drop (`zeros 0.2337`).
+  - `last.keras` (ep 64, fp32): **0.7562** F1@0.5 (**+1.41 pp** over `const128` `last` `0.7421`, beating `const128` `best` `0.7519`), with **−0.1402** `shuffle` drop (**7.7×** log-mel DDCL — strongest audio grounding recorded on Dataset A) and monotonic `val_loss` down to **0.04622** (vs `0.0496`).
+- **Cosine-64 is now proven across two completely independent datasets** (`final_data` and Dataset A), while Focal Loss (`−0.92 pp`) and Early FiLM (`−0.92 pp`) were cleanly rejected.
+
+**Implication.** ITGPT-MERT + 64-ep Cosine LR (`focal_gamma=0`, `early_film=false`) is our locked placement recipe on both benchmarks. Next high-ROI onset lever is scaling to full `final_data` (~1,750 train charts via lazy MERT loader), or freezing the onset head for Stage 2 step selection.
+
+**Related.** [EXP-20261125-02](EXPERIMENT_LOG.md#exp-20261125-02-dataset-a-cosine-64-lifts-itgpt-mert-to-07580-f105--06752-20-ms-skill-last-07562-shuffle-01402) · [EXP-20261124-03](EXPERIMENT_LOG.md#exp-20261124-03-single-knob-64-ep-cosine-lr-lifts-300t50v-itgpt-mert-112-pp-to-08388-f1-and-743-audio-transfer) · [EXP-20261123-02](EXPERIMENT_LOG.md#exp-20261123-02-itgpt-mert-single-knob-swap-lifts-dataset-a-fraxtil-42-pp-over-paper-faithful-itgpt-0752-vs-0710)
 
 ### NOTE-20261125-01: Why Early FiLM overfit (**−0.92 pp**) and what the completed 3-ablation ladder proves
 
