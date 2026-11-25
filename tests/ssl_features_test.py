@@ -372,3 +372,20 @@ class CombineMertLayersTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             ssl_features.combine_mert_layers([])
+
+    def test_stack_mert_layers_resample_and_fp16_save(self):
+        a = np.array([[1.0, 2.0, 3.0, 4.0], [2.0, 4.0, 6.0, 8.0]], dtype=np.float32)
+        b = a * 50.0
+        stacked = ssl_features.stack_mert_layers([a, b])
+        self.assertEqual(stacked.shape, (2, 2, 4))
+        np.testing.assert_allclose(stacked[:, 0, :], stacked[:, 1, :], atol=1e-5)
+        resampled = ssl_features.resample_stacked_features_to_frame_count(stacked, 5)
+        self.assertEqual(resampled.shape, (5, 2, 4))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = pathlib.Path(tmpdir) / "song.mert_stack_l0_2.npy"
+            ssl_features.save_mert_features(
+                resampled, str(out), allow_3d=True, save_fp16=True
+            )
+            loaded = np.load(out)
+            self.assertEqual(loaded.shape, (5, 2, 4))
+            self.assertEqual(loaded.dtype, np.float16)

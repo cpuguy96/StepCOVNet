@@ -139,6 +139,34 @@ def resample_features_to_frame_count(
     return np.asarray(resampled, dtype=np.float32).reshape(n_frames, feature_dim)
 
 
+def resample_stacked_features_to_frame_count(
+    features: np.ndarray,
+    n_frames: int,
+    hop_sec: float = constants.HOP_COEFF,
+) -> np.ndarray:
+    """Linearly resample stacked multi-layer features onto ``n_frames`` steps.
+
+    Args:
+        features: Source features with shape ``(time_steps, n_layers, feature_dim)``.
+        n_frames: Target number of time steps.
+        hop_sec: Target frame spacing in seconds.
+
+    Returns:
+        Resampled float32 array with shape ``(n_frames, n_layers, feature_dim)``.
+
+    Raises:
+        ValueError: If ``features`` is not 3D.
+    """
+    if features.ndim != 3:
+        raise ValueError(
+            f"stacked features must be 3D (time, layers, dim); got shape {features.shape!r}"
+        )
+    n_src, n_layers, feature_dim = features.shape
+    flat = features.reshape(n_src, n_layers * feature_dim)
+    resampled = resample_features_to_frame_count(flat, n_frames, hop_sec=hop_sec)
+    return resampled.reshape(max(1, int(n_frames)), n_layers, feature_dim)
+
+
 def load_mert_features(
     audio_path: str,
     features_dir: str = "",
@@ -216,6 +244,32 @@ def _load_mert_model(model_name: str, device: str):
     return model, processor
 
 
+def stack_mert_layers(layer_arrays: list[np.ndarray]) -> np.ndarray:
+    """Per-layer standardize and stack MERT hidden states along a layer axis.
+
+    Normalizing each layer across the hidden axis keeps all layers on a common
+    scale for learnable softmax layer mixing (SUPERB protocol).
+
+    Args:
+        layer_arrays: Non-empty list of ``(time_steps, hidden_dim)`` arrays.
+
+    Returns:
+        Float32 array of shape ``(time_steps, n_layers, hidden_dim)``.
+
+    Raises:
+        ValueError: If ``layer_arrays`` is empty.
+    """
+    if not layer_arrays:
+        raise ValueError("layer_arrays must be non-empty")
+    normalized: list[np.ndarray] = []
+    for arr in layer_arrays:
+        x = np.asarray(arr, dtype=np.float32)
+        mean = np.mean(x, axis=-1, keepdims=True)
+        std = np.std(x, axis=-1, keepdims=True)
+        normalized.append((x - mean) / np.maximum(std, 1e-6))
+    return np.stack(normalized, axis=1).astype(np.float32)
+
+
 def combine_mert_layers(layer_arrays: list[np.ndarray]) -> np.ndarray:
     """Average multiple MERT hidden-state layers after per-layer normalization.
 
@@ -235,13 +289,7 @@ def combine_mert_layers(layer_arrays: list[np.ndarray]) -> np.ndarray:
         raise ValueError("layer_arrays must be non-empty")
     if len(layer_arrays) == 1:
         return np.asarray(layer_arrays[0], dtype=np.float32)
-    normalized: list[np.ndarray] = []
-    for arr in layer_arrays:
-        x = np.asarray(arr, dtype=np.float32)
-        mean = np.mean(x, axis=-1, keepdims=True)
-        std = np.std(x, axis=-1, keepdims=True)
-        normalized.append((x - mean) / np.maximum(std, 1e-6))
-    return np.mean(np.stack(normalized, axis=0), axis=0).astype(np.float32)
+    return np.mean(stack_mert_layers(layer_arrays), axis=1).astype(np.float32)
 
 
 def _mert_hidden_states_for_chunk(
@@ -252,6 +300,7 @@ def _mert_hidden_states_for_chunk(
     layer: int,
     device: str,
     layers: tuple[int, ...] | None = None,
+    stack_layers: bool = False,
 ) -> np.ndarray:
     """Run MERT on one waveform chunk and return single- or multi-layer states.
 
@@ -262,15 +311,27 @@ def _mert_hidden_states_for_chunk(
         layer: Hidden-state layer index (0 = embedding output) used when
             ``layers`` is None.
         device: Torch device string.
-        layers: Optional tuple of layer indices to layer-normalize and average.
+        layers: Optional tuple of layer indices to layer-normalize and average
+            (or stack when ``stack_layers`` is True).
+        stack_layers: If True, return ``(time_steps, n_layers, hidden_dim)``
+            instead of averaging layers.
 
     Returns:
-        Hidden states with shape ``(time_steps, hidden_dim)``, float32.
+        Hidden states with shape ``(time_steps, hidden_dim)`` (or
+        ``(time_steps, n_layers, hidden_dim)`` when ``stack_layers`` is True),
+        float32.
 
     Raises:
         ValueError: If any requested layer index is out of range.
     """
+    selected = layers if layers is not None else (layer,)
+    if not selected:
+        raise ValueError("layers must be non-empty when provided")
     if waveform.size == 0:
+        if stack_layers:
+            return np.zeros(
+                (0, len(selected), constants.MERT_HIDDEN_SIZE), dtype=np.float32
+            )
         return np.zeros((0, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
     torch, _ = _require_ssl_deps()
     inputs = processor(
@@ -289,9 +350,6 @@ def _mert_hidden_states_for_chunk(
     with torch.no_grad():
         outputs = model(**model_kwargs, output_hidden_states=True)
     hidden_states = outputs.hidden_states
-    selected = layers if layers is not None else (layer,)
-    if not selected:
-        raise ValueError("layers must be non-empty when provided")
     extracted: list[np.ndarray] = []
     for idx in selected:
         if idx < 0 or idx >= len(hidden_states):
@@ -299,6 +357,8 @@ def _mert_hidden_states_for_chunk(
                 f"MERT layer index {idx} out of range (model has {len(hidden_states)} layers)"
             )
         extracted.append(hidden_states[idx].squeeze(0).cpu().numpy().astype(np.float32))
+    if stack_layers:
+        return stack_mert_layers(extracted)
     return combine_mert_layers(extracted)
 
 
@@ -308,6 +368,7 @@ def extract_mert_features_from_audio(
     model_name: str = DEFAULT_MERT_MODEL,
     layer: int = DEFAULT_MERT_LAYER,
     layers: tuple[int, ...] | None = None,
+    stack_layers: bool = False,
     device: str = "cpu",
     chunk_seconds: float = MERT_CHUNK_SECONDS,
     model: object = None,
@@ -319,14 +380,16 @@ def extract_mert_features_from_audio(
         audio_path: Path to an audio file readable by librosa.
         model_name: Hugging Face MERT model id.
         layer: Hidden-state layer index to extract when ``layers`` is None.
-        layers: Optional tuple of layer indices to normalize and average.
+        layers: Optional tuple of layer indices to normalize and combine/stack.
+        stack_layers: If True, keep the layer axis ``(time, n_layers, dim)``.
         device: Torch device for inference.
         chunk_seconds: Maximum chunk length in seconds for long files.
         model: Optional pre-loaded MERT model (avoids reloading weights per file).
         processor: Optional matching feature extractor.
 
     Returns:
-        Feature array with shape ``(time_steps, hidden_dim)`` on the HOP_COEFF grid.
+        Feature array on the HOP_COEFF grid with shape
+        ``(time_steps, hidden_dim)`` or ``(time_steps, n_layers, hidden_dim)``.
 
     Raises:
         ValueError: If the audio file is empty.
@@ -355,43 +418,60 @@ def extract_mert_features_from_audio(
                 processor=processor,
                 layer=layer,
                 layers=layers,
+                stack_layers=stack_layers,
                 device=device,
             )
         )
     if not chunks:
-        merged = np.zeros((0, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
+        n_layers = len(layers) if layers is not None else 1
+        merged = (
+            np.zeros((0, n_layers, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
+            if stack_layers
+            else np.zeros((0, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
+        )
     elif len(chunks) == 1:
         merged = chunks[0]
     else:
         merged = np.concatenate(chunks, axis=0)
 
     n_frames = mel_onset.onset_frame_count(audio_path)
+    if stack_layers:
+        return resample_stacked_features_to_frame_count(merged, n_frames)
     return resample_features_to_frame_count(merged, n_frames)
 
 
 def save_mert_features(
     features: np.ndarray,
     output_path: str,
+    *,
+    allow_3d: bool = False,
+    save_fp16: bool = False,
 ) -> str:
     """Save MERT features to a ``.mert.npy`` file.
 
     Args:
-        features: Array with shape ``(time_steps, feature_dim)``.
+        features: Array with shape ``(time_steps, feature_dim)``, or
+            ``(time_steps, n_layers, feature_dim)`` when ``allow_3d`` is True.
         output_path: Destination ``.npy`` path.
+        allow_3d: If True, permit 3D stacked multi-layer arrays.
+        save_fp16: If True, cast to float16 on disk to halve cache size.
 
     Returns:
         The output path written.
 
     Raises:
-        ValueError: If ``features`` is not 2D.
+        ValueError: If ``features`` has an unsupported rank.
     """
-    if features.ndim != 2:
+    valid_dims = (2, 3) if allow_3d else (2,)
+    if features.ndim not in valid_dims:
+        expected = "2D or 3D" if allow_3d else "2D (time, dim)"
         raise ValueError(
-            f"features must be 2D (time, dim); got shape {features.shape!r}"
+            f"features must be {expected}; got shape {features.shape!r}"
         )
     out_path = pathlib.Path(output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(out_path, features.astype(np.float32))
+    target_dtype = np.float16 if save_fp16 else np.float32
+    np.save(out_path, features.astype(target_dtype))
     return str(out_path)
 
 
@@ -402,6 +482,8 @@ def extract_and_save_mert_features(
     model_name: str = DEFAULT_MERT_MODEL,
     layer: int = DEFAULT_MERT_LAYER,
     layers: tuple[int, ...] | None = None,
+    stack_layers: bool = False,
+    save_fp16: bool = False,
     device: str = "cpu",
     chunk_seconds: float = MERT_CHUNK_SECONDS,
     model: object = None,
@@ -414,7 +496,9 @@ def extract_and_save_mert_features(
         output_path: Destination ``.mert.npy`` path.
         model_name: Hugging Face MERT model id.
         layer: Hidden-state layer index when ``layers`` is None.
-        layers: Optional tuple of layer indices to normalize and average.
+        layers: Optional tuple of layer indices to normalize and combine/stack.
+        stack_layers: If True, save stacked ``(time, n_layers, dim)`` arrays.
+        save_fp16: If True, save array as float16.
         device: Torch device for inference.
         chunk_seconds: Chunk length for long audio.
         model: Optional pre-loaded MERT model.
@@ -428,9 +512,15 @@ def extract_and_save_mert_features(
         model_name=model_name,
         layer=layer,
         layers=layers,
+        stack_layers=stack_layers,
         device=device,
         chunk_seconds=chunk_seconds,
         model=model,
         processor=processor,
     )
-    return save_mert_features(features, output_path)
+    return save_mert_features(
+        features,
+        output_path,
+        allow_3d=stack_layers,
+        save_fp16=save_fp16,
+    )

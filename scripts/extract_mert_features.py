@@ -77,10 +77,20 @@ PARSER.add_argument(
     help="Optional comma-separated hidden-state layer indices to layer-normalize and average (e.g. '2,6,10').",
 )
 PARSER.add_argument(
+    "--stack_layers",
+    action="store_true",
+    help="Keep the layer axis (time, n_layers, dim) instead of averaging --layers (for learnable layer mixing).",
+)
+PARSER.add_argument(
+    "--fp16",
+    action="store_true",
+    help="Store cached MERT arrays as float16 on disk to halve cache size and RAM.",
+)
+PARSER.add_argument(
     "--suffix",
     type=str,
     default="",
-    help="Output cache suffix (default '.mert.npy', or '.mert_l<layers>.npy' when --layers is set).",
+    help="Output cache suffix (default '.mert.npy', '.mert_l<layers>.npy', or '.mert_stack_l<layers>.npy').",
 )
 PARSER.add_argument(
     "--device",
@@ -147,7 +157,8 @@ def _resolve_suffix(args: argparse.Namespace, layers: tuple[int, ...] | None) ->
         return explicit
     if layers is not None:
         tag = "_".join(str(idx) for idx in layers)
-        return f".mert_l{tag}.npy"
+        prefix = ".mert_stack_l" if args.stack_layers else ".mert_l"
+        return f"{prefix}{tag}.npy"
     return ssl_features.MERT_FILE_SUFFIX
 
 
@@ -339,6 +350,8 @@ def _extract_pending_jobs(
                 model_name=args.model_name,
                 layer=args.layer,
                 layers=layers,
+                stack_layers=bool(args.stack_layers),
+                save_fp16=bool(args.fp16),
                 device=args.device,
                 chunk_seconds=args.chunk_seconds,
                 model=model,

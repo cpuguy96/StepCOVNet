@@ -373,11 +373,13 @@ class ItgptBeatMertEncoder(keras.layers.Layer):
 
     Replaces :class:`ItgptBeatCNNEncoder` when ``audio_feature_type == "mert"``
     so pretrained MERT beat frames plug directly into ITGPT's hierarchical
-    attention stack.
+    attention stack. When ``n_mert_layers > 1``, applies SUPERB-style learnable
+    softmax scalar weights across the layer axis before projection.
 
     Args:
         d_model: Projected width.
         dropout_rate: Dropout after the first linear projection.
+        n_mert_layers: Stacked MERT layer count (``1`` disables layer mixing).
         **kwargs: Keras layer kwargs.
     """
 
@@ -385,11 +387,14 @@ class ItgptBeatMertEncoder(keras.layers.Layer):
         self,
         d_model: int,
         dropout_rate: float = constants.DROPOUT_RATE,
+        n_mert_layers: int = 1,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.d_model = d_model
         self.dropout_rate = dropout_rate
+        self.n_mert_layers = int(n_mert_layers)
+        self.layer_logits: Any = None
         self.norm = ItgptRmsNorm()
         self.proj0 = keras.layers.Dense(d_model, activation="gelu")
         self.drop = keras.layers.Dropout(dropout_rate)
@@ -398,17 +403,44 @@ class ItgptBeatMertEncoder(keras.layers.Layer):
         )
         self.proj1 = keras.layers.Dense(d_model)
 
+    def build(self, input_shape: object) -> None:
+        """Create optional learnable layer-mixing logits.
+
+        Args:
+            input_shape: Incoming tensor shape.
+        """
+        if self.n_mert_layers > 1:
+            self.layer_logits = self.add_weight(
+                name="layer_logits",
+                shape=(self.n_mert_layers,),
+                initializer="zeros",
+                trainable=True,
+                dtype="float32",
+            )
+        super().build(input_shape)
+
     def call(self, inputs: Any, training: bool | None = None) -> Any:
         """Encode each beat's MERT frame sequence.
 
         Args:
-            inputs: ``(batch * beats, n_frames_per_beat, feature_dim)``.
+            inputs: ``(batch * beats, n_frames_per_beat, feature_dim)`` when
+                ``n_mert_layers == 1``, or
+                ``(batch * beats, n_frames_per_beat, n_mert_layers, feature_dim)``
+                when ``n_mert_layers > 1``.
             training: Keras training flag.
 
         Returns:
             ``(batch * beats, n_frames_per_beat, d_model)``.
         """
-        hidden = self.drop(self.proj0(self.norm(inputs)), training=training)
+        hidden = inputs
+        if self.n_mert_layers > 1 and self.layer_logits is not None:
+            weights = ops.softmax(ops.cast(self.layer_logits, "float32"))
+            weights = ops.cast(weights, hidden.dtype)
+            hidden = ops.sum(
+                hidden * ops.reshape(weights, (1, 1, self.n_mert_layers, 1)),
+                axis=-2,
+            )
+        hidden = self.drop(self.proj0(self.norm(hidden)), training=training)
         hidden = self.conv(hidden)
         return self.proj1(hidden)
 
@@ -564,6 +596,8 @@ class ItgptPlacementModel(keras.Model):
         n_frames_per_beat: Input frames per beat (``32`` for log-mel, ``24``
             for MERT).
         feature_dim: Per-frame feature width when ``audio_feature_type == "mert"``.
+        n_mert_layers: Stacked MERT layer count (``1`` for pre-averaged or
+            single-layer caches; ``> 1`` enables learnable softmax layer mixing).
         early_film: If True, apply zero-initialized FiLM modulation from
             ``[difficulty, bpm]`` before the sub-beat attention stack and before
             the global encoder.
@@ -590,6 +624,7 @@ class ItgptPlacementModel(keras.Model):
         audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL,
         n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
         feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
+        n_mert_layers: int = 1,
         early_film: bool = False,
         cyclic_measure_pos: bool = False,
         continuous_beat_conv: bool = False,
@@ -611,6 +646,8 @@ class ItgptPlacementModel(keras.Model):
             )
         if feature_dim < 1:
             raise ValueError(f"feature_dim must be positive, got {feature_dim}")
+        if n_mert_layers < 1:
+            raise ValueError(f"n_mert_layers must be positive, got {n_mert_layers}")
         self.d_model = d_model
         self.n_heads = n_heads
         self.n_enc_layers = n_enc_layers
@@ -620,6 +657,7 @@ class ItgptPlacementModel(keras.Model):
         self.audio_feature_type = audio_feature_type
         self.n_frames_per_beat = n_frames_per_beat
         self.feature_dim = feature_dim
+        self.n_mert_layers = int(n_mert_layers)
         self.early_film = bool(early_film)
         self.cyclic_measure_pos = bool(cyclic_measure_pos)
         self.continuous_beat_conv = bool(continuous_beat_conv)
@@ -627,7 +665,10 @@ class ItgptPlacementModel(keras.Model):
         self.beat_mert: ItgptBeatMertEncoder | None = None
         if audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
             self.beat_mert = ItgptBeatMertEncoder(
-                d_model, dropout_rate=dropout_rate, name="beat_mert"
+                d_model,
+                dropout_rate=dropout_rate,
+                n_mert_layers=self.n_mert_layers,
+                name="beat_mert",
             )
         else:
             self.beat_cnn = ItgptBeatCNNEncoder(d_model, cnn_hidden, name="beat_cnn")
@@ -747,13 +788,18 @@ class ItgptPlacementModel(keras.Model):
         if self.audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
             if self.beat_mert is None:
                 raise RuntimeError("beat_mert encoder is not initialized")
+            tail = (
+                (self.n_mert_layers, self.feature_dim)
+                if self.n_mert_layers > 1
+                else (self.feature_dim,)
+            )
             if self.continuous_beat_conv:
                 mert_in = ops.reshape(
                     audio,
                     (
                         batch_size,
                         ops.multiply(n_beats, self.n_frames_per_beat),
-                        self.feature_dim,
+                        *tail,
                     ),
                 )
                 hidden = self.beat_mert(mert_in, training=training)
@@ -764,7 +810,7 @@ class ItgptPlacementModel(keras.Model):
             else:
                 mert_in = ops.reshape(
                     audio,
-                    (n_beat_rows, self.n_frames_per_beat, self.feature_dim),
+                    (n_beat_rows, self.n_frames_per_beat, *tail),
                 )
                 hidden = self.beat_mert(mert_in, training=training)
         else:
@@ -857,6 +903,7 @@ class ItgptPlacementModel(keras.Model):
                 "audio_feature_type": self.audio_feature_type,
                 "n_frames_per_beat": self.n_frames_per_beat,
                 "feature_dim": self.feature_dim,
+                "n_mert_layers": self.n_mert_layers,
                 "early_film": self.early_film,
                 "cyclic_measure_pos": self.cyclic_measure_pos,
                 "continuous_beat_conv": self.continuous_beat_conv,
@@ -876,6 +923,7 @@ def build_itgpt_placement_model(
     audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL,
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
     feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
+    n_mert_layers: int = 1,
     early_film: bool = False,
     cyclic_measure_pos: bool = False,
     continuous_beat_conv: bool = False,
@@ -884,9 +932,9 @@ def build_itgpt_placement_model(
     """Build the ITGPT placement network.
 
     Inputs are a padded beat tensor ``audio`` (``(T, 32, 80, 3)`` for log-mel
-    or ``(T, 24, feature_dim)`` for MERT) with ``T % 64 == 0``, plus scalar
-    ``bpm`` / ``difficulty``. Output is a 48-way sigmoid per beat (padded tail
-    included; mask it in the loss).
+    or ``(T, 24, feature_dim)`` / ``(T, 24, n_mert_layers, feature_dim)`` for
+    MERT) with ``T % 64 == 0``, plus scalar ``bpm`` / ``difficulty``. Output is
+    a 48-way sigmoid per beat (padded tail included; mask it in the loss).
 
     Args:
         d_model: Transformer width.
@@ -898,6 +946,7 @@ def build_itgpt_placement_model(
         audio_feature_type: Beat audio frontend (``"logmel"`` or ``"mert"``).
         n_frames_per_beat: Input frames per beat.
         feature_dim: Per-frame width when ``audio_feature_type == "mert"``.
+        n_mert_layers: Stacked MERT layer count (``1`` disables layer mixing).
         early_film: If True, apply zero-initialized FiLM conditioning from
             ``[difficulty, bpm]`` before the sub-beat and global stacks.
         cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
@@ -927,6 +976,7 @@ def build_itgpt_placement_model(
         audio_feature_type=audio_feature_type,
         n_frames_per_beat=n_frames_per_beat,
         feature_dim=feature_dim,
+        n_mert_layers=n_mert_layers,
         early_film=early_film,
         cyclic_measure_pos=cyclic_measure_pos,
         continuous_beat_conv=continuous_beat_conv,

@@ -234,6 +234,56 @@ class ItgptModelsTest(unittest.TestCase):
             pred_reloaded = np.asarray(reloaded(inputs, training=False))
         np.testing.assert_allclose(pred_trained, pred_reloaded, atol=1e-5)
 
+    def test_mert_layer_mixer_trains_weights_and_reloads(self):
+        trainers.set_seed(0)
+        n_beats = constants.CHUNK_ALIGN
+        n_layers = 4
+        feature_dim = 16
+        model = trainers.compile_placement_model(
+            models.build_itgpt_placement_model(
+                d_model=32,
+                n_heads=4,
+                n_enc_layers=1,
+                dropout_rate=0.0,
+                max_beats=n_beats,
+                audio_feature_type="mert",
+                n_frames_per_beat=constants.CNN_FRAMES_OUT,
+                feature_dim=feature_dim,
+                n_mert_layers=n_layers,
+                model_name="itgpt_mert_mix_test",
+            ),
+            config.ItgptRunConfig(learning_rate=1e-2, weight_decay=0.0, clipnorm=1.0),
+        )
+        rng = np.random.default_rng(23)
+        inputs = {
+            "audio": rng.standard_normal(
+                (1, n_beats, constants.CNN_FRAMES_OUT, n_layers, feature_dim)
+            ).astype(np.float32),
+            "bpm": np.array([[140.0]], dtype=np.float32),
+            "difficulty": np.array([[8.0]], dtype=np.float32),
+        }
+        labels = np.zeros((1, n_beats, constants.N_SLOTS), dtype=np.float32)
+        labels[0, 0, 0] = 1.0
+        _ = model(inputs, training=False)
+        assert model.beat_mert is not None
+        self.assertIsNotNone(model.beat_mert.layer_logits)
+        np.testing.assert_allclose(
+            np.asarray(model.beat_mert.layer_logits), np.zeros(n_layers), atol=1e-6
+        )
+        loss = model.train_on_batch(inputs, labels)
+        self.assertTrue(np.isfinite(loss))
+        self.assertGreater(
+            float(np.max(np.abs(np.asarray(model.beat_mert.layer_logits)))), 0.0
+        )
+        pred_trained = np.asarray(model(inputs, training=False))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = pathlib.Path(tmpdir) / "mert_mix_roundtrip.keras"
+            model.save(ckpt)
+            reloaded = trainers.load_placement_model(ckpt)
+            self.assertEqual(reloaded.n_mert_layers, n_layers)
+            pred_reloaded = np.asarray(reloaded(inputs, training=False))
+        np.testing.assert_allclose(pred_trained, pred_reloaded, atol=1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()

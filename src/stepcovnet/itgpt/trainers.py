@@ -377,12 +377,18 @@ def train_placement(
         raise ValueError("train split is empty")
     if not val_charts:
         raise ValueError("val split is empty")
-    feature_dim = (
-        int(train_charts[0].beat_audio.shape[-1])
-        if experiment.dataset.audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT
-        else ddcl_constants.MERT_FEATURE_DIM
+    beat_shape = train_charts[0].beat_audio.shape
+    if experiment.dataset.audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
+        feature_dim = int(beat_shape[-1])
+        n_mert_layers = int(beat_shape[-2]) if len(beat_shape) == 4 else 1
+    else:
+        feature_dim = ddcl_constants.MERT_FEATURE_DIM
+        n_mert_layers = 1
+    model = build_and_compile(
+        experiment,
+        feature_dim=feature_dim,
+        n_mert_layers=n_mert_layers,
     )
-    model = build_and_compile(experiment, feature_dim=feature_dim)
     dummy_inputs, _, _ = datasets.pack_chart(
         train_charts[0], max_beats=experiment.dataset.max_beats
     )
@@ -500,12 +506,14 @@ def build_and_compile(
     experiment: config.ItgptExperimentConfig,
     *,
     feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
+    n_mert_layers: int = 1,
 ) -> keras.Model:
     """Build and compile the placement model.
 
     Args:
         experiment: Experiment config.
         feature_dim: Per-frame feature width when ``audio_feature_type == "mert"``.
+        n_mert_layers: Stacked MERT layer count (``1`` disables layer mixing).
 
     Returns:
         Compiled Keras model.
@@ -520,6 +528,7 @@ def build_and_compile(
         audio_feature_type=experiment.dataset.audio_feature_type,
         n_frames_per_beat=experiment.dataset.n_frames_per_beat,
         feature_dim=feature_dim,
+        n_mert_layers=n_mert_layers,
         early_film=experiment.model.early_film,
         cyclic_measure_pos=experiment.model.cyclic_measure_pos,
         continuous_beat_conv=experiment.model.continuous_beat_conv,

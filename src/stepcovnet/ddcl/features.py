@@ -225,26 +225,34 @@ def load_mert_features(
 ) -> np.ndarray:
     """Load precomputed 100 Hz MERT embeddings beside ``audio_path``.
 
+    Supports both 2D ``(time, feature_dim)`` arrays (returned as float32) and
+    3D stacked multi-layer ``(time, n_layers, feature_dim)`` arrays (preserving
+    float16 when cached in fp16 to bound RAM usage).
+
     Args:
         audio_path: Path to the song audio file; resolves sibling cache file.
         cache_suffix: Sibling filename suffix (default ``.mert.npy``).
 
     Returns:
-        Float32 array of shape ``(time, feature_dim)``.
+        Array of shape ``(time, feature_dim)`` or
+        ``(time, n_layers, feature_dim)``.
 
     Raises:
         FileNotFoundError: If the sibling MERT cache file does not exist.
-        ValueError: If the loaded array is not rank-2.
+        ValueError: If the loaded array is neither rank-2 nor rank-3.
     """
     mert_path = pathlib.Path(audio_path).with_suffix(cache_suffix)
     if not mert_path.is_file():
         raise FileNotFoundError(f"missing cached MERT features: {mert_path}")
-    arr = np.asarray(np.load(mert_path), dtype=np.float32)
-    if arr.ndim != 2:
+    raw = np.load(mert_path)
+    if raw.ndim not in (2, 3):
         raise ValueError(
-            f"expected 2D MERT array (time, dim) in {mert_path}, got {arr.shape}"
+            f"expected 2D or 3D MERT array in {mert_path}, got {raw.shape}"
         )
-    return arr
+    target_dtype = (
+        np.float16 if (raw.ndim == 3 and raw.dtype == np.float16) else np.float32
+    )
+    return np.asarray(raw, dtype=target_dtype)
 
 
 def resample_beat_mert(
@@ -258,21 +266,22 @@ def resample_beat_mert(
     """Sample ``n_frames`` MERT embeddings inside ``[start_sec, end_sec)``.
 
     Args:
-        mert: Precomputed 100 Hz MERT embeddings ``(time, feature_dim)``.
+        mert: Precomputed 100 Hz MERT embeddings ``(time, feature_dim)`` or
+            ``(time, n_layers, feature_dim)``.
         start_sec: Beat start in seconds.
         end_sec: Beat end in seconds (exclusive).
         n_frames: Sub-beat frames to sample (default 16).
         frame_rate: MERT frame rate in Hz (100 Hz).
 
     Returns:
-        Float32 array of shape ``(n_frames, feature_dim)`` with zero padding
-        outside the song bounds.
+        Array of shape ``(n_frames, *mert.shape[1:])`` preserving ``mert.dtype``
+        with zero padding outside the song bounds.
 
     Raises:
-        ValueError: If ``mert`` is not rank-2 or ``n_frames`` is not positive.
+        ValueError: If ``mert`` is not rank-2/rank-3 or ``n_frames`` is not positive.
     """
-    if mert.ndim != 2:
-        raise ValueError(f"mert must have rank 2, got shape {mert.shape}")
+    if mert.ndim not in (2, 3):
+        raise ValueError(f"mert must have rank 2 or 3, got shape {mert.shape}")
     if n_frames < 1:
         raise ValueError(f"n_frames must be at least 1, got {n_frames}")
     n_mert_frames = mert.shape[0]
@@ -286,7 +295,8 @@ def resample_beat_mert(
         num=n_frames,
         endpoint=False,
     ).astype(int)
-    out = np.zeros((n_frames, mert.shape[1]), dtype=np.float32)
+    out_dtype = mert.dtype if mert.dtype in (np.float16, np.float32) else np.float32
+    out = np.zeros((n_frames,) + mert.shape[1:], dtype=out_dtype)
     for row, frame_idx in enumerate(frame_idxs):
         if 0 <= frame_idx < n_mert_frames:
             out[row] = mert[frame_idx]
@@ -302,12 +312,13 @@ def beats_to_mert_tensor(
     """Stack per-beat MERT tensors for ``n_beats = len(beat_times) - 1``.
 
     Args:
-        mert: Precomputed 100 Hz MERT embeddings ``(time, feature_dim)``.
+        mert: Precomputed 100 Hz MERT embeddings ``(time, feature_dim)`` or
+            ``(time, n_layers, feature_dim)``.
         beat_times: Start times for beats ``0..n_beats`` (length ``n_beats+1``).
         n_frames: Sub-beat frames per beat.
 
     Returns:
-        Float32 array ``(n_beats, n_frames, feature_dim)``.
+        Array ``(n_beats, n_frames, *mert.shape[1:])`` preserving fp16/fp32 dtype.
 
     Raises:
         ValueError: If ``beat_times`` has fewer than two entries.
@@ -316,13 +327,14 @@ def beats_to_mert_tensor(
     if times.size < 2:
         raise ValueError("beat_times must include an exclusive end time")
     n_beats = times.size - 1
+    out_dtype = mert.dtype if mert.dtype in (np.float16, np.float32) else np.float32
     stacked = [
         resample_beat_mert(
             mert, float(times[i]), float(times[i + 1]), n_frames=n_frames
         )
         for i in range(n_beats)
     ]
-    return np.stack(stacked, axis=0).astype(np.float32)
+    return np.stack(stacked, axis=0).astype(out_dtype)
 
 
 load_or_compute_logmel = ddc_features.load_or_compute_ddc_logmel

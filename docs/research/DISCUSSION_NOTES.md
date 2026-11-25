@@ -6,6 +6,24 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
+### NOTE-20261125-07: Learnable 5-layer MERT mixer reveals `L10 > L6 > L16 > L2 > L0` and pushes `16th` F1 **+4.8 pp** (`0.680`) and `last` **+0.35 pp** (`0.7633`)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 16:57:15 |
+| **Topic** | Dataset A knob #2: SUPERB-style learnable softmax weights over MERT layers `(0, 2, 6, 10, 16)` |
+
+**Context.** After equal-weighted `L2+6+10` jumped `+0.84 pp` over `L6` (`EXP-20261125-03`), we cached 5 per-layer-standardized MERT layers `(0, 2, 6, 10, 16)` in fp16 and added 5 learnable softmax layer weights inside `ItgptBeatMertEncoder` (`EXP-20261125-07`).
+
+**Discovery.**
+
+- **Clear, stable learned layer hierarchy across all checkpoints:** **`L10 (0.223) > L6 (0.208) > L16 (0.204) > L2 (0.186) > L0 (0.180)`** (`logits = [-0.091, -0.054, +0.058, +0.125, +0.036]`). The model consistently prefers mid-to-upper structural/rhythmic layers (`L6, L10, L16`) while keeping moderate early percussive weight (`L2`) and down-weighting raw CNN `L0`.
+- **New single-checkpoint records on secondary metrics, parity on peak F1@0.5:** `best_slot_f1` (ep 40, fp32) matched `L2+6+10` peak (`0.7661` vs `0.7664`) while setting new records on ±20 ms `skill_event_f1` (**+0.6847**), audio grounding (`shuffle −0.1457`, **8.0×** mel DDCL), `val_loss` (**0.04510**), `F1_max` (**0.7699**), `last` F1 (**0.7633**, `+0.35 pp`), and **`16th` off-beat F1 (`0.632 → 0.680`, `+4.8 pp`!)**.
+
+**Implication.** Great validation of multi-layer MERT (and tells us to keep `L6, L10, L16` + `L2` — skip `L0` — when baking a compact 2D pre-averaged cache for full `final_data`). Because 5-layer stacked tensors use 5× RAM and 1.5× step time with nearly identical peak F1@0.5, Runs 3 (`gradient_accumulation_steps = 4`) and 4 (`AdamW` EMA) stay on the clean, fast 2D `L2+6+10` baseline (`0.7664`) for pure single-knob optimization comparisons.
+
+**Related.** [EXP-20261125-07](EXPERIMENT_LOG.md#exp-20261125-07-learnable-5-layer-mert-mixer-0261016-sets-new-dataset-a-skill16thlastshuffle-records-and-reveals-optimal-layer-ranking-l10--l6--l16--l2--l0) · [EXP-20261125-03](EXPERIMENT_LOG.md#exp-20261125-03-multi-layer-mert-layers-2610-lifts-dataset-a-084-pp-to-07664-f1--07697-max-f1-560-pp-over-log-mel-itgpt)
+
 ### NOTE-20261125-06: Per-beat `Conv1D` zero-padding acts as a downbeat anchor (`continuous_beat_conv = true` loses **−1.17 pp**)
 
 | Field | Value |
