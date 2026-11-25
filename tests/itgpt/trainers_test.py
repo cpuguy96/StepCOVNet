@@ -356,6 +356,7 @@ class ItgptTrainersTest(unittest.TestCase):
                     steps_per_epoch=1,
                     validation_steps=1,
                     focal_gamma=1.0,
+                    grid_weight_24th=2.0,
                     model_output_dir=str(pathlib.Path(tmpdir) / "models"),
                     callback_root_dir="",
                     model_name="focal_smoke",
@@ -378,6 +379,7 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             self.assertIsInstance(reloaded.loss, trainers.ItgptPlacementLoss)
             self.assertAlmostEqual(reloaded.loss.focal_gamma, 1.0)
+            self.assertAlmostEqual(reloaded.loss.grid_weight_24th, 2.0)
 
 
 if __name__ == "__main__":

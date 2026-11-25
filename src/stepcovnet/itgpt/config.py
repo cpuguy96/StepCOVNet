@@ -187,6 +187,8 @@ class ItgptRunConfig(_DictSerializableMixin):
         min_learning_rate: Floor LR at warmup start and cosine end.
         focal_gamma: Focal modulating exponent ``(1 - p_t)^gamma`` applied to
             grid-weighted slot BCE (``0.0`` keeps plain weighted BCE).
+        grid_weight_24th: Slot loss weight for 24th/triplet grid indices
+            ``(8, 16, 32, 40)`` (default ``1.0``).
     """
 
     epoch: int = 8
@@ -207,14 +209,15 @@ class ItgptRunConfig(_DictSerializableMixin):
     warmup_epochs: int = 0
     min_learning_rate: float = 0.0
     focal_gamma: float = 0.0
+    grid_weight_24th: float = constants.GRID_WEIGHT_24TH
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
 
         Raises:
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
-                ``eval_slot_f1_every``, LR schedule, or ``focal_gamma`` fields
-                are invalid.
+                ``eval_slot_f1_every``, LR schedule, ``focal_gamma``, or
+                ``grid_weight_24th`` fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -254,6 +257,10 @@ class ItgptRunConfig(_DictSerializableMixin):
         if self.focal_gamma < 0.0:
             raise ValueError(
                 f"focal_gamma must be >= 0, got {self.focal_gamma}"
+            )
+        if self.grid_weight_24th <= 0.0:
+            raise ValueError(
+                f"grid_weight_24th must be positive, got {self.grid_weight_24th}"
             )
 
 

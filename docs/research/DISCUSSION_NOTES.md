@@ -6,6 +6,25 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
+### NOTE-20261125-04: `grid_weight_24th = 2.0` overfits triplets (**−1.18 pp**), confirming representation > loss reweighting
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 08:20:14 |
+| **Topic** | Pre-scaling knob #2 negative result (`grid_weight_24th = 2.0`: `0.8388 → 0.8270`) contrasted with multi-layer MERT (`EXP-20261125-03`) |
+
+**Context.** As pre-scaling knob #2 on `300t/50v`, we raised `grid_weight_24th` from `1.0 → 2.0` (matching 16th weight `2.0`) on top of Cosine-64 (`0.8388`) to target `24th` under-prediction (`50.4%` F1, `37.1%` recall).
+
+**Discovery.**
+
+- **Severe memorization and −1.18 pp regression (`EXP-20261125-04`):** Train loss dropped to `0.0242` while `val_loss` blew up to `0.1406` (vs `0.0402 / 0.0784` on `w24=1.0`); `best.keras` (ep 19, fp32) scored **0.8270** F1@0.5 (`−1.18 pp`), max-F1 **0.8319** (`−0.69 pp`), ±20 ms `skill_event_f1` **+0.7472** (`−1.42 pp`), and weakened both `shuffle` (`−0.1090` vs `−0.1151`) and `zeros` (`−0.0762` vs `−0.1172`) grounding.
+- **Even the target slice regressed:** `24th` dropped `0.504 → 0.469` (`−3.5 pp`), and `16th` collapsed `0.700 → 0.628` (`−7.2 pp`).
+- **Two failed loss tweaks (`Focal −0.92 pp`, `w24=2.0 −1.18 pp`) vs one huge representation win (`MERT L2+6+10 +0.84 pp` overall, `5.5×` triplets):** Reweighting BCE cannot create missing transient evidence; giving the model layer-2 percussive features (`EXP-20261125-03`) directly unlocks fine subdivisions without distorting optimization.
+
+**Implication.** Keep ITGPT's original grid weights (`grid_weight_24th = 1.0`, `focal_gamma = 0.0`). Proceeding to pre-scaling knob #3 (cyclic `beat % 4` + `beat % 16` position in `level6`) on top of Cosine-64 (`0.8388`).
+
+**Related.** [EXP-20261125-04](EXPERIMENT_LOG.md#exp-20261125-04-raising-grid_weight_24th-10--20-on-300t50v-overfits-and-regresses-cosine-64-by-118-pp-08270-vs-08388--rejected) · [EXP-20261125-03](EXPERIMENT_LOG.md#exp-20261125-03-multi-layer-mert-layers-2610-lifts-dataset-a-084-pp-to-07664-f1--07697-max-f1-560-pp-over-log-mel-itgpt) · [EXP-20261124-03](EXPERIMENT_LOG.md#exp-20261124-03-single-knob-64-ep-cosine-lr-lifts-300t50v-itgpt-mert-112-pp-to-08388-f1-and-743-audio-transfer)
+
 ### NOTE-20261125-03: Multi-layer MERT (`layers 2,6,10`) cuts Dataset A errors **10.4%** to **0.7664** F1 / **0.7697** max-F1 and **5.5×** triplet F1
 
 | Field | Value |

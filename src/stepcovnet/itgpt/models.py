@@ -16,11 +16,16 @@ from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.itgpt import constants
 
 
-def grid_importance_weights(n_slots: int = constants.N_SLOTS) -> Any:
+def grid_importance_weights(
+    n_slots: int = constants.N_SLOTS,
+    *,
+    weight_24th: float = constants.GRID_WEIGHT_24TH,
+) -> Any:
     """Return the ITGPT 48-slot BCE weights.
 
     Args:
         n_slots: Slot count (paper: 48).
+        weight_24th: Loss weight for 24th/triplet slots (paper: 1.0).
 
     Returns:
         Vector of length ``n_slots``.
@@ -29,7 +34,7 @@ def grid_importance_weights(n_slots: int = constants.N_SLOTS) -> Any:
     for index in constants.INDICES_16TH:
         weights[index] = constants.GRID_WEIGHT_16TH
     for index in constants.INDICES_24TH:
-        weights[index] = constants.GRID_WEIGHT_24TH
+        weights[index] = float(weight_24th)
     for index in constants.INDICES_32ND:
         weights[index] = 1.0
     return ops.convert_to_tensor(weights, dtype="float32")

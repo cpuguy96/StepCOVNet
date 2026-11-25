@@ -55,7 +55,7 @@ def placement_binary_crossentropy(y_true: object, y_pred: object) -> object:
 
 @keras.saving.register_keras_serializable(package="stepcovnet.itgpt")
 class ItgptPlacementLoss(keras.losses.Loss):
-    """Grid-weighted slot BCE with optional focal modulation.
+    """Grid-weighted slot BCE with optional focal modulation and 24th weight.
 
     Returns per-beat mean loss ``(batch, beats)`` so Keras applies the beat
     mask ``sample_weight`` before reducing across beats.
@@ -63,6 +63,7 @@ class ItgptPlacementLoss(keras.losses.Loss):
     Args:
         focal_gamma: Non-negative focal exponent ``(1 - p_t)^gamma``
             (``0.0`` reduces to :func:`placement_binary_crossentropy`).
+        grid_weight_24th: Loss weight for 24th/triplet slots (default ``1.0``).
         name: Keras loss name.
         **kwargs: Additional :class:`keras.losses.Loss` kwargs.
     """
@@ -70,11 +71,13 @@ class ItgptPlacementLoss(keras.losses.Loss):
     def __init__(
         self,
         focal_gamma: float = 0.0,
+        grid_weight_24th: float = constants.GRID_WEIGHT_24TH,
         name: str = "itgpt_placement_loss",
         **kwargs,
     ) -> None:
         super().__init__(name=name, **kwargs)
         self.focal_gamma = float(focal_gamma)
+        self.grid_weight_24th = float(grid_weight_24th)
 
     def call(self, y_true: object, y_pred: object) -> object:
         """Compute per-beat mean of focal-modulated grid-weighted BCE.
@@ -95,7 +98,9 @@ class ItgptPlacementLoss(keras.losses.Loss):
         if self.focal_gamma > 0.0:
             p_t = y_true * y_pred + (1.0 - y_true) * (1.0 - y_pred)
             per_slot = per_slot * ops.power(1.0 - p_t, self.focal_gamma)
-        weighted = per_slot * models.grid_importance_weights()
+        weighted = per_slot * models.grid_importance_weights(
+            weight_24th=self.grid_weight_24th
+        )
         return ops.mean(weighted, axis=-1)
 
     def get_config(self) -> dict:
@@ -105,7 +110,12 @@ class ItgptPlacementLoss(keras.losses.Loss):
             Serialized config mapping.
         """
         base = super().get_config()
-        base.update({"focal_gamma": self.focal_gamma})
+        base.update(
+            {
+                "focal_gamma": self.focal_gamma,
+                "grid_weight_24th": self.grid_weight_24th,
+            }
+        )
         return base
 
 
@@ -193,9 +203,16 @@ def compile_placement_model(
             learning_rate=learning_rate,
             clipnorm=run_config.clipnorm,
         )
+    use_custom_loss = (
+        run_config.focal_gamma > 0.0
+        or run_config.grid_weight_24th != constants.GRID_WEIGHT_24TH
+    )
     loss: object = (
-        ItgptPlacementLoss(focal_gamma=run_config.focal_gamma)
-        if run_config.focal_gamma > 0.0
+        ItgptPlacementLoss(
+            focal_gamma=run_config.focal_gamma,
+            grid_weight_24th=run_config.grid_weight_24th,
+        )
+        if use_custom_loss
         else placement_binary_crossentropy
     )
     model.compile(
