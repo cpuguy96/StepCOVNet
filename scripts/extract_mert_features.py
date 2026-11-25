@@ -68,7 +68,19 @@ PARSER.add_argument(
     "--layer",
     type=int,
     default=ssl_features.DEFAULT_MERT_LAYER,
-    help="Hidden-state layer index to extract.",
+    help="Hidden-state layer index to extract (ignored when --layers is set).",
+)
+PARSER.add_argument(
+    "--layers",
+    type=str,
+    default="",
+    help="Optional comma-separated hidden-state layer indices to layer-normalize and average (e.g. '2,6,10').",
+)
+PARSER.add_argument(
+    "--suffix",
+    type=str,
+    default="",
+    help="Output cache suffix (default '.mert.npy', or '.mert_l<layers>.npy' when --layers is set).",
 )
 PARSER.add_argument(
     "--device",
@@ -117,21 +129,45 @@ def _resolve_audio_paths(args: argparse.Namespace) -> tuple[list[str], str]:
     return pairing.list_unique_audio_paths(data_dir)
 
 
+def _parse_layers(layers_arg: str) -> tuple[int, ...] | None:
+    """Parse comma-separated layer indices if provided."""
+    raw = str(layers_arg).strip()
+    if not raw:
+        return None
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    if not parts:
+        raise SystemExit("--layers must contain at least one integer index.")
+    return tuple(int(part) for part in parts)
+
+
+def _resolve_suffix(args: argparse.Namespace, layers: tuple[int, ...] | None) -> str:
+    """Resolve output cache filename suffix."""
+    explicit = str(args.suffix).strip()
+    if explicit:
+        return explicit
+    if layers is not None:
+        tag = "_".join(str(idx) for idx in layers)
+        return f".mert_l{tag}.npy"
+    return ssl_features.MERT_FILE_SUFFIX
+
+
 def _output_path(
     audio_path: str,
     *,
     beside_audio: bool,
     output_dir: str,
     data_root: str,
+    suffix: str,
 ) -> str:
     if beside_audio:
-        return ssl_features.mert_npy_path(audio_path, "", data_root)
+        return ssl_features.mert_npy_path(audio_path, "", data_root, suffix=suffix)
     if not output_dir:
         raise SystemExit("--output_dir is required unless --beside_audio is set.")
     return ssl_features.mert_npy_path(
         audio_path,
         output_dir,
         data_root,
+        suffix=suffix,
     )
 
 
@@ -203,7 +239,8 @@ def _log_plan(
     _log("MERT extraction")
     _log(f"  source:  {source}")
     _log(f"  audios:  {total} total ({pending} to extract, {skipped} cached)")
-    _log(f"  model:   {args.model_name} (layer {args.layer})")
+    layer_desc = f"layers {args.layers}" if str(args.layers).strip() else f"layer {args.layer}"
+    _log(f"  model:   {args.model_name} ({layer_desc})")
     _log(f"  device:  {args.device}")
     _log(f"  output:  {output}")
     if pending:
@@ -238,6 +275,8 @@ def main(argv: list[str] | None = None) -> None:
     if not args.beside_audio:
         pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
+    layers = _parse_layers(args.layers)
+    suffix = _resolve_suffix(args, layers)
     pending_jobs: list[tuple[str, str, str]] = []
     skipped = 0
     for audio_path in audio_paths:
@@ -246,6 +285,7 @@ def main(argv: list[str] | None = None) -> None:
             beside_audio=args.beside_audio,
             output_dir=args.output_dir,
             data_root=data_root,
+            suffix=suffix,
         )
         label = _display_path(audio_path, data_root)
         if args.skip_existing and pathlib.Path(output_path).is_file():
@@ -268,9 +308,9 @@ def main(argv: list[str] | None = None) -> None:
     if wsl_gpu.device_requests_gpu(args.device):
         wsl_gpu.assert_wsl_gpu_free_for_training()
         wsl_gpu.guard_gpu_device_job(args.device, __file__)
-        _extract_pending_jobs(pending_jobs, args, skipped=skipped)
+        _extract_pending_jobs(pending_jobs, args, skipped=skipped, layers=layers)
         return
-    _extract_pending_jobs(pending_jobs, args, skipped=skipped)
+    _extract_pending_jobs(pending_jobs, args, skipped=skipped, layers=layers)
 
 
 def _extract_pending_jobs(
@@ -278,6 +318,7 @@ def _extract_pending_jobs(
     args: argparse.Namespace,
     *,
     skipped: int,
+    layers: tuple[int, ...] | None = None,
 ) -> None:
     batch_started = time.perf_counter()
     _log(f"Loading MERT model on {args.device}...")
@@ -297,6 +338,7 @@ def _extract_pending_jobs(
                 output_path,
                 model_name=args.model_name,
                 layer=args.layer,
+                layers=layers,
                 device=args.device,
                 chunk_seconds=args.chunk_seconds,
                 model=model,

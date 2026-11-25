@@ -19,6 +19,7 @@ class ItgptConfigTest(unittest.TestCase):
                 exclude_normalized_ids=["bad_song"],
                 audio_feature_type="mert",
                 n_frames_per_beat=24,
+                mert_cache_suffix=".mert_l2_6_10.npy",
             ),
             model=config.ItgptModelConfig(
                 d_model=32, n_heads=4, n_enc_layers=1, early_film=True
@@ -41,6 +42,7 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.dataset.exclude_normalized_ids, ["bad_song"])
         self.assertEqual(loaded.dataset.audio_feature_type, "mert")
         self.assertEqual(loaded.dataset.n_frames_per_beat, 24)
+        self.assertEqual(loaded.dataset.mert_cache_suffix, ".mert_l2_6_10.npy")
         self.assertEqual(loaded.model.d_model, 32)
         self.assertEqual(loaded.model.n_heads, 4)
         self.assertTrue(loaded.model.early_film)
@@ -101,6 +103,10 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(learning_rate=1e-4, min_learning_rate=2e-4)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(focal_gamma=-0.5)
+        with self.assertRaises(ValueError):
+            config.ItgptDatasetConfig(
+                training_index_path="x.json", mert_cache_suffix="bad_suffix"
+            )
 
 
 if __name__ == "__main__":

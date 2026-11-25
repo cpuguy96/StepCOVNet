@@ -4,7 +4,27 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
-## Session 2026-11-25 — Early FiLM ablation, 3-knob scorecard & Dataset A Cosine-64
+## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
+
+### NOTE-20261125-03: Multi-layer MERT (`layers 2,6,10`) cuts Dataset A errors **10.4%** to **0.7664** F1 / **0.7697** max-F1 and **5.5×** triplet F1
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 05:55:00 |
+| **Topic** | Pre-scaling knob #1: per-layer normalized mean of MERT layers `(2, 6, 10)` vs single layer `6` on Dataset A |
+
+**Context.** Before extracting ~730 more `*.mert.npy` files for full `final_data`, we tested whether blending early percussive (L2), mid rhythmic (L6), and upper structural (L10) hidden states of `MERT-v1-330M` via per-layer standardization + mean (`1024`-d, same disk/RAM/params) beats single layer 6 on Dataset A (`EXP-20261125-02` control: **0.7580** F1@0.5 / **0.7608** max-F1 / `+0.6752` ±20 ms skill).
+
+**Discovery.**
+
+- **Decisive win across every checkpoint and metric (`EXP-20261125-03`):**
+  - `best.keras` (ep 38, `val_loss 0.04550`, fp32): **0.7664** F1@0.5 (**+0.84 pp** vs L6 Cosine-64, **+5.60 pp** vs paper-faithful log-mel ITGPT `0.7104`), **0.7697** max-F1 (`+0.89 pp`), **+0.6837** ±20 ms `skill_event_f1` (`+0.85 pp`, **+7.52 pp** vs mel ITGPT), total errors down **−10.4%** (`9,248 → 8,288`).
+  - `last.keras` (ep 64, fp32): **0.7599** F1@0.5 / **0.7646** max-F1 with **−0.1437** `shuffle` drop (**7.9×** log-mel DDCL — strongest audio grounding yet on Dataset A).
+- **The exact hypothesized audio physics showed up in the error breakdown:** Adding early layer 2 (percussive attacks) and upper layer 10 (phrase structure) lifted `16th` off-beats **+3.4 pp** (`0.598 → 0.632`), multiplied `24th` triplet F1 by **5.5×** (`0.046 → 0.253`), lifted song intros **+4.7 pp** (`0.580 → 0.626`), and pushed `fraxtil_s_arrow_arrangements` to **0.8280** (`+2.2 pp`) and `fraxtil_s_beast_beats` to **0.8176** (`+1.4 pp`), with near-perfect probability calibration.
+
+**Implication.** **Promote `layers 2,6,10` (per-layer normalized mean) as our standard MERT representation for full `final_data` extraction** — zero extra disk/RAM/parameters, huge subdivision and intro gains. Proceeding next to pre-scaling knob #2 (`grid_weight_24th = 2.0` on `300t/50v`) and knob #3 (cyclic measure/phrase position on `300t/50v`).
+
+**Related.** [EXP-20261125-03](EXPERIMENT_LOG.md#exp-20261125-03-multi-layer-mert-layers-2610-lifts-dataset-a-084-pp-to-07664-f1--07697-max-f1-560-pp-over-log-mel-itgpt) · [EXP-20261125-02](EXPERIMENT_LOG.md#exp-20261125-02-dataset-a-cosine-64-lifts-itgpt-mert-to-07580-f105--06752-20-ms-skill-last-07562-shuffle-01402)
 
 ### NOTE-20261125-02: Cosine-64 generalizes to Dataset A (**0.7580** F1 / **+0.6752** ±20 ms skill / `last` **0.7562**, **−0.1402** `shuffle`)
 

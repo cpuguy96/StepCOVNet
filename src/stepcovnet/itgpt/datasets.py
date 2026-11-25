@@ -91,6 +91,7 @@ def load_split_charts(
         exclude_normalized_ids=list(dataset_config.exclude_normalized_ids),
         audio_feature_type=dataset_config.audio_feature_type,
         n_frames_per_beat=dataset_config.n_frames_per_beat,
+        mert_cache_suffix=dataset_config.mert_cache_suffix,
     )
     return ddcl_datasets.load_split_charts(ddcl_dataset, split)
 

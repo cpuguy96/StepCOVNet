@@ -66,6 +66,8 @@ class DdclDatasetConfig(_DictSerializableMixin):
         audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
         n_frames_per_beat: Sub-beat frames resampled per beat (32 for logmel,
             16 recommended for MERT).
+        mert_cache_suffix: Sibling filename suffix for cached MERT arrays
+            (default ``.mert.npy``).
     """
 
     training_index_path: str
@@ -78,13 +80,14 @@ class DdclDatasetConfig(_DictSerializableMixin):
     exclude_normalized_ids: list[str] = dataclasses.field(default_factory=list)
     audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
+    mert_cache_suffix: str = constants.MERT_CACHE_SUFFIX
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.
 
         Raises:
             ValueError: If ``batch_size``, ``memlen``, ``n_frames_per_beat``,
-                or ``audio_feature_type`` is invalid.
+                ``audio_feature_type``, or ``mert_cache_suffix`` is invalid.
         """
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {self.batch_size}")
@@ -98,6 +101,11 @@ class DdclDatasetConfig(_DictSerializableMixin):
         if self.n_frames_per_beat < 1:
             raise ValueError(
                 f"n_frames_per_beat must be at least 1, got {self.n_frames_per_beat}"
+            )
+        if not self.mert_cache_suffix.startswith(".") or not self.mert_cache_suffix.endswith(".npy"):
+            raise ValueError(
+                "mert_cache_suffix must start with '.' and end with '.npy', "
+                f"got {self.mert_cache_suffix!r}"
             )
 
 

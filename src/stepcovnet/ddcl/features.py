@@ -218,20 +218,25 @@ def window_at_beat(
     return out
 
 
-def load_mert_features(audio_path: str | pathlib.Path) -> np.ndarray:
+def load_mert_features(
+    audio_path: str | pathlib.Path,
+    *,
+    cache_suffix: str = constants.MERT_CACHE_SUFFIX,
+) -> np.ndarray:
     """Load precomputed 100 Hz MERT embeddings beside ``audio_path``.
 
     Args:
-        audio_path: Path to the song audio file; resolves sibling ``.mert.npy``.
+        audio_path: Path to the song audio file; resolves sibling cache file.
+        cache_suffix: Sibling filename suffix (default ``.mert.npy``).
 
     Returns:
         Float32 array of shape ``(time, feature_dim)``.
 
     Raises:
-        FileNotFoundError: If the sibling ``.mert.npy`` file does not exist.
+        FileNotFoundError: If the sibling MERT cache file does not exist.
         ValueError: If the loaded array is not rank-2.
     """
-    mert_path = pathlib.Path(audio_path).with_suffix(constants.MERT_CACHE_SUFFIX)
+    mert_path = pathlib.Path(audio_path).with_suffix(cache_suffix)
     if not mert_path.is_file():
         raise FileNotFoundError(f"missing cached MERT features: {mert_path}")
     arr = np.asarray(np.load(mert_path), dtype=np.float32)

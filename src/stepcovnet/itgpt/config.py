@@ -65,6 +65,8 @@ class ItgptDatasetConfig(_DictSerializableMixin):
         exclude_normalized_ids: Song slugs dropped before load.
         audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
         n_frames_per_beat: Sub-beat frames per beat (32 for logmel, 24 for MERT).
+        mert_cache_suffix: Sibling filename suffix for cached MERT arrays
+            (default ``.mert.npy``).
     """
 
     training_index_path: str
@@ -77,12 +79,14 @@ class ItgptDatasetConfig(_DictSerializableMixin):
     exclude_normalized_ids: list[str] = dataclasses.field(default_factory=list)
     audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
+    mert_cache_suffix: str = ddcl_constants.MERT_CACHE_SUFFIX
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.
 
         Raises:
-            ValueError: If sizes or ``audio_feature_type`` are invalid.
+            ValueError: If sizes, ``audio_feature_type``, or
+                ``mert_cache_suffix`` are invalid.
         """
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {self.batch_size}")
@@ -106,6 +110,11 @@ class ItgptDatasetConfig(_DictSerializableMixin):
             raise ValueError(
                 "MERT ITGPT requires n_frames_per_beat == "
                 f"{constants.CNN_FRAMES_OUT}, got {self.n_frames_per_beat}"
+            )
+        if not self.mert_cache_suffix.startswith(".") or not self.mert_cache_suffix.endswith(".npy"):
+            raise ValueError(
+                "mert_cache_suffix must start with '.' and end with '.npy', "
+                f"got {self.mert_cache_suffix!r}"
             )
 
 

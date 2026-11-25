@@ -354,3 +354,21 @@ class ListAudioChartPairsTest(unittest.TestCase):
                 pathlib.Path(audio_path).stem,
                 pathlib.Path(chart_path).stem.split(".")[0],
             )
+
+
+class CombineMertLayersTest(unittest.TestCase):
+    def test_single_layer_is_identity_and_multi_layer_normalizes_scale(self):
+        a = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+        np.testing.assert_allclose(ssl_features.combine_mert_layers([a]), a)
+        # Scaling layer b by 100x must not dominate the average after per-layer norm.
+        b = a * 100.0
+        combined = ssl_features.combine_mert_layers([a, b])
+        expected = (a - a.mean(axis=-1, keepdims=True)) / a.std(axis=-1, keepdims=True)
+        np.testing.assert_allclose(combined, expected, rtol=1e-5, atol=1e-5)
+        self.assertTrue(
+            ssl_features.mert_npy_path(
+                "songs/track.ogg", suffix=".mert_l2_6_10.npy"
+            ).endswith("track.mert_l2_6_10.npy")
+        )
+        with self.assertRaises(ValueError):
+            ssl_features.combine_mert_layers([])

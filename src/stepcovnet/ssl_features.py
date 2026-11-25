@@ -27,6 +27,8 @@ def mert_npy_path(
     audio_path: str,
     features_dir: str = "",
     data_root: str = "",
+    *,
+    suffix: str = MERT_FILE_SUFFIX,
 ) -> str:
     """Resolve the path where precomputed MERT features are stored for an audio file.
 
@@ -36,15 +38,16 @@ def mert_npy_path(
             are expected beside the audio file.
         data_root: When ``features_dir`` is set, preserve relative paths under this
             root so nested training layouts do not collide on song stem alone.
+        suffix: Output filename suffix (default ``.mert.npy``).
 
     Returns:
-        Absolute or relative path to the ``.mert.npy`` file.
+        Absolute or relative path to the MERT ``.npy`` file.
     """
     audio = pathlib.Path(audio_path)
     if not features_dir:
-        return str(audio.with_suffix(MERT_FILE_SUFFIX))
+        return str(audio.with_suffix(suffix))
     rel = os.path.relpath(audio_path, data_root) if data_root else audio.name
-    rel_npy = str(pathlib.Path(rel).with_suffix(MERT_FILE_SUFFIX))
+    rel_npy = str(pathlib.Path(rel).with_suffix(suffix))
     return str(pathlib.Path(features_dir) / rel_npy)
 
 
@@ -62,6 +65,9 @@ def resample_features_to_hop_grid(
 
     Returns:
         Resampled features with shape ``(n_target_frames, feature_dim)``, float32.
+
+    Raises:
+        ValueError: If ``features`` is not 2D.
     """
     if features.ndim != 2:
         raise ValueError(
@@ -103,6 +109,9 @@ def resample_features_to_frame_count(
 
     Returns:
         Resampled features with shape ``(n_frames, feature_dim)``, float32.
+
+    Raises:
+        ValueError: If ``features`` is not 2D.
     """
     if features.ndim != 2:
         raise ValueError(
@@ -207,25 +216,59 @@ def _load_mert_model(model_name: str, device: str):
     return model, processor
 
 
+def combine_mert_layers(layer_arrays: list[np.ndarray]) -> np.ndarray:
+    """Average multiple MERT hidden-state layers after per-layer normalization.
+
+    Normalizing each layer across the hidden axis prevents deeper layers with
+    larger activation norms from drowning out early percussive layers.
+
+    Args:
+        layer_arrays: Non-empty list of ``(time_steps, hidden_dim)`` arrays.
+
+    Returns:
+        Float32 array of shape ``(time_steps, hidden_dim)``.
+
+    Raises:
+        ValueError: If ``layer_arrays`` is empty.
+    """
+    if not layer_arrays:
+        raise ValueError("layer_arrays must be non-empty")
+    if len(layer_arrays) == 1:
+        return np.asarray(layer_arrays[0], dtype=np.float32)
+    normalized: list[np.ndarray] = []
+    for arr in layer_arrays:
+        x = np.asarray(arr, dtype=np.float32)
+        mean = np.mean(x, axis=-1, keepdims=True)
+        std = np.std(x, axis=-1, keepdims=True)
+        normalized.append((x - mean) / np.maximum(std, 1e-6))
+    return np.mean(np.stack(normalized, axis=0), axis=0).astype(np.float32)
+
+
 def _mert_hidden_states_for_chunk(
     waveform: np.ndarray,
     *,
-    model,
-    processor,
+    model: object,
+    processor: object,
     layer: int,
     device: str,
+    layers: tuple[int, ...] | None = None,
 ) -> np.ndarray:
-    """Run MERT on one waveform chunk and return hidden states for one layer.
+    """Run MERT on one waveform chunk and return single- or multi-layer states.
 
     Args:
         waveform: 1D float waveform at MERT_SAMPLE_RATE.
         model: Loaded MERT model.
         processor: Matching Wav2Vec2 feature extractor.
-        layer: Hidden-state layer index (0 = embedding output).
+        layer: Hidden-state layer index (0 = embedding output) used when
+            ``layers`` is None.
         device: Torch device string.
+        layers: Optional tuple of layer indices to layer-normalize and average.
 
     Returns:
         Hidden states with shape ``(time_steps, hidden_dim)``, float32.
+
+    Raises:
+        ValueError: If any requested layer index is out of range.
     """
     if waveform.size == 0:
         return np.zeros((0, constants.MERT_HIDDEN_SIZE), dtype=np.float32)
@@ -246,12 +289,17 @@ def _mert_hidden_states_for_chunk(
     with torch.no_grad():
         outputs = model(**model_kwargs, output_hidden_states=True)
     hidden_states = outputs.hidden_states
-    if layer < 0 or layer >= len(hidden_states):
-        raise ValueError(
-            f"MERT layer index {layer} out of range (model has {len(hidden_states)} layers)"
-        )
-    hidden = hidden_states[layer].squeeze(0).cpu().numpy()
-    return hidden.astype(np.float32)
+    selected = layers if layers is not None else (layer,)
+    if not selected:
+        raise ValueError("layers must be non-empty when provided")
+    extracted: list[np.ndarray] = []
+    for idx in selected:
+        if idx < 0 or idx >= len(hidden_states):
+            raise ValueError(
+                f"MERT layer index {idx} out of range (model has {len(hidden_states)} layers)"
+            )
+        extracted.append(hidden_states[idx].squeeze(0).cpu().numpy().astype(np.float32))
+    return combine_mert_layers(extracted)
 
 
 def extract_mert_features_from_audio(
@@ -259,17 +307,19 @@ def extract_mert_features_from_audio(
     *,
     model_name: str = DEFAULT_MERT_MODEL,
     layer: int = DEFAULT_MERT_LAYER,
+    layers: tuple[int, ...] | None = None,
     device: str = "cpu",
     chunk_seconds: float = MERT_CHUNK_SECONDS,
-    model=None,
-    processor=None,
+    model: object = None,
+    processor: object = None,
 ) -> np.ndarray:
     """Extract MERT hidden states from an audio file, resampled to the onset grid.
 
     Args:
         audio_path: Path to an audio file readable by librosa.
         model_name: Hugging Face MERT model id.
-        layer: Hidden-state layer index to extract.
+        layer: Hidden-state layer index to extract when ``layers`` is None.
+        layers: Optional tuple of layer indices to normalize and average.
         device: Torch device for inference.
         chunk_seconds: Maximum chunk length in seconds for long files.
         model: Optional pre-loaded MERT model (avoids reloading weights per file).
@@ -277,6 +327,9 @@ def extract_mert_features_from_audio(
 
     Returns:
         Feature array with shape ``(time_steps, hidden_dim)`` on the HOP_COEFF grid.
+
+    Raises:
+        ValueError: If the audio file is empty.
     """
     waveform, _ = librosa.load(audio_path, sr=MERT_SAMPLE_RATE, mono=True)
     if waveform.size == 0:
@@ -301,6 +354,7 @@ def extract_mert_features_from_audio(
                 model=model,
                 processor=processor,
                 layer=layer,
+                layers=layers,
                 device=device,
             )
         )
@@ -327,6 +381,9 @@ def save_mert_features(
 
     Returns:
         The output path written.
+
+    Raises:
+        ValueError: If ``features`` is not 2D.
     """
     if features.ndim != 2:
         raise ValueError(
@@ -344,10 +401,11 @@ def extract_and_save_mert_features(
     *,
     model_name: str = DEFAULT_MERT_MODEL,
     layer: int = DEFAULT_MERT_LAYER,
+    layers: tuple[int, ...] | None = None,
     device: str = "cpu",
     chunk_seconds: float = MERT_CHUNK_SECONDS,
-    model=None,
-    processor=None,
+    model: object = None,
+    processor: object = None,
 ) -> str:
     """Extract MERT features from audio and write them to disk.
 
@@ -355,7 +413,8 @@ def extract_and_save_mert_features(
         audio_path: Source audio path.
         output_path: Destination ``.mert.npy`` path.
         model_name: Hugging Face MERT model id.
-        layer: Hidden-state layer index.
+        layer: Hidden-state layer index when ``layers`` is None.
+        layers: Optional tuple of layer indices to normalize and average.
         device: Torch device for inference.
         chunk_seconds: Chunk length for long audio.
         model: Optional pre-loaded MERT model.
@@ -368,6 +427,7 @@ def extract_and_save_mert_features(
         audio_path,
         model_name=model_name,
         layer=layer,
+        layers=layers,
         device=device,
         chunk_seconds=chunk_seconds,
         model=model,

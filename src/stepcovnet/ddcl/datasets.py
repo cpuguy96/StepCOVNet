@@ -158,6 +158,7 @@ def load_ddcl_chart(
     pack: prep_models.ParsedSongPack | None = None,
     audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL,
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
+    mert_cache_suffix: str = constants.MERT_CACHE_SUFFIX,
 ) -> DdclChart:
     """Load beat-grid features and ``M-slot48`` targets for one chart.
 
@@ -172,6 +173,7 @@ def load_ddcl_chart(
         pack: Optional preloaded parsed song metadata/charts.
         audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
         n_frames_per_beat: Sub-beat frames resampled per beat.
+        mert_cache_suffix: Sibling filename suffix for cached MERT arrays.
 
     Returns:
         In-memory chart example.
@@ -209,7 +211,9 @@ def load_ddcl_chart(
             beat_audio = shared_beat_audio[:n_beats]
         else:
             if spec is None:
-                spec = features.load_mert_features(audio_path)
+                spec = features.load_mert_features(
+                    audio_path, cache_suffix=mert_cache_suffix
+                )
             beat_audio = features.beats_to_mert_tensor(
                 spec,
                 beat_times,
@@ -283,7 +287,9 @@ def load_split_charts(
         )
         shared_beat_audio: np.ndarray | None = None
         if dataset_config.audio_feature_type == constants.AUDIO_FEATURE_MERT:
-            spec = features.load_mert_features(audio_key)
+            spec = features.load_mert_features(
+                audio_key, cache_suffix=dataset_config.mert_cache_suffix
+            )
             max_n_beats = 0
             for entry in group:
                 if 0 <= entry.chart_index < len(pack.charts):
@@ -326,6 +332,7 @@ def load_split_charts(
                     pack=pack,
                     audio_feature_type=dataset_config.audio_feature_type,
                     n_frames_per_beat=dataset_config.n_frames_per_beat,
+                    mert_cache_suffix=dataset_config.mert_cache_suffix,
                 )
             )
         del spec
