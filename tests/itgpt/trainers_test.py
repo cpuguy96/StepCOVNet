@@ -297,6 +297,88 @@ class ItgptTrainersTest(unittest.TestCase):
                 "CosineDecay",
             )
 
+    def test_focal_loss_equivalence_modulation_and_reload(self):
+        y_true = np.zeros((1, 4, constants.N_SLOTS), dtype=np.float32)
+        y_true[0, 0, 0] = 1.0
+        y_true[0, 1, 12] = 1.0
+        y_pred = np.full((1, 4, constants.N_SLOTS), 0.1, dtype=np.float32)
+        y_pred[0, 0, 0] = 0.9
+        y_pred[0, 1, 12] = 0.4
+        mask = np.array([[1.0, 1.0, 0.0, 0.0]], dtype=np.float32)
+
+        plain_per_beat = np.asarray(
+            trainers.placement_binary_crossentropy(y_true, y_pred)
+        )
+        zero_focal = trainers.ItgptPlacementLoss(focal_gamma=0.0)
+        zero_per_beat = np.asarray(zero_focal.call(y_true, y_pred))
+        np.testing.assert_allclose(zero_per_beat, plain_per_beat, rtol=1e-6, atol=1e-6)
+
+        focal_1 = trainers.ItgptPlacementLoss(focal_gamma=1.0)
+        focal_per_beat = np.asarray(focal_1.call(y_true, y_pred))
+        self.assertTrue(np.all(focal_per_beat < plain_per_beat))
+        # Harder beat (slot 12 at p=0.4) retains a larger fraction of its loss
+        # than the easier beat (slot 0 at p=0.9).
+        self.assertGreater(
+            focal_per_beat[0, 1] / plain_per_beat[0, 1],
+            focal_per_beat[0, 0] / plain_per_beat[0, 0],
+        )
+        # Masked reduction matches Keras sum_over_batch_size used by the plain loss.
+        masked_loss = float(focal_1(y_true, y_pred, sample_weight=mask))
+        self.assertAlmostEqual(
+            masked_loss,
+            float(np.mean(focal_per_beat * mask)),
+            places=6,
+        )
+        self.assertAlmostEqual(
+            float(zero_focal(y_true, y_pred, sample_weight=mask)),
+            float(np.mean(plain_per_beat * mask)),
+            places=6,
+        )
+
+        chart = _synthetic_chart()
+        report = mock.Mock()
+        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    focal_gamma=1.0,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="focal_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+            ):
+                trainers.train_placement(experiment)
+            reloaded = trainers.load_placement_model(
+                pathlib.Path(tmpdir) / "models" / "focal_smoke.keras"
+            )
+            self.assertIsInstance(reloaded.loss, trainers.ItgptPlacementLoss)
+            self.assertAlmostEqual(reloaded.loss.focal_gamma, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

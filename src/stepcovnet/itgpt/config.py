@@ -172,6 +172,8 @@ class ItgptRunConfig(_DictSerializableMixin):
         lr_schedule: Optimizer schedule (``constant`` or ``cosine``).
         warmup_epochs: Linear warmup epochs before cosine decay (0 disables warmup).
         min_learning_rate: Floor LR at warmup start and cosine end.
+        focal_gamma: Focal modulating exponent ``(1 - p_t)^gamma`` applied to
+            grid-weighted slot BCE (``0.0`` keeps plain weighted BCE).
     """
 
     epoch: int = 8
@@ -191,13 +193,15 @@ class ItgptRunConfig(_DictSerializableMixin):
     lr_schedule: str = constants.LR_SCHEDULE_CONSTANT
     warmup_epochs: int = 0
     min_learning_rate: float = 0.0
+    focal_gamma: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
 
         Raises:
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
-                ``eval_slot_f1_every``, or LR schedule fields are invalid.
+                ``eval_slot_f1_every``, LR schedule, or ``focal_gamma`` fields
+                are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -233,6 +237,10 @@ class ItgptRunConfig(_DictSerializableMixin):
             raise ValueError(
                 "min_learning_rate must be in [0, learning_rate], "
                 f"got {self.min_learning_rate} vs {self.learning_rate}"
+            )
+        if self.focal_gamma < 0.0:
+            raise ValueError(
+                f"focal_gamma must be >= 0, got {self.focal_gamma}"
             )
 
 

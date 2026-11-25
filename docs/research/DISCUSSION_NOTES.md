@@ -6,6 +6,26 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-24 — ITGPT-MERT ladder scaling (`200t/50v` & `300t/50v`) & single-knob ablations
 
+### NOTE-20261124-04: Why Focal Loss hurt stepchart placement (**−0.92 pp**) and validated one-knob discipline
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-24 23:19:42 |
+| **Topic** | Negative result on `focal_gamma = 1.0` (`0.8388 → 0.8296`) and why label ambiguity breaks focal modulation on human stepcharts |
+
+**Context.** On top of our promoted 64-ep Cosine LR champion (`0.8388`, `EXP-20261124-03`), we tested `focal_gamma = 1.0` alone (`EXP-20261124-04`) to see whether down-weighting easy quarters/empty slots would lift `16th` (`0.700`) and `24th` (`0.504`) ranking.
+
+**Discovery.**
+
+- **Clear single-knob regression across the board:** `best_slot_f1.keras` (ep 56, fp32) fell **−0.92 pp** (`0.8388 → 0.8296`), max-F1 fell **−0.73 pp** (`0.8388 → 0.8315`), and ±20 ms `skill_event_f1` fell **−1.10 pp** (`+0.7614 → +0.7504`).
+- **The exact target slices suffered most:** `16th` off-beats dropped **−3.1 pp** (`0.700 → 0.669`, recall `71.3% → 65.6%`), `24th` triplets dropped **−0.7 pp** (`0.504 → 0.497`), song intros dropped **−3.0 pp** (`0.797 → 0.767`), and `vocaloid_project_pad_pack_4th` dropped **−1.95 pp** (`0.806 → 0.787`).
+- **Root cause (irreducible charting ambiguity):** Unlike object detection where hard examples have an objective ground-truth box, "hard" 16th slots in human stepcharts carry genuine stylistic ambiguity between chartists. Focal modulation `(1 - p_t)` shifts gradient mass away from clean rhythmic regularities onto noisy stylistic edge cases, causing earlier `val_loss` divergence (ep 19 vs ep 30) and a `−3.0 pp` recall drop.
+- **Why one-knob-at-a-time saved the project:** Had we bundled Cosine LR (#4) + Focal Loss (#2) together, their effects (`+1.12 pp` and `−0.92 pp`) would have nearly canceled (`~0.830`), completely hiding Cosine LR's `+1.12 pp` jump!
+
+**Implication.** Reject `focal_gamma = 1.0` and keep plain grid-weighted BCE (`focal_gamma = 0.0`). Next single-knob ablation on top of `0.8388`: **Ablation 3 (#3 — early FiLM difficulty + BPM conditioning)**, which directly targets the still-unaddressed `meter <= 8` over-prediction (`0.778`, `P=0.682 / R=0.906` vs `meter 11–12` `0.853`).
+
+**Related.** [EXP-20261124-04](EXPERIMENT_LOG.md#exp-20261124-04-single-knob-focal-loss-focal_gamma--10-regresses-cosine-64-by-092-pp-08296-vs-08388--rejected) · [EXP-20261124-03](EXPERIMENT_LOG.md#exp-20261124-03-single-knob-64-ep-cosine-lr-lifts-300t50v-itgpt-mert-112-pp-to-08388-f1-and-743-audio-transfer)
+
 ### NOTE-20261124-03: Single-knob 64-ep Cosine LR beats 128-ep constant LR by **+1.12 pp** (**0.8388** F1) and lifts 16th/24th subdivisions **+4.8 / +3.8 pp**
 
 | Field | Value |

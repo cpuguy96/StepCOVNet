@@ -28,6 +28,7 @@ class ItgptConfigTest(unittest.TestCase):
                 lr_schedule="cosine",
                 warmup_epochs=2,
                 min_learning_rate=1e-6,
+                focal_gamma=1.0,
             ),
         )
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -45,6 +46,7 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.run.lr_schedule, "cosine")
         self.assertEqual(loaded.run.warmup_epochs, 2)
         self.assertAlmostEqual(loaded.run.min_learning_rate, 1e-6)
+        self.assertAlmostEqual(loaded.run.focal_gamma, 1.0)
         self.assertFalse(loaded.run.mixed_precision)
         self.assertFalse(loaded.run.jit_compile)
 
@@ -93,6 +95,8 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(min_learning_rate=-1e-6)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(learning_rate=1e-4, min_learning_rate=2e-4)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(focal_gamma=-0.5)
 
 
 if __name__ == "__main__":

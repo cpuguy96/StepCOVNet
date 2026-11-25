@@ -53,6 +53,62 @@ def placement_binary_crossentropy(y_true: object, y_pred: object) -> object:
     return ops.mean(weighted, axis=-1)
 
 
+@keras.saving.register_keras_serializable(package="stepcovnet.itgpt")
+class ItgptPlacementLoss(keras.losses.Loss):
+    """Grid-weighted slot BCE with optional focal modulation.
+
+    Returns per-beat mean loss ``(batch, beats)`` so Keras applies the beat
+    mask ``sample_weight`` before reducing across beats.
+
+    Args:
+        focal_gamma: Non-negative focal exponent ``(1 - p_t)^gamma``
+            (``0.0`` reduces to :func:`placement_binary_crossentropy`).
+        name: Keras loss name.
+        **kwargs: Additional :class:`keras.losses.Loss` kwargs.
+    """
+
+    def __init__(
+        self,
+        focal_gamma: float = 0.0,
+        name: str = "itgpt_placement_loss",
+        **kwargs,
+    ) -> None:
+        super().__init__(name=name, **kwargs)
+        self.focal_gamma = float(focal_gamma)
+
+    def call(self, y_true: object, y_pred: object) -> object:
+        """Compute per-beat mean of focal-modulated grid-weighted BCE.
+
+        Args:
+            y_true: Slot labels ``(batch, beats, 48)``.
+            y_pred: Slot probabilities ``(batch, beats, 48)``.
+
+        Returns:
+            Weighted loss ``(batch, beats)``.
+        """
+        epsilon = keras.backend.epsilon()
+        y_pred = ops.clip(ops.cast(y_pred, "float32"), epsilon, 1.0 - epsilon)
+        y_true = ops.cast(y_true, "float32")
+        per_slot = -(
+            y_true * ops.log(y_pred) + (1.0 - y_true) * ops.log(1.0 - y_pred)
+        )
+        if self.focal_gamma > 0.0:
+            p_t = y_true * y_pred + (1.0 - y_true) * (1.0 - y_pred)
+            per_slot = per_slot * ops.power(1.0 - p_t, self.focal_gamma)
+        weighted = per_slot * models.grid_importance_weights()
+        return ops.mean(weighted, axis=-1)
+
+    def get_config(self) -> dict:
+        """Return loss config for Keras serialization.
+
+        Returns:
+            Serialized config mapping.
+        """
+        base = super().get_config()
+        base.update({"focal_gamma": self.focal_gamma})
+        return base
+
+
 def load_placement_model(path: str | pathlib.Path) -> keras.Model:
     """Load a saved ITGPT placement model, including the custom loss.
 
@@ -66,6 +122,7 @@ def load_placement_model(path: str | pathlib.Path) -> keras.Model:
         path,
         custom_objects={
             "placement_binary_crossentropy": placement_binary_crossentropy,
+            "ItgptPlacementLoss": ItgptPlacementLoss,
             "ItgptPlacementModel": models.ItgptPlacementModel,
         },
     )
@@ -136,9 +193,14 @@ def compile_placement_model(
             learning_rate=learning_rate,
             clipnorm=run_config.clipnorm,
         )
+    loss: object = (
+        ItgptPlacementLoss(focal_gamma=run_config.focal_gamma)
+        if run_config.focal_gamma > 0.0
+        else placement_binary_crossentropy
+    )
     model.compile(
         optimizer=optimizer,
-        loss=placement_binary_crossentropy,
+        loss=loss,
         jit_compile=run_config.jit_compile,
     )
     return model
