@@ -131,6 +131,9 @@ class ItgptModelConfig(_DictSerializableMixin):
         early_film: If True, apply zero-initialized FiLM conditioning from
             ``[difficulty, bpm]`` before the hierarchical sub-beat blocks and
             before the global encoder.
+        cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
+            (bar) and ``beat % 16`` (4-bar phrase) positional embeddings in
+            ``level6``.
     """
 
     d_model: int = constants.D_MODEL
@@ -139,6 +142,7 @@ class ItgptModelConfig(_DictSerializableMixin):
     cnn_hidden: int = constants.CNN_HIDDEN
     dropout_rate: float = constants.DROPOUT_RATE
     early_film: bool = False
+    cyclic_measure_pos: bool = False
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.

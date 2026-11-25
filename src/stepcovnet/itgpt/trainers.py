@@ -521,6 +521,7 @@ def build_and_compile(
         n_frames_per_beat=experiment.dataset.n_frames_per_beat,
         feature_dim=feature_dim,
         early_film=experiment.model.early_film,
+        cyclic_measure_pos=experiment.model.cyclic_measure_pos,
         model_name=experiment.run.model_name,
     )
     return compile_placement_model(model, experiment.run)

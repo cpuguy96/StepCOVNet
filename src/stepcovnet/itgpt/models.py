@@ -567,6 +567,8 @@ class ItgptPlacementModel(keras.Model):
         early_film: If True, apply zero-initialized FiLM modulation from
             ``[difficulty, bpm]`` before the sub-beat attention stack and before
             the global encoder.
+        cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
+            and ``beat % 16`` positional embeddings before ``level6``.
         **kwargs: Keras model kwargs.
 
     Raises:
@@ -586,6 +588,7 @@ class ItgptPlacementModel(keras.Model):
         n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
         feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
         early_film: bool = False,
+        cyclic_measure_pos: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -614,6 +617,7 @@ class ItgptPlacementModel(keras.Model):
         self.n_frames_per_beat = n_frames_per_beat
         self.feature_dim = feature_dim
         self.early_film = bool(early_film)
+        self.cyclic_measure_pos = bool(cyclic_measure_pos)
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
         self.beat_mert: ItgptBeatMertEncoder | None = None
         if audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
@@ -691,6 +695,21 @@ class ItgptPlacementModel(keras.Model):
             embeddings_initializer=keras.initializers.RandomNormal(stddev=0.02),  # type: ignore[arg-type]
             name="level6_pos",
         )
+        self.bar_pos_emb: keras.layers.Embedding | None = None
+        self.phrase_pos_emb: keras.layers.Embedding | None = None
+        if self.cyclic_measure_pos:
+            self.bar_pos_emb = keras.layers.Embedding(
+                4,
+                d_model,
+                embeddings_initializer="zeros",
+                name="bar_pos_emb",
+            )
+            self.phrase_pos_emb = keras.layers.Embedding(
+                16,
+                d_model,
+                embeddings_initializer="zeros",
+                name="phrase_pos_emb",
+            )
         self.level6 = [
             ItgptEncoderBlock(d_model, n_heads, dropout_rate, name=f"level6_{index}")
             for index in range(n_enc_layers)
@@ -784,7 +803,14 @@ class ItgptPlacementModel(keras.Model):
                 batch_size=batch_size,
                 n_beats=n_beats,
             )
-        pos = self.level6_pos(ops.arange(n_beats, dtype="int32"))
+        beat_idx = ops.arange(n_beats, dtype="int32")
+        pos = self.level6_pos(beat_idx)
+        if self.bar_pos_emb is not None and self.phrase_pos_emb is not None:
+            pos = (
+                pos
+                + self.bar_pos_emb(ops.mod(beat_idx, 4))
+                + self.phrase_pos_emb(ops.mod(beat_idx, 16))
+            )
         global_h = global_h + pos
         global_h = ops.concatenate([diff_tok, bpm_tok, global_h], axis=1)
         for block in self.level6:
@@ -812,6 +838,7 @@ class ItgptPlacementModel(keras.Model):
                 "n_frames_per_beat": self.n_frames_per_beat,
                 "feature_dim": self.feature_dim,
                 "early_film": self.early_film,
+                "cyclic_measure_pos": self.cyclic_measure_pos,
             }
         )
         return config
@@ -829,6 +856,7 @@ def build_itgpt_placement_model(
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
     feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
     early_film: bool = False,
+    cyclic_measure_pos: bool = False,
     model_name: str = "itgpt_placement",
 ) -> keras.Model:
     """Build the ITGPT placement network.
@@ -850,6 +878,8 @@ def build_itgpt_placement_model(
         feature_dim: Per-frame width when ``audio_feature_type == "mert"``.
         early_film: If True, apply zero-initialized FiLM conditioning from
             ``[difficulty, bpm]`` before the sub-beat and global stacks.
+        cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
+            and ``beat % 16`` positional embeddings before ``level6``.
         model_name: Keras model name.
 
     Returns:
@@ -873,5 +903,6 @@ def build_itgpt_placement_model(
         n_frames_per_beat=n_frames_per_beat,
         feature_dim=feature_dim,
         early_film=early_film,
+        cyclic_measure_pos=cyclic_measure_pos,
         name=model_name,
     )

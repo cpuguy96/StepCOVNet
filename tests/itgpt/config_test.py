@@ -22,7 +22,11 @@ class ItgptConfigTest(unittest.TestCase):
                 mert_cache_suffix=".mert_l2_6_10.npy",
             ),
             model=config.ItgptModelConfig(
-                d_model=32, n_heads=4, n_enc_layers=1, early_film=True
+                d_model=32,
+                n_heads=4,
+                n_enc_layers=1,
+                early_film=True,
+                cyclic_measure_pos=True,
             ),
             run=config.ItgptRunConfig(
                 epoch=10,
@@ -47,7 +51,9 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.model.d_model, 32)
         self.assertEqual(loaded.model.n_heads, 4)
         self.assertTrue(loaded.model.early_film)
+        self.assertTrue(loaded.model.cyclic_measure_pos)
         self.assertFalse(config.ItgptModelConfig().early_film)
+        self.assertFalse(config.ItgptModelConfig().cyclic_measure_pos)
         self.assertEqual(loaded.run.weight_decay, 0.0)
         self.assertEqual(loaded.run.eval_slot_f1_every, 16)
         self.assertEqual(loaded.run.lr_schedule, "cosine")

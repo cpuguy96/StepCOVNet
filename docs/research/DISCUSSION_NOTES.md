@@ -6,6 +6,26 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
+### NOTE-20261125-05: Cyclic measure position (**−0.52 pp**) closes the 6-ablation pre-scaling sweep — locked recipe for full `final_data`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 10:52:03 |
+| **Topic** | Pre-scaling knob #3 negative result (`cyclic_measure_pos = true`: `0.8388 → 0.8336`) and final 6-ablation synthesis |
+
+**Context.** As the third and final pre-scaling single-knob ablation, we added zero-initialized cyclic `beat % 4` + `beat % 16` positional embeddings in `level6` (`5,120` params) on top of `300t/50v` Cosine-64 (`0.8388`).
+
+**Discovery.**
+
+- **Mild regression via non-audio bar-grid bias (`EXP-20261125-05`):** `best_slot_f1.keras` (ep 56, fp32) scored **0.8336** F1@0.5 (`−0.52 pp` vs `0.8388`), ±20 ms `skill_event_f1` **+0.7540** (`−0.74 pp`), and weakened `zeros` suppression (`−0.1172 → −0.0932`, `zeros` F1 `0.7216 → 0.7404`). Quarters/8ths edged up (`+0.2 / +0.1 pp`), while fine audio subdivisions (`16th −2.4 pp`, `24th −2.9 pp`) and song outros (`−1.5 pp`) fell. ITGPT's 4-beat (`level2`) and 16-beat (`level3`) chunks already encode local bar/phrase structure.
+- **Complete 6-ablation synthesis (strictly one knob at a time):**
+  - **PROMOTED (+wins):** **Cosine-64 LR** (`+1.12 pp` on `300t/50v` → **0.8388**, `+0.61 pp` / `+1.41 pp` `last` on Dataset A → **0.7580**) + **Multi-layer MERT `layers 2,6,10`** (`+0.84 pp` F1 / `+0.89 pp` max-F1 / `−10.4%` errors / **5.5×** triplets on Dataset A → **0.7664 / 0.7697 max-F1**).
+  - **REJECTED (−regressions):** `Focal gamma=1.0` (`−0.92 pp`), `Early FiLM` (`−0.92 pp`), `grid_weight_24th=2.0` (`−1.18 pp`), `cyclic_measure_pos` (`−0.52 pp`).
+
+**Implication.** Every loss and architecture tweak hurt; only **optimization (Cosine-64)** and **audio representation (multi-layer MERT `2,6,10`)** delivered clean, orthogonal gains. We now have a battle-tested, locked recipe ready to scale to full `final_data` (~1,750 train charts / 1,119 songs via lazy MERT loader).
+
+**Related.** [EXP-20261125-05](EXPERIMENT_LOG.md#exp-20261125-05-cyclic-measurephrase-position-beat--4--beat--16-regresses-cosine-64-by-052-pp-08336-vs-08388--rejected) · [EXP-20261125-03](EXPERIMENT_LOG.md#exp-20261125-03-multi-layer-mert-layers-2610-lifts-dataset-a-084-pp-to-07664-f1--07697-max-f1-560-pp-over-log-mel-itgpt) · [EXP-20261124-03](EXPERIMENT_LOG.md#exp-20261124-03-single-knob-64-ep-cosine-lr-lifts-300t50v-itgpt-mert-112-pp-to-08388-f1-and-743-audio-transfer)
+
 ### NOTE-20261125-04: `grid_weight_24th = 2.0` overfits triplets (**−1.18 pp**), confirming representation > loss reweighting
 
 | Field | Value |

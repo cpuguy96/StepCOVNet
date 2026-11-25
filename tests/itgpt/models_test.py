@@ -141,6 +141,7 @@ class ItgptModelsTest(unittest.TestCase):
                 n_frames_per_beat=constants.CNN_FRAMES_OUT,
                 feature_dim=feature_dim,
                 early_film=True,
+                cyclic_measure_pos=True,
                 model_name="itgpt_mert_film_test",
             ),
             config.ItgptRunConfig(
@@ -166,6 +167,7 @@ class ItgptModelsTest(unittest.TestCase):
             model.save(ckpt)
             reloaded = trainers.load_placement_model(ckpt)
             self.assertTrue(reloaded.early_film)
+            self.assertTrue(reloaded.cyclic_measure_pos)
             pred_reloaded = np.asarray(reloaded(inputs, training=False))
         np.testing.assert_allclose(pred_trained, pred_reloaded, atol=1e-5)
 
