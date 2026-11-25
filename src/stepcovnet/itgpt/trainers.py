@@ -503,6 +503,7 @@ def build_and_compile(
         audio_feature_type=experiment.dataset.audio_feature_type,
         n_frames_per_beat=experiment.dataset.n_frames_per_beat,
         feature_dim=feature_dim,
+        early_film=experiment.model.early_film,
         model_name=experiment.run.model_name,
     )
     return compile_placement_model(model, experiment.run)

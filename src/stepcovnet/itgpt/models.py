@@ -479,6 +479,71 @@ class ItgptConditionProj(keras.layers.Layer):
         return ops.expand_dims(self.dense1(self.dense0(scaled)), axis=1)
 
 
+class ItgptConditionFilm(keras.layers.Layer):
+    """Zero-initialized FiLM modulation ``(1 + gamma) * h + beta`` from condition tokens.
+
+    Starts as an exact identity transform at initialization so hierarchical
+    audio features are undisturbed at step 0 and smoothly adapt to target
+    difficulty and BPM during training.
+
+    Args:
+        d_model: Feature channel width to modulate.
+        **kwargs: Keras layer kwargs.
+    """
+
+    def __init__(self, d_model: int, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        self.hidden = keras.layers.Dense(d_model, activation="gelu")
+        self.gamma_beta = keras.layers.Dense(
+            d_model * 2,
+            kernel_initializer="zeros",
+            bias_initializer="zeros",
+        )
+
+    def call(
+        self,
+        features: Any,
+        cond_vec: Any,
+        *,
+        batch_size: Any,
+        n_beats: Any,
+        frames_per_beat: int | None = None,
+    ) -> Any:
+        """Modulate beat or sub-beat features with chart-level FiLM parameters.
+
+        Args:
+            features: Either ``(B * T, F, d_model)`` when ``frames_per_beat``
+                is set, or ``(B, T, d_model)`` when ``frames_per_beat`` is None.
+            cond_vec: Condition embedding ``(B, cond_dim)``.
+            batch_size: Batch size ``B``.
+            n_beats: Padded beat count ``T``.
+            frames_per_beat: Optional sub-beat frame count ``F``.
+
+        Returns:
+            Modulated tensor with the same shape as ``features``.
+        """
+        params = self.gamma_beta(self.hidden(cond_vec))
+        delta_gamma, beta = ops.split(params, 2, axis=-1)  # type: ignore[misc]
+        one = ops.cast(1.0, delta_gamma.dtype)
+        scale = one + delta_gamma
+        if frames_per_beat is None:
+            scale_b = ops.expand_dims(scale, axis=1)
+            beta_b = ops.expand_dims(beta, axis=1)
+            return features * scale_b + beta_b
+        reshaped = ops.reshape(
+            features,
+            (batch_size, n_beats, frames_per_beat, self.d_model),
+        )
+        scale_b = ops.reshape(scale, (batch_size, 1, 1, self.d_model))
+        beta_b = ops.reshape(beta, (batch_size, 1, 1, self.d_model))
+        modulated = reshaped * scale_b + beta_b
+        return ops.reshape(
+            modulated,
+            (ops.multiply(batch_size, n_beats), frames_per_beat, self.d_model),
+        )
+
+
 @keras.saving.register_keras_serializable(package="stepcovnet.itgpt")
 class ItgptPlacementModel(keras.Model):
     """Subclassed ITGPT placement network (dynamic beat length).
@@ -494,6 +559,9 @@ class ItgptPlacementModel(keras.Model):
         n_frames_per_beat: Input frames per beat (``32`` for log-mel, ``24``
             for MERT).
         feature_dim: Per-frame feature width when ``audio_feature_type == "mert"``.
+        early_film: If True, apply zero-initialized FiLM modulation from
+            ``[difficulty, bpm]`` before the sub-beat attention stack and before
+            the global encoder.
         **kwargs: Keras model kwargs.
 
     Raises:
@@ -512,6 +580,7 @@ class ItgptPlacementModel(keras.Model):
         audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL,
         n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
         feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
+        early_film: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -539,6 +608,7 @@ class ItgptPlacementModel(keras.Model):
         self.audio_feature_type = audio_feature_type
         self.n_frames_per_beat = n_frames_per_beat
         self.feature_dim = feature_dim
+        self.early_film = bool(early_film)
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
         self.beat_mert: ItgptBeatMertEncoder | None = None
         if audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
@@ -559,6 +629,15 @@ class ItgptPlacementModel(keras.Model):
             constants.MAX_BPM,
             name="bpm_proj",
         )
+        self.early_film_subbeat: ItgptConditionFilm | None = None
+        self.early_film_beat: ItgptConditionFilm | None = None
+        if self.early_film:
+            self.early_film_subbeat = ItgptConditionFilm(
+                d_model, name="early_film_subbeat"
+            )
+            self.early_film_beat = ItgptConditionFilm(
+                d_model, name="early_film_beat"
+            )
         self.level1 = ItgptHierarchicalAttnBlock(
             d_model,
             n_heads,
@@ -657,6 +736,20 @@ class ItgptPlacementModel(keras.Model):
                 ),
             )
             hidden = self.beat_cnn(conv_in)
+        diff_tok = self.diff_proj(inputs["difficulty"])
+        bpm_tok = self.bpm_proj(inputs["bpm"])
+        cond_vec = ops.concatenate(
+            [ops.squeeze(diff_tok, axis=1), ops.squeeze(bpm_tok, axis=1)],
+            axis=-1,
+        )
+        if self.early_film_subbeat is not None:
+            hidden = self.early_film_subbeat(
+                hidden,
+                cond_vec,
+                batch_size=batch_size,
+                n_beats=n_beats,
+                frames_per_beat=constants.CNN_FRAMES_OUT,
+            )
         hidden = self.level1(
             hidden, batch_size=batch_size, n_beats=n_beats, training=training
         )
@@ -679,10 +772,15 @@ class ItgptPlacementModel(keras.Model):
             ops.reshape(hidden, (n_beat_rows, 6 * self.d_model))
         )
         global_h = ops.reshape(global_h, (batch_size, n_beats, self.d_model))
+        if self.early_film_beat is not None:
+            global_h = self.early_film_beat(
+                global_h,
+                cond_vec,
+                batch_size=batch_size,
+                n_beats=n_beats,
+            )
         pos = self.level6_pos(ops.arange(n_beats, dtype="int32"))
         global_h = global_h + pos
-        diff_tok = self.diff_proj(inputs["difficulty"])
-        bpm_tok = self.bpm_proj(inputs["bpm"])
         global_h = ops.concatenate([diff_tok, bpm_tok, global_h], axis=1)
         for block in self.level6:
             global_h = block(global_h, training=training)
@@ -708,6 +806,7 @@ class ItgptPlacementModel(keras.Model):
                 "audio_feature_type": self.audio_feature_type,
                 "n_frames_per_beat": self.n_frames_per_beat,
                 "feature_dim": self.feature_dim,
+                "early_film": self.early_film,
             }
         )
         return config
@@ -724,6 +823,7 @@ def build_itgpt_placement_model(
     audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL,
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
     feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
+    early_film: bool = False,
     model_name: str = "itgpt_placement",
 ) -> keras.Model:
     """Build the ITGPT placement network.
@@ -743,6 +843,8 @@ def build_itgpt_placement_model(
         audio_feature_type: Beat audio frontend (``"logmel"`` or ``"mert"``).
         n_frames_per_beat: Input frames per beat.
         feature_dim: Per-frame width when ``audio_feature_type == "mert"``.
+        early_film: If True, apply zero-initialized FiLM conditioning from
+            ``[difficulty, bpm]`` before the sub-beat and global stacks.
         model_name: Keras model name.
 
     Returns:
@@ -765,5 +867,6 @@ def build_itgpt_placement_model(
         audio_feature_type=audio_feature_type,
         n_frames_per_beat=n_frames_per_beat,
         feature_dim=feature_dim,
+        early_film=early_film,
         name=model_name,
     )

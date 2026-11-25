@@ -4,6 +4,30 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-11-25 — Early FiLM ablation & 3-knob scorecard
+
+### NOTE-20261125-01: Why Early FiLM overfit (**−0.92 pp**) and what the completed 3-ablation ladder proves
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 01:26:31 |
+| **Topic** | Negative result on `early_film = true` (`0.8388 → 0.8296`) and synthesis of the full 3-knob ablation ladder (`#4 Cosine LR`, `#2 Focal`, `#3 Early FiLM`) |
+
+**Context.** To complete our strict one-knob-at-a-time ablation ladder on `300t/50v`, we tested zero-initialized Early FiLM (`[difficulty, bpm]` before `level1` and `level6`, `EXP-20261125-01`) cleanly on top of the promoted Cosine-64 base (`0.8388`, `focal_gamma = 0.0`).
+
+**Discovery.**
+
+- **Early FiLM accelerated training (`+1.37 pp` ahead at ep 16) then stalled and overfit (`−0.92 pp` final):** `best_slot_f1.keras` (ep 40, fp32) reached **0.8296** (`−0.92 pp` vs `0.8388`), max-F1 **0.8308** (`−0.80 pp`), ±20 ms `skill_event_f1` **+0.7489** (`−1.25 pp`), with lower train loss (`0.0367` vs `0.0402`) and higher val loss (`0.0852` vs `0.0784`).
+- **Late conditioning is a protective inductive bias:** Letting `[difficulty, bpm]` modulate `levels 1–5` allows the sub-beat encoder to specialize early to chart-level `(meter, bpm)` fingerprints on 294 training charts rather than sharing one difficulty-invariant audio encoder across all charts. Even on the target `meter <= 8` bucket, higher precision (`0.682 → 0.715`) was offset by lower recall (`0.906 → 0.842`, F1 `0.778 → 0.774`), while `meter 13+` (`−2.03 pp`), `16th` (`−2.2 pp`), and `24th` (`−3.9 pp`) all degraded.
+- **Complete 3-ablation scorecard (`300t/50v`, frozen `48` val charts, fp32):**
+  1. **#4 Cosine LR (64 ep):** `0.8276 → 0.8388` (**`+1.12 pp`**, **PROMOTED**)
+  2. **#2 Focal Loss (`gamma=1.0`):** `0.8388 → 0.8296` (**`−0.92 pp`**, **REJECTED**)
+  3. **#3 Early FiLM (`[difficulty, bpm]`):** `0.8388 → 0.8296` (**`−0.92 pp`**, **REJECTED**)
+
+**Implication.** ITGPT's original late-conditioning + plain grid-weighted BCE architecture paired with **MERT + 64-ep Cosine LR** is already clean and hard to beat with loss/conditioning tweaks at `294` training charts. The highest-ROI path to push onset F1 much further (~`0.88–0.90`) is **data scaling to full `final_data` (~1,750 train charts via a lazy/disk-backed MERT loader)** — or freezing **`0.8388`** as our production onset head and starting **Stage 2 step selection**.
+
+**Related.** [EXP-20261125-01](EXPERIMENT_LOG.md#exp-20261125-01-single-knob-early-film-difficulty-bpm-regresses-cosine-64-by-092-pp-08296-vs-08388--rejected) · [EXP-20261124-04](EXPERIMENT_LOG.md#exp-20261124-04-single-knob-focal-loss-focal_gamma--10-regresses-cosine-64-by-092-pp-08296-vs-08388--rejected) · [EXP-20261124-03](EXPERIMENT_LOG.md#exp-20261124-03-single-knob-64-ep-cosine-lr-lifts-300t50v-itgpt-mert-112-pp-to-08388-f1-and-743-audio-transfer)
+
 ## Session 2026-11-24 — ITGPT-MERT ladder scaling (`200t/50v` & `300t/50v`) & single-knob ablations
 
 ### NOTE-20261124-04: Why Focal Loss hurt stepchart placement (**−0.92 pp**) and validated one-knob discipline

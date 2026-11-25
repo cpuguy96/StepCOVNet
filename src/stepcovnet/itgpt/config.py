@@ -119,6 +119,9 @@ class ItgptModelConfig(_DictSerializableMixin):
         n_enc_layers: Global encoder blocks (paper default CLI: 4; config: 8).
         cnn_hidden: Beat CNN base channels (paper: 32).
         dropout_rate: Attention / FFN dropout (paper: 0.1).
+        early_film: If True, apply zero-initialized FiLM conditioning from
+            ``[difficulty, bpm]`` before the hierarchical sub-beat blocks and
+            before the global encoder.
     """
 
     d_model: int = constants.D_MODEL
@@ -126,6 +129,7 @@ class ItgptModelConfig(_DictSerializableMixin):
     n_enc_layers: int = constants.N_ENC_LAYERS
     cnn_hidden: int = constants.CNN_HIDDEN
     dropout_rate: float = constants.DROPOUT_RATE
+    early_film: bool = False
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.

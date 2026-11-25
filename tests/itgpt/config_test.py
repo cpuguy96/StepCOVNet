@@ -20,7 +20,9 @@ class ItgptConfigTest(unittest.TestCase):
                 audio_feature_type="mert",
                 n_frames_per_beat=24,
             ),
-            model=config.ItgptModelConfig(d_model=32, n_heads=4, n_enc_layers=1),
+            model=config.ItgptModelConfig(
+                d_model=32, n_heads=4, n_enc_layers=1, early_film=True
+            ),
             run=config.ItgptRunConfig(
                 epoch=10,
                 weight_decay=0.0,
@@ -41,6 +43,8 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.dataset.n_frames_per_beat, 24)
         self.assertEqual(loaded.model.d_model, 32)
         self.assertEqual(loaded.model.n_heads, 4)
+        self.assertTrue(loaded.model.early_film)
+        self.assertFalse(config.ItgptModelConfig().early_film)
         self.assertEqual(loaded.run.weight_decay, 0.0)
         self.assertEqual(loaded.run.eval_slot_f1_every, 16)
         self.assertEqual(loaded.run.lr_schedule, "cosine")
