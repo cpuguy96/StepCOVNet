@@ -16,7 +16,7 @@ from keras import ops
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import evaluation as ddcl_eval
-from stepcovnet.itgpt import config, datasets, evaluation, models
+from stepcovnet.itgpt import config, constants, datasets, evaluation, models
 
 
 def set_seed(seed: int) -> None:
@@ -71,6 +71,41 @@ def load_placement_model(path: str | pathlib.Path) -> keras.Model:
     )
 
 
+def build_learning_rate(
+    run_config: config.ItgptRunConfig,
+) -> float | keras.optimizers.schedules.LearningRateSchedule:
+    """Return a constant LR or step-level warmup + cosine decay schedule.
+
+    Args:
+        run_config: Optimizer and epoch-count settings.
+
+    Returns:
+        Scalar LR when ``lr_schedule == "constant"``, or a Keras
+        :class:`keras.optimizers.schedules.CosineDecay` schedule when
+        ``lr_schedule == "cosine"``.
+    """
+    if run_config.lr_schedule == constants.LR_SCHEDULE_CONSTANT:
+        return float(run_config.learning_rate)
+    steps_per_epoch = max(1, int(run_config.steps_per_epoch))
+    total_steps = int(run_config.epoch) * steps_per_epoch
+    warmup_steps = int(run_config.warmup_epochs) * steps_per_epoch
+    decay_steps = max(1, total_steps - warmup_steps)
+    alpha = float(run_config.min_learning_rate) / float(run_config.learning_rate)
+    if warmup_steps > 0:
+        return keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=float(run_config.min_learning_rate),
+            decay_steps=decay_steps,
+            alpha=alpha,
+            warmup_target=float(run_config.learning_rate),
+            warmup_steps=warmup_steps,
+        )
+    return keras.optimizers.schedules.CosineDecay(
+        initial_learning_rate=float(run_config.learning_rate),
+        decay_steps=decay_steps,
+        alpha=alpha,
+    )
+
+
 def compile_placement_model(
     model: keras.Model,
     run_config: config.ItgptRunConfig,
@@ -89,15 +124,16 @@ def compile_placement_model(
     Returns:
         The same model, compiled in place.
     """
+    learning_rate = build_learning_rate(run_config)
     if run_config.weight_decay > 0.0:
         optimizer: keras.optimizers.Optimizer = keras.optimizers.AdamW(
-            learning_rate=run_config.learning_rate,
+            learning_rate=learning_rate,
             weight_decay=run_config.weight_decay,
             clipnorm=run_config.clipnorm,
         )
     else:
         optimizer = keras.optimizers.Adam(
-            learning_rate=run_config.learning_rate,
+            learning_rate=learning_rate,
             clipnorm=run_config.clipnorm,
         )
     model.compile(

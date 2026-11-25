@@ -4,7 +4,32 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
-## Session 2026-11-24 — ITGPT-MERT ladder scaling (`200t/50v` & `300t/50v`)
+## Session 2026-11-24 — ITGPT-MERT ladder scaling (`200t/50v` & `300t/50v`) & single-knob ablations
+
+### NOTE-20261124-03: Single-knob 64-ep Cosine LR beats 128-ep constant LR by **+1.12 pp** (**0.8388** F1) and lifts 16th/24th subdivisions **+4.8 / +3.8 pp**
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-24 19:22:33 |
+| **Topic** | One-knob-at-a-time ablation #1 (`CosineDecay`, 64 ep) + Step 0 cross-validated subdivision calibration diagnostic |
+
+**Context.** Before stacking multiple modeling/loss/schedule changes, we committed to a strict one-knob-at-a-time ablation ladder on `300t/50v` (`EXP-20261124-02` control: **0.8276** F1@0.5 / **0.8324** max-F1 @ `0.35` / `last` **0.8177**). First we ran a 30-second song-grouped 5-fold CV calibration diagnostic (Step 0) on the control checkpoint; then we tested **Cosine LR alone** (`warmup_epochs=4`, `1e-4 → 1e-6`, `64` epochs, EMA off, identical model/loss/split/seed).
+
+**Discovery.**
+
+- **Step 0 diagnostic:** On `EXP-20261124-02` `best.keras`, a 5-fold song-CV global threshold (`τ ≈ 0.364`) gave a real `+0.49 pp` (`0.8276 → 0.8324`), while per-subdivision thresholds *hurt* pooled F1 (`0.8271`, since well-calibrated probabilities have a single Bayes-optimal pooled-F1 threshold). PR-AUC proved `16th` (`0.7401`) and `24th` (`0.4994`) are genuine ranking bottlenecks rather than threshold bias.
+- **Cosine LR alone delivered an across-the-board +1.12 pp jump in half the epochs:**
+  - `best_slot_f1.keras` (ep 56, fp32): **0.8388** F1@0.5 (**+1.12 pp**), **0.8388** max-F1 @ **`0.50`** (**+0.64 pp**), **+0.7614** ±20 ms `skill_event_f1` (**+1.52 pp**).
+  - `last.keras` (ep 64): **0.8359** (**+1.82 pp** over constant-LR `last` **0.8177**), eliminating late-epoch drift (`0.0007` peak-to-last gap).
+  - **Stronger grounding & dramatically less memorization:** Val `shuffle` drop strengthened (`−0.1122 → −0.1151`), `zeros` drop strengthened (`−0.0903 → −0.1172`), train F1 settled cleanly at `0.8999` (instead of memorizing to `0.9862`), narrowing the train–val gap from `16.9 pp → 6.1 pp` and lifting train→val audio transfer to **74.3%**.
+  - **Where the gain landed:** `16th` off-beats jumped **+4.8 pp** (`0.652 → 0.700`, recall `59.4% → 71.3%`), `24th` triplets jumped **+3.8 pp** (`0.466 → 0.504`, recall `32.1% → 37.1%`), song intros (`0–10%`) jumped **+3.2 pp** (`0.765 → 0.797`), and `meter 11–12` jumped **+1.4 pp** (`0.839 → 0.853`).
+- **What stays exposed for the next isolated knobs:**
+  - **#2 (Subdivision loss):** `16th` (`0.700`, `46.7%` of errors) + `24th` (`0.504`, `11.9%` of errors) still account for **58.6%** of all errors.
+  - **#3 (Early FiLM difficulty/BPM conditioning):** `meter <= 8` still heavily over-predicts (`0.778` F1, `P=0.682 / R=0.906`, `957 FP` vs `212 FN`), whereas `meter 11–12` is now balanced at `0.853` (`P=0.848 / R=0.858`).
+
+**Implication.** Promote 64-ep Cosine LR as the new champion (`0.8388`) and fast, low-noise baseline for Ablation 2 (#2 subdivision loss) and Ablation 3 (#3 early FiLM conditioning).
+
+**Related.** [EXP-20261124-03](EXPERIMENT_LOG.md#exp-20261124-03-single-knob-64-ep-cosine-lr-lifts-300t50v-itgpt-mert-112-pp-to-08388-f1-and-743-audio-transfer) · [EXP-20261124-02](EXPERIMENT_LOG.md#exp-20261124-02-300t50v-completes-3-point-itgpt-mert-scaling-curve-at-0828-f1--0832-max-f1-and-447-audio-transfer)
 
 ### NOTE-20261124-02: `300t/50v` completes a textbook log-linear scaling curve (**0.772 → 0.818 → 0.828** F1 / **0.832** max-F1, **32.0% → 42.3% → 44.7%** audio transfer)
 

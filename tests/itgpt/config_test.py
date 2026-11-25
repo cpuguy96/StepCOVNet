@@ -22,8 +22,12 @@ class ItgptConfigTest(unittest.TestCase):
             ),
             model=config.ItgptModelConfig(d_model=32, n_heads=4, n_enc_layers=1),
             run=config.ItgptRunConfig(
+                epoch=10,
                 weight_decay=0.0,
                 eval_slot_f1_every=16,
+                lr_schedule="cosine",
+                warmup_epochs=2,
+                min_learning_rate=1e-6,
             ),
         )
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -38,6 +42,9 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.model.n_heads, 4)
         self.assertEqual(loaded.run.weight_decay, 0.0)
         self.assertEqual(loaded.run.eval_slot_f1_every, 16)
+        self.assertEqual(loaded.run.lr_schedule, "cosine")
+        self.assertEqual(loaded.run.warmup_epochs, 2)
+        self.assertAlmostEqual(loaded.run.min_learning_rate, 1e-6)
         self.assertFalse(loaded.run.mixed_precision)
         self.assertFalse(loaded.run.jit_compile)
 
@@ -76,6 +83,16 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(weight_decay=-0.1)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(eval_slot_f1_every=-1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(lr_schedule="linear")
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(warmup_epochs=-1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(epoch=4, lr_schedule="cosine", warmup_epochs=4)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(min_learning_rate=-1e-6)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(learning_rate=1e-4, min_learning_rate=2e-4)
 
 
 if __name__ == "__main__":

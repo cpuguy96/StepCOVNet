@@ -169,6 +169,9 @@ class ItgptRunConfig(_DictSerializableMixin):
         jit_compile: If True, XLA-compile ``fit`` (can spike allocator workspace).
         eval_slot_f1_every: Evaluate full-val ``M-slot48`` every N epochs to log
             ``val_slot_f1_at_05`` and save ``best_slot_f1.keras`` (0 disables).
+        lr_schedule: Optimizer schedule (``constant`` or ``cosine``).
+        warmup_epochs: Linear warmup epochs before cosine decay (0 disables warmup).
+        min_learning_rate: Floor LR at warmup start and cosine end.
     """
 
     epoch: int = 8
@@ -185,13 +188,16 @@ class ItgptRunConfig(_DictSerializableMixin):
     mixed_precision: bool = False
     jit_compile: bool = False
     eval_slot_f1_every: int = 0
+    lr_schedule: str = constants.LR_SCHEDULE_CONSTANT
+    warmup_epochs: int = 0
+    min_learning_rate: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
 
         Raises:
-            ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``, or
-                ``eval_slot_f1_every`` is invalid.
+            ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
+                ``eval_slot_f1_every``, or LR schedule fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -206,6 +212,27 @@ class ItgptRunConfig(_DictSerializableMixin):
         if self.eval_slot_f1_every < 0:
             raise ValueError(
                 f"eval_slot_f1_every must be >= 0, got {self.eval_slot_f1_every}"
+            )
+        if self.lr_schedule not in constants.LR_SCHEDULES:
+            raise ValueError(
+                f"lr_schedule must be one of {constants.LR_SCHEDULES}, "
+                f"got {self.lr_schedule!r}"
+            )
+        if self.warmup_epochs < 0:
+            raise ValueError(
+                f"warmup_epochs must be >= 0, got {self.warmup_epochs}"
+            )
+        if (
+            self.lr_schedule == constants.LR_SCHEDULE_COSINE
+            and self.warmup_epochs >= self.epoch
+        ):
+            raise ValueError(
+                f"warmup_epochs ({self.warmup_epochs}) must be < epoch ({self.epoch})"
+            )
+        if not 0.0 <= self.min_learning_rate <= self.learning_rate:
+            raise ValueError(
+                "min_learning_rate must be in [0, learning_rate], "
+                f"got {self.min_learning_rate} vs {self.learning_rate}"
             )
 
 
