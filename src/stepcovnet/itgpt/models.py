@@ -569,6 +569,9 @@ class ItgptPlacementModel(keras.Model):
             the global encoder.
         cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
             and ``beat % 16`` positional embeddings before ``level6``.
+        continuous_beat_conv: If True, run ``beat_mert`` over the continuous
+            ``(batch, beats * n_frames_per_beat, feature_dim)`` stream so its
+            ``Conv1D`` spans beat boundaries instead of zero-padding each beat.
         **kwargs: Keras model kwargs.
 
     Raises:
@@ -589,6 +592,7 @@ class ItgptPlacementModel(keras.Model):
         feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
         early_film: bool = False,
         cyclic_measure_pos: bool = False,
+        continuous_beat_conv: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -618,6 +622,7 @@ class ItgptPlacementModel(keras.Model):
         self.feature_dim = feature_dim
         self.early_film = bool(early_film)
         self.cyclic_measure_pos = bool(cyclic_measure_pos)
+        self.continuous_beat_conv = bool(continuous_beat_conv)
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
         self.beat_mert: ItgptBeatMertEncoder | None = None
         if audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
@@ -742,11 +747,26 @@ class ItgptPlacementModel(keras.Model):
         if self.audio_feature_type == ddcl_constants.AUDIO_FEATURE_MERT:
             if self.beat_mert is None:
                 raise RuntimeError("beat_mert encoder is not initialized")
-            mert_in = ops.reshape(
-                audio,
-                (n_beat_rows, self.n_frames_per_beat, self.feature_dim),
-            )
-            hidden = self.beat_mert(mert_in, training=training)
+            if self.continuous_beat_conv:
+                mert_in = ops.reshape(
+                    audio,
+                    (
+                        batch_size,
+                        ops.multiply(n_beats, self.n_frames_per_beat),
+                        self.feature_dim,
+                    ),
+                )
+                hidden = self.beat_mert(mert_in, training=training)
+                hidden = ops.reshape(
+                    hidden,
+                    (n_beat_rows, self.n_frames_per_beat, self.d_model),
+                )
+            else:
+                mert_in = ops.reshape(
+                    audio,
+                    (n_beat_rows, self.n_frames_per_beat, self.feature_dim),
+                )
+                hidden = self.beat_mert(mert_in, training=training)
         else:
             if self.beat_cnn is None:
                 raise RuntimeError("beat_cnn encoder is not initialized")
@@ -839,6 +859,7 @@ class ItgptPlacementModel(keras.Model):
                 "feature_dim": self.feature_dim,
                 "early_film": self.early_film,
                 "cyclic_measure_pos": self.cyclic_measure_pos,
+                "continuous_beat_conv": self.continuous_beat_conv,
             }
         )
         return config
@@ -857,6 +878,7 @@ def build_itgpt_placement_model(
     feature_dim: int = ddcl_constants.MERT_FEATURE_DIM,
     early_film: bool = False,
     cyclic_measure_pos: bool = False,
+    continuous_beat_conv: bool = False,
     model_name: str = "itgpt_placement",
 ) -> keras.Model:
     """Build the ITGPT placement network.
@@ -880,6 +902,9 @@ def build_itgpt_placement_model(
             ``[difficulty, bpm]`` before the sub-beat and global stacks.
         cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
             and ``beat % 16`` positional embeddings before ``level6``.
+        continuous_beat_conv: If True, run ``beat_mert`` continuously over
+            ``(batch, beats * n_frames_per_beat, feature_dim)`` so its
+            ``Conv1D`` spans beat boundaries.
         model_name: Keras model name.
 
     Returns:
@@ -904,5 +929,6 @@ def build_itgpt_placement_model(
         feature_dim=feature_dim,
         early_film=early_film,
         cyclic_measure_pos=cyclic_measure_pos,
+        continuous_beat_conv=continuous_beat_conv,
         name=model_name,
     )

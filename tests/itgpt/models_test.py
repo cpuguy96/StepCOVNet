@@ -171,6 +171,69 @@ class ItgptModelsTest(unittest.TestCase):
             pred_reloaded = np.asarray(reloaded(inputs, training=False))
         np.testing.assert_allclose(pred_trained, pred_reloaded, atol=1e-5)
 
+    def test_continuous_beat_conv_spans_boundaries_and_reloads(self):
+        trainers.set_seed(0)
+        n_beats = constants.CHUNK_ALIGN
+        feature_dim = 16
+        model_sep = trainers.compile_placement_model(
+            models.build_itgpt_placement_model(
+                d_model=32,
+                n_heads=4,
+                n_enc_layers=1,
+                dropout_rate=0.0,
+                max_beats=n_beats,
+                audio_feature_type="mert",
+                n_frames_per_beat=constants.CNN_FRAMES_OUT,
+                feature_dim=feature_dim,
+                continuous_beat_conv=False,
+                model_name="itgpt_mert_sep_test",
+            ),
+            config.ItgptRunConfig(learning_rate=1e-3, weight_decay=0.0, clipnorm=1.0),
+        )
+        model_cont = trainers.compile_placement_model(
+            models.build_itgpt_placement_model(
+                d_model=32,
+                n_heads=4,
+                n_enc_layers=1,
+                dropout_rate=0.0,
+                max_beats=n_beats,
+                audio_feature_type="mert",
+                n_frames_per_beat=constants.CNN_FRAMES_OUT,
+                feature_dim=feature_dim,
+                continuous_beat_conv=True,
+                model_name="itgpt_mert_cont_test",
+            ),
+            config.ItgptRunConfig(learning_rate=1e-3, weight_decay=0.0, clipnorm=1.0),
+        )
+        rng = np.random.default_rng(19)
+        inputs = {
+            "audio": rng.standard_normal(
+                (1, n_beats, constants.CNN_FRAMES_OUT, feature_dim)
+            ).astype(np.float32),
+            "bpm": np.array([[140.0]], dtype=np.float32),
+            "difficulty": np.array([[8.0]], dtype=np.float32),
+        }
+        _ = model_sep(inputs, training=False)
+        _ = model_cont(inputs, training=False)
+        # Identical weights must differ because Conv1D sees cross-beat frames.
+        model_cont.set_weights(model_sep.get_weights())
+        pred_sep = np.asarray(model_sep(inputs, training=False))
+        pred_cont = np.asarray(model_cont(inputs, training=False))
+        self.assertGreater(float(np.max(np.abs(pred_cont - pred_sep))), 1e-4)
+
+        labels = np.zeros((1, n_beats, constants.N_SLOTS), dtype=np.float32)
+        labels[0, 1, 0] = 1.0
+        loss = model_cont.train_on_batch(inputs, labels)
+        self.assertTrue(np.isfinite(loss))
+        pred_trained = np.asarray(model_cont(inputs, training=False))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = pathlib.Path(tmpdir) / "mert_cont_roundtrip.keras"
+            model_cont.save(ckpt)
+            reloaded = trainers.load_placement_model(ckpt)
+            self.assertTrue(reloaded.continuous_beat_conv)
+            pred_reloaded = np.asarray(reloaded(inputs, training=False))
+        np.testing.assert_allclose(pred_trained, pred_reloaded, atol=1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()

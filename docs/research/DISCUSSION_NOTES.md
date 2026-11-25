@@ -6,6 +6,24 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
+### NOTE-20261125-06: Per-beat `Conv1D` zero-padding acts as a downbeat anchor (`continuous_beat_conv = true` loses **−1.17 pp**)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 14:27:33 |
+| **Topic** | Dataset A knob #1 negative result (`continuous_beat_conv = true`: `0.7664 → 0.7547`) and free checkpoint-soup diagnostic (`best + best_slot_f1 → 0.7700`) |
+
+**Context.** Before running 4 Dataset A ablations on top of the `L2+6+10 + Cosine-64` champion (`0.7664`), a free checkpoint weight-soup check (`best` ep 38 + `best_slot_f1` ep 40) lifted Dataset A to **0.7700** F1@0.5 / **+0.6915** ±20 ms skill (`+0.36 / +0.78 pp`) by canceling a 3.4 pp P/R swing between consecutive epochs. We then ran knob #1 (`continuous_beat_conv = true`, zero extra params) to test whether making `beat_mert`'s `Conv1D(k=3)` span beat boundaries improves downbeat/lead-in accuracy.
+
+**Discovery.**
+
+- **Clean regression across all subdivisions (`EXP-20261125-06`):** `best.keras` (ep 40, fp32) dropped **−1.17 pp** to **0.7547** F1@0.5 (max-F1 **0.7612**, ±20 ms `skill_event_f1` **+0.6654** `−1.83 pp`, `last` **0.7490**), adding `+362` total errors (`8,288 → 8,650`).
+- **Mechanism:** Isolating `Conv1D(k=3, padding="same")` per beat makes frame `0` and frame `23` boundary-marked before `level1`, reinforcing exact downbeat alignment; removing that boundary cue blurs local beat phase while `level2` (4-beat chunks) already provides cross-beat context.
+
+**Implication.** **Keep `continuous_beat_conv = false`.** Moving directly to Dataset A knob #2: **learnable multi-layer MERT mixer** (SUPERB-style softmax weights over layers `0, 2, 4, 6, 9, 12`).
+
+**Related.** [EXP-20261125-06](EXPERIMENT_LOG.md#exp-20261125-06-continuous-cross-beat-conv1d-in-beat_mert-regresses-dataset-a-l2610-by-117-pp-07547-vs-07664--rejected) · [EXP-20261125-03](EXPERIMENT_LOG.md#exp-20261125-03-multi-layer-mert-layers-2610-lifts-dataset-a-084-pp-to-07664-f1--07697-max-f1-560-pp-over-log-mel-itgpt)
+
 ### NOTE-20261125-05: Cyclic measure position (**−0.52 pp**) closes the 6-ablation pre-scaling sweep — locked recipe for full `final_data`
 
 | Field | Value |

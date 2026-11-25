@@ -134,6 +134,10 @@ class ItgptModelConfig(_DictSerializableMixin):
         cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
             (bar) and ``beat % 16`` (4-bar phrase) positional embeddings in
             ``level6``.
+        continuous_beat_conv: If True, run ``ItgptBeatMertEncoder`` across the
+            continuous ``(batch, beats * n_frames_per_beat, feature_dim)``
+            stream so its ``Conv1D`` spans beat boundaries rather than
+            zero-padding each beat independently.
     """
 
     d_model: int = constants.D_MODEL
@@ -143,6 +147,7 @@ class ItgptModelConfig(_DictSerializableMixin):
     dropout_rate: float = constants.DROPOUT_RATE
     early_film: bool = False
     cyclic_measure_pos: bool = False
+    continuous_beat_conv: bool = False
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.
