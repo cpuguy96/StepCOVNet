@@ -284,6 +284,11 @@ def compile_placement_blocks(model: models.ItgptPlacementModel) -> None:
     Args:
         model: Placement model whose submodules will be compiled in-place.
     """
+    # Five hierarchical levels x {train, eval} need 10 cache entries (default=8).
+    torch._dynamo.config.cache_size_limit = max(
+        int(torch._dynamo.config.cache_size_limit),
+        16,
+    )
     if model.beat_mert is not None:
         model.beat_mert.compile(dynamic=True)
     if model.beat_cnn is not None:
@@ -537,6 +542,7 @@ def train_placement(
                     writer.add_scalar("loss/train", mean_train_loss, epoch_num)
                     writer.add_scalar("loss/val", mean_val_loss, epoch_num)
                     writer.add_scalar("lr", current_lr, epoch_num)
+                    writer.flush()
 
                 eval_every = int(experiment.run.eval_slot_f1_every)
                 if eval_every > 0 and (
@@ -560,6 +566,7 @@ def train_placement(
                             float(slot_report.f1_max),
                             epoch_num,
                         )
+                        writer.flush()
                     if best_slot_f1 is None or slot_report.f1_at_05 > best_slot_f1:
                         prev_f1 = (
                             "None" if best_slot_f1 is None else f"{best_slot_f1:.5f}"

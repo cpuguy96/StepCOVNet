@@ -52,6 +52,14 @@ Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commi
 
 **Colab sync (proactive, private Drive only — never GitHub):** Whenever preparing experiments or checking Colab results, proactively open and follow [.cursor/skills/colab-gpu-stepcovnet/SKILL.md](.cursor/skills/colab-gpu-stepcovnet/SKILL.md) without waiting to be asked.
 
+### Cloud VM & Colab hard defaults (every session)
+
+- **Git author:** Fresh cloud VMs default `/etc/gitconfig` to `noreply@github.com` (`web-flow`). Before the first commit, ensure `~/.gitconfig` is set to the repo owner (`bash scripts/colab_cloud_bootstrap.sh` sets it automatically from repo history).
+- **GPU priority & autonomous launch:** **`L4 → T4 → local (RTX 2080) → A100`**. On a fresh cloud VM, run `bash scripts/colab_cloud_bootstrap.sh` (installs `colab` on Python 3.13 + `rclone` + auto-pulls `MyDrive/StepCOVNet/.secrets/rclone.conf`) and launch directly via `scripts/colab_run_remote.sh` — never claim cloud VMs cannot launch Colab.
+- **Live TensorBoard (cloud VMs vs local WSL):** `scripts/colab_run_remote.sh` mirrors live `tfevents` every ~60 s to **`MyDrive/StepCOVNet/live_tb/<run_name>/`** so the user's own PC TensorBoard (via Google Drive for Desktop) picks up cloud-VM runs live. On cloud VMs, never link `http://localhost:6006` / `6008` (hits user's own PC), never use `cloudflared`, and never tell the user to run Colab cells. On local WSL, launch local TensorBoard on port `6008+` pointing at `experiments/colab/`.
+- **Long runs & VM cleanup:** Pass `--max-poll-seconds 420` and re-attach with `--attach` to stay under cloud-VM command timeouts; verify `colab --auth=oauth2 sessions` shows 0 active VMs when finished.
+- **MERT caches:** Keep saved as **`float32`** (never `float16`); stream `__meta.tar` + `__mert_*.tar` archives for MERT runs.
+
 ---
 
 ## Path conventions (portable)

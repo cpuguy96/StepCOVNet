@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261126-03: Sync live Colab TensorBoard to `MyDrive/StepCOVNet/live_tb/` + enforce cloud-VM defaults in `AGENTS.md`
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-26 11:32:00 |
+| **Category** | convention |
+| **Summary** | User caught two recurring cross-session cloud-VM slips: (1) commits defaulted to `/etc/gitconfig`'s `Antigravity <noreply@github.com>` (`web-flow`), and (2) `localhost:6006`/`6008` links from remote cloud VMs hit the user's own PC instead of the VM (and `~/.gemini/memory/` is not shared across cloud VMs). User also rejected `cloudflared` tunnels and running Colab cells, choosing live Google Drive sync (`MyDrive/StepCOVNet/live_tb/`). |
+| **Artifact** | `AGENTS.md` (`Cloud VM & Colab hard defaults`); skill: `.cursor/skills/colab-gpu-stepcovnet/SKILL.md`; scripts: `scripts/colab_run_remote.sh`, `scripts/colab_cloud_bootstrap.sh`; code: `src/stepcovnet/pytorch/itgpt/trainers.py`. No new alwaysApply rule |
+| **Action taken** | Added durable Cloud VM defaults directly in `AGENTS.md` (auto-loaded on Turn 1 of every session), wired `scripts/colab_run_remote.sh` to mirror live `tfevents` every ~60 s + on completion to `MyDrive/StepCOVNet/live_tb/<run_name>/`, added auto git-author override to `colab_cloud_bootstrap.sh`, and added per-epoch `writer.flush()` in `train_placement` |
+| **Related** | `colab-gpu-stepcovnet`, `JRN-20261126-02`, `EXP-20261126-06` |
+
 ### JRN-20261126-02: Remember cloud-VM google-colab-cli bootstrap (never claim Colab can't be launched from cloud VMs)
 
 | Field | Value |

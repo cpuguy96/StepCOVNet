@@ -447,17 +447,6 @@ if log_path.is_file():
                 continue
             out_lines.append(seg)
 
-tb_count = 0
-if sync_tb:
-    tb_files = sorted(glob.glob("/content/StepCOVNet/callbacks/**/*tfevents*", recursive=True))
-    if tb_files:
-        with tarfile.open("/content/_tb_sync.tar.gz", "w:gz") as tf:
-            for f in tb_files:
-                parts = f.split("/logs/")[-1].split("/", 1)
-                arc = parts[1] if len(parts) > 1 else os.path.basename(f)
-                tf.add(f, arcname=arc)
-        tb_count = len(tb_files)
-
 state = "running"
 rc = None
 if done_path.is_file():
@@ -468,6 +457,17 @@ elif pid_path.is_file():
     if pid > 0 and not pathlib.Path(f"/proc/{pid}").exists():
         state = "crashed"
         rc = 1
+
+tb_count = 0
+if sync_tb or state == "done":
+    tb_files = sorted(glob.glob("/content/StepCOVNet/callbacks/**/*tfevents*", recursive=True))
+    if tb_files:
+        with tarfile.open("/content/_tb_sync.tar.gz", "w:gz") as tf:
+            for f in tb_files:
+                parts = f.split("/logs/")[-1].split("/", 1)
+                arc = parts[1] if len(parts) > 1 else os.path.basename(f)
+                tf.add(f, arcname=arc)
+        tb_count = len(tb_files)
 
 print("__POLL_HEADER__" + json.dumps({"state": state, "rc": rc, "offset": new_offset, "tb": tb_count}))
 if out_lines:
@@ -484,6 +484,7 @@ fi
 TRAIN_RC="1"
 CONSEC_ERR="0"
 POLL_TICK="0"
+TB_DRIVE_ANNOUNCED="0"
 POLL_START_TS="$(date +%s)"
 while true; do
   if [[ "$MAX_POLL_SECONDS" -gt 0 ]]; then
@@ -548,6 +549,12 @@ with tarfile.open(tar_path, "r:gz") as tf:
                 out.truncate(len(data))
 PYEOF
           rm -f "$TMPD/_tb_sync.tar.gz"
+          if timeout 25 "$RCLONE" copy "$TB_LOCAL_DIR" "${REMOTE}:${DRIVE_ROOT}/live_tb/${RUN_NAME}" >/dev/null 2>&1; then
+            if [[ "$TB_DRIVE_ANNOUNCED" == "0" ]]; then
+              echo "[colab-remote] Live TensorBoard syncing -> MyDrive/${DRIVE_ROOT}/live_tb/${RUN_NAME}/"
+              TB_DRIVE_ANNOUNCED="1"
+            fi
+          fi
         fi
       fi
       if [[ "$P_STATE" == "done" ]]; then
