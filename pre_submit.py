@@ -88,15 +88,22 @@ def main(argv: list[str] | None = None) -> None:
 
     if not args.skip_tests:
         _run_step(
-            "Unit tests (pytest tests/ --cov-report=xml)",
-            [str(python), "-m", "pytest", "tests/", "--cov-report=xml"],
+            "Unit tests (pytest tests/ --cov-report=term --cov-report=xml)",
+            [
+                str(python),
+                "-m",
+                "pytest",
+                "tests/",
+                "--cov-report=term",
+                "--cov-report=xml",
+            ],
             cwd=root,
         )
 
     if not args.skip_nbmake:
         _run_step(
-            "Notebook tests (pytest --nbmake notebooks)",
-            [str(python), "-m", "pytest", "--nbmake", "notebooks"],
+            "Notebook tests (pytest --nbmake notebooks --no-cov)",
+            [str(python), "-m", "pytest", "--nbmake", "notebooks", "--no-cov"],
             cwd=root,
         )
 

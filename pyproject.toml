@@ -75,7 +75,7 @@ namespaces = false
 # Pytest Configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-v --tb=short --import-mode=importlib --cov=stepcovnet --cov=scripts"
+addopts = "--cov -v --tb=short --import-mode=importlib"
 testpaths = ["tests"]
 python_files = ["*_test.py"]
 filterwarnings = [
@@ -89,7 +89,9 @@ markers = [
 
 # Coverage Configuration
 [tool.coverage.run]
-source = ["stepcovnet", "scripts"]
+source_pkgs = ["stepcovnet"]
+source_dirs = ["scripts"]
+relative_files = true
 omit = ["*/__pycache__/*"]
 
 [tool.coverage.report]
