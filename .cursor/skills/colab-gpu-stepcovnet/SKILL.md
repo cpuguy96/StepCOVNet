@@ -24,6 +24,22 @@ Run StepCOVNet training and eval directly on Google Colab GPUs (`T4`, `L4`, `A10
 | `colab` (`google-colab-cli`) | `~/.local/bin/colab` (venv `~/.local/share/colab-cli-venv`, includes `keyrings.alt`) | `~/.local/bin/colab whoami` · `~/.local/bin/colab usage` |
 | `rclone` | `~/.local/bin/rclone` (remote `gdrive:StepCOVNet`) | `bash scripts/colab_sync.sh check` |
 
+### Cloud VM / Fresh Linux Bootstrap (when `~/.local/bin/colab` is missing)
+
+Never claim you cannot launch Colab from a fresh cloud VM — `google-colab-cli` has a built-in remote copy-paste OAuth flow that works on headless VMs:
+
+```bash
+mkdir -p ~/.local/bin ~/.local/share
+uv venv ~/.local/share/colab-cli-venv --python 3.13
+uv pip install --python ~/.local/share/colab-cli-venv/bin/python google-colab-cli keyrings.alt
+ln -sf ~/.local/share/colab-cli-venv/bin/colab ~/.local/bin/colab
+# Headless Linux has no D-Bus keyring — use PlaintextKeyring + remote copy-paste OAuth:
+PYTHONUNBUFFERED=1 PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring \
+  ~/.local/bin/colab --auth=oauth2 whoami
+```
+
+Hand the user the printed `https://accounts.google.com/o/oauth2/auth?...` URL, pipe their pasted authorization code to stdin, then pass `PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring` + `--auth=oauth2` on subsequent `colab` calls (`new -s <name> --gpu L4`, `upload`, `exec`, `download`, `stop`). When `rclone` is absent on a cloud VM, fetch archives from Drive with `gdrive readonly download` and push to the Colab VM with `colab upload`, then archive outputs back with `colab download` + `gdrive mutate upload`.
+
 ## Dataset archives on Google Drive
 
 Store base datasets and MERT feature caches as separate `.tar` archives under `gdrive:StepCOVNet/data_archives/` so Colab only streams and unpacks what a run needs (at ~75–100 MiB/s inside Google's network):

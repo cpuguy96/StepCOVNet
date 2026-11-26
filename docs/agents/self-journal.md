@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261126-02: Remember cloud-VM google-colab-cli bootstrap (never claim Colab can't be launched from cloud VMs)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-26 09:46:00 |
+| **Category** | mistake |
+| **Summary** | Initially told user Colab could not be launched from a remote cloud VM because `~/.local/bin/colab` wasn't preinstalled. User corrected that cloud VMs can install `google-colab-cli` + `keyrings.alt` on Python 3.13 and authenticate via its built-in remote copy-paste OAuth flow. |
+| **Artifact** | skill: `.cursor/skills/colab-gpu-stepcovnet/SKILL.md` (`Cloud VM / Fresh Linux Bootstrap` section); persistent memory: `~/.gemini/memory/core.md`. No new alwaysApply rule |
+| **Action taken** | Added exact headless cloud-VM bootstrap commands (`uv venv ... --python 3.13`, `google-colab-cli keyrings.alt`, `PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring`, `--auth=oauth2`, `gdrive` archive transfer) to the Colab skill and `~/.gemini/memory/core.md` |
+| **Related** | `colab-gpu-stepcovnet`, `JRN-20261126-01` |
+
 ### JRN-20261126-01: GPU priority order is L4 → T4 → local → A100 and agent launches Colab autonomously
 
 | Field | Value |
