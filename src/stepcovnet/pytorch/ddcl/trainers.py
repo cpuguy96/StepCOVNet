@@ -234,7 +234,6 @@ def train_placement(
         writer = SummaryWriter(log_dir=str(log_dir))
 
     train_rng = np.random.default_rng(experiment.run.seed + start_epoch)
-    val_rng = np.random.default_rng(experiment.run.seed + 1 + start_epoch)
     steps_per_epoch = max(1, int(experiment.run.steps_per_epoch))
     val_steps = max(1, int(experiment.run.validation_steps))
     total_epochs = int(experiment.run.epoch)
@@ -273,6 +272,7 @@ def train_placement(
 
             model.eval()
             val_loss_sum = 0.0
+            val_rng = np.random.default_rng(experiment.run.seed + 1)
             with torch.no_grad():
                 for _ in range(val_steps):
                     v_inputs_np, v_target_np = datasets.sample_train_batch(

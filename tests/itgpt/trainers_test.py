@@ -13,7 +13,7 @@ import torch
 
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
-from stepcovnet.itgpt import config, constants, trainers
+from stepcovnet.itgpt import config, constants, models, trainers
 
 
 def _synthetic_chart(*, n_beats: int = 6) -> ddcl_datasets.DdclChart:
@@ -358,6 +358,91 @@ class ItgptTrainersTest(unittest.TestCase):
                 self.assertTrue(ckpt.is_file())
                 reloaded = trainers.load_placement_model(ckpt, device="cpu")
                 self.assertEqual(reloaded.d_model, 32)
+
+    def test_train_placement_reuses_same_validation_subset_every_epoch(self) -> None:
+        val_charts = [
+            ddcl_datasets.DdclChart(
+                song_key=f"bundle/val_{idx}",
+                difficulty="easy",
+                meter=meter,
+                beat_audio=np.zeros(
+                    (
+                        6,
+                        constants.N_FRAMES_PER_BEAT,
+                        constants.N_MELS,
+                        constants.N_CHANNELS,
+                    ),
+                    dtype=np.float32,
+                ),
+                stream=np.full((6, ddcl_constants.STREAM_DIM), 140.0, dtype=np.float32),
+                slots=np.zeros((6, constants.N_SLOTS), dtype=np.float32),
+                memlen=0,
+            )
+            for idx, meter in enumerate((1, 5, 9, 13))
+        ]
+        train_chart = _synthetic_chart()
+        report = _mock_report(0.5, 0.55)
+        val_difficulties: list[float] = []
+        orig_forward_logits = models.ItgptPlacementModel.forward_logits
+
+        def _spy_forward_logits(
+            self_model: models.ItgptPlacementModel,
+            inputs: dict[str, torch.Tensor],
+        ) -> torch.Tensor:
+            if not self_model.training:
+                val_difficulties.append(float(inputs["difficulty"].item()))
+            return orig_forward_logits(self_model, inputs)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=2,
+                    steps_per_epoch=1,
+                    validation_steps=3,
+                    eval_slot_f1_every=0,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="det_val_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    side_effect=[[train_chart], val_charts],
+                ),
+                mock.patch.object(
+                    models.ItgptPlacementModel,
+                    "forward_logits",
+                    autospec=True,
+                    side_effect=_spy_forward_logits,
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
+            ):
+                trainers.train_placement(experiment, device="cpu")
+        self.assertEqual(len(val_difficulties), 6)
+        self.assertEqual(val_difficulties[:3], val_difficulties[3:])
 
 
 if __name__ == "__main__":

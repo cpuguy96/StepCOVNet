@@ -410,13 +410,11 @@ def train_placement(
             pin_memory=pin_memory,
         )
     )
-    val_iter = iter(
-        datasets.build_dataloader(
-            val_charts,
-            max_beats=experiment.dataset.max_beats,
-            seed=experiment.run.seed + 1 + start_epoch,
-            pin_memory=pin_memory,
-        )
+    val_loader = datasets.build_dataloader(
+        val_charts,
+        max_beats=experiment.dataset.max_beats,
+        seed=experiment.run.seed + 1,
+        pin_memory=pin_memory,
     )
 
     try:
@@ -465,6 +463,7 @@ def train_placement(
             with eval_ctx:
                 raw_model.eval()
                 val_loss_sum = 0.0
+                val_iter = iter(val_loader)
                 with torch.no_grad():
                     for _ in range(validation_steps):
                         val_inputs, val_slots, val_mask = _move_batch(
