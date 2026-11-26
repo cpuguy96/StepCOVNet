@@ -1,17 +1,27 @@
-"""Launches the main training loop to train a new StepCovNet model."""
+"""PyTorch training loops for core dense onset and arrow classification models."""
 
+from __future__ import annotations
+
+import copy
+import dataclasses
 import datetime
+import itertools
 import json
 import logging
 import math
 import os
 import pathlib
+from collections.abc import Callable
+from typing import Any
 
-import keras
-import tensorflow as tf
+import torch
+from torch import nn
+from torch.nn import functional as nn_func
+from torch.utils.tensorboard import SummaryWriter
 
 from stepcovnet import (
     config,
+    constants,
     datasets,
     dense_overfit_eval,
     losses,
@@ -21,104 +31,26 @@ from stepcovnet import (
     wsl_gpu,
 )
 from stepcovnet.dataset_prep import training_index
+from stepcovnet.pytorch import runtime
+from stepcovnet.pytorch.core import trainers as core_trainers
 
 ONSET_CHECKPOINT_MONITOR = "val_onset_f1_score"
+POST_HOC_EVENT_F1_REPORT_NAME = "event_f1_sweep.json"
+
+load_onset_model = core_trainers.load_onset_model
+load_arrow_model = core_trainers.load_arrow_model
+save_core_checkpoint = core_trainers.save_core_checkpoint
 
 
-def _get_tb_callback(root_dir: str, callback_name: str):
-    """Create a TensorBoard callback for logging training metrics.
+@dataclasses.dataclass
+class TrainingHistory:
+    """Epoch-level training and validation metrics container.
 
-    Args:
-        root_dir: Root directory for storing logs.
-        callback_name: Name of the callback/run directory.
-
-    Returns:
-        TensorBoard callback configured to log to the specified directory.
+    Attributes:
+        history: Mapping from metric name to list of per-epoch floats.
     """
-    logdir = pathlib.Path(root_dir) / "logs" / callback_name
-    return keras.callbacks.TensorBoard(
-        str(logdir), histogram_freq=0, write_images=False, embeddings_freq=0
-    )
 
-
-def _get_ckpt_callback(
-    root_dir: str,
-    callback_name: str,
-    monitor_metric: str,
-    mode: str,
-) -> keras.callbacks.ModelCheckpoint:
-    """Create a model checkpoint callback for saving the best model.
-
-    Args:
-        root_dir: Root directory for storing model checkpoints.
-        callback_name: Name of the callback/run directory.
-        monitor_metric: Metric name to monitor for checkpointing (e.g., 'val_loss').
-        mode: Mode for monitoring ('min' or 'max'). 'min' saves when metric decreases,
-            'max' saves when metric increases.
-
-    Returns:
-        ModelCheckpoint callback configured to save the best model based on
-        the monitored metric.
-    """
-    ckpt_path = (
-        pathlib.Path(root_dir)
-        / "models"
-        / callback_name
-        / (f"{monitor_metric.upper()}" + "-{" + f"{monitor_metric}" + ":.5f}.keras")
-    )
-    model_checkpoint_callback = keras.callbacks.ModelCheckpoint(
-        filepath=str(ckpt_path),
-        monitor=monitor_metric,
-        save_best_only=True,
-        mode=mode,
-    )
-    return model_checkpoint_callback
-
-
-def _get_callbacks(
-    root_dir: str,
-    monitor_metric: str,
-    monitor_mode: str,
-    experiment_name: str = "",
-    early_stopping_patience: int = 0,
-) -> tuple[list[keras.callbacks.Callback], str]:
-    """Get training callbacks and return the callback name.
-
-    Creates TensorBoard and ModelCheckpoint callbacks for monitoring and
-    saving the best model during training. The callback name includes a
-    timestamp and optional experiment name.
-
-    Args:
-        root_dir: Root directory for storing callbacks (logs and checkpoints).
-        monitor_metric: Metric name to monitor for checkpointing.
-        monitor_mode: Mode for monitoring ('min' or 'max').
-        experiment_name: Optional experiment name to append to the callback name.
-        early_stopping_patience: Epochs without improvement before stopping; 0 disables.
-
-    Returns:
-        Tuple containing:
-            - List of Keras callbacks (TensorBoard and ModelCheckpoint).
-            - Callback name string (timestamp + optional experiment name).
-    """
-    now = datetime.datetime.now()
-    callback_name = now.strftime("%Y%m%d-%H%M%S")
-    if experiment_name:
-        callback_name = callback_name + "-" + experiment_name
-    training_callbacks = [
-        _get_tb_callback(root_dir, callback_name),
-        _get_ckpt_callback(root_dir, callback_name, monitor_metric, monitor_mode),
-    ]
-    if early_stopping_patience > 0:
-        training_callbacks.append(
-            keras.callbacks.EarlyStopping(
-                monitor=monitor_metric,
-                mode=monitor_mode,
-                patience=early_stopping_patience,
-                restore_best_weights=True,
-                verbose=1,
-            )
-        )
-    return training_callbacks, callback_name
+    history: dict[str, list[float]] = dataclasses.field(default_factory=dict)
 
 
 def _get_onset_experiment_name(
@@ -130,83 +62,61 @@ def _get_onset_experiment_name(
     model_params: config.OnsetModelConfig,
     feature_source: config.FeatureSource = config.FeatureSource.MEL,
 ) -> str:
-    """Generate a descriptive experiment name from hyperparameters.
-
-    Creates a human-readable name that encodes key training and model
-    configuration parameters. Used for organizing runs and checkpoints.
+    """Generate a descriptive experiment name from onset hyperparameters.
 
     Args:
-        take_count: Number of batches used from training dataset.
-        apply_temporal_augment: Whether temporal augmentation was applied.
-        should_apply_spec_augment: Whether spectrogram augmentation was applied.
-        use_gaussian_target: Whether Gaussian targets were used.
+        take_count: Number of batches per epoch (``-1`` for all).
+        apply_temporal_augment: Whether temporal augmentation is enabled.
+        should_apply_spec_augment: Whether SpecAugment is enabled.
+        use_gaussian_target: Whether Gaussian targets are used.
         gaussian_sigma: Standard deviation for Gaussian targets.
-        model_params: Model configuration OnsetModelConfig object
-            containing architecture parameters.
+        model_params: Dense onset architecture configuration.
+        feature_source: Input feature source.
 
     Returns:
-        String experiment name with format:
-        "ONSET-take_{N}-sigma_{X}-temporal_augment-spec_augment-unet_filters_{N}-..."
+        Human-readable experiment identifier string.
     """
     parts = ["ONSET"]
-
     if feature_source == config.FeatureSource.MERT:
         parts.append("mert")
     elif feature_source == config.FeatureSource.WAVEFORM:
         parts.append("waveform")
 
-    if take_count == -1:
-        parts.append("take_all")
-    else:
-        parts.append(f"take_{take_count}")
+    parts.append("take_all" if take_count == -1 else f"take_{take_count}")
 
     if use_gaussian_target:
-        sigma_str = str(gaussian_sigma).replace(".", "_")
-        parts.append(f"sigma_{sigma_str}")
-
+        parts.append(f"sigma_{str(gaussian_sigma).replace('.', '_')}")
     if apply_temporal_augment:
         parts.append("temporal_augment")
-
     if should_apply_spec_augment:
         parts.append("spec_augment")
 
     arch = model_params.onset_architecture
     parts.append(arch.value)
+    parts.append(f"filters_{model_params.initial_filters}")
+    parts.append(f"dropout_{str(model_params.dropout_rate).replace('.', '_')}")
 
-    initial_filters = model_params.initial_filters
-    depth = model_params.depth
-    kernel_size = model_params.kernel_size
-    dropout_rate = model_params.dropout_rate
     dilation_rates = model_params.dilation_rates
-
-    parts.append(f"filters_{initial_filters}")
-    parts.append(f"dropout_{str(dropout_rate).replace('.', '_')}")
+    if dilation_rates is None:
+        dilation_str = "N_A"
+    elif isinstance(dilation_rates, list | tuple):
+        dilation_str = "_".join(map(str, dilation_rates))
+    else:
+        dilation_str = str(dilation_rates)
 
     if arch == config.OnsetArchitecture.BILSTM:
-        parts.append(f"bilstm_depth_{depth}")
+        parts.append(f"bilstm_depth_{model_params.depth}")
         parts.append(f"bilstm_units_{model_params.recurrent_units}")
     elif arch == config.OnsetArchitecture.TRANSFORMER:
         parts.append(f"tfm_layers_{model_params.transformer_layers}")
         parts.append(f"tfm_heads_{model_params.transformer_heads}")
     elif arch == config.OnsetArchitecture.TCN:
         parts.append(f"tcn_blocks_{model_params.tcn_blocks}")
-        parts.append(f"kernel_{kernel_size}")
-        if dilation_rates is None:
-            dilation_str = "N_A"
-        elif isinstance(dilation_rates, list | tuple):
-            dilation_str = "_".join(map(str, dilation_rates))
-        else:
-            dilation_str = str(dilation_rates)
+        parts.append(f"kernel_{model_params.kernel_size}")
         parts.append(f"dilations_{dilation_str}")
     else:
-        parts.append(f"depth_{depth}")
-        parts.append(f"kernel_{kernel_size}")
-        if dilation_rates is None:
-            dilation_str = "N_A"
-        elif isinstance(dilation_rates, list | tuple):
-            dilation_str = "_".join(map(str, dilation_rates))
-        else:
-            dilation_str = str(dilation_rates)
+        parts.append(f"depth_{model_params.depth}")
+        parts.append(f"kernel_{model_params.kernel_size}")
         parts.append(f"dilations_{dilation_str}")
 
     return "-".join(parts)
@@ -215,26 +125,18 @@ def _get_onset_experiment_name(
 def _get_arrow_experiment_name(
     experiment_config: config.ArrowExperimentConfig,
 ) -> str:
-    """Generate a descriptive experiment name from hyperparameters.
-
-    Creates a human-readable name that encodes key training and model
-    configuration parameters for arrow classification experiments.
-    All distinguishing model, run, and dataset fields are provided by the
-    configs' get_experiment_name_parts() so that different configs yield different names.
+    """Generate a descriptive experiment name from arrow hyperparameters.
 
     Args:
-        experiment_config: Full arrow experiment configuration (dataset, model, run).
+        experiment_config: Full arrow experiment configuration.
 
     Returns:
-        String experiment name, e.g. "ARROW-transformer-take_all-att_layers_1-...".
+        Human-readable experiment identifier string.
     """
-    model_config = experiment_config.model
-    run_config = experiment_config.run
-    dataset_config = experiment_config.dataset
-    parts = ["ARROW", model_config.model_type]
-    parts.extend(model_config.get_experiment_name_parts())
-    parts.extend(run_config.get_experiment_name_parts())
-    parts.extend(dataset_config.get_experiment_name_parts())
+    parts = ["ARROW", experiment_config.model.model_type]
+    parts.extend(experiment_config.model.get_experiment_name_parts())
+    parts.extend(experiment_config.run.get_experiment_name_parts())
+    parts.extend(experiment_config.dataset.get_experiment_name_parts())
     return "-".join(parts)
 
 
@@ -242,7 +144,7 @@ def _list_monitored_checkpoints(
     callback_root_dir: str,
     monitor_metric: str,
 ) -> list[str]:
-    """Return all monitored checkpoint paths under a callback root, sorted by path."""
+    """Return all monitored ``.pt`` checkpoint paths under a callback root."""
     models_root = pathlib.Path(callback_root_dir) / "models"
     if not models_root.is_dir():
         return []
@@ -250,9 +152,9 @@ def _list_monitored_checkpoints(
     paths: list[str] = []
     for root, _dirs, files in os.walk(models_root):
         for name in files:
-            if not name.startswith(prefix) or not name.endswith(".keras"):
+            if not name.startswith(prefix) or not name.endswith(".pt"):
                 continue
-            value_text = name[len(prefix) : -len(".keras")]
+            value_text = name[len(prefix) : -len(".pt")]
             try:
                 float(value_text)
             except ValueError:
@@ -265,48 +167,70 @@ def _monitored_checkpoint_value(path: str, monitor_metric: str) -> float:
     """Parse the monitored metric value encoded in a checkpoint filename."""
     prefix = f"{monitor_metric.upper()}-"
     name = pathlib.Path(path).name
-    return float(name[len(prefix) : -len(".keras")])
+    return float(name[len(prefix) : -len(".pt")])
 
 
 def _latest_monitored_checkpoint(
     callback_root_dir: str,
     monitor_metric: str,
+    *,
+    monitor_mode: str = "max",
 ) -> str | None:
     """Return the checkpoint with the best monitored metric under a callback root."""
     paths = _list_monitored_checkpoints(callback_root_dir, monitor_metric)
     if not paths:
         return None
-    return max(
+    selector = min if monitor_mode == "min" else max
+    return selector(
         paths,
         key=lambda path: _monitored_checkpoint_value(path, monitor_metric),
     )
 
 
+def _save_config(
+    experiment_config: config.OnsetExperimentConfig | config.ArrowExperimentConfig,
+    callback_root_dir: str,
+    callback_name: str,
+) -> None:
+    """Save experiment config JSON into ``{callback_root_dir}/logs/{callback_name}/config.json``."""
+    logdir = pathlib.Path(callback_root_dir) / "logs" / callback_name
+    logdir.mkdir(parents=True, exist_ok=True)
+    config_path = logdir / "config.json"
+    experiment_config.to_json(str(config_path))
+    logging.info("Saved experiment config to %s", config_path)
+
+
+def _model_filename(model: nn.Module, fallback_name: str) -> str:
+    name = str(getattr(model, "name", "") or fallback_name)
+    return f"{name}.pt"
+
+
 def _write_model(
-    model: keras.Model,
+    model: nn.Module,
     model_output_dir: str,
     *,
     callback_root_dir: str = "",
     monitor_metric: str = ONSET_CHECKPOINT_MONITOR,
-):
-    """Save the trained Keras model to the specified directory.
-
-    When ``callback_root_dir`` contains a monitored checkpoint, that model is
-    saved instead of the final-epoch weights.
-    """
-    filepath = pathlib.Path(model_output_dir) / f"{model.name}.keras"
+    monitor_mode: str = "max",
+    fallback_name: str = "model",
+) -> pathlib.Path:
+    """Save the trained PyTorch model (or best monitored checkpoint) to ``model_output_dir``."""
+    filepath = pathlib.Path(model_output_dir) / _model_filename(model, fallback_name)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    best_path = _latest_monitored_checkpoint(callback_root_dir, monitor_metric)
+    best_path = _latest_monitored_checkpoint(
+        callback_root_dir, monitor_metric, monitor_mode=monitor_mode
+    )
     if best_path is not None:
-        logging.info("Saving best checkpoint from %s to %s", best_path, filepath)
-        best_model = keras.models.load_model(best_path, compile=False)
-        best_model.save(filepath=str(filepath))
-        return
+        logging.info("Copying best checkpoint from %s to %s", best_path, filepath)
+        ckpt = torch.load(
+            pathlib.Path(best_path), map_location="cpu", weights_only=False
+        )
+        tmp = filepath.with_suffix(".pt.tmp")
+        torch.save(ckpt, tmp)
+        tmp.replace(filepath)
+        return filepath
     logging.info("Saving trained model to %s", filepath)
-    model.save(filepath=str(filepath))
-
-
-POST_HOC_EVENT_F1_REPORT_NAME = "event_f1_sweep.json"
+    return core_trainers.save_core_checkpoint(model, filepath)
 
 
 def _select_best_event_f1_checkpoint(
@@ -315,12 +239,8 @@ def _select_best_event_f1_checkpoint(
     run_config: config.RunConfig,
     *,
     monitor_metric: str = ONSET_CHECKPOINT_MONITOR,
-) -> dict | None:
-    """Sweep every saved checkpoint and threshold for best validation event F1.
-
-    Returns a report dict describing the best (checkpoint, threshold) pair and the
-    per-checkpoint sweeps, or None when no monitored checkpoints exist.
-    """
+) -> dict[str, Any] | None:
+    """Sweep every saved ``.pt`` checkpoint and threshold for best validation event F1."""
     checkpoint_paths = _list_monitored_checkpoints(
         run_config.callback_root_dir,
         monitor_metric,
@@ -328,10 +248,10 @@ def _select_best_event_f1_checkpoint(
     if not checkpoint_paths:
         return None
     thresholds = tuple(run_config.post_hoc_event_f1_thresholds)
-    per_checkpoint: list[dict] = []
-    best_entry: dict | None = None
+    per_checkpoint: list[dict[str, Any]] = []
+    best_entry: dict[str, Any] | None = None
     for checkpoint_path in checkpoint_paths:
-        checkpoint_model = keras.models.load_model(checkpoint_path, compile=False)
+        checkpoint_model = core_trainers.load_onset_model(checkpoint_path)
         sweep = dense_overfit_eval.sweep_thresholds_dense_val_event_f1(
             checkpoint_model,
             dataset_config,
@@ -340,7 +260,7 @@ def _select_best_event_f1_checkpoint(
             min_onset_distance_ms=run_config.min_onset_distance_ms,
             tolerance_sec=run_config.tolerance_sec,
         )
-        entry = {"checkpoint": checkpoint_path, **sweep}
+        entry: dict[str, Any] = {"checkpoint": checkpoint_path, **sweep}
         per_checkpoint.append(entry)
         if (
             best_entry is None
@@ -358,20 +278,14 @@ def _select_best_event_f1_checkpoint(
 
 
 def _export_best_event_f1_checkpoint(
-    model: keras.Model,
+    model: nn.Module,
     dataset_config: config.OnsetDatasetConfig,
     model_config: config.OnsetModelConfig,
     run_config: config.RunConfig,
     *,
     monitor_metric: str = ONSET_CHECKPOINT_MONITOR,
-) -> dict | None:
-    """Export the event-F1-optimal checkpoint and write its sweep report.
-
-    Overrides the frame-F1 model file under ``model_output_dir`` with the
-    checkpoint that maximizes validation peak-pick event F1. Returns the report
-    dict (also written to ``event_f1_sweep.json``), or None when no checkpoints
-    are available to sweep.
-    """
+) -> dict[str, Any] | None:
+    """Export the event-F1-optimal checkpoint and write ``event_f1_sweep.json``."""
     report = _select_best_event_f1_checkpoint(
         dataset_config,
         model_config,
@@ -382,9 +296,13 @@ def _export_best_event_f1_checkpoint(
         return None
     output_dir = pathlib.Path(run_config.model_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    filepath = output_dir / f"{model.name}.keras"
-    best_model = keras.models.load_model(report["best_checkpoint"], compile=False)
-    best_model.save(filepath=str(filepath))
+    filepath = output_dir / _model_filename(model, "onset_model")
+    ckpt = torch.load(
+        pathlib.Path(report["best_checkpoint"]), map_location="cpu", weights_only=False
+    )
+    tmp = filepath.with_suffix(".pt.tmp")
+    torch.save(ckpt, tmp)
+    tmp.replace(filepath)
     report_path = output_dir / POST_HOC_EVENT_F1_REPORT_NAME
     with report_path.open("w", encoding="utf-8") as report_file:
         json.dump(report, report_file, indent=2)
@@ -398,160 +316,100 @@ def _export_best_event_f1_checkpoint(
     return report
 
 
-def _save_config(
-    experiment_config: config.OnsetExperimentConfig | config.ArrowExperimentConfig,
-    callback_root_dir: str,
-    callback_name: str,
-):
-    """Save experiment config to JSON file in the run directory.
+def _iter_limited(loader: Any, take_count: int):
+    if take_count < 0:
+        return iter(loader)
+    return itertools.islice(iter(loader), int(take_count))
 
-    Saves the complete experiment configuration (dataset, model, and run
-    parameters) to a JSON file in the run's log directory. This enables
-    reproducibility by allowing the exact configuration to be reloaded
-    for re-running or comparing experiments.
+
+def _binary_focal_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    *,
+    alpha: float = 0.25,
+    gamma: float = 2.0,
+) -> torch.Tensor:
+    logits_f = logits.float().reshape(targets.shape)
+    targets_f = targets.float()
+    bce = nn_func.binary_cross_entropy_with_logits(
+        logits_f, targets_f, reduction="none"
+    )
+    probs = torch.sigmoid(logits_f)
+    p_t = probs * targets_f + (1.0 - probs) * (1.0 - targets_f)
+    alpha_t = alpha * targets_f + (1.0 - alpha) * (1.0 - targets_f)
+    modulating = (1.0 - p_t).clamp(min=0.0) ** gamma
+    return (alpha_t * modulating * bce).mean()
+
+
+def _dense_onset_loss(
+    model: models.DenseOnsetTorchModel,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    *,
+    use_gaussian_target: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    logits = model.forward_logits(x)
+    probs = torch.sigmoid(logits)
+    if use_gaussian_target:
+        loss = nn_func.mse_loss(probs.float(), y.float())
+    else:
+        loss = _binary_focal_loss(logits, y)
+    return loss, probs
+
+
+def _is_better(value: float, best: float | None, mode: str) -> bool:
+    if best is None:
+        return True
+    return value < best if mode == "min" else value > best
+
+
+def _build_cosine_warmup_schedule(
+    total_epochs: int,
+    warmup_epochs: int,
+    lr_peak: float,
+    lr_min: float,
+) -> Callable[[int], float]:
+    """Build an epoch LR schedule that linearly warms up then cosine-decays.
 
     Args:
-        experiment_config: The experiment configuration to save. Can be
-            either OnsetExperimentConfig or ArrowExperimentConfig.
-        callback_root_dir: Root directory for storing callbacks.
-        callback_name: Name of the callback/run directory where the config
-            will be saved.
-
-    The config is saved to: {callback_root_dir}/logs/{callback_name}/config.json
-    """
-    logdir = pathlib.Path(callback_root_dir) / "logs" / callback_name
-    logdir.mkdir(parents=True, exist_ok=True)
-    config_path = logdir / "config.json"
-    experiment_config.to_json(str(config_path))
-    logging.info(f"Saved experiment config to {config_path}")
-
-
-def _build_experiment_callbacks(
-    run_config: config.RunConfig | config.ArrowRunConfig,
-    experiment_name: str,
-    monitor_metric: str,
-    monitor_mode: str,
-    experiment_config: config.OnsetExperimentConfig | config.ArrowExperimentConfig,
-) -> list[keras.callbacks.Callback]:
-    """Build callbacks for an experiment and save its config if callbacks enabled.
-
-    Args:
-        run_config: Training run configuration (onset or arrow).
-        experiment_name: Human-readable experiment name for log directories.
-        monitor_metric: Metric name to monitor for checkpointing.
-        monitor_mode: Mode for monitoring ('min' or 'max').
-        experiment_config: Combined dataset/model/run configuration to persist.
+        total_epochs: Total number of training epochs.
+        warmup_epochs: Epochs for linear warmup from ``lr_min`` to ``lr_peak``.
+        lr_peak: Peak learning rate at end of warmup.
+        lr_min: Minimum learning rate at start of warmup and end of decay.
 
     Returns:
-        List of Keras callbacks (empty when callback_root_dir is not set).
+        Callable ``(epoch: int) -> lr: float``.
     """
-    if not run_config.callback_root_dir:
-        return []
+    decay_epochs = total_epochs - warmup_epochs
 
-    training_callbacks, callback_name = _get_callbacks(
-        root_dir=run_config.callback_root_dir,
-        monitor_metric=monitor_metric,
-        monitor_mode=monitor_mode,
-        experiment_name=experiment_name,
-        early_stopping_patience=getattr(run_config, "early_stopping_patience", 0),
-    )
-    _save_config(experiment_config, run_config.callback_root_dir, callback_name)
-    return training_callbacks
+    def schedule(epoch: int) -> float:
+        if epoch < warmup_epochs:
+            if warmup_epochs == 1:
+                return lr_peak
+            progress = epoch / (warmup_epochs - 1)
+            return lr_min + (lr_peak - lr_min) * progress
+        progress = (epoch - warmup_epochs) / max(decay_epochs, 1)
+        return lr_min + 0.5 * (lr_peak - lr_min) * (1.0 + math.cos(math.pi * progress))
 
-
-def _fit_and_save_model(
-    model: keras.Model,
-    train_dataset,
-    val_dataset,
-    run_config: config.RunConfig | config.ArrowRunConfig,
-    callbacks: list[keras.callbacks.Callback],
-    monitor_metric: str,
-) -> keras.callbacks.History:
-    """Run model.fit with common settings, then persist the trained model.
-
-    Args:
-        model: Compiled Keras model to train.
-        train_dataset: Training dataset.
-        val_dataset: Validation dataset.
-        run_config: Training run configuration (onset or arrow).
-        callbacks: List of callbacks to pass to model.fit.
-        monitor_metric: Validation metric used for best-checkpoint selection.
-
-    Returns:
-        Training history object from model.fit.
-    """
-    val_data = val_dataset.take(run_config.val_take_count)
-    if run_config.val_take_count != -1:
-        # Taking a prefix of an already-cached dataset leaves that cache
-        # partially filled, so tf.data discards it and re-reads features every
-        # epoch. Cache the truncated subset instead.
-        val_data = val_data.cache()
-    train_history = model.fit(
-        train_dataset.take(run_config.take_count),
-        epochs=run_config.epoch,
-        validation_data=val_data,
-        callbacks=callbacks,
-        verbose=run_config.fit_verbose,  # type: ignore[arg-type]
-    )
-
-    _write_model(
-        model,
-        run_config.model_output_dir,
-        callback_root_dir=run_config.callback_root_dir,
-        monitor_metric=monitor_metric,
-    )
-
-    return train_history
-
-
-def build_onset_dense_compile_metrics(
-    run_config: config.RunConfig,
-) -> list[keras.metrics.Metric]:
-    """Return Keras metrics compiled for dense onset training."""
-    return [
-        keras.metrics.BinaryAccuracy(name="acc"),
-        keras.metrics.Precision(name="prec"),
-        keras.metrics.Recall(name="rec"),
-        keras.metrics.AUC(curve="PR", name="pr_auc"),
-        keras.metrics.AUC(name="auc"),
-        metrics.OnsetF1Metric(tolerance=2, threshold=0.5),
-    ]
-
-
-def _build_dense_val_event_f1_callback(
-    val_dataset: tf.data.Dataset,
-    run_config: config.RunConfig,
-) -> dense_overfit_eval.DenseValEventF1Callback:
-    return dense_overfit_eval.DenseValEventF1Callback(
-        val_dataset,
-        confidence_threshold=run_config.confidence_threshold,
-        tolerance_sec=run_config.tolerance_sec,
-        min_onset_distance_ms=run_config.min_onset_distance_ms,
-    )
+    return schedule
 
 
 def run_train_from_config(
     dataset_config: config.OnsetDatasetConfig,
     model_config: config.OnsetModelConfig,
     run_config: config.RunConfig,
-) -> tuple[keras.Model, keras.callbacks.History]:
-    """Train a U-Net WaveNet model using configuration objects.
-
-    This is the recommended way to train models as it provides better tracking
-    and reproducibility. The config is automatically saved with the run.
+) -> tuple[models.DenseOnsetTorchModel, TrainingHistory]:
+    """Train a PyTorch dense onset model using configuration objects.
 
     Args:
-        dataset_config: Configuration for dataset creation.
-        model_config: Configuration for model architecture.
-        run_config: Configuration for training run parameters.
+        dataset_config: Dataset configuration.
+        model_config: Dense onset architecture configuration.
+        run_config: Training run hyperparameters and output paths.
 
     Returns:
-        A tuple containing:
-            - model: The trained Keras model.
-            - train_history: The training history object containing loss and
-            metrics per epoch.
+        Tuple ``(model, history)``.
     """
-    wsl_gpu.guard_tensorflow_gpu_job()
+    wsl_gpu.guard_pytorch_gpu_job()
     if run_config.seed is not None:
         reproducibility.apply_training_seed(run_config.seed)
 
@@ -570,45 +428,15 @@ def run_train_from_config(
         val_ref = index_ref
         train_split = training_index.SPLIT_TRAIN
         val_split = training_index.SPLIT_VAL
-        logging.info(
-            "Using training index %s (data root %s)",
-            index_ref,
-            data_root,
-        )
     elif training_index.manifest_split_enabled(
         dataset_config.data_dir,
         dataset_config.val_data_dir,
     ):
         train_split = training_index.SPLIT_TRAIN
         val_split = training_index.SPLIT_VAL
-        logging.info(
-            "Using training_index.json for train/val under %s",
-            dataset_config.data_dir,
-        )
 
-    if dataset_config.max_train_songs != -1:
-        all_train_samples = datasets.list_dense_onset_samples(
-            train_ref,
-            split=train_split,
-        )
-        selected_train_samples = datasets.select_song_pairs(
-            all_train_samples,
-            max_songs=dataset_config.max_train_songs,
-            seed=run_config.seed,
-        )
-        selected_stems = sorted(
-            pathlib.Path(audio_path).stem for audio_path, _, _ in selected_train_samples
-        )
-        logging.info(
-            "Training on %d of %d songs (max_train_songs=%d, seed=%s): %s",
-            len(selected_train_samples),
-            len(all_train_samples),
-            dataset_config.max_train_songs,
-            run_config.seed,
-            ", ".join(selected_stems),
-        )
-
-    train_dataset = datasets.create_dataset(
+    input_features = config.resolve_onset_input_features(dataset_config, model_config)
+    train_loader = datasets.create_dataset(
         data_dir=train_ref,
         batch_size=dataset_config.batch_size,
         apply_temporal_augment=dataset_config.apply_temporal_augment,
@@ -617,7 +445,7 @@ def run_train_from_config(
         gaussian_sigma=dataset_config.gaussian_sigma,
         feature_source=dataset_config.feature_source,
         mert_features_dir=dataset_config.mert_features_dir,
-        n_features=config.resolve_onset_input_features(dataset_config, model_config),
+        n_features=input_features,
         max_songs=dataset_config.max_train_songs,
         song_selection_seed=run_config.seed,
         split=train_split,
@@ -627,12 +455,10 @@ def run_train_from_config(
         density_conditioning=dataset_config.density_conditioning,
     )
 
-    # Validation always evaluates whole songs; windowed training would otherwise
-    # inherit the (larger) train batch size and skew frame metrics via padding.
     val_batch_size = (
         1 if dataset_config.train_window_frames > 0 else dataset_config.batch_size
     )
-    val_dataset = datasets.create_dataset(
+    val_loader = datasets.create_dataset(
         data_dir=val_ref,
         batch_size=val_batch_size,
         apply_temporal_augment=False,
@@ -640,7 +466,7 @@ def run_train_from_config(
         use_gaussian_target=False,
         feature_source=dataset_config.feature_source,
         mert_features_dir=dataset_config.mert_features_dir,
-        n_features=config.resolve_onset_input_features(dataset_config, model_config),
+        n_features=input_features,
         split=val_split,
         data_root=data_root,
         density_conditioning=dataset_config.density_conditioning,
@@ -655,64 +481,154 @@ def run_train_from_config(
         model_params=model_config,
         feature_source=dataset_config.feature_source,
     )
-
-    input_features = config.resolve_onset_input_features(dataset_config, model_config)
+    model_name = run_config.model_name or experiment_name
     if config.uses_waveform_model_input(dataset_config):
-        model = models.build_unet_wavenet_from_waveform_model(
-            model_name=run_config.model_name or experiment_name,
-            initial_filters=model_config.initial_filters,
-            depth=model_config.depth,
-            dilation_rates=model_config.dilation_rates,
-            kernel_size=model_config.kernel_size,
-            dropout_rate=model_config.dropout_rate,
-            frontend_filters=model_config.waveform_frontend_filters,
+        model: models.DenseOnsetTorchModel = (
+            models.build_unet_wavenet_from_waveform_model(
+                model_name=model_name,
+                initial_filters=model_config.initial_filters,
+                depth=model_config.depth,
+                dilation_rates=model_config.dilation_rates,
+                kernel_size=model_config.kernel_size,
+                dropout_rate=model_config.dropout_rate,
+                frontend_filters=model_config.waveform_frontend_filters,
+            )
         )
     else:
         model = models.build_onset_dense_model(
             model_config,
-            model_name=run_config.model_name or experiment_name,
+            model_name=model_name,
             input_features=input_features,
         )
 
-    if run_config.show_model_summary:
-        model.summary()
-
-    if dataset_config.use_gaussian_target:
-        loss = keras.losses.MeanSquaredError()
-    else:
-        loss = keras.losses.BinaryFocalCrossentropy(apply_class_balancing=True)
-
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3),  # type: ignore
-        loss=loss,
-        metrics=build_onset_dense_compile_metrics(run_config),
-    )
+    device = runtime.resolve_device(None)
+    model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, eps=1e-7)
 
     experiment_config = config.OnsetExperimentConfig(
         dataset=dataset_config, model=model_config, run=run_config
     )
     monitor_metric = run_config.checkpoint_metric or ONSET_CHECKPOINT_MONITOR
-    training_callbacks = _build_experiment_callbacks(
-        run_config=run_config,
-        experiment_name=experiment_name,
-        monitor_metric=monitor_metric,
-        monitor_mode="min" if monitor_metric.endswith("loss") else "max",
-        experiment_config=experiment_config,
-    )
-    # Peak-picked event metrics come from an extra predict pass over the val
-    # split, so only pay for it when one of them drives selection.
-    if monitor_metric in config.EVENT_CHECKPOINT_METRICS:
-        val_data = val_dataset.take(run_config.val_take_count)
-        event_f1_callback = _build_dense_val_event_f1_callback(val_data, run_config)
-        training_callbacks.insert(0, event_f1_callback)
+    monitor_mode = "min" if monitor_metric.endswith("loss") else "max"
 
-    train_history = _fit_and_save_model(
-        model=model,
-        train_dataset=train_dataset,
-        val_dataset=val_dataset,
-        run_config=run_config,
-        callbacks=training_callbacks,
+    callback_name = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    if experiment_name:
+        callback_name = f"{callback_name}-{experiment_name}"
+    writer: SummaryWriter | None = None
+    ckpt_dir: pathlib.Path | None = None
+    if run_config.callback_root_dir:
+        _save_config(experiment_config, run_config.callback_root_dir, callback_name)
+        writer = SummaryWriter(
+            log_dir=str(
+                pathlib.Path(run_config.callback_root_dir) / "logs" / callback_name
+            )
+        )
+        ckpt_dir = pathlib.Path(run_config.callback_root_dir) / "models" / callback_name
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    event_cb: dense_overfit_eval.DenseValEventF1Callback | None = None
+    if monitor_metric in config.EVENT_CHECKPOINT_METRICS:
+        val_batches = list(_iter_limited(val_loader, run_config.val_take_count))
+        event_cb = dense_overfit_eval.DenseValEventF1Callback(
+            val_batches,
+            confidence_threshold=run_config.confidence_threshold,
+            tolerance_sec=run_config.tolerance_sec,
+            min_onset_distance_ms=run_config.min_onset_distance_ms,
+            model=model,
+        )
+
+    history = TrainingHistory()
+    best_metric_val: float | None = None
+    best_state: dict[str, torch.Tensor] | None = None
+    stale_epochs = 0
+    patience = int(getattr(run_config, "early_stopping_patience", 0))
+
+    try:
+        for epoch in range(int(run_config.epoch)):
+            model.train()
+            tr_f1 = metrics.OnsetF1Metric(tolerance=2, threshold=0.5)
+            tr_loss_sum = 0.0
+            tr_steps = 0
+            for x_batch, y_batch in _iter_limited(train_loader, run_config.take_count):
+                x_t = x_batch.to(device)
+                y_t = y_batch.to(device)
+                optimizer.zero_grad(set_to_none=True)
+                loss, probs = _dense_onset_loss(
+                    model,
+                    x_t,
+                    y_t,
+                    use_gaussian_target=dataset_config.use_gaussian_target,
+                )
+                loss.backward()
+                optimizer.step()
+                tr_loss_sum += float(loss.detach().cpu().item())
+                tr_steps += 1
+                tr_f1.update_state(y_t.detach(), probs.detach())
+
+            model.eval()
+            va_f1 = metrics.OnsetF1Metric(tolerance=2, threshold=0.5)
+            va_loss_sum = 0.0
+            va_steps = 0
+            with torch.no_grad():
+                for x_batch, y_batch in _iter_limited(
+                    val_loader, run_config.val_take_count
+                ):
+                    x_t = x_batch.to(device)
+                    y_t = y_batch.to(device)
+                    v_loss, v_probs = _dense_onset_loss(
+                        model, x_t, y_t, use_gaussian_target=False
+                    )
+                    va_loss_sum += float(v_loss.detach().cpu().item())
+                    va_steps += 1
+                    va_f1.update_state(y_t, v_probs)
+
+            epoch_logs: dict[str, float] = {
+                "loss": tr_loss_sum / max(1, tr_steps),
+                "onset_f1_score": tr_f1.result(),
+                "val_loss": va_loss_sum / max(1, va_steps),
+                "val_onset_f1_score": va_f1.result(),
+            }
+            if event_cb is not None:
+                event_cb.model = model
+                event_cb.on_epoch_end(epoch, epoch_logs)
+
+            for k, v in epoch_logs.items():
+                history.history.setdefault(k, []).append(float(v))
+                if writer is not None:
+                    writer.add_scalar(k, float(v), epoch + 1)
+
+            monitored = epoch_logs.get(monitor_metric, epoch_logs["val_loss"])
+            if _is_better(monitored, best_metric_val, monitor_mode):
+                best_metric_val = monitored
+                best_state = copy.deepcopy(
+                    {k: v.detach().cpu() for k, v in model.state_dict().items()}
+                )
+                stale_epochs = 0
+                if ckpt_dir is not None:
+                    ckpt_name = f"{monitor_metric.upper()}-{monitored:.5f}.pt"
+                    core_trainers.save_core_checkpoint(
+                        model,
+                        ckpt_dir / ckpt_name,
+                        extra={"epoch": epoch + 1, monitor_metric: monitored},
+                    )
+            else:
+                stale_epochs += 1
+                if patience > 0 and stale_epochs >= patience:
+                    break
+    finally:
+        if writer is not None:
+            writer.close()
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    _write_model(
+        model,
+        run_config.model_output_dir,
+        callback_root_dir=run_config.callback_root_dir,
         monitor_metric=monitor_metric,
+        monitor_mode=monitor_mode,
+        fallback_name=model_name,
     )
 
     if run_config.post_hoc_event_f1_export and run_config.callback_root_dir:
@@ -724,11 +640,14 @@ def run_train_from_config(
             monitor_metric=monitor_metric,
         )
 
-    saved_path = pathlib.Path(run_config.model_output_dir) / f"{model.name}.keras"
+    saved_path = pathlib.Path(run_config.model_output_dir) / _model_filename(
+        model, model_name
+    )
     if saved_path.is_file():
-        model = keras.models.load_model(saved_path, compile=False)
+        model = core_trainers.load_onset_model(saved_path, device=device)
+        model.name = model_name  # type: ignore[attr-defined]
 
-    return model, train_history
+    return model, history
 
 
 def run_train(
@@ -747,44 +666,8 @@ def run_train(
     model_name: str = "",
     val_take_count: int = -1,
     model_params: dict | None = None,
-) -> tuple[keras.Model, keras.callbacks.History]:
-    """Train a U-Net WaveNet model on step detection data.
-
-    Trains a Keras model for detecting steps in audio spectrograms. The function
-    handles dataset creation, model compilation with configurable loss
-    functions, and training with callbacks for monitoring and checkpointing.
-    Input spectrograms are always normalized.
-
-    Args:
-        data_dir: Path to the directory containing training data.
-        val_data_dir: Path to the directory containing validation data.
-        batch_size: Number of samples per batch during training.
-        apply_temporal_augment: Whether to apply temporal augmentation to
-            training data.
-        should_apply_spec_augment: Whether to apply spectrogram augmentation
-            to training data.
-        use_gaussian_target: Whether to use Gaussian targets (True) or binary
-            targets (False).
-        gaussian_sigma: Standard deviation for Gaussian target distribution.
-        take_count: Number of batches to use from the training dataset.
-        epoch: Number of epochs to train for.
-        model_output_dir: Directory where the trained model will be saved.
-        callback_root_dir: Root directory for storing training callbacks (
-            checkpoints, logs).
-        model_name: Name of the model that will be saved. If none provided,
-            generated from the experiment name.
-        val_take_count: Number of batches to use from the validation dataset.
-            -1 (default) uses the entire validation dataset.
-        model_params: Optional dictionary of parameters to pass to the model
-            builder. If omitted or None, default OnsetModelConfig values are used.
-
-    Returns:
-        A tuple containing:
-            - model: The trained Keras model.
-            - train_history: The training history object containing loss and
-            metrics per epoch.
-    """
-    # Convert kwargs to config objects for backward compatibility
+) -> tuple[models.DenseOnsetTorchModel, TrainingHistory]:
+    """Train a PyTorch dense onset model from keyword arguments."""
     dataset_config = config.OnsetDatasetConfig(
         data_dir=data_dir,
         val_data_dir=val_data_dir,
@@ -806,56 +689,50 @@ def run_train(
     return run_train_from_config(dataset_config, model_config, run_config)
 
 
-def _build_cosine_warmup_schedule(
-    total_epochs: int,
-    warmup_epochs: int,
-    lr_peak: float,
-    lr_min: float,
-) -> keras.callbacks.LearningRateScheduler:
-    """Build a LearningRateScheduler that linearly warms up then cosine-decays.
-
-    Args:
-        total_epochs: Total number of training epochs.
-        warmup_epochs: Epochs for linear warmup from lr_min to lr_peak.
-        lr_peak: Peak (maximum) learning rate reached at end of warmup.
-        lr_min: Minimum learning rate at start of warmup and end of decay.
-
-    Returns:
-        A Keras LearningRateScheduler callback.
-    """
-    decay_epochs = total_epochs - warmup_epochs
-
-    def schedule(epoch: int, _lr: float) -> float:
-        if epoch < warmup_epochs:
-            # Reach lr_peak at the last warmup epoch (epoch == warmup_epochs - 1).
-            if warmup_epochs == 1:
-                return lr_peak
-            progress = epoch / (warmup_epochs - 1)
-            return lr_min + (lr_peak - lr_min) * progress
-        progress = (epoch - warmup_epochs) / max(decay_epochs, 1)
-        return lr_min + 0.5 * (lr_peak - lr_min) * (1.0 + math.cos(math.pi * progress))
-
-    return keras.callbacks.LearningRateScheduler(schedule)
+def _split_arrow_batch(
+    feats: dict[str, torch.Tensor] | torch.Tensor,
+    cols: torch.Tensor,
+    device: torch.device,
+) -> tuple[
+    dict[str, torch.Tensor] | torch.Tensor,
+    torch.Tensor,
+    torch.Tensor | None,
+    torch.Tensor | None,
+]:
+    y_arrow = cols.to(device=device, dtype=torch.long)
+    if isinstance(feats, dict):
+        aux_target = feats.get("aux_interval_target")
+        aux_mask = feats.get("aux_interval_mask")
+        x = {
+            k: v.to(device=device, dtype=torch.float32)
+            for k, v in feats.items()
+            if k not in ("aux_interval_target", "aux_interval_mask")
+        }
+        return (
+            x,
+            y_arrow,
+            aux_target.to(device=device, dtype=torch.float32)
+            if aux_target is not None
+            else None,
+            aux_mask.to(device=device, dtype=torch.float32)
+            if aux_mask is not None
+            else None,
+        )
+    return feats.to(device=device, dtype=torch.float32), y_arrow, None, None
 
 
 def run_arrow_train_from_config(
     experiment_config: config.ArrowExperimentConfig,
-) -> tuple[keras.Model, keras.callbacks.History]:
-    """Train an arrow classification model using an experiment config.
-
-    This is the recommended way to train models as it provides better tracking
-    and reproducibility. The config is automatically saved with the run.
+) -> tuple[models.ArrowSequenceModel, TrainingHistory]:
+    """Train a PyTorch arrow classification model from an experiment config.
 
     Args:
-        experiment_config: Full arrow experiment configuration (dataset, model, run).
+        experiment_config: Full arrow experiment configuration.
 
     Returns:
-        A tuple containing:
-            - model: The trained Keras model.
-            - train_history: The training history object containing loss and
-            metrics per epoch.
+        Tuple ``(model, history)``.
     """
-    wsl_gpu.guard_tensorflow_gpu_job()
+    wsl_gpu.guard_pytorch_gpu_job()
     dataset_config = experiment_config.dataset
     model_config = experiment_config.model
     run_config = experiment_config.run
@@ -864,7 +741,8 @@ def run_arrow_train_from_config(
 
     dataset_provides_aux = dataset_config.use_aux_interval_target
     use_aux_interval = dataset_provides_aux and run_config.aux_interval_weight > 0
-    train_dataset = datasets.create_arrow_dataset(
+
+    train_loader = datasets.create_arrow_dataset(
         data_dir=dataset_config.data_dir,
         batch_size=dataset_config.batch_size,
         snippet_half_frames=dataset_config.snippet_half_frames,
@@ -875,8 +753,7 @@ def run_arrow_train_from_config(
         use_aux_interval_target=dataset_config.use_aux_interval_target,
         timing_jitter_sigma=dataset_config.timing_jitter_sigma,
     )
-
-    val_dataset = datasets.create_arrow_dataset(
+    val_loader = datasets.create_arrow_dataset(
         data_dir=dataset_config.val_data_dir,
         batch_size=dataset_config.batch_size,
         snippet_half_frames=dataset_config.snippet_half_frames,
@@ -888,33 +765,8 @@ def run_arrow_train_from_config(
         timing_jitter_sigma=0.0,
     )
 
-    if dataset_provides_aux:
-
-        def _prepare_aux_batch(out, cols):
-            x = {
-                k: v
-                for k, v in out.items()
-                if k not in ("aux_interval_target", "aux_interval_mask")
-            }
-            if use_aux_interval:
-                y = {
-                    "output_probabilities": cols,
-                    "aux_interval": out["aux_interval_target"],
-                }
-                sample_weight = {
-                    # Uniform weight for the main classification head.
-                    "output_probabilities": tf.ones_like(cols, dtype=tf.float32),
-                    # Masked weights for aux_interval regression (last step masked out).
-                    "aux_interval": out["aux_interval_mask"],
-                }
-                return (x, y, sample_weight)
-            return (x, cols)
-
-        train_dataset = train_dataset.map(_prepare_aux_batch)
-        val_dataset = val_dataset.map(_prepare_aux_batch)
-
     experiment_name = _get_arrow_experiment_name(experiment_config)
-
+    model_name = run_config.model_name or experiment_name
     input_options = models.ArrowInputOptions(
         snippet_half_frames=dataset_config.snippet_half_frames,
         use_interval=dataset_config.use_interval,
@@ -924,98 +776,181 @@ def run_arrow_train_from_config(
     )
     output_options = models.ArrowOutputOptions(
         use_aux_interval=use_aux_interval,
-        model_name=run_config.model_name or experiment_name,
+        model_name=model_name,
     )
     model = models.build_arrow_model_from_config(
         model_config, input_options, output_options
     )
 
-    if run_config.show_model_summary:
-        model.summary()
-
+    device = runtime.resolve_device(None)
+    model.to(device)
     arrow_combined_loss = losses.build_arrow_combined_loss(run_config)
-    rej_threshold = run_config.chart_validity_rejection_threshold
 
     use_lr_schedule = run_config.warmup_epochs > 0
     initial_lr = run_config.lr_min if use_lr_schedule else run_config.lr_peak
+    optimizer = torch.optim.Adam(model.parameters(), lr=float(initial_lr), eps=1e-7)
+    lr_schedule = (
+        _build_cosine_warmup_schedule(
+            total_epochs=run_config.epoch,
+            warmup_epochs=run_config.warmup_epochs,
+            lr_peak=run_config.lr_peak,
+            lr_min=run_config.lr_min,
+        )
+        if use_lr_schedule
+        else None
+    )
 
-    _main_metrics = [
-        keras.metrics.SparseCategoricalAccuracy(name="acc"),
-        keras.metrics.SparseCategoricalCrossentropy(name="main_loss"),
-        metrics.ChartValidityAuxiliaryLossMetric(name="chart_validity_aux_loss"),
-        metrics.NoteKindBalanceAuxiliaryLossMetric(name="note_kind_balance_aux_loss"),
-        metrics.ArrowDistributionMatchMetric(name="arrow_dist_match"),
-        metrics.ArrowNoteKindDistributionMetric(name="arrow_note_kind_dist_match"),
-        metrics.ChartValidityMetric(name="chart_validity"),
-    ]
-    if rej_threshold is not None:
-        _main_metrics.append(
-            metrics.ChartValidityPassRateMetric(
-                threshold=rej_threshold,
-                name=f"chart_validity_pass_rate_{str(rej_threshold).replace('.', '_')}",
+    monitor_metric = (
+        "val_output_probabilities_main_loss" if use_aux_interval else "val_main_loss"
+    )
+
+    callback_name = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    if experiment_name:
+        callback_name = f"{callback_name}-{experiment_name}"
+    writer: SummaryWriter | None = None
+    ckpt_dir: pathlib.Path | None = None
+    if run_config.callback_root_dir:
+        _save_config(experiment_config, run_config.callback_root_dir, callback_name)
+        writer = SummaryWriter(
+            log_dir=str(
+                pathlib.Path(run_config.callback_root_dir) / "logs" / callback_name
             )
         )
+        ckpt_dir = pathlib.Path(run_config.callback_root_dir) / "models" / callback_name
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    if use_aux_interval:
-        model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),  # type: ignore
-            loss={
-                "output_probabilities": arrow_combined_loss,
-                "aux_interval": losses.masked_mse_aux_interval,
-            },
-            loss_weights={
-                "output_probabilities": 1.0,
-                "aux_interval": run_config.aux_interval_weight,
-            },
-            metrics={
-                "output_probabilities": _main_metrics,
-                "aux_interval": keras.metrics.MeanSquaredError(name="aux_interval_mse"),
-            },
-        )
-    else:
-        model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=initial_lr, clipnorm=1.0),  # type: ignore
-            loss=arrow_combined_loss,
-            metrics=_main_metrics,
-        )
+    history = TrainingHistory()
+    best_val: float | None = None
+    best_state: dict[str, torch.Tensor] | None = None
+    stale_epochs = 0
+    patience = int(getattr(run_config, "early_stopping_patience", 0))
+    aux_w = float(run_config.aux_interval_weight)
 
-    lr_callbacks: list[keras.callbacks.Callback] = []
-    if use_lr_schedule:
-        lr_callbacks.append(
-            _build_cosine_warmup_schedule(
-                total_epochs=run_config.epoch,
-                warmup_epochs=run_config.warmup_epochs,
-                lr_peak=run_config.lr_peak,
-                lr_min=run_config.lr_min,
-            )
-        )
+    def _run_epoch(loader: Any, limit: int, train: bool) -> dict[str, float]:
+        model.train(train)
+        loss_sum = 0.0
+        main_ce_sum = 0.0
+        steps = 0
+        correct = 0.0
+        valid_total = 0.0
+        val_metric = metrics.ChartValidityMetric()
+        dist_metric = metrics.ArrowDistributionMatchMetric()
+        kind_metric = metrics.ArrowNoteKindDistributionMetric()
 
-    # When aux_interval is enabled, the main loss metric is logged under the
-    # "output_probabilities" head, so its validation metric name is
-    # "val_output_probabilities_main_loss" instead of "val_main_loss".
-    if use_aux_interval:
-        monitor_metric = "val_output_probabilities_main_loss"
-    else:
-        monitor_metric = "val_main_loss"
+        ctx = torch.enable_grad() if train else torch.no_grad()
+        with ctx:
+            for raw_feats, raw_cols in _iter_limited(loader, limit):
+                x, y_arrow, y_aux, aux_mask = _split_arrow_batch(
+                    raw_feats, raw_cols, device
+                )
+                if train:
+                    optimizer.zero_grad(set_to_none=True)
+                out = model(x)
+                if isinstance(out, dict):
+                    probs = out["output_probabilities"]
+                    total_loss = arrow_combined_loss(y_arrow, probs)
+                    if use_aux_interval and y_aux is not None:
+                        total_loss = (
+                            total_loss
+                            + aux_w
+                            * losses.masked_mse_aux_interval(
+                                y_aux, out["aux_interval"], aux_mask
+                            )
+                        )
+                else:
+                    probs = out
+                    total_loss = arrow_combined_loss(y_arrow, probs)
+                if train:
+                    total_loss.backward()
+                    nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
 
-    training_callbacks = _build_experiment_callbacks(
-        run_config=run_config,
-        experiment_name=experiment_name,
+                main_ce = losses.arrow_label_smoothed_crossentropy(
+                    y_arrow, probs.detach(), smoothing=0.0
+                )
+                loss_sum += float(total_loss.detach().cpu().item())
+                main_ce_sum += float(main_ce.detach().cpu().item())
+                steps += 1
+
+                valid_mask = y_arrow != constants.ARROW_PADDING_CLASS
+                preds = torch.argmax(probs.detach(), dim=-1)
+                correct += float(((preds == y_arrow) & valid_mask).sum().cpu().item())
+                valid_total += float(valid_mask.sum().cpu().item())
+                val_metric.update_state(y_arrow.detach(), probs.detach())
+                dist_metric.update_state(y_arrow.detach(), probs.detach())
+                kind_metric.update_state(y_arrow.detach(), probs.detach())
+
+        return {
+            "loss": loss_sum / max(1, steps),
+            "main_loss": main_ce_sum / max(1, steps),
+            "acc": correct / max(1.0, valid_total),
+            "chart_validity": val_metric.result(),
+            "arrow_dist_match": dist_metric.result(),
+            "arrow_note_kind_dist_match": kind_metric.result(),
+        }
+
+    try:
+        for epoch in range(int(run_config.epoch)):
+            if lr_schedule is not None:
+                lr = lr_schedule(epoch)
+                for group in optimizer.param_groups:
+                    group["lr"] = lr
+            tr_stats = _run_epoch(train_loader, run_config.take_count, train=True)
+            va_stats = _run_epoch(val_loader, run_config.val_take_count, train=False)
+
+            epoch_logs: dict[str, float] = {
+                **tr_stats,
+                **{f"val_{k}": v for k, v in va_stats.items()},
+            }
+            if use_aux_interval:
+                epoch_logs["val_output_probabilities_main_loss"] = va_stats["main_loss"]
+
+            for k, v in epoch_logs.items():
+                history.history.setdefault(k, []).append(float(v))
+                if writer is not None:
+                    writer.add_scalar(k, float(v), epoch + 1)
+
+            monitored = epoch_logs[monitor_metric]
+            if _is_better(monitored, best_val, "min"):
+                best_val = monitored
+                best_state = copy.deepcopy(
+                    {k: v.detach().cpu() for k, v in model.state_dict().items()}
+                )
+                stale_epochs = 0
+                if ckpt_dir is not None:
+                    ckpt_name = f"{monitor_metric.upper()}-{monitored:.5f}.pt"
+                    core_trainers.save_core_checkpoint(
+                        model,
+                        ckpt_dir / ckpt_name,
+                        extra={"epoch": epoch + 1, monitor_metric: monitored},
+                    )
+            else:
+                stale_epochs += 1
+                if patience > 0 and stale_epochs >= patience:
+                    break
+    finally:
+        if writer is not None:
+            writer.close()
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    _write_model(
+        model,
+        run_config.model_output_dir,
+        callback_root_dir=run_config.callback_root_dir,
         monitor_metric=monitor_metric,
         monitor_mode="min",
-        experiment_config=experiment_config,
+        fallback_name=model_name,
     )
-
-    train_history = _fit_and_save_model(
-        model=model,
-        train_dataset=train_dataset,
-        val_dataset=val_dataset,
-        run_config=run_config,
-        callbacks=lr_callbacks + training_callbacks,
-        monitor_metric=monitor_metric,
+    saved_path = pathlib.Path(run_config.model_output_dir) / _model_filename(
+        model, model_name
     )
+    if saved_path.is_file():
+        model = core_trainers.load_arrow_model(saved_path, device=device)
+        model.name = model_name  # type: ignore[attr-defined]
 
-    return model, train_history
+    return model, history
 
 
 def run_arrow_train(
@@ -1030,37 +965,8 @@ def run_arrow_train(
     model_name: str = "",
     val_take_count: int = -1,
     model_params: dict | None = None,
-) -> tuple[keras.Model, keras.callbacks.History]:
-    """Train an arrow classification model.
-
-    Trains a Keras model to classify arrow types (directions) based on audio
-    features. Step times are always normalized.
-    Uses SparseCategoricalCrossentropy loss and ignores the background class
-    (0).
-
-    Args:
-        data_dir: Path to the directory containing training data.
-        val_data_dir: Path to the directory containing validation data.
-        batch_size: Number of samples per batch during training.
-        take_count: Number of batches to use from the training dataset. -1 (default) uses the entire dataset (tf.data accepts -1 for take-all).
-        epoch: Number of epochs to train for.
-        model_output_dir: Directory where the trained model will be saved.
-        callback_root_dir: Root directory for storing training callbacks.
-        model_name: Name of the model that will be saved. If none provided,
-            generated from the experiment name.
-        val_take_count: Number of batches to use from the validation dataset.
-            -1 (default) uses the entire validation dataset.
-        model_params: Optional dictionary of parameters to pass to the arrow
-            model builder. If omitted or None, default ArrowModelConfig values
-            are used.
-
-    Returns:
-        A tuple containing:
-            - model: The trained Keras model.
-            - train_history: The training history object containing loss and
-            metrics per epoch.
-    """
-    # Convert kwargs to config objects for backward compatibility
+) -> tuple[models.ArrowSequenceModel, TrainingHistory]:
+    """Train a PyTorch arrow classification model from keyword arguments."""
     dataset_config = config.ArrowDatasetConfig(
         data_dir=data_dir,
         val_data_dir=val_data_dir,

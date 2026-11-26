@@ -1,26 +1,26 @@
-"""Training reproducibility helpers."""
+"""Training reproducibility helpers (PyTorch, NumPy, and Python RNG state)."""
 
-import contextlib
+from __future__ import annotations
+
 import os
 import random
 
-import keras
 import numpy as np
-import tensorflow as tf
+import torch
 
 
 def apply_training_seed(seed: int) -> None:
-    """Set Python, NumPy, TensorFlow, and Keras RNG state before model build.
+    """Set Python, NumPy, and PyTorch RNG state before model build.
 
     Call once at the start of a training run, before constructing models or
     reading data that depends on randomness.
+
+    Args:
+        seed: Integer random seed.
     """
     os.environ["PYTHONHASHSEED"] = str(seed)
-    os.environ["TF_DETERMINISTIC_OPS"] = "1"
-    os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
     random.seed(seed)
     np.random.seed(seed)
-    tf.random.set_seed(seed)
-    keras.utils.set_random_seed(seed)
-    with contextlib.suppress(AttributeError):
-        tf.config.experimental.enable_op_determinism()
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)

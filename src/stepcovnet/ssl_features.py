@@ -465,9 +465,7 @@ def save_mert_features(
     valid_dims = (2, 3) if allow_3d else (2,)
     if features.ndim not in valid_dims:
         expected = "2D or 3D" if allow_3d else "2D (time, dim)"
-        raise ValueError(
-            f"features must be {expected}; got shape {features.shape!r}"
-        )
+        raise ValueError(f"features must be {expected}; got shape {features.shape!r}")
     out_path = pathlib.Path(output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     target_dtype = np.float16 if save_fp16 else np.float32

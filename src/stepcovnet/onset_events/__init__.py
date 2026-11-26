@@ -1,15 +1,19 @@
-"""Event-based onset detection: raw audio in, continuous times and confidence out."""
+"""Pure-NumPy onset event utilities (audio, charts, targets, Hungarian matching, metrics)."""
 
-from stepcovnet.onset_events import config, inference, models, trainers
+from __future__ import annotations
 
-build_onset_event_model = models.build_onset_event_model
-predict_onsets = inference.predict_onsets
-train_onset_event = trainers.train_onset_event
-
+from stepcovnet.onset_events import (
+    audio,
+    charts,
+    matching,
+    metrics,
+    targets,
+)
 
 __all__ = [
-    "config",
-    "build_onset_event_model",
-    "train_onset_event",
-    "predict_onsets",
+    "audio",
+    "charts",
+    "matching",
+    "metrics",
+    "targets",
 ]

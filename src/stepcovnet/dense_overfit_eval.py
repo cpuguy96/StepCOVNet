@@ -1,9 +1,13 @@
 """Peak-pick and event-F1 evaluation for dense frame onset models."""
 
-import keras
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Any
+
 import numpy as np
 import scipy.signal
-import tensorflow as tf
+import torch
 
 from stepcovnet import config, datasets, onset_null_baseline, timing_match
 from stepcovnet.onset_events import charts, metrics
@@ -12,6 +16,35 @@ DEFAULT_MIN_ONSET_DISTANCE_MS = 50.0
 DEFAULT_TOLERANCE_SEC = timing_match.DEFAULT_TOLERANCE_SEC
 DEFAULT_CONFIDENCE_THRESHOLD = 0.05
 CORRUPTION_KINDS = ("none", "shuffle", "zeros")
+
+
+def _predict_dense_model(model: Any, features: np.ndarray | torch.Tensor) -> np.ndarray:
+    """Run dense onset inference for either a PyTorch module or a callable/mock."""
+    if isinstance(model, torch.nn.Module):
+        param = next(model.parameters(), None)
+        device = param.device if param is not None else torch.device("cpu")
+        x = (
+            features.to(device=device, dtype=torch.float32)
+            if isinstance(features, torch.Tensor)
+            else torch.from_numpy(np.asarray(features, dtype=np.float32)).to(device)
+        )
+        was_training = model.training
+        model.eval()
+        with torch.no_grad():
+            out = model(x)
+        if was_training:
+            model.train()
+        return out.detach().cpu().numpy()
+    if hasattr(model, "predict"):
+        arr = (
+            features.detach().cpu().numpy()
+            if isinstance(features, torch.Tensor)
+            else features
+        )
+        return np.asarray(model.predict(arr, verbose=0))
+    return np.asarray(model(features))
+
+
 DEFAULT_CORRUPTION_SEED = 42
 DENSE_EVENT_ONSET_F1_METRIC_NAME = "dense_event_onset_f1"
 DENSE_SKILL_EVENT_F1_METRIC_NAME = "skill_event_f1"
@@ -239,7 +272,7 @@ def micro_f1_from_counts(tp: float, fp: float, fn: float) -> float:
     return float(2.0 * tp / denom) if denom > 0 else 0.0
 
 
-class DenseValEventF1Callback(keras.callbacks.Callback):
+class DenseValEventF1Callback:
     """Compute peak-pick val event metrics at epoch end (same path as eval script).
 
     Both published metrics depend on the peak-pick threshold, so the threshold
@@ -258,20 +291,21 @@ class DenseValEventF1Callback(keras.callbacks.Callback):
 
     def __init__(
         self,
-        val_dataset: tf.data.Dataset,
+        val_dataset: Iterable[tuple[Any, Any]],
         *,
         confidence_threshold: float,
         tolerance_sec: float = DEFAULT_TOLERANCE_SEC,
         min_onset_distance_ms: float = DEFAULT_MIN_ONSET_DISTANCE_MS,
         metric_name: str = DENSE_EVENT_ONSET_F1_METRIC_NAME,
         sweep_thresholds: tuple[float, ...] | None = None,
+        model: Any = None,
     ) -> None:
-        super().__init__()
         self.val_dataset = val_dataset
         self.confidence_threshold = confidence_threshold
         self.tolerance_sec = tolerance_sec
         self.min_onset_distance_ms = min_onset_distance_ms
         self.metric_name = metric_name
+        self.model = model
         candidates = sweep_thresholds or DEFAULT_EVENT_F1_SWEEP_THRESHOLDS
         self.sweep_thresholds = tuple(
             sorted({float(confidence_threshold), *(float(t) for t in candidates)}),
@@ -344,7 +378,12 @@ class DenseValEventF1Callback(keras.callbacks.Callback):
         if logs is None:
             logs = {}
         cached = [
-            (np.asarray(target), np.asarray(self.model.predict(features, verbose=0)))
+            (
+                target.detach().cpu().numpy()
+                if isinstance(target, torch.Tensor)
+                else np.asarray(target),
+                _predict_dense_model(self.model, features),
+            )
             for features, target in self.val_dataset
         ]
 
@@ -524,11 +563,13 @@ def oracle_density_for_pair(
         max_steps=None,
         chart_index=chart_index,
     )
+    if ref_times is None:
+        return 0.0
     return datasets.onset_density_scalar(int(ref_times.size), duration_sec)
 
 
 def predict_dense_probs_for_pair(
-    model: tf.keras.Model,
+    model: Any,
     audio_path: str,
     dataset_config: config.OnsetDatasetConfig,
     *,
@@ -575,7 +616,7 @@ def predict_dense_probs_for_pair(
                 )
             features = datasets.append_density_channel(features, density)
         features_batch = np.expand_dims(features, axis=0)
-    pred = model.predict(features_batch, verbose=0)
+    pred = _predict_dense_model(model, features_batch)
     return np.asarray(pred).reshape(-1)
 
 
@@ -614,7 +655,7 @@ def event_metrics_from_probs(
 
 
 def eval_dense_event_f1_for_pair(
-    model: tf.keras.Model,
+    model: Any,
     audio_path: str,
     chart_path: str,
     dataset_config: config.OnsetDatasetConfig,
@@ -682,7 +723,7 @@ def eval_dense_event_f1_for_pair(
 
 
 def eval_dense_val_event_f1(
-    model: tf.keras.Model,
+    model: Any,
     dataset_config: config.OnsetDatasetConfig,
     model_config: config.OnsetModelConfig,
     *,
@@ -837,23 +878,7 @@ def _threshold_summary_from_cache(
     min_onset_distance_ms: float,
     tolerance_sec: float,
 ) -> dict[str, float]:
-    """Aggregate micro event F1, ``timing_match``, and null-relative skill.
-
-    Lowering the threshold emits more peaks, which raises the audio-blind floor
-    as well as the raw score, so a sweep ranked on raw F1 can select a threshold
-    that only matched the onset *count*. Each threshold is therefore scored
-    against a null baseline drawn at that threshold's own prediction count.
-
-    Args:
-        pred_gt_cache: Per-song ``(pred_probs, gt_times, gt_mask)`` triples.
-        confidence_threshold: Peak-pick height threshold to score.
-        min_onset_distance_ms: Peak-pick minimum onset spacing.
-        tolerance_sec: Match tolerance.
-
-    Returns:
-        Micro counts, ``micro_event_f1``, ``micro_timing_match``, the null
-        floors at this prediction count, and skill over those floors.
-    """
+    """Aggregate micro event F1, ``timing_match``, and null-relative skill."""
     total_tp = 0.0
     total_fp = 0.0
     total_fn = 0.0
@@ -921,7 +946,7 @@ def _threshold_summary_from_cache(
 
 
 def sweep_thresholds_dense_val_event_f1(
-    model: tf.keras.Model,
+    model: Any,
     dataset_config: config.OnsetDatasetConfig,
     model_config: config.OnsetModelConfig,
     *,
@@ -933,10 +958,6 @@ def sweep_thresholds_dense_val_event_f1(
 ) -> dict[str, object]:
     """Predict once per val pair, then score event F1 across confidence thresholds.
 
-    The model forward pass runs a single time per audio/chart pair; the cached
-    probability traces are re-scored at every threshold so the sweep cost is
-    dominated by one inference pass over the validation split.
-
     Args:
         model: Trained dense onset model.
         dataset_config: Dataset settings used to resolve val samples/features.
@@ -945,12 +966,7 @@ def sweep_thresholds_dense_val_event_f1(
         min_onset_distance_ms: Peak-pick minimum onset spacing.
         tolerance_sec: Match tolerance.
         val_data_dir: Optional explicit val split reference.
-        selection_metric: Key from the per-threshold summary used to pick the
-            best threshold. Defaults to skill over the audio-blind floor on
-            Hungarian F1; ranking on raw ``micro_event_f1`` can select a
-            threshold that merely matched the onset count. Ordered
-            ``timing_match`` stays a diagnostic — it sits at its chance floor
-            for a partially-correct model.
+        selection_metric: Key from per-threshold summary used to pick the best threshold.
 
     Returns:
         Sweep report with per-threshold summaries and the selected threshold.
@@ -1023,8 +1039,6 @@ def sweep_thresholds_dense_val_event_f1(
         "best_micro_timing_match": best_summary["micro_timing_match"],
         "best_skill_event_f1": best_summary["skill_event_f1"],
         "best_skill_timing_match": best_summary["skill_timing_match"],
-        # Kept so a null-aware selection can be compared against the raw-F1
-        # choice that the AR density-conditioning result showed to be unsafe.
         "raw_f1_best_threshold": best_raw_f1["confidence_threshold"],
         "raw_f1_best_micro_event_f1": best_raw_f1["micro_event_f1"],
         "per_threshold": per_threshold,
@@ -1032,7 +1046,7 @@ def sweep_thresholds_dense_val_event_f1(
 
 
 def eval_dense_event_f1(
-    model: tf.keras.Model,
+    model: Any,
     dataset_config: config.OnsetDatasetConfig,
     model_config: config.OnsetModelConfig,
     chart_path: str,
@@ -1055,8 +1069,8 @@ def eval_dense_event_f1(
             model_config,
         ),
     )
-    features, _target = next(iter(ds.take(1)))
-    pred = model.predict(features, verbose=0)
+    features, _target = next(iter(ds))
+    pred = _predict_dense_model(model, features)
     pred_probs = np.asarray(pred).reshape(-1)
     pred_times, pred_conf = peak_times_and_confidence(
         pred_probs,

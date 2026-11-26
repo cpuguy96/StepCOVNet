@@ -262,26 +262,25 @@ def reexec_with_tensorflow_gpu_env_if_needed(argv: list[str]) -> None:
     os.execvp("bash", ["bash", "-lc", command])
 
 
-def require_tensorflow_gpu() -> None:
-    """Exit with an error when TensorFlow cannot see a GPU in WSL training.
+def require_pytorch_gpu() -> None:
+    """Exit with an error when PyTorch cannot see a GPU in WSL training."""
+    import torch  # noqa: PLC0415
 
-    Call after :func:`apply_tensorflow_gpu_library_path` and before training.
-    """
-    import tensorflow as tf  # noqa: PLC0415
-
-    gpus = tf.config.list_physical_devices("GPU")
-    if gpus:
-        print(f"TensorFlow GPU devices: {gpus}", flush=True)
+    if torch.cuda.is_available():
+        count = torch.cuda.device_count()
+        names = [torch.cuda.get_device_name(i) for i in range(count)]
+        print(f"PyTorch CUDA devices: {names}", flush=True)
         return
     if is_running_in_wsl():
         print(
-            "TensorFlow found no GPU in WSL. Run "
-            "`source scripts/wsl_gpu_env.sh` before training, or use "
-            "`wsl_gpu.apply_tensorflow_gpu_library_path()` before importing TensorFlow.",
+            "PyTorch found no CUDA GPU in WSL. Verify your CUDA PyTorch wheel and NVIDIA WSL driver.",
             flush=True,
         )
         raise SystemExit(1)
-    print("Warning: training without a visible TensorFlow GPU device.", flush=True)
+    print("Warning: training without a visible PyTorch CUDA GPU device.", flush=True)
+
+
+require_tensorflow_gpu = require_pytorch_gpu
 
 
 def _wsl_bash_command(
@@ -296,11 +295,7 @@ def _wsl_bash_command(
     gpu_env = f"{repo_root_wsl}/scripts/wsl_gpu_env.sh"
     quoted_args = " ".join(shlex.quote(arg) for arg in args)
     script_path = f"{repo_root_wsl}/{script_rel}"
-    lock_export = (
-        "export STEPCOVNET_GPU_LOCK_HELD=1 && "
-        if lock_held
-        else ""
-    )
+    lock_export = "export STEPCOVNET_GPU_LOCK_HELD=1 && " if lock_held else ""
     script_export = f"export STEPCOVNET_GPU_SCRIPT={shlex.quote(script_rel)} && "
     return (
         f"bash {shlex.quote(ensure)} && "
@@ -560,18 +555,30 @@ def bootstrap_gpu_script(
     reexec_with_tensorflow_gpu_env_if_needed(argv)
 
 
-def guard_tensorflow_gpu_job(script_file: str | None = None) -> None:
-    """Acquire the shared GPU lock when TensorFlow sees a GPU device."""
-    import tensorflow as tf  # noqa: PLC0415
+def guard_pytorch_gpu_job(script_file: str | None = None) -> None:
+    """Acquire the shared GPU lock when PyTorch sees a CUDA GPU device.
+
+    Args:
+        script_file: Optional script path used to name the lock holder.
+    """
+    import torch  # noqa: PLC0415
 
     from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
 
-    if tf.config.list_physical_devices("GPU"):
+    if torch.cuda.is_available():
         wsl_gpu_lock.ensure_gpu_job_lock(job_name_from_script(script_file))
 
 
+guard_tensorflow_gpu_job = guard_pytorch_gpu_job
+
+
 def guard_gpu_device_job(device: str, script_file: str | None = None) -> None:
-    """Acquire the shared GPU lock for CUDA/torch or similar device strings."""
+    """Acquire the shared GPU lock for CUDA/torch or similar device strings.
+
+    Args:
+        device: Requested compute device string.
+        script_file: Optional script path used to name the lock holder.
+    """
     from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
 
     if device_requests_gpu(device):
