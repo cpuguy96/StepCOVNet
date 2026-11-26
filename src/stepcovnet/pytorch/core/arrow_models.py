@@ -138,8 +138,11 @@ class SnippetCNN(nn.Module):
 class PositionalEncoding(nn.Module):
     """Sinusoidal positional encoding matching ``stepcovnet.models.PositionalEncoding``.
 
+    Precomputes ``position`` steps into a non-persistent buffer and dynamically
+    extends the sinusoidal table whenever an input sequence exceeds ``position``.
+
     Args:
-        position: Maximum supported sequence length.
+        position: Initial precomputed sequence length.
         d_model: Even embedding dimension.
 
     Attributes:
@@ -151,20 +154,27 @@ class PositionalEncoding(nn.Module):
 
     pos_encoding: torch.Tensor
 
+    @staticmethod
+    def _build_table(length: int, d_model: int) -> torch.Tensor:
+        """Compute ``(1, length, d_model)`` float32 sinusoidal encodings."""
+        pos = np.arange(length, dtype=np.float32)[:, np.newaxis]
+        idx = np.arange(d_model, dtype=np.float32)[np.newaxis, :]
+        angles = pos / np.power(10000.0, (2.0 * (idx // 2.0)) / float(d_model))
+        table = np.zeros((length, d_model), dtype=np.float32)
+        table[:, 0::2] = np.sin(angles[:, 0::2])
+        table[:, 1::2] = np.cos(angles[:, 1::2])
+        return torch.from_numpy(table).unsqueeze(0)
+
     def __init__(self, position: int, d_model: int) -> None:
         super().__init__()
         if d_model % 2 != 0:
             raise ValueError("PositionalEncoding requires an even d_model.")
         self.position = int(position)
         self.d_model = int(d_model)
-        pos = np.arange(self.position, dtype=np.float32)[:, np.newaxis]
-        idx = np.arange(self.d_model, dtype=np.float32)[np.newaxis, :]
-        angles = pos / np.power(10000.0, (2.0 * (idx // 2.0)) / float(self.d_model))
-        table = np.zeros((self.position, self.d_model), dtype=np.float32)
-        table[:, 0::2] = np.sin(angles[:, 0::2])
-        table[:, 1::2] = np.cos(angles[:, 1::2])
         self.register_buffer(
-            "pos_encoding", torch.from_numpy(table).unsqueeze(0), persistent=False
+            "pos_encoding",
+            self._build_table(self.position, self.d_model),
+            persistent=False,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -177,7 +187,11 @@ class PositionalEncoding(nn.Module):
             Position-encoded tensor ``(B, S, d_model)``.
         """
         seq_len = int(x.shape[1])
-        return x + self.pos_encoding[:, :seq_len, :].to(x.dtype)
+        if seq_len <= int(self.pos_encoding.shape[1]):
+            pe = self.pos_encoding[:, :seq_len, :]
+        else:
+            pe = self._build_table(seq_len, self.d_model).to(device=x.device)
+        return x + pe.to(x.dtype)
 
 
 class ArrowInputEncoder(nn.Module):

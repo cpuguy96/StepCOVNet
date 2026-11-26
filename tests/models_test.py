@@ -141,6 +141,32 @@ class ArrowModelsTest(unittest.TestCase):
                     torch.allclose(row_sums, torch.ones_like(row_sums), atol=1e-4)
                 )
 
+    def test_positional_encoding_extends_beyond_initial_length(self):
+        pe = models.PositionalEncoding(position=16, d_model=8)
+        x = torch.zeros(1, 40, 8)
+        out = pe(x)
+        self.assertEqual(tuple(out.shape), (1, 40, 8))
+        self.assertTrue(torch.allclose(out[:, :16, :], pe.pos_encoding, atol=1e-6))
+
+        cfg = config.ArrowModelConfig.from_dict(
+            {
+                "model_type": "transformer",
+                "transformer": {
+                    "num_layers": 1,
+                    "d_model": 8,
+                    "num_heads": 2,
+                    "ff_dim": 16,
+                },
+            }
+        )
+        model = models.build_arrow_model_from_config(
+            cfg, models.ArrowInputOptions(), models.ArrowOutputOptions()
+        )
+        long_len = constants.MAX_STEPS + 64
+        with torch.no_grad():
+            probs = model({"timing_input": torch.rand(1, long_len, 1)})
+        self.assertEqual(tuple(probs.shape), (1, long_len, constants.N_ARROW_TYPES))
+
 
 if __name__ == "__main__":
     unittest.main()
