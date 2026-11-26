@@ -39,14 +39,23 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--fast",
         action="store_true",
-        help="Ruff only (skip install, unit tests, and notebook checks).",
+        help="Static checks only (ruff check, ruff format --check, pyright).",
     )
     parser.add_argument(
         "--skip-install",
         action="store_true",
         help="Skip pip install -e .[dev]",
     )
-    parser.add_argument("--skip-ruff", action="store_true", help="Skip ruff check .")
+    parser.add_argument(
+        "--skip-ruff",
+        action="store_true",
+        help="Skip ruff check . and ruff format --check .",
+    )
+    parser.add_argument(
+        "--skip-pyright",
+        action="store_true",
+        help="Skip pyright type check",
+    )
     parser.add_argument(
         "--skip-tests",
         action="store_true",
@@ -83,6 +92,18 @@ def main(argv: list[str] | None = None) -> None:
         _run_step(
             "Ruff check (ruff check .)",
             [str(python), "-m", "ruff", "check", "."],
+            cwd=root,
+        )
+        _run_step(
+            "Ruff format check (ruff format --check .)",
+            [str(python), "-m", "ruff", "format", "--check", "."],
+            cwd=root,
+        )
+
+    if not args.skip_pyright:
+        _run_step(
+            "Pyright type check",
+            [str(python), "-m", "pyright", "--pythonpath", str(python)],
             cwd=root,
         )
 

@@ -732,7 +732,7 @@ def eval_dense_val_event_f1(
     tolerance_sec: float = DEFAULT_TOLERANCE_SEC,
     val_data_dir: str = "",
     corruption: str = "none",
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Peak-pick event F1 on every val sample (manifest rows or legacy pairs).
 
     Args:

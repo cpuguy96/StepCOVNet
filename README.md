@@ -236,8 +236,7 @@ stepcovnet/
 ├── configs/                # JSON experiment configs — see configs/README.md
 ├── docs/                   # Research notes + docs/agents/ layout
 ├── notebooks/
-├── pre_submit.py           # Local CI mirror (ruff, tests, notebooks)
-├── pre_submit.sh
+├── pre_submit.py           # Local CI mirror (ruff, pyright, tests, notebooks)
 ├── resources/              # Images, etc. (e.g. README header GIF)
 ├── scripts/                # CLI entry points (28 scripts)
 │   ├── generate.py / generate_ui.py
@@ -285,10 +284,10 @@ Please ensure your code passes existing tests and linting standards.
 Before opening a PR, run the same checks as CI from **repository root**:
 
 ```bash
-# Quick (ruff only, ~seconds):
+# Quick (ruff + pyright, ~seconds):
 python pre_submit.py --fast
 
-# Full CI mirror before push (~30+ min):
+# Full CI mirror before push (~2–4 min):
 python pre_submit.py --skip-install
 ```
 

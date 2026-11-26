@@ -9,24 +9,43 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validation:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
           pip install -e ".[dev]"
 
       - name: Ruff check
         run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Pyright type check
+        run: pyright --pythonpath "$(which python)"
 
       - name: Run Unit Tests
         run: |
@@ -38,7 +57,12 @@ jobs:
           pytest --nbmake notebooks --no-cov
 
       - name: Send coverage to Codacy
+        if: matrix.python-version == '3.13'
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: |
+          if [[ -z "${CODACY_PROJECT_TOKEN:-}" ]]; then
+            echo "CODACY_PROJECT_TOKEN is not set; skipping Codacy upload."
+            exit 0
+          fi
           bash <(curl -Ls https://coverage.codacy.com/get.sh) report -r coverage.xml

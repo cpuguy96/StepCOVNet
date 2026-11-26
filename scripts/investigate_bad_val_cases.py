@@ -76,6 +76,8 @@ def _eval_at_threshold(
         min_onset_distance_ms=MIN_ONSET_DISTANCE_MS,
     )
     times = charts.load_onset_times(chart_path, max_steps=None)
+    if times is None:
+        raise ValueError(f"Failed to load onset times from {chart_path}")
     n_gt = int(times.size)
     n_max = max(n_gt, int(pred_times.size), 1)
     gt_times = np.zeros((1, n_max), dtype=np.float32)
@@ -196,6 +198,8 @@ def _feature_profile(
         dense_overfit_eval._predict_dense_model(model, np.expand_dims(features_norm, 0))
     ).reshape(-1)
     times = charts.load_onset_times(chart_path, max_steps=None)
+    if times is None:
+        raise ValueError(f"Failed to load onset times from {chart_path}")
     duration_audio = float(librosa.get_duration(path=audio_path))
     mert_path = ssl_features.mert_npy_path(
         audio_path,

@@ -155,7 +155,7 @@ def register_adaptive_experiment(
     if plan is not None:
         spec = prepare_experiment_spec(plan)
     else:
-        spec = {"id": exp_id, "notes": notes}
+        spec: dict[str, object] = {"id": exp_id, "notes": notes}
         if run is not None:
             spec["run"] = _strip_nones(run)
         if model is not None:

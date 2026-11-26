@@ -18,6 +18,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import typing
 from datetime import datetime
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -58,7 +59,7 @@ def _parse_current_phase(text: str) -> dict[str, str]:
     return fields
 
 
-def _git_summary() -> dict[str, str | bool]:
+def _git_summary() -> dict[str, str | bool | int]:
     """Return branch name and whether the working tree is clean."""
     branch = subprocess.run(
         ["git", "branch", "--show-current"],
@@ -155,7 +156,7 @@ def _latest_exp(text: str) -> str | None:
     return None
 
 
-def _recent_logs(limit: int = 3) -> list[dict[str, str]]:
+def _recent_logs(limit: int = 3) -> list[dict[str, str | float]]:
     """Return newest log files under ``logs/`` by mtime."""
     if not LOGS_DIR.is_dir():
         return []
@@ -164,7 +165,7 @@ def _recent_logs(limit: int = 3) -> list[dict[str, str]]:
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, str | float]] = []
     for path in files[:limit]:
         mtime = path.stat().st_mtime
         rows.append(
@@ -203,7 +204,7 @@ def _manifest_summary() -> dict[str, object] | None:
     }
 
 
-def collect_status() -> dict[str, object]:
+def collect_status() -> dict[str, typing.Any]:
     """Gather strategic and local status into one dict."""
     log_text = ""
     if EXPERIMENT_LOG.is_file():
@@ -223,7 +224,7 @@ def collect_status() -> dict[str, object]:
     }
 
 
-def _format_markdown(status: dict[str, object]) -> str:
+def _format_markdown(status: dict[str, typing.Any]) -> str:
     """Render status dict as markdown for agent/user consumption."""
     lines: list[str] = ["# Project status", ""]
     phase = status.get("phase") or {}

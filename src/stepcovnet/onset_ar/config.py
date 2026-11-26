@@ -28,7 +28,7 @@ class _DictSerializableMixin:
 
     @classmethod
     def from_dict(cls, data: dict):
-        fields = {field.name for field in dataclasses.fields(cls)}
+        fields = {field.name for field in dataclasses.fields(cls)}  # type: ignore[arg-type]
         return cls(**{key: value for key, value in data.items() if key in fields})
 
 

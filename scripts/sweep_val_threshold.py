@@ -74,6 +74,8 @@ def _predict_probs(
 
 def _gt_batch(chart_path: str) -> tuple[np.ndarray, np.ndarray, int]:
     times = charts.load_onset_times(chart_path, max_steps=None)
+    if times is None:
+        raise ValueError(f"Failed to load onset times from {chart_path}")
     n_gt = int(times.size)
     n_max = max(n_gt, 1)
     gt_times = np.zeros((1, n_max), dtype=np.float32)
@@ -163,6 +165,8 @@ def _song_metadata(
     data_root: str,
 ) -> dict[str, float | int | bool]:
     times = charts.load_onset_times(chart_path, max_steps=None)
+    if times is None:
+        raise ValueError(f"Failed to load onset times from {chart_path}")
     duration = float(librosa.get_duration(path=audio_path))
     n_gt = int(times.size)
     mert_stats = _mert_feature_stats(audio_path, experiment, data_root)

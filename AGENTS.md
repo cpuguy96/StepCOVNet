@@ -37,8 +37,8 @@ North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 | When | Command |
 | ---- | ------- |
 | **Every commit** (hook) | Ruff on staged files via `pre-commit` |
-| **Quick local check** | `python pre_submit.py --fast` (ruff only, ~seconds) |
-| **Before push / PR** | `python pre_submit.py --skip-install` (full CI mirror, ~30+ min) |
+| **Quick local check** | `python pre_submit.py --fast` (ruff + pyright, ~seconds) |
+| **Before push / PR** | `python pre_submit.py --skip-install` (full CI mirror, ~2–4 min) |
 
 `pre_submit.py --fast` is the same as `--skip-install --skip-tests --skip-nbmake`. Full `pre_submit.py` mirrors [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml).
 

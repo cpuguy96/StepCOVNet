@@ -731,8 +731,8 @@ def _print_sweep_summary(
     best_overrides: dict[str, Any],
     optimize_metric: str,
     optimize_mode: str,
-    results_path: str,
-    best_config_path: str,
+    results_path: str | pathlib.Path,
+    best_config_path: str | pathlib.Path,
     gate_info: dict[str, Any] | None = None,
 ) -> None:
     """Print final summary with best run and file paths."""

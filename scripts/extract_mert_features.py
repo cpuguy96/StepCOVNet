@@ -187,7 +187,9 @@ def _configure_quiet_hf_logs() -> None:
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
     try:
-        from transformers.utils import logging as hf_logging  # noqa: PLC0415
+        from transformers.utils import (  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+            logging as hf_logging,
+        )
 
         hf_logging.set_verbosity_error()
     except ImportError:

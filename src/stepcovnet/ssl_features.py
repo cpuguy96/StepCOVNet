@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import typing
 
 import librosa
 import numpy as np
@@ -211,7 +212,7 @@ def _require_ssl_deps():
     """
     try:
         import torch  # noqa: PLC0415
-        import transformers  # noqa: PLC0415
+        import transformers  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
     except ImportError as exc:
         raise ImportError(
             "MERT extraction requires optional dependencies. "
@@ -295,8 +296,8 @@ def combine_mert_layers(layer_arrays: list[np.ndarray]) -> np.ndarray:
 def _mert_hidden_states_for_chunk(
     waveform: np.ndarray,
     *,
-    model: object,
-    processor: object,
+    model: typing.Any,
+    processor: typing.Any,
     layer: int,
     device: str,
     layers: tuple[int, ...] | None = None,

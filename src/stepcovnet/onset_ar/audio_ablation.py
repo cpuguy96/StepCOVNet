@@ -148,7 +148,7 @@ def score_batch(
     batch: dict[str, np.ndarray],
     *,
     experiment_config: config.ArExperimentConfig,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Teacher-forced alignment + token metrics for one corrupted batch."""
     param = (
         next(model.parameters(), None) if isinstance(model, torch.nn.Module) else None
@@ -301,7 +301,7 @@ def empty_variant_totals() -> dict[str, dict[str, float]]:
 def accumulate_variant_row(
     totals: dict[str, dict[str, float]],
     variant: str,
-    row: dict[str, object],
+    row: dict[str, Any],
     *,
     matched_pred_patches: np.ndarray | None,
     matched_token_preds: np.ndarray | None,
