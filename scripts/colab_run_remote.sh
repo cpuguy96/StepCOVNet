@@ -67,6 +67,8 @@ ARCHIVE_MODELS="best"
 HIGH_MEM="0"
 COLAB_STATE_CONFIG=""
 POLL_INTERVAL="20"
+ATTACH_ONLY="0"
+MAX_POLL_SECONDS="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -85,6 +87,8 @@ while [[ $# -gt 0 ]]; do
     --download-all) DOWNLOAD_ALL="1"; shift ;;
     --state-config) COLAB_STATE_CONFIG="$2"; shift 2 ;;
     --poll-interval) POLL_INTERVAL="$2"; shift 2 ;;
+    --attach) ATTACH_ONLY="1"; shift ;;
+    --max-poll-seconds) MAX_POLL_SECONDS="$2"; shift 2 ;;
     -h|--help)
       sed -n '2,28p' "$0"
       exit 0
@@ -96,8 +100,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$SESSION" || -z "$RUN_NAME" || -z "$CONFIG_PATH" ]]; then
-  echo "ERROR: --session, --run-name, and --config are required." >&2
+if [[ -z "$SESSION" || -z "$RUN_NAME" ]]; then
+  echo "ERROR: --session and --run-name are required." >&2
+  exit 1
+fi
+if [[ "$ATTACH_ONLY" == "0" && -z "$CONFIG_PATH" ]]; then
+  echo "ERROR: --config is required unless --attach is passed." >&2
   exit 1
 fi
 
@@ -109,7 +117,7 @@ case "$ARCHIVE_MODELS" in
     ;;
 esac
 
-if [[ ! -f "$REPO_ROOT/$CONFIG_PATH" ]]; then
+if [[ "$ATTACH_ONLY" == "0" && ! -f "$REPO_ROOT/$CONFIG_PATH" ]]; then
   echo "ERROR: config not found: $REPO_ROOT/$CONFIG_PATH" >&2
   exit 1
 fi
@@ -156,18 +164,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [[ "$ATTACH_ONLY" == "0" ]]; then
 # 1. Provision (or auto-reuse) Colab GPU session
 if [[ "$REUSE_SESSION" == "1" ]]; then
   echo "[colab-remote] Reusing existing session '$SESSION'..."
-elif timeout 30 "$COLAB" "${COLAB_GLOBAL[@]}" status -s "$SESSION" >/dev/null 2>&1; then
-  echo "[colab-remote] Found active session '$SESSION'; auto-reusing it (will still stop on exit unless --keep is passed)..."
 else
-  NEW_ARGS=(new -s "$SESSION" --gpu "$GPU")
-  if [[ "$HIGH_MEM" == "1" ]]; then
-    NEW_ARGS+=(--high-mem)
+  STATUS_OUT="$(timeout 30 "$COLAB" "${COLAB_GLOBAL[@]}" status -s "$SESSION" 2>&1 || true)"
+  if [[ -n "$STATUS_OUT" && "$STATUS_OUT" != *"not found"* && "$STATUS_OUT" != *"No active sessions"* && "$STATUS_OUT" == *"$SESSION"* ]]; then
+    echo "[colab-remote] Found active session '$SESSION'; auto-reusing it (will still stop on exit unless --keep is passed)..."
+  else
+    NEW_ARGS=(new -s "$SESSION" --gpu "$GPU")
+    if [[ "$HIGH_MEM" == "1" ]]; then
+      NEW_ARGS+=(--high-mem)
+    fi
+    echo "[colab-remote] Provisioning session '$SESSION' (GPU=$GPU)..."
+    timeout 120 "$COLAB" "${COLAB_GLOBAL[@]}" "${NEW_ARGS[@]}"
   fi
-  echo "[colab-remote] Provisioning session '$SESSION' (GPU=$GPU)..."
-  timeout 120 "$COLAB" "${COLAB_GLOBAL[@]}" "${NEW_ARGS[@]}"
 fi
 
 # 2. Bundle & upload local code directly (~1 MB, zero GitHub)
@@ -398,6 +410,9 @@ colab_exec_retry 3 90 --timeout 60 \
   --env "STEPCOVNET_EVAL_CMD=${EVAL_CMD}" \
   --env "STEPCOVNET_DOWNLOAD_ALL=${DOWNLOAD_ALL}" \
   -f "$TMPD/start_train.py"
+else
+  echo "[colab-remote] Attaching to running job '${RUN_NAME}' on session '${SESSION}'..."
+fi
 
 # Poll remote detached process, streaming concise epoch/eval lines (filtering \r progress-bar spam)
 # and periodically syncing TensorBoard tfevents locally into experiments/colab/<RUN_NAME>/tb/.
@@ -460,12 +475,26 @@ if out_lines:
 PYEOF
 
 TB_LOCAL_DIR="${LOCAL_RUNS_DIR}/${RUN_NAME}/tb"
+OFFSET_FILE="${LOCAL_RUNS_DIR}/${RUN_NAME}/.poll_offset"
 mkdir -p "$TB_LOCAL_DIR"
 LOG_OFFSET="0"
+if [[ "$ATTACH_ONLY" == "1" && -f "$OFFSET_FILE" ]]; then
+  LOG_OFFSET="$(cat "$OFFSET_FILE" 2>/dev/null || echo 0)"
+fi
 TRAIN_RC="1"
 CONSEC_ERR="0"
 POLL_TICK="0"
+POLL_START_TS="$(date +%s)"
 while true; do
+  if [[ "$MAX_POLL_SECONDS" -gt 0 ]]; then
+    NOW_TS="$(date +%s)"
+    if (( NOW_TS - POLL_START_TS >= MAX_POLL_SECONDS )); then
+      echo "$LOG_OFFSET" > "$OFFSET_FILE"
+      STOPPED="1"
+      echo "[colab-remote] Poll window (${MAX_POLL_SECONDS}s) elapsed; training still running on '${SESSION}'. Re-attach with --attach."
+      exit 75
+    fi
+  fi
   sleep "$POLL_INTERVAL"
   POLL_TICK=$((POLL_TICK + 1))
   DO_TB="0"
@@ -492,6 +521,7 @@ print(obj["state"], obj["offset"], "-" if obj["rc"] is None else obj["rc"], obj.
 PYEOF
 )"
       read -r P_STATE LOG_OFFSET P_RC P_TB <<< "$PARSED"
+      echo "$LOG_OFFSET" > "$OFFSET_FILE"
       if [[ "${P_TB:-0}" -gt 0 ]]; then
         if timeout 30 "$COLAB" "${COLAB_GLOBAL[@]}" download -s "$SESSION" /content/_tb_sync.tar.gz "$TMPD/_tb_sync.tar.gz" >/dev/null 2>&1; then
           python3 - "$TMPD/_tb_sync.tar.gz" "$TB_LOCAL_DIR" <<'PYEOF' 2>/dev/null || true
@@ -522,6 +552,7 @@ PYEOF
       fi
       if [[ "$P_STATE" == "done" ]]; then
         TRAIN_RC="${P_RC:-0}"
+        rm -f "$OFFSET_FILE"
         echo "[colab-remote] Remote training completed with exit code ${TRAIN_RC}."
         break
       elif [[ "$P_STATE" == "crashed" ]]; then

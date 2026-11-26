@@ -444,6 +444,50 @@ class ItgptTrainersTest(unittest.TestCase):
         self.assertEqual(len(val_difficulties), 6)
         self.assertEqual(val_difficulties[:3], val_difficulties[3:])
 
+    def test_compile_placement_blocks_compiles_submodules_and_preserves_keys(
+        self,
+    ) -> None:
+        model = models.build_itgpt_placement_model(
+            d_model=32,
+            n_heads=4,
+            n_enc_layers=2,
+            dropout_rate=0.0,
+            max_beats=constants.CHUNK_ALIGN,
+            audio_feature_type="mert",
+            n_frames_per_beat=24,
+            feature_dim=16,
+        )
+        keys_before = list(model.state_dict().keys())
+        compiled_targets: list[tuple[torch.nn.Module, bool]] = []
+
+        def _spy_compile(
+            self_mod: torch.nn.Module, *args: object, **kwargs: object
+        ) -> None:
+            del args
+            compiled_targets.append((self_mod, bool(kwargs.get("dynamic"))))
+
+        with mock.patch.object(
+            torch.nn.Module,
+            "compile",
+            autospec=True,
+            side_effect=_spy_compile,
+        ):
+            trainers.compile_placement_blocks(model)
+
+        expected = [
+            model.beat_mert,
+            model.level1,
+            model.level2,
+            model.level3,
+            model.level4,
+            model.level5,
+            model.level6[0],
+            model.level6[1],
+        ]
+        self.assertEqual([mod for mod, _ in compiled_targets], expected)
+        self.assertTrue(all(dyn for _, dyn in compiled_targets))
+        self.assertEqual(list(model.state_dict().keys()), keys_before)
+
 
 if __name__ == "__main__":
     unittest.main()

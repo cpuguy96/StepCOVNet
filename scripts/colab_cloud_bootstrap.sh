@@ -156,7 +156,18 @@ else
   echo "      (or drop it in chat and run: bash scripts/colab_cloud_bootstrap.sh --save-to-drive)"
 fi
 
-# 5. Check Colab CLI auth
+# 5. Override cloud-VM default `/etc/gitconfig` (`noreply@github.com` -> GitHub `web-flow`)
+if [[ -z "$(git config --global --get user.email 2>/dev/null || true)" ]] && [[ "$(git config --get user.email 2>/dev/null || true)" == "noreply@github.com" ]]; then
+  LAST_AUTHOR="$(git log --format='%an%x09%ae' -n 50 2>/dev/null | awk -F'\t' '$2 != "noreply@github.com" && $2 != "" {print; exit}' || true)"
+  if [[ -n "$LAST_AUTHOR" ]]; then
+    IFS=$'\t' read -r GIT_NAME GIT_EMAIL <<< "$LAST_AUTHOR"
+    git config --global user.name "$GIT_NAME"
+    git config --global user.email "$GIT_EMAIL"
+    echo "[bootstrap] Configured git author: ${GIT_NAME} <${GIT_EMAIL}>"
+  fi
+fi
+
+# 6. Check Colab CLI auth
 export PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
 if timeout 10 "$HOME/.local/bin/colab" --auth=oauth2 sessions >/dev/null 2>&1; then
   echo "[bootstrap] colab CLI is authenticated and READY."
