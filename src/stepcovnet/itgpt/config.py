@@ -202,6 +202,8 @@ class ItgptRunConfig(_DictSerializableMixin):
             grid-weighted slot BCE (``0.0`` keeps plain weighted BCE).
         grid_weight_24th: Slot loss weight for 24th/triplet grid indices
             ``(8, 16, 32, 40)`` (default ``1.0``).
+        label_smoothing: Binary label smoothing factor in ``[0, 1)`` mapping
+            targets ``y -> y * (1 - eps) + 0.5 * eps`` (``0.0`` disables).
         gradient_accumulation_steps: Number of micro-batches to accumulate
             before applying an optimizer update (``1`` disables accumulation).
         use_ema: If True, enable optimizer exponential moving average (EMA)
@@ -234,6 +236,7 @@ class ItgptRunConfig(_DictSerializableMixin):
     min_learning_rate: float = 0.0
     focal_gamma: float = 0.0
     grid_weight_24th: float = constants.GRID_WEIGHT_24TH
+    label_smoothing: float = 0.0
     gradient_accumulation_steps: int = 1
     use_ema: bool = False
     ema_momentum: float = 0.99
@@ -245,8 +248,9 @@ class ItgptRunConfig(_DictSerializableMixin):
         Raises:
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
                 ``eval_slot_f1_every``, LR schedule, ``focal_gamma``,
-                ``grid_weight_24th``, ``gradient_accumulation_steps``,
-                ``ema_momentum``, or ``max_bar_shift`` fields are invalid.
+                ``grid_weight_24th``, ``label_smoothing``,
+                ``gradient_accumulation_steps``, ``ema_momentum``, or
+                ``max_bar_shift`` fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -290,6 +294,10 @@ class ItgptRunConfig(_DictSerializableMixin):
         if self.grid_weight_24th <= 0.0:
             raise ValueError(
                 f"grid_weight_24th must be positive, got {self.grid_weight_24th}"
+            )
+        if not 0.0 <= self.label_smoothing < 1.0:
+            raise ValueError(
+                f"label_smoothing must be in [0, 1), got {self.label_smoothing}"
             )
         if self.gradient_accumulation_steps < 1:
             raise ValueError(

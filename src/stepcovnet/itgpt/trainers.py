@@ -55,7 +55,7 @@ def placement_binary_crossentropy(y_true: object, y_pred: object) -> object:
 
 @keras.saving.register_keras_serializable(package="stepcovnet.itgpt")
 class ItgptPlacementLoss(keras.losses.Loss):
-    """Grid-weighted slot BCE with optional focal modulation and 24th weight.
+    """Grid-weighted slot BCE with optional focal, 24th weight, and smoothing.
 
     Returns per-beat mean loss ``(batch, beats)`` so Keras applies the beat
     mask ``sample_weight`` before reducing across beats.
@@ -64,6 +64,8 @@ class ItgptPlacementLoss(keras.losses.Loss):
         focal_gamma: Non-negative focal exponent ``(1 - p_t)^gamma``
             (``0.0`` reduces to :func:`placement_binary_crossentropy`).
         grid_weight_24th: Loss weight for 24th/triplet slots (default ``1.0``).
+        label_smoothing: Binary label smoothing factor in ``[0, 1)`` mapping
+            ``y -> y * (1 - eps) + 0.5 * eps`` (default ``0.0``).
         name: Keras loss name.
         **kwargs: Additional :class:`keras.losses.Loss` kwargs.
     """
@@ -72,12 +74,14 @@ class ItgptPlacementLoss(keras.losses.Loss):
         self,
         focal_gamma: float = 0.0,
         grid_weight_24th: float = constants.GRID_WEIGHT_24TH,
+        label_smoothing: float = 0.0,
         name: str = "itgpt_placement_loss",
         **kwargs,
     ) -> None:
         super().__init__(name=name, **kwargs)
         self.focal_gamma = float(focal_gamma)
         self.grid_weight_24th = float(grid_weight_24th)
+        self.label_smoothing = float(label_smoothing)
 
     def call(self, y_true: object, y_pred: object) -> object:
         """Compute per-beat mean of focal-modulated grid-weighted BCE.
@@ -92,6 +96,10 @@ class ItgptPlacementLoss(keras.losses.Loss):
         epsilon = keras.backend.epsilon()
         y_pred = ops.clip(ops.cast(y_pred, "float32"), epsilon, 1.0 - epsilon)
         y_true = ops.cast(y_true, "float32")
+        if self.label_smoothing > 0.0:
+            y_true = (
+                y_true * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+            )
         per_slot = -(
             y_true * ops.log(y_pred) + (1.0 - y_true) * ops.log(1.0 - y_pred)
         )
@@ -114,6 +122,7 @@ class ItgptPlacementLoss(keras.losses.Loss):
             {
                 "focal_gamma": self.focal_gamma,
                 "grid_weight_24th": self.grid_weight_24th,
+                "label_smoothing": self.label_smoothing,
             }
         )
         return base
@@ -217,11 +226,13 @@ def compile_placement_model(
     use_custom_loss = (
         run_config.focal_gamma > 0.0
         or run_config.grid_weight_24th != constants.GRID_WEIGHT_24TH
+        or run_config.label_smoothing > 0.0
     )
     loss: object = (
         ItgptPlacementLoss(
             focal_gamma=run_config.focal_gamma,
             grid_weight_24th=run_config.grid_weight_24th,
+            label_smoothing=run_config.label_smoothing,
         )
         if use_custom_loss
         else placement_binary_crossentropy

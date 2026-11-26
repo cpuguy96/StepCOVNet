@@ -39,6 +39,7 @@ class ItgptConfigTest(unittest.TestCase):
                 min_learning_rate=1e-6,
                 focal_gamma=1.0,
                 grid_weight_24th=2.0,
+                label_smoothing=0.02,
                 gradient_accumulation_steps=4,
                 use_ema=True,
                 ema_momentum=0.995,
@@ -73,6 +74,8 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertAlmostEqual(loaded.run.min_learning_rate, 1e-6)
         self.assertAlmostEqual(loaded.run.focal_gamma, 1.0)
         self.assertAlmostEqual(loaded.run.grid_weight_24th, 2.0)
+        self.assertAlmostEqual(loaded.run.label_smoothing, 0.02)
+        self.assertAlmostEqual(config.ItgptRunConfig().label_smoothing, 0.0)
         self.assertEqual(loaded.run.gradient_accumulation_steps, 4)
         self.assertEqual(config.ItgptRunConfig().gradient_accumulation_steps, 1)
         self.assertTrue(loaded.run.use_ema)
@@ -132,6 +135,10 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(focal_gamma=-0.5)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(grid_weight_24th=0.0)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(label_smoothing=-0.01)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(label_smoothing=1.0)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(gradient_accumulation_steps=0)
         with self.assertRaises(ValueError):

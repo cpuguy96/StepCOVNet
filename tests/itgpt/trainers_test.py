@@ -486,6 +486,71 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             self.assertTrue(reloaded.optimizer.use_ema)
 
+    def test_label_smoothing_math_and_reload(self):
+        y_true = np.zeros((1, 2, constants.N_SLOTS), dtype=np.float32)
+        y_true[0, 0, 0] = 1.0
+        y_pred = np.full((1, 2, constants.N_SLOTS), 0.01, dtype=np.float32)
+        y_pred[0, 0, 0] = 0.99
+        y_pred_overconf = np.full((1, 2, constants.N_SLOTS), 1e-4, dtype=np.float32)
+        y_pred_overconf[0, 0, 0] = 0.9999
+
+        plain = np.asarray(trainers.placement_binary_crossentropy(y_true, y_pred))
+        zero_ls = np.asarray(
+            trainers.ItgptPlacementLoss(label_smoothing=0.0).call(y_true, y_pred)
+        )
+        np.testing.assert_allclose(zero_ls, plain, rtol=1e-6, atol=1e-6)
+
+        ls_loss = trainers.ItgptPlacementLoss(label_smoothing=0.02)
+        # Optimal probability under label_smoothing=0.02 is 0.99 / 0.01, so
+        # over-confident 0.9999 / 1e-4 incurs higher loss than calibrated 0.99 / 0.01.
+        cal_val = float(np.mean(np.asarray(ls_loss.call(y_true, y_pred))))
+        over_val = float(np.mean(np.asarray(ls_loss.call(y_true, y_pred_overconf))))
+        self.assertGreater(over_val, cal_val)
+
+        chart = _synthetic_chart()
+        report = mock.Mock()
+        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    label_smoothing=0.02,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="ls_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+            ):
+                trainers.train_placement(experiment)
+            reloaded = trainers.load_placement_model(
+                pathlib.Path(tmpdir) / "models" / "ls_smoke.keras"
+            )
+            self.assertIsInstance(reloaded.loss, trainers.ItgptPlacementLoss)
+            self.assertAlmostEqual(reloaded.loss.label_smoothing, 0.02)
+
 
 if __name__ == "__main__":
     unittest.main()

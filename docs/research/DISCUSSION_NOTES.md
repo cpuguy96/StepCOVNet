@@ -4,7 +4,26 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
-## Session 2026-11-26 — Hybrid spectral-flux & bar-shift augmentation ablations
+## Session 2026-11-26 — Hybrid spectral-flux, bar-shift, & Colab parallel label-smoothing ablations
+
+### NOTE-20261126-03: Mild binary label smoothing (`label_smoothing = 0.01`) breaks **0.7711** F1@0.5 / **0.7722** max-F1 / **+0.6904** ±20 ms skill on Dataset A (parallel Colab `L4` + `T4`)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-26 07:19:40 |
+| **Topic** | Dataset A batch 2 #4 (`label_smoothing = 0.01` & `0.02` run in parallel on Colab `L4` + `T4` via isolated `git worktree` + `google-colab-cli`) |
+
+**Context.** While the local RTX 2080 ran batch 2 #2 (`mert_spectral_flux`) and #3 (`max_bar_shift = 15`), we stood up automated multi-GPU Colab execution (`scripts/colab_run_remote.sh`, `scripts/colab_sync.sh`, `scripts/colab_worktree.sh`, `colab-gpu-stepcovnet` skill) and ran batch 2 #4 (`label_smoothing = 0.01` on `L4` and `0.02` on `T4` simultaneously) on top of the `1953704` (`0.7680`) champion.
+
+**Discovery.**
+
+- **New all-time Dataset A single-checkpoint highs (`EXP-20261126-03`):** `label_smoothing = 0.01` (`best.keras` ep 26, fp32) set records across **`slot_f1_at_05` (0.7711, `+0.31 pp`)**, **`slot_f1_max` (0.7722 @ `0.45`, `+0.24 pp`)**, **±20 ms `micro_event_f1` (0.7873, `+0.59 pp`)**, **`skill_event_f1` (+0.6904, `+0.91 pp`)**, and **audio grounding (`shuffle −0.1427`, `zeros −0.7357` → `0.0` skill on silence)** while keeping balanced density (`+1.7%`). `label_smoothing = 0.02` matched `0.7711` at exact `τ = 0.50` calibration (`best_threshold = 0.50`) but had higher errors (`8,338` vs `8,250`) and slightly weaker `shuffle` grounding (`−0.1353`).
+- **Late-epoch drift caveat:** Both `0.01` and `0.02` peaked at ep 16–26 and drifted down by ep 64 (`last` `0.7556` / `0.7574` vs unsmoothed `0.7650`), so early-stopped `best.keras` selection is essential on 81-song Dataset A.
+- **Colab concurrency finding:** Colab enforces **1 active GPU per accelerator type** on this account, so pairing `L4` (`2.33 CU/hr`) + `T4` (`1.24 CU/hr`) + local RTX 2080 (free) yields **3 simultaneous TF-identical GPUs** (~5.9 CU total for two full 64-epoch runs).
+
+**Implication.** Keep `label_smoothing = 0.0` as default in `ItgptRunConfig`, and run a head-to-head **`label_smoothing = 0.01` vs `0.0`** check on `300t/50v` (`L2+6+10+16 + Cosine-64 + EMA`) on Colab `L4` + `T4` to confirm whether `0.01` stacks cleanly on larger data without late-epoch drift.
+
+**Related.** [EXP-20261126-03](EXPERIMENT_LOG.md#exp-20261126-03-mild-binary-label-smoothing-label_smoothing--001--002-colab-l4--t4-sets-new-dataset-a-peakeventgrounding-records-07711-f105--07722-max-f1--06904-20-ms-skill-with-late-epoch-last-drift) · [EXP-20261125-10](EXPERIMENT_LOG.md#exp-20261125-10-static-2d-mert-layers-261016--cosine-64--ema-sets-new-dataset-a-records-07680-f105--8182-errors--last-07650--07709-max-f1--promoted)
 
 ### NOTE-20261126-02: Random bar-aligned beat-shift (`max_bar_shift = 15`) breaks song-start phrase alignment (**−1.42 pp**, `intro` **−13.7 pp**) — 13-ablation synthesis
 
