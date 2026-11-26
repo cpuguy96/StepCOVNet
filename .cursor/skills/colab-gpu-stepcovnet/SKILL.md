@@ -10,11 +10,12 @@ Run StepCOVNet training and eval directly on Google Colab GPUs (`T4`, `L4`, `A10
 
 ## Policies
 
-- **Proactive sync & launch:** Whenever preparing code/configs for experiments or reviewing Colab results, run the sync/launch/pull commands without waiting to be asked.
+- **GPU selection order (strict default):** **`L4 → T4 → local (RTX 2080) → A100`**. Prefer Colab `L4` first (then `T4`) so the user's local RTX 2080 stays free for other work. Only fall back to local GPU when both Colab `L4` and `T4` slots are occupied or unavailable, or when the user explicitly requests local; reserve `A100` for heavy runs that exceed `L4` speed/VRAM.
+- **Launch autonomously (do not hand commands back):** Whenever `colab` (`~/.local/bin/colab`) and `rclone` (`~/.local/bin/rclone`) are present in the environment, sync datasets/code and launch Colab jobs directly yourself via `scripts/colab_run_remote.sh` without waiting to be asked or asking the user to run the command.
 - **Never push WIP code to GitHub for Colab.** Code is uploaded directly from the local working tree via `colab upload` (or mirrored privately to `gdrive:StepCOVNet/code/code.tar.gz`).
 - **Keep credentials local:** `rclone`'s `client_secret` and `refresh_token` stay in `~/.config/rclone/rclone.conf` (`chmod 600`); `colab_run_remote.sh` only passes a short-lived `access_token` in memory during dataset streaming and immediately drops it.
 - **Always stop idle VMs:** `colab_run_remote.sh` stops the Colab session automatically on exit unless `--keep` is passed. Verify no leaked sessions with `~/.local/bin/colab sessions` and check quota with `~/.local/bin/colab usage`.
-- **Low-verbosity logs & live TensorBoard:** `colab_run_remote.sh` filters per-step Keras progress-bar spam (keeping only epoch summaries, checkpoint/eval lines, and errors) and syncs TensorBoard `events.out.tfevents.*` every ~60s into `experiments/colab/<run_name>/tb/`. Always start a local TensorBoard daemon on a free port (`6008+`) comparing the live Colab `tb/` folder against the baseline run.
+- **Low-verbosity logs & live TensorBoard:** `colab_run_remote.sh` filters per-step progress-bar spam (keeping only epoch summaries, checkpoint/eval lines, and errors) and syncs TensorBoard `events.out.tfevents.*` every ~60s into `experiments/colab/<run_name>/tb/`. Always start a local TensorBoard daemon on a free port (`6008+`) comparing the live Colab `tb/` folder against the baseline run.
 
 ## Prerequisites (already installed in WSL)
 
@@ -51,23 +52,24 @@ bash scripts/colab_run_remote.sh \
   --script scripts/train_itgpt_placement.py \
   --config configs/ddc/itgpt_mert_placement_fraxtil_orig_cosine64_l2_6_10_16_ema.json \
   --datasets literature_fraxtil_orig,literature_fraxtil_orig__mert_l2_6_10_16 \
-  --eval-cmd "python scripts/eval_itgpt_placement.py --config={CONFIG} --model_dir={RUN_DIR}"
+  --eval-cmd "python scripts/eval_itgpt_placement.py --config={CONFIG} --model_path={RUN_DIR}/best.pt --diagnose_grounding --output={RUN_DIR}/eval_val_grounding_best.json"
 ```
 
 Useful flags:
-- `--gpu <T4|L4|A100|H100>` — accelerator tier (`T4` for cheap smoke tests, `L4`/`A100` for full runs).
+- `--gpu <L4|T4|A100>` — accelerator tier (default `L4`; follow `L4 → T4 → local → A100` priority).
 - `--extra-args "..."` — forwarded verbatim to the training script (e.g. `"--epochs=2 --steps_per_epoch=10"`).
-- `--archive-models <best|all|none>` — archives outputs directly from Colab to `MyDrive/StepCOVNet/runs/<run_name>/` before VM shutdown (default: `best`, saving `best*.keras` + all logs/JSONs; pull any good model down to `experiments/colab/<run_name>/` later via `bash scripts/colab_sync.sh pull-runs <run_name>`).
+- `--archive-models <best|all|none>` — archives outputs directly from Colab to `MyDrive/StepCOVNet/runs/<run_name>/` before VM shutdown (default: `best`, saving `best*.pt` + all logs/JSONs; pull any good model down to `experiments/colab/<run_name>/` later via `bash scripts/colab_sync.sh pull-runs <run_name>`).
 - `--download-all` — also download model checkpoints directly to `experiments/colab/<run_name>/` immediately (default downloads only lightweight `*.log`, `*.txt`, `*.json`, `*.csv`, `*.md` locally while keeping checkpoints in Drive).
 - `--keep` / `--reuse-session` — keep a VM alive across back-to-back runs on the same unpacked dataset (remember to run `~/.local/bin/colab stop -s <session>` afterward).
 
-## Parallel multi-GPU code chains (Local RTX 2080 + Colab GPUs)
+## Parallel multi-GPU code chains (Priority: L4 → T4 → Local → A100)
 
 - **Verified concurrency limits on this account:** Colab caps at **1 concurrent session per GPU type** (a 2nd `T4` or 2nd `L4` is refused with `precondition failed`), **but different GPU types stack concurrently**:
-  - **GPU 0 (local):** WSL RTX 2080 (8 GiB, free)
-  - **GPU 1 (Colab):** `--gpu L4` (24 GiB, `2.33 CU/hr`)
-  - **GPU 2 (Colab):** `--gpu T4` (15 GiB, `1.24 CU/hr`)
-  - Total: **3 concurrent GPU experiment chains** (`L4 + T4` = `3.57 CU/hr`; `H100` is not entitled on this account).
+  - **Priority 1 (Colab):** `--gpu L4` (24 GiB, `2.33 CU/hr`, native `bf16`)
+  - **Priority 2 (Colab):** `--gpu T4` (15 GiB, `1.24 CU/hr`, `fp16`)
+  - **Priority 3 (local):** WSL RTX 2080 (8 GiB, free — leave free for user unless `L4` + `T4` are both busy or local is requested)
+  - **Priority 4 (Colab):** `--gpu A100` (for heavy runs exceeding `L4`; `H100` is not entitled on this account)
+  - Total parallel chains: up to **3 concurrent chains** (`L4 + T4` = `3.57 CU/hr`, plus local RTX 2080 only when needed).
 - For **parallel code-changing chains**, isolate each branch in its own `git worktree` (never let two sessions edit the same working directory):
   ```bash
   bash scripts/colab_worktree.sh create <name>        # creates ../StepCOVNet-exp-<name> on exp/<name>

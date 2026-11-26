@@ -53,7 +53,7 @@ DRIVE_ROOT="${COLAB_DRIVE_ROOT:-StepCOVNet}"
 LOCAL_RUNS_DIR="${COLAB_LOCAL_RUNS_DIR:-$REPO_ROOT/experiments/colab}"
 
 SESSION=""
-GPU="T4"
+GPU="L4"
 RUN_NAME=""
 TRAIN_SCRIPT="scripts/train_itgpt_placement.py"
 CONFIG_PATH=""

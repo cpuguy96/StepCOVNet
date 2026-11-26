@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261126-01: GPU priority order is L4 → T4 → local → A100 and agent launches Colab autonomously
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-26 09:33:30 |
+| **Category** | convention |
+| **Summary** | User corrected GPU selection order to `L4 → T4 → local (RTX 2080) → A100` so the local GPU stays free for other tasks, and reminded agents to launch Colab jobs autonomously rather than handing commands back when `colab` + `rclone` are available. |
+| **Artifact** | skill: `.cursor/skills/colab-gpu-stepcovnet/SKILL.md` (GPU order + autonomous launch policy + updated `.pt`/`--model_path` example); code: `scripts/colab_run_remote.sh` (default `GPU="L4"`). No new alwaysApply rule |
+| **Action taken** | Enforced `L4 → T4 → local → A100` order and autonomous Colab launch in the Colab skill and switched `colab_run_remote.sh` default from `T4` to `L4` |
+| **Related** | `colab-gpu-stepcovnet`, `EXP-20261126-04` |
+
 ### JRN-20260817-02: Whats-next skill is how to choose, not the scoreboard
 
 | Field | Value |
