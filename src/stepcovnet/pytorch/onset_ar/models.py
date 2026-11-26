@@ -14,8 +14,8 @@ from torch.nn import functional as nn_func
 from stepcovnet.pytorch.onset_ar import config, targets
 
 
-def _init_keras_style(module: nn.Module) -> None:
-    """Apply Keras-matching Glorot uniform weights and zero biases.
+def _init_xavier_uniform(module: nn.Module) -> None:
+    """Apply Glorot/Xavier uniform weights and zero biases.
 
     Args:
         module: Module to initialize in-place when linear.
@@ -27,7 +27,7 @@ def _init_keras_style(module: nn.Module) -> None:
 
 
 class SinusoidalPositionEncoding(nn.Module):
-    """Fixed sinusoidal positional encoding table matching Keras AR onset.
+    """Fixed sinusoidal positional encoding table for AR onset sequences.
 
     Args:
         max_len: Maximum supported sequence length.
@@ -93,7 +93,7 @@ class MultiHeadAttentionSDPA(nn.Module):
         self.v_proj = nn.Linear(self.d_model, inner_dim)
         self.out_proj = nn.Linear(inner_dim, self.d_model)
         for lin in (self.q_proj, self.k_proj, self.v_proj, self.out_proj):
-            _init_keras_style(lin)
+            _init_xavier_uniform(lin)
 
     def project_kv(self, kv: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Project key and value tensors into multi-head layout ``(B, H, S, Dh)``.
@@ -166,7 +166,7 @@ class MultiHeadAttentionSDPA(nn.Module):
 
 
 class ArEncoderBlock(nn.Module):
-    """Post-LN bidirectional Transformer encoder block matching Keras AR onset.
+    """Post-LN bidirectional Transformer encoder block for AR onset.
 
     Args:
         d_model: Hidden width.
@@ -182,8 +182,8 @@ class ArEncoderBlock(nn.Module):
         self.ffn_drop = nn.Dropout(dropout_rate)
         self.ffn2 = nn.Linear(d_model * 4, d_model)
         self.ln2 = nn.LayerNorm(d_model, eps=1e-3)
-        _init_keras_style(self.ffn1)
-        _init_keras_style(self.ffn2)
+        _init_xavier_uniform(self.ffn1)
+        _init_xavier_uniform(self.ffn2)
 
     def forward(self, x: torch.Tensor, *, attn_bias: torch.Tensor) -> torch.Tensor:
         """Run one bidirectional encoder layer.
@@ -219,8 +219,8 @@ class ArDecoderBlock(nn.Module):
         self.ffn_drop = nn.Dropout(dropout_rate)
         self.ffn2 = nn.Linear(d_model * 4, d_model)
         self.ffn_ln = nn.LayerNorm(d_model, eps=1e-3)
-        _init_keras_style(self.ffn1)
-        _init_keras_style(self.ffn2)
+        _init_xavier_uniform(self.ffn1)
+        _init_xavier_uniform(self.ffn2)
 
     def forward(
         self,
@@ -373,7 +373,7 @@ class ArOnsetModel(nn.Module):
 
         # Patch encoder (PE applied AFTER encoder layers for PE-free content keys).
         self.patch_embed = nn.Linear(self.patch_dim, self.d_model)
-        _init_keras_style(self.patch_embed)
+        _init_xavier_uniform(self.patch_embed)
         self.enc_layers = nn.ModuleList(
             [
                 ArEncoderBlock(self.d_model, self.num_heads, self.dropout_rate)
@@ -388,7 +388,7 @@ class ArOnsetModel(nn.Module):
         self.density_proj: nn.Linear | None = None
         if self.use_density:
             self.density_proj = nn.Linear(1, self.d_model)
-            _init_keras_style(self.density_proj)
+            _init_xavier_uniform(self.density_proj)
 
         # Optional cross-memory projection when pe_free_keys & not content-only.
         self.cross_memory_proj: nn.Linear | None = None
@@ -398,7 +398,7 @@ class ArOnsetModel(nn.Module):
             and not self.decoder_cross_content_only
         ):
             self.cross_memory_proj = nn.Linear(self.d_model, self.d_model)
-            _init_keras_style(self.cross_memory_proj)
+            _init_xavier_uniform(self.cross_memory_proj)
 
         self.dec_layers = nn.ModuleList(
             [
@@ -409,7 +409,7 @@ class ArOnsetModel(nn.Module):
 
         # Token head.
         self.token_logits = nn.Linear(self.d_model, self.vocab_size)
-        _init_keras_style(self.token_logits)
+        _init_xavier_uniform(self.token_logits)
 
         # Content pointer / gap QK pathway.
         self.pointer_cross_attn: MultiHeadAttentionSDPA | None = None
@@ -427,24 +427,24 @@ class ArOnsetModel(nn.Module):
                 self.pointer_key_ln = nn.LayerNorm(self.d_model, eps=1e-3)
             self.pointer_query = nn.Linear(self.d_model, self.d_model)
             self.pointer_key = nn.Linear(self.d_model, self.d_model)
-            _init_keras_style(self.pointer_query)
-            _init_keras_style(self.pointer_key)
+            _init_xavier_uniform(self.pointer_query)
+            _init_xavier_uniform(self.pointer_key)
 
         # Legacy index pointer head when pointer_head == "index".
         self.index_pointer_head: nn.Linear | None = None
         if self.build_absolute_pointer and not self.content_pointer:
             self.index_pointer_head = nn.Linear(self.d_model, self.max_patches)
-            _init_keras_style(self.index_pointer_head)
+            _init_xavier_uniform(self.index_pointer_head)
 
         # Dense gap head when gap_head == "dense".
         self.dense_gap_head: nn.Linear | None = None
         if self.gap_vocab_size > 0 and not self.content_gap:
             self.dense_gap_head = nn.Linear(self.d_model, self.gap_vocab_size)
-            _init_keras_style(self.dense_gap_head)
+            _init_xavier_uniform(self.dense_gap_head)
 
         # Residual head: sigmoid * patch_duration.
         self.residual_head = nn.Linear(self.d_model, 1)
-        _init_keras_style(self.residual_head)
+        _init_xavier_uniform(self.residual_head)
 
     def model_config(self) -> dict[str, Any]:
         """Return JSON-serializable experiment config for checkpoint persistence.

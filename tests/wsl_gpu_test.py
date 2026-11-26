@@ -14,7 +14,7 @@ class WslGpuTest(unittest.TestCase):
         missing = wsl_gpu.nvidia_library_dirs(pathlib.Path("/nonexistent/venv"))
         self.assertEqual(missing, [])
 
-    def test_apply_tensorflow_gpu_library_path_prepends_dirs(self):
+    def test_apply_gpu_library_path_prepends_dirs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             lib_dir = (
                 pathlib.Path(tmpdir)
@@ -27,7 +27,7 @@ class WslGpuTest(unittest.TestCase):
             )
             lib_dir.mkdir(parents=True)
             os.environ.pop("LD_LIBRARY_PATH", None)
-            applied = wsl_gpu.apply_tensorflow_gpu_library_path(pathlib.Path(tmpdir))
+            applied = wsl_gpu.apply_gpu_library_path(pathlib.Path(tmpdir))
             self.assertTrue(applied)
             self.assertIn(str(lib_dir), os.environ["LD_LIBRARY_PATH"])
 
@@ -41,7 +41,7 @@ class WslGpuTest(unittest.TestCase):
             mock.patch.object(wsl_gpu.os, "execvp", autospec=True) as execvp,
         ):
             find_root.return_value = pathlib.Path("/repo")
-            wsl_gpu.reexec_with_tensorflow_gpu_env_if_needed(["/repo/script.py"])
+            wsl_gpu.reexec_with_gpu_env_if_needed(["/repo/script.py"])
             execvp.assert_not_called()
 
     def test_require_pytorch_gpu_exits_in_wsl_when_no_device(self):

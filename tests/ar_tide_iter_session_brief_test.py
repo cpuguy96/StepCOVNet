@@ -30,7 +30,7 @@ class ArTideIterSessionBriefTest(unittest.TestCase):
                 json.dumps(
                     {
                         "run": {
-                            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+                            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.pt",
                             "lambda_incremental_consistency": 0.15,
                         },
                     },
@@ -43,7 +43,7 @@ class ArTideIterSessionBriefTest(unittest.TestCase):
                 "id": "iter33",
                 "timestamp": "t1",
                 "notes": "good",
-                "model_path": "models_wsl/ar/tide_overfit_iter/iter33/ar_onset_model.keras",
+                "model_path": "models_wsl/ar/tide_overfit_iter/iter33/ar_onset_model.pt",
                 "config": str(cfg),
                 "train_exit": 0,
                 "free_run": "614/634 (0.9685)",
@@ -67,7 +67,7 @@ class ArTideIterSessionBriefTest(unittest.TestCase):
                     {
                         "run": {
                             "lambda_incremental_consistency": 0.15,
-                            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+                            "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.pt",
                         },
                     },
                 ),
@@ -78,7 +78,7 @@ class ArTideIterSessionBriefTest(unittest.TestCase):
                 "id": "iter33",
                 "timestamp": "t",
                 "notes": "n",
-                "model_path": "models_wsl/ar/tide_overfit_iter/iter33/ar_onset_model.keras",
+                "model_path": "models_wsl/ar/tide_overfit_iter/iter33/ar_onset_model.pt",
                 "config": str(cfg),
                 "train_exit": 0,
                 "free_run": "614/634 (0.9685)",

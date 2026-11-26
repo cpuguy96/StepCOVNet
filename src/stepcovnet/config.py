@@ -700,7 +700,7 @@ class RunConfig(_DictSerializableMixin):
         model_name: Name of the model. If empty, generated from experiment name.
         seed: Random seed for reproducibility (optional).
         show_model_summary: If True, print model summary before training. Default True.
-        fit_verbose: Keras model.fit verbosity: 0 (silent), 1 (progress bar), or 2 (one line per epoch).
+        fit_verbose: Training verbosity level: 0 (silent), 1 (progress), or 2 (one line per epoch).
             Default 1.
         confidence_threshold: Peak-pick confidence threshold for dense event-F1 validation.
         tolerance_sec: Event matching tolerance in seconds for dense event-F1 validation.

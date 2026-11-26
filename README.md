@@ -120,7 +120,7 @@ You can build a single executable (e.g. `generate_ui.exe` on Windows) so others 
    ```bash
    python scripts/build_generate_ui_binary.py
    ```
-3. The executable will be created under `dist/` (e.g. `dist/generate_ui.exe`). The bundle includes TensorFlow/Keras, so the file is large and startup may take a few seconds.
+3. The executable will be created under `dist/` (e.g. `dist/generate_ui.exe`). The bundle includes PyTorch, so the file is large and startup may take a few seconds.
 
 ### Training Models
 

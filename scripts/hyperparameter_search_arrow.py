@@ -1089,7 +1089,7 @@ def _write_final_results_and_best(ctx: _SweepContext) -> None:
 
 def main() -> int:
     args = PARSER.parse_args()
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
     if not args.resume_from and not args.sweep_config:
         PARSER.error("--sweep_config is required unless --resume_from is set")
     if args.resume_from and args.sweep_config:

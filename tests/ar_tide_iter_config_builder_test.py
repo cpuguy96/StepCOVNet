@@ -84,7 +84,7 @@ class ArTideIterConfigBuilderTest(unittest.TestCase):
                 "id": "iter99",
                 "notes": "should not warm-start",
                 "run": {
-                    "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.keras",
+                    "init_model_path": "models_wsl/ar/tide_overfit_iter/iter17/ar_onset_model.pt",
                     "learning_rate": 1e-5,
                 },
             },

@@ -124,7 +124,7 @@ def format_log_heading(exp_id: str, attempt: int, timestamp: str) -> str:
 
 
 def sanitize_line(line: str) -> str:
-    """Strip Keras progress-bar noise for readable console output."""
+    """Strip noisy progress-bar lines for readable console output."""
     text = _ANSI_RE.sub("", line)
     text = _PROGRESS_RE.sub("", text)
     return text.rstrip()

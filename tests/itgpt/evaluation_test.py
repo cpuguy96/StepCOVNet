@@ -30,7 +30,7 @@ class _ConstPredictor:
 
         Args:
             inputs: Packed chart dict with ``audio``.
-            verbose: Unused Keras verbosity.
+            verbose: Unused verbosity flag.
 
         Returns:
             Constant probabilities.
@@ -83,7 +83,7 @@ class _AudioSensitivePredictor:
 
         Args:
             inputs: Packed chart dict with ``audio``.
-            verbose: Unused Keras verbosity.
+            verbose: Unused verbosity flag.
 
         Returns:
             Probabilities ``(1, beats, 48)``.

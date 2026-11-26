@@ -581,7 +581,7 @@ mode = os.environ["STEPCOVNET_ARCHIVE_MODE"]
 
 run_dir = pathlib.Path("/content/runs") / run_name
 LOG_EXTS = {".log", ".txt", ".json", ".csv", ".md"}
-MODEL_EXTS = {".keras", ".h5", ".pt", ".pth", ".ckpt", ".safetensors", ".npz"}
+MODEL_EXTS = {".pt", ".pth", ".ckpt", ".safetensors", ".npz"}
 
 def should_upload(p: pathlib.Path) -> bool:
     if not p.is_file():

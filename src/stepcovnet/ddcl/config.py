@@ -174,13 +174,12 @@ class DdclRunConfig(_DictSerializableMixin):
         clipnorm: Global gradient clip (DDCL: 1.0).
         weight_decay: Decoupled AdamW weight decay (0.0 keeps plain Adam).
         eval_slot_f1_every: Evaluate full-val ``M-slot48`` every N epochs to log
-            ``val_slot_f1_at_05`` and save ``best_slot_f1.keras`` (0 disables).
+            ``val_slot_f1_at_05`` and save ``best_slot_f1.pt`` (0 disables).
         seed: Reproducibility seed.
-        model_output_dir: Directory for the saved ``.keras`` file.
+        model_output_dir: Directory for the saved ``.pt`` checkpoint.
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
-        resume: If True, ``BackupAndRestore`` continues an interrupted run
-            in ``model_output_dir``.
+        resume: If True, resume from saved backup checkpoints in ``model_output_dir``.
     """
 
     epoch: int = 8

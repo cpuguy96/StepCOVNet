@@ -3,7 +3,7 @@
 Usage:
     python scripts/graduate_ar_tide_overfit.py \\
         --config configs/ar/versions/tide_overfit/v7.json \\
-        --model-path models_wsl/ar/perfect_overfit/run5/ar_onset_model.keras \\
+        --model-path models_wsl/ar/perfect_overfit/run5/ar_onset_model.pt \\
         --version-ref configs/ar/versions/tide_overfit/v7.json
 """
 
@@ -20,7 +20,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 CHAMPION_CONFIG = REPO_ROOT / "configs/ar/tide_overfit.json"
 CHAMPION_MANIFEST = REPO_ROOT / "configs/ar/tide_overfit.manifest.json"
 CHAMPION_MODEL_DIR = REPO_ROOT / "models_wsl/ar/tide_overfit"
-CHAMPION_MODEL = CHAMPION_MODEL_DIR / "ar_onset_model.keras"
+CHAMPION_MODEL = CHAMPION_MODEL_DIR / "ar_onset_model.pt"
 DEBUG_SCRIPT = REPO_ROOT / "scripts/eval_ar_onset_offline.py"
 
 
@@ -157,7 +157,7 @@ def main() -> int:
     new_manifest = {
         "graduated_from": version_ref,
         "updated": __import__("datetime").date.today().isoformat(),
-        "checkpoint": "models_wsl/ar/tide_overfit/ar_onset_model.keras",
+        "checkpoint": "models_wsl/ar/tide_overfit/ar_onset_model.pt",
         "primary_metric": "ar_decode_ordered_onset_match",
         "free_run": {
             "n_matched": int(candidate_free["n_matched"]),

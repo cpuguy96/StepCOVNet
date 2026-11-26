@@ -9,8 +9,8 @@ from torch.nn import functional as nn_func
 from stepcovnet.ddcl import constants
 
 
-def _init_keras_style(module: nn.Module) -> None:
-    """Apply Glorot/Xavier uniform + zero bias matching Keras defaults.
+def _init_xavier_uniform(module: nn.Module) -> None:
+    """Apply Glorot/Xavier uniform weights and zero bias.
 
     Args:
         module: Layer to initialize if linear or conv.
@@ -22,7 +22,7 @@ def _init_keras_style(module: nn.Module) -> None:
 
 
 class ConvLSTM2d(nn.Module):
-    """2D Convolutional LSTM matching Keras ``ConvLSTM2D(padding="valid")``.
+    """2D Convolutional LSTM with valid spatial convolutions.
 
     Applies valid spatial convolution to inputs ``x_t`` and same-padded spatial
     convolution to the recurrent hidden state ``h_{t-1}``.
@@ -62,7 +62,7 @@ class ConvLSTM2d(nn.Module):
             padding=(pad_h, pad_w),
             bias=False,
         )
-        _init_keras_style(self.input_conv)
+        _init_xavier_uniform(self.input_conv)
         nn.init.orthogonal_(self.recurrent_conv.weight)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
@@ -148,7 +148,7 @@ class _DdclLogmelBranch(nn.Module):
         x = self.pool1(x.reshape(batch_size * seq_len, *x.shape[2:])).reshape(
             batch_size, seq_len, constants.CONV2_FILTERS, -1, 8
         )
-        # Permute (B, T, C, H, W) -> (B, T, H, W, C) matching Keras Reshape.
+        # Permute (B, T, C, H, W) -> (B, T, H, W, C) for channels-last flatten.
         x = x.permute(0, 1, 3, 4, 2).contiguous()
         return x.reshape(batch_size, seq_len, -1)
 
@@ -193,14 +193,14 @@ class _DdclHead(nn.Module):
         in_dim = lstm_units * 2
         for width in dense_sizes:
             lin = nn.Linear(in_dim, width)
-            _init_keras_style(lin)
+            _init_xavier_uniform(lin)
             dnn_layers.extend(
                 [lin, nn.LeakyReLU(negative_slope=0.2), nn.Dropout(dropout_rate)]
             )
             in_dim = width
         self.dnn = nn.Sequential(*dnn_layers)
         self.slots = nn.Linear(in_dim, constants.N_SLOTS)
-        _init_keras_style(self.slots)
+        _init_xavier_uniform(self.slots)
 
     def forward_logits(
         self,
@@ -407,8 +407,8 @@ class DdclMertPlacementModel(nn.Module):
         self.mert_pool = (
             nn.AvgPool1d(kernel_size=2, stride=2) if self.n_frames >= 2 else None
         )
-        _init_keras_style(self.mert_proj)
-        _init_keras_style(self.mert_conv)
+        _init_xavier_uniform(self.mert_proj)
+        _init_xavier_uniform(self.mert_conv)
 
         pooled_frames = self.n_frames // 2 if self.n_frames >= 2 else self.n_frames
         flat_dim = pooled_frames * self.conv_filters
@@ -491,12 +491,12 @@ class DdclMertPlacementModel(nn.Module):
 
 
 class BinaryFocalWithLogitsLoss(nn.Module):
-    """Binary focal cross-entropy matching Keras ``BinaryFocalCrossentropy``.
+    """Binary focal cross-entropy with logits.
 
     Args:
-        gamma: Focusing parameter (Keras default: ``2.0``).
+        gamma: Focusing parameter (default: ``2.0``).
         alpha: Class balance weight when ``apply_class_balancing`` is True.
-        apply_class_balancing: Whether to apply alpha balancing (Keras default False).
+        apply_class_balancing: Whether to apply alpha balancing (default False).
     """
 
     def __init__(

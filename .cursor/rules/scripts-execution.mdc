@@ -39,7 +39,7 @@ If a tool backgrounds the command after its foreground timeout, the same tee pip
 
 ## TensorBoard with training
 
-When launching a **training** job that writes Keras TensorBoard callbacks (`callback_root_dir` / `callbacks/.../logs`):
+When launching a **training** job that writes TensorBoard logs (`callback_root_dir` / `callbacks/.../logs`):
 
 1. **Start TensorBoard in a separate terminal before or with the train command** — do not wait for the user to ask.
 2. Point `--logdir` at the **stage** log tree, not one run folder.
@@ -59,7 +59,7 @@ Runs of one **stage** share a `callback_root_dir`, so every run lands in the sam
 | ITGPT placement | `callbacks/ddc/itgpt_placement` | `callbacks/ddc/itgpt_placement/logs` |
 | Everything AR | — | `callbacks/ar` |
 
-Keras TensorBoard must log to `logs/{YYYYMMDD-HHMMSS}-{run}/`, not the stage `logs/` root. A root `logs/train` folder overwrites prior curves and forces a new `callback_root_dir` per experiment, which makes overlay in TensorBoard ugly. Do not invent `placement_128ep`-style stage trees to preserve curves.
+TensorBoard must log to `logs/{YYYYMMDD-HHMMSS}-{run}/`, not the stage `logs/` root. A root `logs/train` folder overwrites prior curves and forces a new `callback_root_dir` per experiment, which makes overlay in TensorBoard ugly. Do not invent `placement_128ep`-style stage trees to preserve curves.
 
 Reruns never overwrite prior curves. In the UI, check multiple runs in the left sidebar to overlay metrics. Reuse a server on the same port only when its `--logdir` already covers the new run.
 
@@ -81,7 +81,7 @@ When the user says **rerun** / **increase epochs** / tweak hyperparams on an exi
 
 - Reserve **`smoke`** for tiny gate runs (e.g. 10-song `configs/ar/smoke.json`). Multi-song scale-up configs use **`scale_<Nt>t_<Nv>v`** (not `smoke_…`).
 - AR TensorBoard run suffixes include **`{train}t{val}v-ep{epochs}`** (and `es{patience}` when early stopping is on) via `_get_experiment_name` — do not rely on the parent `callback_root_dir` alone to tell splits apart.
-- `callback_root_dir` names the **stage** (e.g. `callbacks/ar/ladder`), shared by every run in it; `run.run_label` (e.g. `r2_50t`, `r2_ss_50t`) names the variant inside the run folder. `model_output_dir` stays **per variant** — it writes a fixed `ar_onset_model.keras` that would otherwise be overwritten.
+- `callback_root_dir` names the **stage** (e.g. `callbacks/ar/ladder`), shared by every run in it; `run.run_label` (e.g. `r2_50t`, `r2_ss_50t`) names the variant inside the run folder. `model_output_dir` stays **per variant** — it writes a fixed `ar_onset_model.pt` that would otherwise be overwritten.
 
 ## GPU scheduling
 

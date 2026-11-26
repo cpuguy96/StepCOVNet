@@ -1,6 +1,6 @@
 ---
 name: wsl-gpu-stepcovnet
-description: Runs StepCOVNet GPU training and MERT extraction on Windows via WSL with TensorFlow CUDA libraries. Use for train_onset, overfit scripts, extract_mert_features with cuda, or when TensorFlow sees zero GPUs in WSL.
+description: Runs StepCOVNet GPU training and MERT extraction on Windows via WSL with PyTorch CUDA libraries. Use for train_onset, overfit scripts, extract_mert_features with cuda, or when PyTorch sees zero GPUs in WSL.
 disable-model-invocation: true
 ---
 
@@ -54,7 +54,7 @@ export STEPCOVNET_IN_WSL=1
 python scripts/<script>.py <args>
 ```
 
-Without `source wsl_gpu_env.sh`, TensorFlow may silently fall back to CPU.
+Without `source wsl_gpu_env.sh`, PyTorch may silently fall back to CPU.
 
 ## Onset event training
 

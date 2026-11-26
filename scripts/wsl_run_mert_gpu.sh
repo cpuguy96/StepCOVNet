@@ -34,7 +34,7 @@ arr = np.load(path)
 print("features", path, "shape", arr.shape, "dtype", arr.dtype)
 PY
 
-echo "Training onset model on MERT features (GPU TensorFlow if available)..."
+echo "Training onset model on MERT features (GPU PyTorch if available)..."
 "$PY" scripts/train_onset.py --config=configs/local/e2e_mert_wsl.json
 
 echo "Done."

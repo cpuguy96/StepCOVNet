@@ -1,4 +1,4 @@
-"""Pure NumPy/PyTorch dataset helpers for ITGPT placement (no TensorFlow import)."""
+"""Pure NumPy/PyTorch dataset helpers for ITGPT placement."""
 
 from __future__ import annotations
 

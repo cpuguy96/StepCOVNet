@@ -3,7 +3,7 @@ r"""Simple UI for generating a StepMania chart from an audio file.
 Launch with:
     python scripts/generate_ui.py
 
-Onset and arrow models (.keras) are optional; leave blank to download from Google Drive and cache.
+Onset and arrow models (.pt) are optional; leave blank to download from Google Drive and cache.
 """
 
 import atexit
@@ -202,10 +202,10 @@ class _GeneratorApp:
         self._add_row("Song title:", self.song_title_var)
         self._add_row("BPM (optional; leave blank to detect from audio):", self.bpm_var)
         self._add_row(
-            "Onset model (.keras, optional):", self.onset_model_var, self.browse_onset
+            "Onset model (.pt, optional):", self.onset_model_var, self.browse_onset
         )
         self._add_row(
-            "Arrow model (.keras, optional):", self.arrow_model_var, self.browse_arrow
+            "Arrow model (.pt, optional):", self.arrow_model_var, self.browse_arrow
         )
         cache_row = tk.Frame(main_frame)
         cache_row.grid(row=self._row, column=0, sticky=tk.W, pady=(6, 8))

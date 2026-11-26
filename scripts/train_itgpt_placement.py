@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code.
     """
     args = _build_parser().parse_args(argv)
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
     experiment = config.ItgptExperimentConfig.from_json(args.config)
     if args.epochs is not None:
         experiment.run.epoch = args.epochs

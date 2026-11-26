@@ -93,25 +93,25 @@ class ExtractDriveFileIdTest(unittest.TestCase):
         )
 
 
-class DownloadZipAndExtractKerasTest(unittest.TestCase):
-    """Tests for _download_zip_and_extract_keras."""
+class DownloadZipAndExtractCheckpointTest(unittest.TestCase):
+    """Tests for _download_zip_and_extract_checkpoint."""
 
-    def test_zip_with_no_keras_raises_runtimeerror(self):
-        """When the zip contains no .keras file, raises RuntimeError."""
+    def test_zip_with_no_checkpoint_raises_runtimeerror(self):
+        """When the zip contains no .pt file, raises RuntimeError."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            out_path = pathlib.Path(tmpdir) / "out.keras"
+            out_path = pathlib.Path(tmpdir) / "out.pt"
             with mock.patch.object(
                 pretrained.gdown, "download", autospec=True
             ) as mock_download:
 
-                def create_zip_without_keras(url, output, **kwargs):
+                def create_zip_without_checkpoint(url, output, **kwargs):
                     with zipfile.ZipFile(output, "w") as zf:
                         zf.writestr("readme.txt", b"no model here")
 
-                mock_download.side_effect = create_zip_without_keras
+                mock_download.side_effect = create_zip_without_checkpoint
                 with self.assertRaises(RuntimeError) as ctx:
-                    pretrained._download_zip_and_extract_keras("id", out_path)
-                self.assertIn("contains no .keras file", str(ctx.exception))
+                    pretrained._download_zip_and_extract_checkpoint("id", out_path)
+                self.assertIn("contains no .pt file", str(ctx.exception))
                 self.assertIn("readme.txt", str(ctx.exception))
 
 
@@ -121,7 +121,7 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
     def test_provided_path_exists_returns_it(self):
         """When provided_path exists, returns that path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = pathlib.Path(tmpdir) / "onset.keras"
+            path = pathlib.Path(tmpdir) / "onset.pt"
             with pathlib.Path(path).open("w") as f:
                 f.write("")
             result = pretrained.resolve_onset_model_path(path)
@@ -130,7 +130,7 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
     def test_provided_path_missing_raises_filenotfounderror(self):
         """When provided_path is set but file does not exist, raises FileNotFoundError."""
         with self.assertRaises(FileNotFoundError) as ctx:
-            pretrained.resolve_onset_model_path("/nonexistent/onset.keras")
+            pretrained.resolve_onset_model_path("/nonexistent/onset.pt")
         self.assertIn("Onset model path does not exist", str(ctx.exception))
 
     def test_none_and_file_in_default_dir_returns_cached_path(self):
@@ -166,7 +166,7 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
         self.assertIn("--onset_model_path", str(ctx.exception))
 
     def test_none_and_drive_id_set_downloads_zip_and_returns_path(self):
-        """When provided_path is None, no cached file, and Drive ID set, downloads zip and extracts .keras."""
+        """When provided_path is None, no cached file, and Drive ID set, downloads zip and extracts .pt."""
         with tempfile.TemporaryDirectory() as tmpdir:
             with (
                 mock.patch.object(
@@ -186,11 +186,11 @@ class ResolveOnsetModelPathTest(unittest.TestCase):
             ):
                 out_path = pathlib.Path(tmpdir) / pretrained._ONSET_FILENAME
 
-                def create_zip_with_keras(url, output, **kwargs):
+                def create_zip_with_checkpoint(url, output, **kwargs):
                     with zipfile.ZipFile(output, "w") as zf:
-                        zf.writestr("model.keras", b"dummy")
+                        zf.writestr("model.pt", b"dummy")
 
-                mock_download.side_effect = create_zip_with_keras
+                mock_download.side_effect = create_zip_with_checkpoint
                 result = pretrained.resolve_onset_model_path(None)
             self.assertEqual(result, str(out_path))
             self.assertTrue(pathlib.Path(out_path).is_file())
@@ -244,7 +244,7 @@ class ResolveArrowModelPathTest(unittest.TestCase):
     def test_provided_path_exists_returns_it(self):
         """When provided_path exists, returns that path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = pathlib.Path(tmpdir) / "arrow.keras"
+            path = pathlib.Path(tmpdir) / "arrow.pt"
             with pathlib.Path(path).open("w") as f:
                 f.write("")
             result = pretrained.resolve_arrow_model_path(path)
@@ -253,7 +253,7 @@ class ResolveArrowModelPathTest(unittest.TestCase):
     def test_provided_path_missing_raises_filenotfounderror(self):
         """When provided_path is set but file does not exist, raises FileNotFoundError."""
         with self.assertRaises(FileNotFoundError) as ctx:
-            pretrained.resolve_arrow_model_path("/nonexistent/arrow.keras")
+            pretrained.resolve_arrow_model_path("/nonexistent/arrow.pt")
         self.assertIn("Arrow model path does not exist", str(ctx.exception))
 
     def test_none_and_file_in_default_dir_returns_cached_path(self):
@@ -289,7 +289,7 @@ class ResolveArrowModelPathTest(unittest.TestCase):
         self.assertIn("--arrow_model_path", str(ctx.exception))
 
     def test_none_and_drive_id_set_downloads_zip_and_returns_path(self):
-        """When provided_path is None, no cached file, and Drive ID set, downloads zip and extracts .keras."""
+        """When provided_path is None, no cached file, and Drive ID set, downloads zip and extracts .pt."""
         with tempfile.TemporaryDirectory() as tmpdir:
             with (
                 mock.patch.object(
@@ -305,11 +305,11 @@ class ResolveArrowModelPathTest(unittest.TestCase):
             ):
                 out_path = pathlib.Path(tmpdir) / pretrained._ARROW_FILENAME
 
-                def create_zip_with_keras(url, output, **kwargs):
+                def create_zip_with_checkpoint(url, output, **kwargs):
                     with zipfile.ZipFile(output, "w") as zf:
-                        zf.writestr("arrow.keras", b"dummy")
+                        zf.writestr("arrow.pt", b"dummy")
 
-                mock_download.side_effect = create_zip_with_keras
+                mock_download.side_effect = create_zip_with_checkpoint
                 result = pretrained.resolve_arrow_model_path(None)
             self.assertEqual(result, str(out_path))
             self.assertTrue(pathlib.Path(out_path).is_file())
@@ -386,12 +386,12 @@ class ClearModelCacheTest(unittest.TestCase):
                 pretrained.clear_model_cache()
             self.assertEqual(list(cache_dir.iterdir()), [])
 
-    def test_removes_only_known_keras_files(self):
-        """Only onset.keras and arrow.keras are removed; other files are left."""
+    def test_removes_only_known_checkpoint_files(self):
+        """Only onset.pt and arrow.pt are removed; other files are left."""
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = pathlib.Path(tmpdir)
             (cache_dir / pretrained._ONSET_FILENAME).write_text("x")
-            other_path = cache_dir / "other.keras"
+            other_path = cache_dir / "other.pt"
             other_path.write_text("other")
             with mock.patch.object(
                 pretrained,
@@ -414,7 +414,7 @@ class RefreshModelCacheTest(unittest.TestCase):
             cache_dir = pathlib.Path(tmpdir)
             (cache_dir / pretrained._ONSET_FILENAME).write_text("old_onset")
             (cache_dir / pretrained._ARROW_FILENAME).write_text("old_arrow")
-            resolved = str(cache_dir / "resolved.keras")
+            resolved = str(cache_dir / "resolved.pt")
             with (
                 mock.patch.object(
                     pretrained,

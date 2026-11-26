@@ -94,8 +94,7 @@ class ArModelConfig(_DictSerializableMixin):
     num_heads: int = 4
     dropout_rate: float = 0.1
     pointer_head: str = "content"
-    # False = Keras keep-valid masks. True only for rebuilding pre-2026-07-16
-    # checkpoints that were trained with inverted mask polarity.
+    # False = standard keep-valid masks. True only for legacy inverted mask polarity.
     legacy_inverted_attention_masks: bool = False
     density_conditioning: str = "none"
     # Content-pointer: keys from pre-position patch embeddings (not PE-laden memory).
@@ -182,8 +181,8 @@ def pointer_soft_distance_alpha(run: ArRunConfig) -> float:
 
     Absolute pointer: ``logits[p] -= α·max(0, p − prev)``.
     Gap head: ``logits[Δ] -= α·decode_delta(Δ)`` (skipped when ``prev == 0``).
-    Static config value (offline eval). During train with anneal, the live
-    ``tf.Variable`` on the training model is authoritative.
+    Static config value (offline eval). During training with annealing, the
+    active schedule value is authoritative.
     """
     return float(getattr(run, "pointer_soft_distance_alpha", 0.0) or 0.0)
 

@@ -128,7 +128,7 @@ class PlacementRunConfig(_DictSerializableMixin):
         learning_rate: SGD learning rate (paper: 0.1).
         clipnorm: Global gradient clip (paper: 5.0).
         seed: Reproducibility seed.
-        model_output_dir: Directory for the saved ``.keras`` file.
+        model_output_dir: Directory for the saved ``.pt`` checkpoint.
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
     """

@@ -170,7 +170,7 @@ def evaluate_slot48(
     """Predict every val chart and pool ``M-slot48``.
 
     Args:
-        model: Keras model with DDCL placement inputs.
+        model: PyTorch model with DDCL placement inputs.
         charts: Loaded beat-grid charts.
         seed: Null-shuffle seed.
         thresholds: Sweep for max-F1.
@@ -321,7 +321,7 @@ def evaluate_decoded_timing(
     """Predict slots and score decoded times with ``timing_match``.
 
     Args:
-        model: Keras model with DDCL placement inputs.
+        model: PyTorch model with DDCL placement inputs.
         charts: Loaded beat-grid charts with BPM and onset times.
         threshold: Occupancy cutoff for decoding.
         tolerance_sec: Ordered-match window.
@@ -903,7 +903,7 @@ def diagnose_decoded_timing(
     """Predict chart slots once and run counterfactual timing diagnostics.
 
     Args:
-        model: Keras model with DDCL placement inputs.
+        model: PyTorch model with DDCL placement inputs.
         charts: Loaded beat-grid charts with BPM and onset times.
         threshold: Primary occupancy cutoff for ``raw``, ``fp_removed``, ``fn_filled``.
         thresholds: Occupancy cutoffs for the threshold sweep.
@@ -1230,7 +1230,7 @@ def evaluate_audio_grounding(
     metric templates.
 
     Args:
-        model: Keras model with DDCL placement inputs.
+        model: PyTorch model with DDCL placement inputs.
         charts: Loaded beat-grid charts with BPM and onset times.
         threshold: Occupancy cutoff for slot F1, decoded timing, and flip rates.
         thresholds: Sweep for ``slot_f1_max``.

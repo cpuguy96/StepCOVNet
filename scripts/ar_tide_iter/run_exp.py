@@ -375,7 +375,7 @@ def main() -> int:
         return 1
 
     cfg = json.loads(config.read_text(encoding="utf-8"))
-    model_path = pathlib.Path(cfg["run"]["model_output_dir"]) / "ar_onset_model.keras"
+    model_path = pathlib.Path(cfg["run"]["model_output_dir"]) / "ar_onset_model.pt"
     if not model_path.is_absolute():
         model_path = (REPO / model_path).resolve()
     train_log = train_log_path(args.id, attempt)

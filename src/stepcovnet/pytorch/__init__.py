@@ -1,4 +1,4 @@
-"""Isolated, zero-TensorFlow PyTorch port of all StepCOVNet model tracks."""
+"""PyTorch backend implementing all StepCOVNet model tracks."""
 
 from __future__ import annotations
 

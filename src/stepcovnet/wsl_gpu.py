@@ -208,13 +208,13 @@ def nvidia_library_dirs(venv_path: pathlib.Path | None = None) -> list[pathlib.P
     return sorted(lib_dirs)
 
 
-def apply_tensorflow_gpu_library_path(venv_path: pathlib.Path | None = None) -> bool:
-    """Prepend NVIDIA wheel library paths for TensorFlow GPU inside WSL.
+def apply_gpu_library_path(venv_path: pathlib.Path | None = None) -> bool:
+    """Prepend NVIDIA wheel library paths for PyTorch CUDA inside WSL.
 
     Mirrors ``scripts/wsl_gpu_env.sh``. Must run **before the Python process
     starts** (e.g. ``source scripts/wsl_gpu_env.sh`` in the shell). Changing
-    ``LD_LIBRARY_PATH`` from Python after startup does not affect TensorFlow's
-    GPU loader; use :func:`reexec_with_tensorflow_gpu_env_if_needed` instead.
+    ``LD_LIBRARY_PATH`` from Python after startup does not affect dynamic
+    library loading; use :func:`reexec_with_gpu_env_if_needed` instead.
 
     Args:
         venv_path: Virtualenv root; defaults to ``~/stepcovnet-venv-wsl``.
@@ -234,10 +234,10 @@ def apply_tensorflow_gpu_library_path(venv_path: pathlib.Path | None = None) -> 
     return True
 
 
-def reexec_with_tensorflow_gpu_env_if_needed(argv: list[str]) -> None:
+def reexec_with_gpu_env_if_needed(argv: list[str]) -> None:
     """Re-exec the current script under ``wsl_gpu_env.sh`` when inside WSL.
 
-    TensorFlow only picks up NVIDIA wheel libraries when ``LD_LIBRARY_PATH`` is
+    NVIDIA wheel libraries are only discovered when ``LD_LIBRARY_PATH`` is
     set before Python starts. When ``STEPCOVNET_WSL_GPU_ENV=1`` is already set,
     this is a no-op.
 
@@ -278,9 +278,6 @@ def require_pytorch_gpu() -> None:
         )
         raise SystemExit(1)
     print("Warning: training without a visible PyTorch CUDA GPU device.", flush=True)
-
-
-require_tensorflow_gpu = require_pytorch_gpu
 
 
 def _wsl_bash_command(
@@ -506,7 +503,7 @@ def assert_wsl_gpu_free_for_training(*, force: bool | None = None) -> None:
 
 
 def maybe_dispatch_for_training(script_rel: str, argv: list[str]) -> bool:
-    """Dispatch TensorFlow training to WSL on Windows when a GPU is available.
+    """Dispatch PyTorch GPU training to WSL on Windows when a GPU is available.
 
     Args:
         script_rel: Script path relative to repo root.
@@ -552,7 +549,7 @@ def bootstrap_gpu_script(
             maybe_dispatch_for_mert_extract(script_rel, argv)
         elif wsl_gpu_available():
             maybe_dispatch_for_training(script_rel, argv)
-    reexec_with_tensorflow_gpu_env_if_needed(argv)
+    reexec_with_gpu_env_if_needed(argv)
 
 
 def guard_pytorch_gpu_job(script_file: str | None = None) -> None:
@@ -567,9 +564,6 @@ def guard_pytorch_gpu_job(script_file: str | None = None) -> None:
 
     if torch.cuda.is_available():
         wsl_gpu_lock.ensure_gpu_job_lock(job_name_from_script(script_file))
-
-
-guard_tensorflow_gpu_job = guard_pytorch_gpu_job
 
 
 def guard_gpu_device_job(device: str, script_file: str | None = None) -> None:

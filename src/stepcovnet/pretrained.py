@@ -1,6 +1,6 @@
 """Resolve onset/arrow model paths: use provided path, or download from Google Drive to a cache dir.
 
-Models on Drive are expected as separate zip files containing a single .keras model each.
+Models on Drive are expected as separate zip files containing a single .pt checkpoint each.
 Paste Google Drive file ID or full share link below; leave empty to require explicit
 --onset_model_path / --arrow_model_path.
 """
@@ -16,8 +16,8 @@ import gdown
 DEFAULT_ONSET_DRIVE_ID: str = "https://drive.google.com/file/d/1p95pj6oJhXS9A60BXsLOl-q6TSht71GY/view?usp=drive_link"
 DEFAULT_ARROW_DRIVE_ID: str = "https://drive.google.com/file/d/1DQbvIrYEBGb7zs_CMxlAPGC_mttqVQPH/view?usp=drive_link"
 
-_ONSET_FILENAME = "onset.keras"
-_ARROW_FILENAME = "arrow.keras"
+_ONSET_FILENAME = "onset.pt"
+_ARROW_FILENAME = "arrow.pt"
 
 
 def _extract_drive_file_id(url_or_id: str) -> str:
@@ -54,11 +54,13 @@ def get_default_models_dir() -> pathlib.Path:
     return root / "models"
 
 
-def _download_zip_and_extract_keras(drive_id: str, output_path: pathlib.Path) -> None:
-    """Download a zip from Google Drive and extract the single .keras file to output_path.
+def _download_zip_and_extract_checkpoint(
+    drive_id: str, output_path: pathlib.Path
+) -> None:
+    """Download a zip from Google Drive and extract the single .pt checkpoint to output_path.
 
-    The zip is expected to contain exactly one .keras file. If multiple exist, the first
-    is used. Raises RuntimeError if the zip contains no .keras file or download fails.
+    The zip is expected to contain exactly one .pt file. If multiple exist, the first
+    is used. Raises RuntimeError if the zip contains no .pt file or download fails.
     """
     default_dir = output_path.parent
     default_dir.mkdir(parents=True, exist_ok=True)
@@ -69,13 +71,13 @@ def _download_zip_and_extract_keras(drive_id: str, output_path: pathlib.Path) ->
         if not zip_path.is_file():
             raise RuntimeError(f"Download from Drive did not produce file: {zip_path}")
         with zipfile.ZipFile(zip_path, "r") as zf:
-            keras_members = [n for n in zf.namelist() if n.endswith(".keras")]
-            if not keras_members:
+            pt_members = [n for n in zf.namelist() if n.endswith(".pt")]
+            if not pt_members:
                 raise RuntimeError(
-                    f"Zip from Drive contains no .keras file; got: {zf.namelist()!r}"
+                    f"Zip from Drive contains no .pt file; got: {zf.namelist()!r}"
                 )
-            # Extract the first .keras (strip any subdir so we get the file content)
-            member = keras_members[0]
+            # Extract the first .pt (strip any subdir so we get the file content)
+            member = pt_members[0]
             with zf.open(member) as src:
                 output_path.write_bytes(src.read())
     finally:
@@ -102,7 +104,7 @@ def resolve_onset_model_path(provided_path: str | pathlib.Path | None) -> str:
         provided_path: User-supplied path to the onset model, or None to use default/cache.
 
     Returns:
-        Absolute path to the onset model file (.keras).
+        Absolute path to the onset model checkpoint (.pt).
     """
     normalized = _normalize_optional_path(provided_path)
     if normalized:
@@ -123,7 +125,7 @@ def resolve_onset_model_path(provided_path: str | pathlib.Path | None) -> str:
             "Set it in stepcovnet.pretrained or pass --onset_model_path."
         )
 
-    _download_zip_and_extract_keras(drive_id, cached)
+    _download_zip_and_extract_checkpoint(drive_id, cached)
     if not cached.is_file():
         raise RuntimeError(f"Download from Drive did not produce file: {cached}")
     return str(cached)
@@ -141,7 +143,7 @@ def resolve_arrow_model_path(provided_path: str | pathlib.Path | None) -> str:
         provided_path: User-supplied path to the arrow model, or None to use default/cache.
 
     Returns:
-        Absolute path to the arrow model file (.keras).
+        Absolute path to the arrow model checkpoint (.pt).
     """
     normalized = _normalize_optional_path(provided_path)
     if normalized:
@@ -162,7 +164,7 @@ def resolve_arrow_model_path(provided_path: str | pathlib.Path | None) -> str:
             "Set it in stepcovnet.pretrained or pass --arrow_model_path."
         )
 
-    _download_zip_and_extract_keras(drive_id, cached)
+    _download_zip_and_extract_checkpoint(drive_id, cached)
     if not cached.is_file():
         raise RuntimeError(f"Download from Drive did not produce file: {cached}")
     return str(cached)
@@ -172,7 +174,7 @@ def clear_model_cache() -> None:
     """Remove cached onset and arrow model files from the default models directory.
 
     Does nothing if the cache directory or files do not exist. Only deletes the
-    known .keras files, not other contents of the directory.
+    known .pt files, not other contents of the directory.
     """
     default_dir = get_default_models_dir()
     for name in (_ONSET_FILENAME, _ARROW_FILENAME):

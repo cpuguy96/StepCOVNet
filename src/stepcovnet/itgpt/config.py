@@ -189,14 +189,14 @@ class ItgptRunConfig(_DictSerializableMixin):
         weight_decay: AdamW weight decay (ITGPT: 1e-2).
         clipnorm: Global gradient clip (ITGPT: 1.0).
         seed: Reproducibility seed.
-        model_output_dir: Directory for the saved ``.keras`` file.
+        model_output_dir: Directory for the saved ``.pt`` checkpoint.
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
-        resume: If True, ``BackupAndRestore`` continues an interrupted run.
-        mixed_precision: If True, use Keras ``mixed_float16`` (8 GB GPU).
-        jit_compile: If True, XLA-compile ``fit`` (can spike allocator workspace).
+        resume: If True, resume from saved backup checkpoints.
+        mixed_precision: If True, enable AMP mixed precision on CUDA.
+        jit_compile: If True, compile the training model with ``torch.compile``.
         eval_slot_f1_every: Evaluate full-val ``M-slot48`` every N epochs to log
-            ``val_slot_f1_at_05`` and save ``best_slot_f1.keras`` (0 disables).
+            ``val_slot_f1_at_05`` and save ``best_slot_f1.pt`` (0 disables).
         lr_schedule: Optimizer schedule (``constant`` or ``cosine``).
         warmup_epochs: Linear warmup epochs before cosine decay (0 disables warmup).
         min_learning_rate: Floor LR at warmup start and cosine end.
@@ -209,8 +209,7 @@ class ItgptRunConfig(_DictSerializableMixin):
         gradient_accumulation_steps: Number of micro-batches to accumulate
             before applying an optimizer update (``1`` disables accumulation).
         use_ema: If True, enable optimizer exponential moving average (EMA)
-            weight tracking and evaluate/checkpoint with EMA weights via
-            :class:`keras.callbacks.SwapEMAWeights`.
+            weight tracking and evaluate/checkpoint with EMA weights.
         ema_momentum: EMA decay factor in ``(0, 1)`` when ``use_ema`` is True
             (default ``0.99``).
         max_bar_shift: Maximum number of 4-beat bars of masked leading padding

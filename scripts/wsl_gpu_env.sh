@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Export LD_LIBRARY_PATH so TensorFlow can load nvidia-* wheel libraries in WSL.
+# Export LD_LIBRARY_PATH so PyTorch can load nvidia-* wheel libraries in WSL.
 # Source after wsl_ensure_env.sh (venv must exist).
 
 # shellcheck source=scripts/wsl_common.sh

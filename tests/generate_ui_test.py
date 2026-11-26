@@ -66,8 +66,8 @@ class ValidateInputsTest(unittest.TestCase):
             "/path/to/audio.mp3",
             "My Song",
             "120",
-            "/path/to/onset.keras",
-            "/path/to/arrow.keras",
+            "/path/to/onset.pt",
+            "/path/to/arrow.pt",
             "/path/to/output.txt",
         )
 
@@ -79,8 +79,8 @@ class ValidateInputsTest(unittest.TestCase):
         self.assertEqual(audio_path, "/path/to/audio.mp3")
         self.assertEqual(song_title, "My Song")
         self.assertEqual(bpm, 120)
-        self.assertEqual(onset_path, "/path/to/onset.keras")
-        self.assertEqual(arrow_path, "/path/to/arrow.keras")
+        self.assertEqual(onset_path, "/path/to/onset.pt")
+        self.assertEqual(arrow_path, "/path/to/arrow.pt")
         self.assertEqual(output_path, "/path/to/output.txt")
 
     def test_validate_inputs_success_strips_whitespace(self):
@@ -88,8 +88,8 @@ class ValidateInputsTest(unittest.TestCase):
             "  /path/to/audio.mp3  ",
             "  My Song  ",
             "  120  ",
-            "  /path/to/onset.keras  ",
-            "  /path/to/arrow.keras  ",
+            "  /path/to/onset.pt  ",
+            "  /path/to/arrow.pt  ",
             "  /path/to/output.txt  ",
         )
         self.assertTrue(ok)
@@ -710,11 +710,11 @@ class BrowseCallbacksTest(unittest.TestCase):
         with mock.patch.object(
             filedialog,
             "askopenfilename",
-            return_value="/path/to/onset.keras",
+            return_value="/path/to/onset.pt",
             autospec=True,
         ):
             self.app.browse_onset()
-        self.assertEqual(self.app.onset_model_var.get(), "/path/to/onset.keras")
+        self.assertEqual(self.app.onset_model_var.get(), "/path/to/onset.pt")
 
     def test_browse_onset_cancelled_does_nothing(self):
         with mock.patch.object(
@@ -730,11 +730,11 @@ class BrowseCallbacksTest(unittest.TestCase):
         with mock.patch.object(
             filedialog,
             "askopenfilename",
-            return_value="/path/to/arrow.keras",
+            return_value="/path/to/arrow.pt",
             autospec=True,
         ):
             self.app.browse_arrow()
-        self.assertEqual(self.app.arrow_model_var.get(), "/path/to/arrow.keras")
+        self.assertEqual(self.app.arrow_model_var.get(), "/path/to/arrow.pt")
 
     def test_browse_output_sets_path(self):
         with mock.patch.object(
@@ -799,8 +799,8 @@ class RunClickedTest(unittest.TestCase):
         self.app.audio_path_var.set("/a.mp3")
         self.app.song_title_var.set("Song")
         self.app.bpm_var.set("120")
-        self.app.onset_model_var.set("/o.keras")
-        self.app.arrow_model_var.set("/ar.keras")
+        self.app.onset_model_var.set("/o.pt")
+        self.app.arrow_model_var.set("/ar.pt")
         self.app.output_path_var.set("/out.txt")
         after_cbs = []
 

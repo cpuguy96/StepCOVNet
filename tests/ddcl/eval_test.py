@@ -11,7 +11,7 @@ from stepcovnet.ddcl import datasets, evaluation, slots
 
 
 class _StubModel:
-    """Keras-like model that returns a queued slot matrix."""
+    """Stub predictor that returns a queued slot matrix."""
 
     def __init__(self, pred: np.ndarray) -> None:
         self._pred = np.asarray(pred, dtype=np.float32)
@@ -21,7 +21,7 @@ class _StubModel:
 
         Args:
             inputs: Unused.
-            verbose: Unused Keras flag.
+            verbose: Unused verbosity flag.
 
         Returns:
             Slot probabilities.
@@ -60,7 +60,7 @@ class _AudioReadingModel:
 
         Args:
             inputs: Dict with ``audio_fwd`` window ``(batch, memlen+1, 4, 4, 3)``.
-            verbose: Unused Keras flag.
+            verbose: Unused verbosity flag.
 
         Returns:
             Slot probabilities ``(batch, 48)``.
