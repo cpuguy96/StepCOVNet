@@ -6,6 +6,23 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
+### NOTE-20261125-08: `gradient_accumulation_steps = 4` cuts optimizer updates 4× and under-trains recall (**−1.73 pp**)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 18:30:05 |
+| **Topic** | Dataset A knob #3 negative result (`gradient_accumulation_steps = 4`: `0.7664 → 0.7491`) |
+
+**Context.** To test whether reducing `batch_size=1` gradient variance improves on `L2+6+10 + Cosine-64` (`0.7664`), we enabled Keras 3 `gradient_accumulation_steps = 4` at the same `64 ep × 200` micro-batch budget and `lr = 1e-4` (after verifying Keras 3 `CosineDecay` tracks micro-batches).
+
+**Discovery.**
+
+- **Clean under-training signature (`EXP-20261125-08`):** `best_slot_f1` / `last` (ep 64, fp32) reached **0.7491** F1@0.5 (`−1.73 pp`, `P=0.785 R=0.716`), max-F1 **0.7610** @ `0.30`, and ±20 ms `skill_event_f1` **+0.6490**, despite hitting `val_loss 0.04528` and still climbing monotonically through ep 64 (`0.730 → 0.741 → 0.745 → 0.749`). High precision + low recall on `24th` (`P=0.839 R=0.047`), `16th` (`R=0.518`), and `meter 01` (`R=0.291`) confirms `3,200` AdamW updates at `1e-4` is simply too few updates to finish converging.
+
+**Implication.** **Keep `gradient_accumulation_steps = 1`.** Moving immediately to knob #4 (**`AdamW` EMA**), which smooths `batch_size=1` weight noise continuously *without* cutting the number of optimizer updates.
+
+**Related.** [EXP-20261125-08](EXPERIMENT_LOG.md#exp-20261125-08-gradient_accumulation_steps--4-under-trains-at-fixed-64-ep-lr1e-4-budget-07491-vs-07664--rejected) · [EXP-20261125-03](EXPERIMENT_LOG.md#exp-20261125-03-multi-layer-mert-layers-2610-lifts-dataset-a-084-pp-to-07664-f1--07697-max-f1-560-pp-over-log-mel-itgpt)
+
 ### NOTE-20261125-07: Learnable 5-layer MERT mixer reveals `L10 > L6 > L16 > L2 > L0` and pushes `16th` F1 **+4.8 pp** (`0.680`) and `last` **+0.35 pp** (`0.7633`)
 
 | Field | Value |

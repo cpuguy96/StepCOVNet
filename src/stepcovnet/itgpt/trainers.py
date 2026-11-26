@@ -192,16 +192,23 @@ def compile_placement_model(
         The same model, compiled in place.
     """
     learning_rate = build_learning_rate(run_config)
+    grad_accum = (
+        int(run_config.gradient_accumulation_steps)
+        if int(run_config.gradient_accumulation_steps) > 1
+        else None
+    )
     if run_config.weight_decay > 0.0:
         optimizer: keras.optimizers.Optimizer = keras.optimizers.AdamW(
             learning_rate=learning_rate,
             weight_decay=run_config.weight_decay,
             clipnorm=run_config.clipnorm,
+            gradient_accumulation_steps=grad_accum,
         )
     else:
         optimizer = keras.optimizers.Adam(
             learning_rate=learning_rate,
             clipnorm=run_config.clipnorm,
+            gradient_accumulation_steps=grad_accum,
         )
     use_custom_loss = (
         run_config.focal_gamma > 0.0

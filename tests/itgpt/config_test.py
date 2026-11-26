@@ -38,6 +38,7 @@ class ItgptConfigTest(unittest.TestCase):
                 min_learning_rate=1e-6,
                 focal_gamma=1.0,
                 grid_weight_24th=2.0,
+                gradient_accumulation_steps=4,
             ),
         )
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -64,6 +65,8 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertAlmostEqual(loaded.run.min_learning_rate, 1e-6)
         self.assertAlmostEqual(loaded.run.focal_gamma, 1.0)
         self.assertAlmostEqual(loaded.run.grid_weight_24th, 2.0)
+        self.assertEqual(loaded.run.gradient_accumulation_steps, 4)
+        self.assertEqual(config.ItgptRunConfig().gradient_accumulation_steps, 1)
         self.assertFalse(loaded.run.mixed_precision)
         self.assertFalse(loaded.run.jit_compile)
 
@@ -116,6 +119,8 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(focal_gamma=-0.5)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(grid_weight_24th=0.0)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(gradient_accumulation_steps=0)
         with self.assertRaises(ValueError):
             config.ItgptDatasetConfig(
                 training_index_path="x.json", mert_cache_suffix="bad_suffix"

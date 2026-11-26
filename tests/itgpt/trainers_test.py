@@ -381,6 +381,56 @@ class ItgptTrainersTest(unittest.TestCase):
             self.assertAlmostEqual(reloaded.loss.focal_gamma, 1.0)
             self.assertAlmostEqual(reloaded.loss.grid_weight_24th, 2.0)
 
+    def test_train_placement_gradient_accumulation_saves_and_reloads(self):
+        chart = _synthetic_chart()
+        report = mock.Mock()
+        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=4,
+                    validation_steps=1,
+                    learning_rate=1e-4,
+                    min_learning_rate=1e-6,
+                    lr_schedule="cosine",
+                    warmup_epochs=0,
+                    gradient_accumulation_steps=4,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="gradaccum_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+            ):
+                model = trainers.train_placement(experiment)
+            self.assertEqual(model.optimizer.gradient_accumulation_steps, 4)
+            self.assertEqual(int(model.optimizer.iterations), 1)
+            reloaded = trainers.load_placement_model(
+                pathlib.Path(tmpdir) / "models" / "gradaccum_smoke.keras"
+            )
+            self.assertEqual(reloaded.optimizer.gradient_accumulation_steps, 4)
+
 
 if __name__ == "__main__":
     unittest.main()

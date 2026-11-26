@@ -198,6 +198,8 @@ class ItgptRunConfig(_DictSerializableMixin):
             grid-weighted slot BCE (``0.0`` keeps plain weighted BCE).
         grid_weight_24th: Slot loss weight for 24th/triplet grid indices
             ``(8, 16, 32, 40)`` (default ``1.0``).
+        gradient_accumulation_steps: Number of micro-batches to accumulate
+            before applying an optimizer update (``1`` disables accumulation).
     """
 
     epoch: int = 8
@@ -219,14 +221,16 @@ class ItgptRunConfig(_DictSerializableMixin):
     min_learning_rate: float = 0.0
     focal_gamma: float = 0.0
     grid_weight_24th: float = constants.GRID_WEIGHT_24TH
+    gradient_accumulation_steps: int = 1
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
 
         Raises:
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
-                ``eval_slot_f1_every``, LR schedule, ``focal_gamma``, or
-                ``grid_weight_24th`` fields are invalid.
+                ``eval_slot_f1_every``, LR schedule, ``focal_gamma``,
+                ``grid_weight_24th``, or ``gradient_accumulation_steps``
+                fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -270,6 +274,11 @@ class ItgptRunConfig(_DictSerializableMixin):
         if self.grid_weight_24th <= 0.0:
             raise ValueError(
                 f"grid_weight_24th must be positive, got {self.grid_weight_24th}"
+            )
+        if self.gradient_accumulation_steps < 1:
+            raise ValueError(
+                "gradient_accumulation_steps must be at least 1, "
+                f"got {self.gradient_accumulation_steps}"
             )
 
 
