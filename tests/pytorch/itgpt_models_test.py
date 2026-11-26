@@ -156,3 +156,23 @@ class PyTorchItgptModelsTest(unittest.TestCase):
             places=5,
         )
         self.assertGreater(float(focal_fn(logits, targets, mask)), 0.0)
+
+        # Label smoothing shifts confident predictions' loss upward and matches explicit targets.
+        confident_logits = torch.full((1, 8, constants.N_SLOTS), -6.0)
+        confident_logits[0, 0, 0] = 6.0
+        eps = 0.02
+        smooth_fn = models.ItgptPlacementLoss(label_smoothing=eps)
+        smoothed_targets = targets * (1.0 - eps) + 0.5 * eps
+        self.assertAlmostEqual(
+            float(smooth_fn(confident_logits, targets, mask)),
+            float(loss_fn(confident_logits, smoothed_targets, mask)),
+            places=6,
+        )
+        self.assertGreater(
+            float(smooth_fn(confident_logits, targets, mask)),
+            float(loss_fn(confident_logits, targets, mask)),
+        )
+        with self.assertRaises(ValueError):
+            models.ItgptPlacementLoss(label_smoothing=-0.01)
+        with self.assertRaises(ValueError):
+            models.ItgptPlacementLoss(label_smoothing=1.0)

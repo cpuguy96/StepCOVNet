@@ -955,7 +955,7 @@ def build_itgpt_placement_model(
 
 
 class ItgptPlacementLoss(nn.Module):
-    """Masked grid-weighted slot BCE-with-logits with optional focal modulation.
+    """Masked grid-weighted slot BCE-with-logits with optional focal and smoothing.
 
     Matches :class:`stepcovnet.itgpt.trainers.ItgptPlacementLoss` while taking
     raw float32 logits for numerical stability.
@@ -964,21 +964,32 @@ class ItgptPlacementLoss(nn.Module):
         focal_gamma: Non-negative focal exponent ``(1 - p_t)^gamma``
             (``0.0`` disables focal modulation).
         grid_weight_24th: Loss weight for 24th/triplet slots (default ``1.0``).
+        label_smoothing: Binary label smoothing factor in ``[0, 1)`` mapping
+            targets ``y -> y * (1 - eps) + 0.5 * eps`` (default ``0.0``).
         normalize_by_valid_beats: If True, divide masked beat losses by the
             number of real beats (``mask.sum()``). If False, divide by the
             total padded beat count (matching Keras ``sum_over_batch_size``).
+
+    Raises:
+        ValueError: If ``label_smoothing`` is outside ``[0, 1)``.
     """
 
     def __init__(
         self,
         focal_gamma: float = 0.0,
         grid_weight_24th: float = constants.GRID_WEIGHT_24TH,
+        label_smoothing: float = 0.0,
         *,
         normalize_by_valid_beats: bool = False,
     ) -> None:
         super().__init__()
+        if not 0.0 <= float(label_smoothing) < 1.0:
+            raise ValueError(
+                f"label_smoothing must be in [0, 1), got {label_smoothing}"
+            )
         self.focal_gamma = float(focal_gamma)
         self.grid_weight_24th = float(grid_weight_24th)
+        self.label_smoothing = float(label_smoothing)
         self.normalize_by_valid_beats = bool(normalize_by_valid_beats)
         self.register_buffer(
             "grid_weights",
@@ -1004,6 +1015,10 @@ class ItgptPlacementLoss(nn.Module):
         """
         logits_fp32 = logits.float()
         targets_fp32 = targets.float()
+        if self.label_smoothing > 0.0:
+            targets_fp32 = (
+                targets_fp32 * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+            )
         mask_fp32 = beat_mask.float()
         per_slot = nn_func.binary_cross_entropy_with_logits(
             logits_fp32,

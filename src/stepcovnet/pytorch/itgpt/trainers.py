@@ -343,6 +343,7 @@ def train_placement(
     criterion = models.ItgptPlacementLoss(
         focal_gamma=experiment.run.focal_gamma,
         grid_weight_24th=experiment.run.grid_weight_24th,
+        label_smoothing=experiment.run.label_smoothing,
     ).to(target_device)
     optimizer = build_optimizer(raw_model, experiment.run)
     ema = (
