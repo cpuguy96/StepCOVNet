@@ -6,6 +6,29 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-26 — Hybrid spectral-flux & bar-shift augmentation ablations
 
+### NOTE-20261126-02: Random bar-aligned beat-shift (`max_bar_shift = 15`) breaks song-start phrase alignment (**−1.42 pp**, `intro` **−13.7 pp**) — 13-ablation synthesis
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-26 02:35:28 |
+| **Topic** | Dataset A batch 2 #3 negative result (`max_bar_shift = 15`: `0.7680 → 0.7538`) and complete 13-ablation synthesis |
+
+**Context.** As batch 2 #3 on top of `L2+6+10+16 + Cosine-64 + EMA` (`0.7680`), we randomly prepended `0..60` (`4k`) masked leading beats during training to break fixed `level3..5` chunk boundaries and `level6_pos` memorization while preserving 4/4 bar phase.
+
+**Discovery.**
+
+- **Clean train/eval alignment failure (`EXP-20261126-02`):** `best_slot_f1` (ep 40, fp32) dropped **−1.42 pp** to **0.7538** (`last 0.7465`, `−1.85 pp`; `skill +0.6638`, `−1.75 pp`), with **`intro (0–10%)` collapsing −13.7 pp (`0.622 → 0.485`)** because 94% of training steps shifted song intros away from `beat 0` / `level6_pos(0..32)` and misaligned 4/8/16-bar musical phrases across `level3..5` chunks.
+- **Complete 13-ablation scoreboard (strictly one knob at a time):**
+  - **3 PROMOTED wins (all Representation or Optimization):**
+    1. **Multi-layer MERT `layers 2,6,10,16`** (`L2+6+10` `+0.84 pp` over L6, learned softmax ranking `L10 > L6 > L16 > L2 > L0`, then `L2+6+10+16` → **0.7680**, **8,182** errors, **0.7709** `last` max-F1)
+    2. **64-ep Warmup + Cosine LR** (`+1.12 pp` on `300t/50v` → **0.8388**, `+0.61 pp` / `+1.41 pp` `last` on Dataset A)
+    3. **`AdamW` EMA (`0.995`) + `SwapEMAWeights`** (`+0.15 pp` peak / `+0.40 pp` `last` / `+0.34 pp` ±20 ms skill, zero inference/RAM cost)
+  - **10 REJECTED / non-promoted tweaks:** `Focal γ=1.0` (`−0.92 pp`), `Early FiLM` (`−0.92 pp`), `grid_weight_24th=2.0` (`−1.18 pp`), `cyclic_measure_pos` (`−0.52 pp`), `continuous_beat_conv` (`−1.17 pp`), `gradaccum4` (`−1.73 pp`), `mert_spectral_flux` (`−0.78 pp`), `max_bar_shift=15` (`−1.42 pp`), plus 5-layer stacked fp16 mixer (matched peak, 5× RAM — distilled into static 2D `2,6,10,16`).
+
+**Implication.** **Keep `max_bar_shift = 0`.** The pre-scaling recipe is now thoroughly battle-tested: **Pure 2D MERT (`layers 2,6,10,16`) + Vanilla ITGPT + 64-ep Cosine LR + `AdamW` EMA (`0.995`)**. Next high-value step is verifying this stacked recipe on `300t/50v` (against L6 Cosine-64 `0.8388`) and then scaling to full `final_data` (~1,750 train charts / 1,119 songs).
+
+**Related.** [EXP-20261126-02](EXPERIMENT_LOG.md#exp-20261126-02-random-bar-aligned-beat-shift-augmentation-max_bar_shift--15-regresses-l261016--ema-by-142-pp-07538-vs-07680--rejected) · [EXP-20261126-01](EXPERIMENT_LOG.md#exp-20261126-01-hybrid-mert--3-band-spectral-flux-side-channel-regresses-l261016--ema-by-078-pp-07602-vs-07680--rejected) · [EXP-20261125-10](EXPERIMENT_LOG.md#exp-20261125-10-static-2d-mert-layers-261016--cosine-64--ema-sets-new-dataset-a-records-07680-f105--8182-errors--last-07650--07709-max-f1--promoted)
+
 ### NOTE-20261126-01: Appending 100 Hz spectral flux/energy to MERT regresses **−0.78 pp** — pure MERT `2,6,10,16` wins cleanly
 
 | Field | Value |

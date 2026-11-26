@@ -469,6 +469,7 @@ def train_placement(
             train_charts,
             max_beats=experiment.dataset.max_beats,
             seed=experiment.run.seed,
+            max_bar_shift=experiment.run.max_bar_shift,
         ),
         epochs=experiment.run.epoch,
         steps_per_epoch=max(1, experiment.run.steps_per_epoch),

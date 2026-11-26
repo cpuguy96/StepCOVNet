@@ -35,28 +35,36 @@ def pack_chart(
     chart: ddcl_datasets.DdclChart,
     *,
     max_beats: int,
+    lead_pad_beats: int = 0,
 ) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
-    """Pad one chart to a 64-beat multiple.
+    """Pad one chart to a 64-beat multiple, with optional masked leading shift.
 
     Args:
         chart: Loaded DDCL beat-grid chart.
         max_beats: Length cap.
+        lead_pad_beats: Masked zero-padded beats prepended before beat 0
+            (default ``0``). Clamped so real beats are preserved whenever
+            ``chart.n_beats <= max_beats``.
 
     Returns:
         ``(inputs, slots, beat_mask)`` with a leading batch axis of 1.
     """
     n_beats = chart.n_beats
-    padded = pad_length(n_beats, max_beats)
-    usable = min(n_beats, padded)
+    lead = max(0, int(lead_pad_beats))
+    if lead > 0:
+        max_lead = max(0, int(max_beats) - n_beats)
+        lead = min(lead, (max_lead // 4) * 4)
+    padded = pad_length(lead + n_beats, max_beats)
+    usable = min(n_beats, max(0, padded - lead))
     audio = np.zeros(
         (1, padded) + chart.beat_audio.shape[1:],
         dtype=np.float32,
     )
     slots = np.zeros((1, padded, constants.N_SLOTS), dtype=np.float32)
     mask = np.zeros((1, padded), dtype=np.float32)
-    audio[0, :usable] = chart.beat_audio[:usable]
-    slots[0, :usable] = chart.slots[:usable]
-    mask[0, :usable] = 1.0
+    audio[0, lead : lead + usable] = chart.beat_audio[:usable]
+    slots[0, lead : lead + usable] = chart.slots[:usable]
+    mask[0, lead : lead + usable] = 1.0
     bpm = float(np.mean(chart.stream[:usable, 1]))
     difficulty = float(chart.meter)
     inputs = {
@@ -121,6 +129,7 @@ def batch_generator(
     *,
     max_beats: int,
     seed: int,
+    max_bar_shift: int = 0,
 ) -> Iterator[tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]]:
     """Infinite generator of one padded chart per step.
 
@@ -128,15 +137,23 @@ def batch_generator(
         charts: Loaded split.
         max_beats: Pad cap.
         seed: RNG seed.
+        max_bar_shift: Max 4-beat bars of masked leading padding prepended
+            randomly per step (``0`` disables shift augmentation).
 
     Yields:
         tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]: Packed
         Packed ``(inputs, slots, beat_mask)`` for ``model.fit``.
     """
     rng = np.random.default_rng(seed)
+    bar_shift_cap = max(0, int(max_bar_shift))
     while True:
         chart = charts[int(rng.integers(0, len(charts)))]
-        inputs, slots, mask = pack_chart(chart, max_beats=max_beats)
+        lead_pad = (
+            int(rng.integers(0, bar_shift_cap + 1)) * 4 if bar_shift_cap > 0 else 0
+        )
+        inputs, slots, mask = pack_chart(
+            chart, max_beats=max_beats, lead_pad_beats=lead_pad
+        )
         yield inputs, slots, mask
 
 
@@ -145,6 +162,7 @@ def tf_dataset(
     *,
     max_beats: int,
     seed: int,
+    max_bar_shift: int = 0,
 ) -> tf.data.Dataset:
     """Return an infinite ``tf.data.Dataset`` with dynamic beat length.
 
@@ -156,6 +174,8 @@ def tf_dataset(
         charts: Loaded split (non-empty).
         max_beats: Pad cap.
         seed: RNG seed.
+        max_bar_shift: Max 4-beat bars of masked leading shift augmentation
+            (``0`` disables).
 
     Returns:
         ``tf.data.Dataset`` yielding ``(inputs, slots, beat_mask)`` batches.
@@ -176,6 +196,11 @@ def tf_dataset(
         tf.TensorSpec(shape=(1, None), dtype=tf.float32),
     )
     return tf.data.Dataset.from_generator(
-        lambda: batch_generator(charts, max_beats=max_beats, seed=seed),
+        lambda: batch_generator(
+            charts,
+            max_beats=max_beats,
+            seed=seed,
+            max_bar_shift=max_bar_shift,
+        ),
         output_signature=signature,
     )

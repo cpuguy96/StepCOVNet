@@ -209,6 +209,10 @@ class ItgptRunConfig(_DictSerializableMixin):
             :class:`keras.callbacks.SwapEMAWeights`.
         ema_momentum: EMA decay factor in ``(0, 1)`` when ``use_ema`` is True
             (default ``0.99``).
+        max_bar_shift: Maximum number of 4-beat bars of masked leading padding
+            randomly prepended to each training chart (``0`` disables shift
+            augmentation; e.g. ``15`` shifts by ``0..60`` beats across a
+            64-beat ``level5`` chunk).
     """
 
     epoch: int = 8
@@ -233,6 +237,7 @@ class ItgptRunConfig(_DictSerializableMixin):
     gradient_accumulation_steps: int = 1
     use_ema: bool = False
     ema_momentum: float = 0.99
+    max_bar_shift: int = 0
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
@@ -240,8 +245,8 @@ class ItgptRunConfig(_DictSerializableMixin):
         Raises:
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
                 ``eval_slot_f1_every``, LR schedule, ``focal_gamma``,
-                ``grid_weight_24th``, ``gradient_accumulation_steps``, or
-                ``ema_momentum`` fields are invalid.
+                ``grid_weight_24th``, ``gradient_accumulation_steps``,
+                ``ema_momentum``, or ``max_bar_shift`` fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -294,6 +299,10 @@ class ItgptRunConfig(_DictSerializableMixin):
         if not 0.0 < self.ema_momentum < 1.0:
             raise ValueError(
                 f"ema_momentum must be in (0, 1), got {self.ema_momentum}"
+            )
+        if self.max_bar_shift < 0:
+            raise ValueError(
+                f"max_bar_shift must be >= 0, got {self.max_bar_shift}"
             )
 
 
