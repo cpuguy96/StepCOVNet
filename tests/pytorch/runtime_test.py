@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from unittest import mock
 
 import torch
 from torch import nn
@@ -34,6 +35,31 @@ class RuntimeTest(unittest.TestCase):
         self.assertEqual(runtime.resolve_amp_dtype("bf16", cpu), torch.bfloat16)
         with self.assertRaises(ValueError):
             runtime.resolve_amp_dtype("fp8", cpu)
+
+    def test_configure_cuda_performance_tf32(self):
+        self.assertFalse(runtime.configure_cuda_performance(torch.device("cpu")))
+        orig_matmul = torch.backends.cuda.matmul.allow_tf32
+        orig_cudnn = torch.backends.cudnn.allow_tf32
+        try:
+            with (
+                mock.patch("torch.cuda.is_available", return_value=True),
+                mock.patch("torch.cuda.get_device_capability", return_value=(7, 5)),
+            ):
+                self.assertFalse(
+                    runtime.configure_cuda_performance(torch.device("cuda"))
+                )
+            with (
+                mock.patch("torch.cuda.is_available", return_value=True),
+                mock.patch("torch.cuda.get_device_capability", return_value=(8, 9)),
+            ):
+                self.assertTrue(
+                    runtime.configure_cuda_performance(torch.device("cuda"))
+                )
+                self.assertTrue(torch.backends.cuda.matmul.allow_tf32)
+                self.assertTrue(torch.backends.cudnn.allow_tf32)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = orig_matmul
+            torch.backends.cudnn.allow_tf32 = orig_cudnn
 
     def test_model_ema_update_swap_restore_and_state_dict(self):
         model = nn.Linear(4, 2, bias=False)

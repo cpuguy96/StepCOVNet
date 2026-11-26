@@ -299,6 +299,7 @@ def train_placement(
     """
     runtime.set_seed(experiment.run.seed)
     target_device = runtime.resolve_device(device)
+    tf32_enabled = runtime.configure_cuda_performance(target_device)
     effective_precision = (
         precision
         if precision is not None
@@ -311,7 +312,7 @@ def train_placement(
     print(
         f"PyTorch ITGPT training: device={target_device}, "
         f"precision={effective_precision} (amp_dtype={amp_dtype}), "
-        f"use_ema={experiment.run.use_ema}",
+        f"tf32={tf32_enabled}, use_ema={experiment.run.use_ema}",
         flush=True,
     )
 

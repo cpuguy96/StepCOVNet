@@ -174,6 +174,7 @@ def train_dense_onset(
     """
     runtime.set_seed(seed)
     target_device = runtime.resolve_device(device)
+    runtime.configure_cuda_performance(target_device)
     amp_dtype = runtime.resolve_amp_dtype(precision, target_device)
     use_scaler = amp_dtype == torch.float16 and target_device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
@@ -295,6 +296,7 @@ def train_arrow(
     """
     runtime.set_seed(seed)
     target_device = runtime.resolve_device(device)
+    runtime.configure_cuda_performance(target_device)
     amp_dtype = runtime.resolve_amp_dtype(precision, target_device)
     use_scaler = amp_dtype == torch.float16 and target_device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)

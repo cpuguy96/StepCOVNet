@@ -55,10 +55,12 @@ Commands:
       Sync local pyproject.toml, src/, scripts/, configs/ (~4 MB) to Drive
       and update notebooks/colab_runner.ipynb. Does NOT touch GitHub.
 
-  push-data <dataset> [--exclude-mert]
+  push-data <dataset> [--exclude-mert | --meta-only]
       Stream data/<dataset> as a .tar archive directly into Drive
       (e.g. literature_fraxtil_orig, literature_fraxtil_exp, final_data, v2).
       Pass --exclude-mert to skip *.mert*.npy caches (upload those separately with push-data-glob).
+      Pass --meta-only to upload a tiny <dataset>__meta.tar excluding raw audio and *.npy caches
+      (keeps only training_index*.json, *.chart.json, *.sm/*.ssc for MERT runs).
 
   push-data-glob <dataset> <archive_name> <glob>
       Stream only files matching <glob> under data/<dataset> into
@@ -132,9 +134,12 @@ cmd_push_data() {
     exit 1
   fi
   local exclude_mert="0"
+  local meta_only="0"
   for arg in "$@"; do
     if [[ "$arg" == "--exclude-mert" ]]; then
       exclude_mert="1"
+    elif [[ "$arg" == "--meta-only" ]]; then
+      meta_only="1"
     else
       echo "ERROR: unexpected argument '$arg'" >&2
       exit 1
@@ -146,11 +151,22 @@ cmd_push_data() {
     exit 1
   fi
   local tar_args=()
-  if [[ "$exclude_mert" == "1" ]]; then
+  local archive_name="$dataset"
+  if [[ "$meta_only" == "1" ]]; then
+    archive_name="${dataset}__meta"
+    tar_args+=(
+      --exclude='*.ogg'
+      --exclude='*.mp3'
+      --exclude='*.wav'
+      --exclude='*.flac'
+      --exclude='*.ddc_mel.npy'
+      --exclude='*.mert*.npy'
+    )
+  elif [[ "$exclude_mert" == "1" ]]; then
     tar_args+=(--exclude='*.mert*.npy')
   fi
-  local target="${REMOTE_BASE}/data_archives/${dataset}.tar"
-  echo "Streaming tar of data/${dataset} (exclude_mert=${exclude_mert}) -> ${target} ..."
+  local target="${REMOTE_BASE}/data_archives/${archive_name}.tar"
+  echo "Streaming tar of data/${dataset} (exclude_mert=${exclude_mert}, meta_only=${meta_only}) -> ${target} ..."
   tar -cf - -C "$REPO_ROOT/data" "${tar_args[@]}" "$dataset" \
     | "$RCLONE" rcat "$target" --stats=10s --stats-one-line
   echo "Dataset upload complete: ${target}"

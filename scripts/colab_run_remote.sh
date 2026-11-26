@@ -114,7 +114,11 @@ if [[ ! -f "$REPO_ROOT/$CONFIG_PATH" ]]; then
   exit 1
 fi
 
-COLAB_GLOBAL=()
+if [[ -z "${DISPLAY:-}" && -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+  export PYTHON_KEYRING_BACKEND="${PYTHON_KEYRING_BACKEND:-keyrings.alt.file.PlaintextKeyring}"
+fi
+
+COLAB_GLOBAL=(--auth "${COLAB_AUTH:-oauth2}")
 if [[ -n "$COLAB_STATE_CONFIG" ]]; then
   COLAB_GLOBAL+=(--config "$COLAB_STATE_CONFIG")
 fi
@@ -152,16 +156,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 1. Provision (or reuse) Colab GPU session
-if [[ "$REUSE_SESSION" == "0" ]]; then
+# 1. Provision (or auto-reuse) Colab GPU session
+if [[ "$REUSE_SESSION" == "1" ]]; then
+  echo "[colab-remote] Reusing existing session '$SESSION'..."
+elif timeout 30 "$COLAB" "${COLAB_GLOBAL[@]}" status -s "$SESSION" >/dev/null 2>&1; then
+  echo "[colab-remote] Found active session '$SESSION'; auto-reusing it (will still stop on exit unless --keep is passed)..."
+else
   NEW_ARGS=(new -s "$SESSION" --gpu "$GPU")
   if [[ "$HIGH_MEM" == "1" ]]; then
     NEW_ARGS+=(--high-mem)
   fi
   echo "[colab-remote] Provisioning session '$SESSION' (GPU=$GPU)..."
   timeout 120 "$COLAB" "${COLAB_GLOBAL[@]}" "${NEW_ARGS[@]}"
-else
-  echo "[colab-remote] Reusing existing session '$SESSION'..."
 fi
 
 # 2. Bundle & upload local code directly (~1 MB, zero GitHub)

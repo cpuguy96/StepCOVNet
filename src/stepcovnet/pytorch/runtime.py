@@ -85,6 +85,31 @@ def resolve_amp_dtype(
     return None
 
 
+def configure_cuda_performance(
+    device: torch.device,
+    *,
+    allow_tf32: bool = True,
+) -> bool:
+    """Enable TF32 matmul and cuDNN kernels on Ampere+ (SM 8.0+) CUDA GPUs.
+
+    Args:
+        device: Target compute device.
+        allow_tf32: Desired TF32 setting on SM 8.0+ GPUs.
+
+    Returns:
+        ``True`` if running on an SM 8.0+ CUDA GPU and TF32 flags were applied,
+        else ``False``.
+    """
+    if device.type != "cuda" or not torch.cuda.is_available():
+        return False
+    major, _ = torch.cuda.get_device_capability(device)
+    if major < 8:
+        return False
+    torch.backends.cuda.matmul.allow_tf32 = bool(allow_tf32)
+    torch.backends.cudnn.allow_tf32 = bool(allow_tf32)
+    return bool(allow_tf32)
+
+
 @contextlib.contextmanager
 def autocast_context(
     device: torch.device,

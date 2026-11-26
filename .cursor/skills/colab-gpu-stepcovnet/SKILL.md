@@ -24,21 +24,19 @@ Run StepCOVNet training and eval directly on Google Colab GPUs (`T4`, `L4`, `A10
 | `colab` (`google-colab-cli`) | `~/.local/bin/colab` (venv `~/.local/share/colab-cli-venv`, includes `keyrings.alt`) | `~/.local/bin/colab whoami` · `~/.local/bin/colab usage` |
 | `rclone` | `~/.local/bin/rclone` (remote `gdrive:StepCOVNet`) | `bash scripts/colab_sync.sh check` |
 
-### Cloud VM / Fresh Linux Bootstrap (when `~/.local/bin/colab` is missing)
+### Cloud VM / Fresh Linux Bootstrap (when `~/.local/bin/colab` or `rclone` is missing)
 
-Never claim you cannot launch Colab from a fresh cloud VM — `google-colab-cli` has a built-in remote copy-paste OAuth flow that works on headless VMs:
+Never claim you cannot launch Colab from a fresh cloud VM — run the one-command bootstrap script:
 
 ```bash
-mkdir -p ~/.local/bin ~/.local/share
-uv venv ~/.local/share/colab-cli-venv --python 3.13
-uv pip install --python ~/.local/share/colab-cli-venv/bin/python google-colab-cli keyrings.alt
-ln -sf ~/.local/share/colab-cli-venv/bin/colab ~/.local/bin/colab
-# Headless Linux has no D-Bus keyring — use PlaintextKeyring + remote copy-paste OAuth:
-PYTHONUNBUFFERED=1 PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring \
-  ~/.local/bin/colab --auth=oauth2 whoami
+bash scripts/colab_cloud_bootstrap.sh
+# Installs google-colab-cli (Python 3.13) + rclone + ~/.ssh/id_ed25519,
+# auto-pulls MyDrive/StepCOVNet/.secrets/rclone.conf (chmod 600) via gdrive CLI
+# (or installs an uploaded /home/antigravity/upload/rclone.conf / --rclone-token '<JSON>';
+# pass --save-to-drive once to seed MyDrive/StepCOVNet/.secrets/rclone.conf).
 ```
 
-Hand the user the printed `https://accounts.google.com/o/oauth2/auth?...` URL, pipe their pasted authorization code to stdin, then pass `PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring` + `--auth=oauth2` on subsequent `colab` calls (`new -s <name> --gpu L4`, `upload`, `exec`, `download`, `stop`). When `rclone` is absent on a cloud VM, fetch archives from Drive with `gdrive readonly download` and push to the Colab VM with `colab upload`, then archive outputs back with `colab download` + `gdrive mutate upload`.
+If `colab` is not yet signed in, start the remote copy-paste OAuth flow (`PYTHONUNBUFFERED=1 PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring ~/.local/bin/colab --auth=oauth2 whoami`), hand the user the printed URL, and pipe their code to stdin. Once `rclone` is configured, `scripts/colab_run_remote.sh` streams directly from Drive → Colab at ~75–100 MB/s. Without `rclone`, fall back to `gdrive readonly download` + `colab --auth=oauth2 ssh -s <name> -- 'tar -xf - -C /content/StepCOVNet/data' < archive.tar` (never `colab upload` on >100 MB archives).
 
 ## Dataset archives on Google Drive
 
@@ -48,7 +46,9 @@ Store base datasets and MERT feature caches as separate `.tar` archives under `g
 # Check what is already uploaded
 bash scripts/colab_sync.sh status
 
-# Upload base dataset once (excluding *.mert*.npy)
+# Upload base dataset once (use --meta-only for MERT-only runs: <15 MB, skips audio & mel)
+bash scripts/colab_sync.sh push-data literature_fraxtil_orig --meta-only
+# Or full base including audio/mel (for log-mel baselines):
 bash scripts/colab_sync.sh push-data literature_fraxtil_orig --exclude-mert
 
 # Upload a specific MERT feature cache once
@@ -67,7 +67,7 @@ bash scripts/colab_run_remote.sh \
   --run-name itgpt_mert_fraxtil_orig_cosine64_l2_6_10_16_ema \
   --script scripts/train_itgpt_placement.py \
   --config configs/ddc/itgpt_mert_placement_fraxtil_orig_cosine64_l2_6_10_16_ema.json \
-  --datasets literature_fraxtil_orig,literature_fraxtil_orig__mert_l2_6_10_16 \
+  --datasets literature_fraxtil_orig__meta,literature_fraxtil_orig__mert_l2_6_10_16 \
   --eval-cmd "python scripts/eval_itgpt_placement.py --config={CONFIG} --model_path={RUN_DIR}/best.pt --diagnose_grounding --output={RUN_DIR}/eval_val_grounding_best.json"
 ```
 
@@ -76,7 +76,7 @@ Useful flags:
 - `--extra-args "..."` — forwarded verbatim to the training script (e.g. `"--epochs=2 --steps_per_epoch=10"`).
 - `--archive-models <best|all|none>` — archives outputs directly from Colab to `MyDrive/StepCOVNet/runs/<run_name>/` before VM shutdown (default: `best`, saving `best*.pt` + all logs/JSONs; pull any good model down to `experiments/colab/<run_name>/` later via `bash scripts/colab_sync.sh pull-runs <run_name>`).
 - `--download-all` — also download model checkpoints directly to `experiments/colab/<run_name>/` immediately (default downloads only lightweight `*.log`, `*.txt`, `*.json`, `*.csv`, `*.md` locally while keeping checkpoints in Drive).
-- `--keep` / `--reuse-session` — keep a VM alive across back-to-back runs on the same unpacked dataset (remember to run `~/.local/bin/colab stop -s <session>` afterward).
+- `--keep` / `--reuse-session` — keep a VM alive across back-to-back runs on the same unpacked dataset (`colab_run_remote.sh` also auto-reuses an already-active session with the same `--session` name, while still stopping on exit unless `--keep` is passed; always stop manually with `~/.local/bin/colab stop -s <session>` after `--keep` chains).
 
 ## Parallel multi-GPU code chains (Priority: L4 → T4 → Local → A100)
 

@@ -148,6 +148,7 @@ def train_ar_onset(
 
     runtime.set_seed(run_cfg.seed)
     target_device = runtime.resolve_device(device)
+    runtime.configure_cuda_performance(target_device)
     amp_dtype = runtime.resolve_amp_dtype(
         "auto" if run_cfg.mixed_precision and precision == "fp32" else precision,
         target_device,

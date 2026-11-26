@@ -149,6 +149,7 @@ def train_placement(
     """
     runtime.set_seed(experiment.run.seed)
     target_device = runtime.resolve_device(device)
+    runtime.configure_cuda_performance(target_device)
     amp_dtype = runtime.resolve_amp_dtype(precision, target_device)
     use_scaler = target_device.type == "cuda" and amp_dtype == torch.float16
     scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)  # type: ignore[attr-defined]

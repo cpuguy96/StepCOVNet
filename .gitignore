@@ -222,6 +222,7 @@ scripts/*
 !scripts/colab_sync.sh
 !scripts/colab_run_remote.sh
 !scripts/colab_worktree.sh
+!scripts/colab_cloud_bootstrap.sh
 
 # WSL helper tests (portable; module lives in src/stepcovnet/wsl_gpu.py)
 tests/wsl_*
