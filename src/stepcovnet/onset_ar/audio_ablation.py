@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
-import tensorflow as tf
+import torch
 
 from stepcovnet import timing_match
-from stepcovnet.onset_ar import config, inference, pointer_mask, targets, trainers
+from stepcovnet.onset_ar import config, pointer_mask, targets
+from stepcovnet.onset_events import metrics as event_metrics
 
 VARIANTS = ("matched", "cross_song", "reverse", "shuffle", "zeros")
 CORRUPTED_VARIANTS = ("shuffle", "zeros")
@@ -24,7 +26,6 @@ GATE_SAME_PRED_MAX = 0.85
 GATE_TOKEN_ACC_EPS = 0.02
 # Keys-only grounding leaves query cosine ≈ 1.0; require a real drop.
 GATE_QUERY_COSINE_MAX = 0.95
-_QUERY_EXTRACTOR_ATTR = "_ar_onset_pointer_query_extractor"
 
 
 def corrupt_patches(
@@ -62,20 +63,48 @@ def corrupt_patches(
     raise ValueError(msg)
 
 
+def _teacher_forced_prev_patch_numpy(target_patches: np.ndarray) -> np.ndarray:
+    arr = np.asarray(target_patches, dtype=np.int64)
+    out = np.zeros_like(arr)
+    if arr.ndim == 2:
+        out[:, 1:] = arr[:, :-1]
+    else:
+        out[1:] = arr[:-1]
+    return out
+
+
 def model_inputs(
     batch: dict[str, np.ndarray],
     experiment_config: config.ArExperimentConfig,
-) -> dict[str, tf.Tensor]:
-    keys = ["mert_patches", "patch_mask", "decoder_input_ids", "decoder_mask"]
+    *,
+    device: torch.device | None = None,
+) -> dict[str, torch.Tensor]:
+    target_device = device or torch.device("cpu")
+    inputs: dict[str, torch.Tensor] = {
+        "mert_patches": torch.from_numpy(
+            np.asarray(batch["mert_patches"], dtype=np.float32)
+        ).to(target_device),
+        "patch_mask": torch.from_numpy(
+            np.asarray(batch["patch_mask"], dtype=np.float32)
+        ).to(target_device),
+        "decoder_input_ids": torch.from_numpy(
+            np.asarray(batch["decoder_input_ids"], dtype=np.int64)
+        ).to(target_device),
+        "decoder_mask": torch.from_numpy(
+            np.asarray(batch["decoder_mask"], dtype=np.float32)
+        ).to(target_device),
+    }
     if config.density_conditioning_active(experiment_config.model):
-        keys.append("density_scalar")
-    inputs = {key: tf.constant(batch[key]) for key in keys}
+        inputs["density_scalar"] = torch.from_numpy(
+            np.asarray(batch["density_scalar"], dtype=np.float32)
+        ).to(target_device)
     if config.prev_patch_input_active(experiment_config.model):
-        inputs["prev_patch_indices"] = tf.constant(
-            pointer_mask.teacher_forced_prev_patch_indices_numpy(
-                batch["target_patch_indices"],
-            ),
+        prev_t = pointer_mask.teacher_forced_prev_patch_indices(
+            torch.from_numpy(
+                np.asarray(batch["target_patch_indices"], dtype=np.int64)
+            ).to(target_device)
         )
+        inputs["prev_patch_indices"] = prev_t
     return inputs
 
 
@@ -106,28 +135,6 @@ def f1_from_counts(tp: int, fp: int, fn: int) -> float:
     return float(2.0 * precision * recall / (precision + recall + 1e-9))
 
 
-def _pointer_query_numpy(
-    model: tf.keras.Model,
-    batch: dict[str, np.ndarray],
-    experiment_config: config.ArExperimentConfig,
-) -> np.ndarray | None:
-    """Return ``pointer_query`` activations when the layer exists."""
-    try:
-        model.get_layer("pointer_query")
-    except ValueError:
-        return None
-    extractor = getattr(model, _QUERY_EXTRACTOR_ATTR, None)
-    if extractor is None:
-        extractor = tf.keras.Model(
-            inputs=model.input,
-            outputs=model.get_layer("pointer_query").output,
-            name="pointer_query_extractor",
-        )
-        setattr(model, _QUERY_EXTRACTOR_ATTR, extractor)
-    query = extractor(model_inputs(batch, experiment_config), training=False)
-    return np.asarray(query.numpy()[0], dtype=np.float32)
-
-
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     a = a.reshape(-1).astype(np.float64)
     b = b.reshape(-1).astype(np.float64)
@@ -135,17 +142,27 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / denom)
 
 
+@torch.no_grad()
 def score_batch(
-    model: tf.keras.Model,
+    model: Any,
     batch: dict[str, np.ndarray],
     *,
     experiment_config: config.ArExperimentConfig,
 ) -> dict[str, object]:
     """Teacher-forced alignment + token metrics for one corrupted batch."""
-    outputs = model(model_inputs(batch, experiment_config), training=False)
-    token_logits = outputs["token_logits"].numpy()[0]
-    residual_sec = outputs["residual_sec"].numpy()[0]
-    query = _pointer_query_numpy(model, batch, experiment_config)
+    param = (
+        next(model.parameters(), None) if isinstance(model, torch.nn.Module) else None
+    )
+    device = param.device if param is not None else torch.device("cpu")
+    if isinstance(model, torch.nn.Module):
+        model.eval()
+    t_inputs = model_inputs(batch, experiment_config, device=device)
+    outputs = model(**t_inputs)
+    token_logits = outputs["token_logits"][0].detach().cpu().numpy()
+    residual_sec = outputs["residual_sec"][0].detach().cpu().numpy().reshape(-1)
+    query: np.ndarray | None = None
+    if "pointer_query" in outputs and outputs["pointer_query"] is not None:
+        query = outputs["pointer_query"][0].detach().cpu().numpy()
 
     onset_step_mask = batch["onset_step_mask"][0]
     step_indices = np.flatnonzero(onset_step_mask > 0.5)
@@ -157,66 +174,39 @@ def score_batch(
     gap_alignment = config.gap_alignment_active(experiment_config.model)
     n_valid_patches = int(batch["patch_mask"][0].sum())
     max_patch = max(n_valid_patches - 1, 0)
+    patch_sec = float(
+        experiment_config.model.patch_frames * experiment_config.dataset.hop_sec
+    )
 
     soft_alpha = config.pointer_soft_distance_alpha(experiment_config.run)
     if gap_alignment:
-        gap_logits = outputs["gap_logits"].numpy()[0]
+        gap_logits = outputs["gap_logits"][0].detach().cpu().numpy()
         gap_vocab = experiment_config.build_gap_vocab()
-        pred_times = inference.decode_teacher_fed_gap_times_numpy(
-            gap_logits,
-            residual_sec,
-            onset_step_mask,
-            batch["target_patch_indices"][0],
-            gap_vocab=gap_vocab,
-            patch_frames=experiment_config.model.patch_frames,
-            hop_sec=experiment_config.dataset.hop_sec,
-            max_patch=max_patch,
-            soft_distance_alpha=soft_alpha,
-        )
-        prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
-            batch["target_patch_indices"][0],
-        )
+        prev = _teacher_forced_prev_patch_numpy(batch["target_patch_indices"][0])
         delta_lookup = targets.gap_delta_lookup_table(gap_vocab)
-        pred_patches_list: list[int] = []
         logits_for_nll = gap_logits.astype(np.float32).copy()
-        for i in range(logits_for_nll.shape[0]):
-            if soft_alpha > 0.0:
-                logits_for_nll[i] = pointer_mask.apply_gap_soft_distance_prior_numpy(
-                    logits_for_nll[i],
-                    int(prev[i]),
-                    alpha=soft_alpha,
-                    delta_lookup=delta_lookup,
+        if soft_alpha > 0.0:
+            for i in range(logits_for_nll.shape[0]):
+                logits_for_nll[i] -= soft_alpha * np.abs(delta_lookup).astype(
+                    np.float32
                 )
+        pred_patches_list: list[int] = []
         for i in step_indices:
             gap_id = int(np.argmax(logits_for_nll[i]))
             delta = gap_vocab.decode_delta(gap_id)
-            pred_patches_list.append(
-                min(max(int(prev[i]) + delta, 0), max_patch),
-            )
+            pred_patches_list.append(min(max(int(prev[i]) + delta, 0), max_patch))
         pred_patches = np.asarray(pred_patches_list, dtype=np.int32)
-        target_gap_ids = batch["target_gap_ids"][0][step_indices]
-        nll_targets = target_gap_ids
+        pred_times = (
+            pred_patches.astype(np.float64) * patch_sec + residual_sec[step_indices]
+        ).astype(np.float32)
+        nll_targets = batch["target_gap_ids"][0][step_indices]
         uniform_classes = gap_vocab.vocab_size
     else:
-        pointer_logits = outputs["pointer_logits"].numpy()[0]
+        pointer_logits = outputs["pointer_logits"][0].detach().cpu().numpy()
         monotonic = bool(experiment_config.model.monotonic_pointer)
         max_ahead = config.pointer_decode_max_ahead(experiment_config.run)
-        pred_times = inference.decode_teacher_fed_times_numpy(
-            pointer_logits,
-            residual_sec,
-            onset_step_mask,
-            patch_frames=experiment_config.model.patch_frames,
-            hop_sec=experiment_config.dataset.hop_sec,
-            target_patch_indices=batch["target_patch_indices"][0],
-            monotonic=monotonic,
-            max_ahead=max_ahead,
-            soft_distance_alpha=soft_alpha,
-        )
         if monotonic:
-            prev = pointer_mask.teacher_forced_prev_patch_indices_numpy(
-                batch["target_patch_indices"][0],
-            )
-            # Per-step mono (+ soft prior / optional prev+R) so NLL matches train CE.
+            prev = _teacher_forced_prev_patch_numpy(batch["target_patch_indices"][0])
             logits_for_nll = pointer_logits.astype(np.float32).copy()
             n_patches = logits_for_nll.shape[-1]
             for i in range(logits_for_nll.shape[0]):
@@ -230,33 +220,27 @@ def score_batch(
                     hi = p + max_ahead
                     if hi + 1 < n_patches:
                         logits_for_nll[i, hi + 1 :] = -1e9
-            pred_patches = np.asarray(
-                [
-                    inference._argmax_pointer_patch(  # noqa: SLF001
-                        pointer_logits[i],
-                        prev_patch=int(prev[i]),
-                        monotonic=True,
-                        max_ahead=max_ahead,
-                        soft_distance_alpha=soft_alpha,
-                    )
-                    for i in step_indices
-                ],
-                dtype=np.int32,
+            pred_patches = np.argmax(logits_for_nll, axis=-1)[step_indices].astype(
+                np.int32
             )
         else:
             logits_for_nll = pointer_logits
             pred_patches = np.argmax(pointer_logits, axis=-1)[step_indices]
+        pred_times = (
+            pred_patches.astype(np.float64) * patch_sec + residual_sec[step_indices]
+        ).astype(np.float32)
         nll_targets = target_patches
         uniform_classes = max(n_valid_patches, 1)
 
     tolerance_sec = experiment_config.run.tolerance_sec
 
-    tp, fp, fn = trainers._ar_event_onset_counts_numpy(  # noqa: SLF001
+    tp, fp, fn = event_metrics.count_event_onset_errors_numpy(
         pred_times,
         np.ones(pred_times.shape, dtype=np.float32),
         gt_times,
         np.ones(gt_times.shape, dtype=np.float32),
         tolerance_sec=tolerance_sec,
+        confidence_threshold=0.5,
     )
     report = timing_match.timing_match_report(
         pred_times,

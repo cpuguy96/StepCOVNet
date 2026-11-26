@@ -1,9 +1,9 @@
-# Complete PyTorch Port (`stepcovnet.pytorch`)
+# PyTorch Backend (`stepcovnet.pytorch`)
 
-Isolated, **zero-TensorFlow / zero-Keras** PyTorch port of every StepCOVNet model track, designed so TensorFlow can be cleanly swapped to PyTorch without breaking existing configs or NumPy data/eval stacks.
+Zero-TensorFlow / zero-Keras PyTorch implementation powering every StepCOVNet model track (`itgpt`, `ddc`, `ddcl`, `onset_ar`, and `core` dense onset / arrow models).
 
-- **Zero TensorFlow/Keras imports** — every package passes clean-subprocess import checks without `tensorflow` or `keras` installed (supports native Windows/Linux CUDA, MPS, and CPU).
-- **Zero edits to existing tracked TF/Keras code** — shares StepCOVNet's pure-NumPy configs (`configs/`), data prep, beat-grid slots, and onset timing/F1 metrics.
+- **Sole deep learning backend** — all canonical packages (`stepcovnet.{models,losses,metrics,datasets,generator,trainers}`, `stepcovnet.{itgpt,ddc,ddcl,onset_ar}`) and `scripts/` run on PyTorch with zero `tensorflow` or `keras` imports (enforced by `tests/no_tensorflow_guard_test.py`).
+- **Native cross-platform acceleration** — supports CUDA, Apple MPS, and CPU out of the box without TensorFlow's WSL2-only CUDA limitation.
 - **Built-in performance wins:** PyTorch SDPA (FlashAttention-2 / cuDNN SDPA), architecture-aware `bf16` (SM 8.0+) / `fp16` (SM 7.x) autocast + GradScaler, optional `torch.compile(dynamic=True)`, `ModelEMA`, true $O(L)$ per-layer KV caching for AR onset decoding, and ONNX export helpers.
 
 ## Ported packages

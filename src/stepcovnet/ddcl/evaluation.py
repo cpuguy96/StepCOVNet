@@ -10,6 +10,8 @@ import dataclasses
 import typing
 
 import numpy as np
+import torch
+from torch import nn
 
 from stepcovnet import onset_null_baseline, timing_match
 from stepcovnet.ddc import peak_pick
@@ -28,19 +30,22 @@ DIAGNOSTIC_CONDITIONS = (
 )
 
 
-class SlotPredictor(typing.Protocol):
-    """Minimal predict interface used by ``M-slot48`` eval."""
+class _PredictProtocol(typing.Protocol):
+    """Minimal duck-typed predict interface used by test stubs."""
 
     def predict(self, inputs: object, verbose: int = 0) -> object:
         """Return slot probabilities.
 
         Args:
-            inputs: Keras input dict.
-            verbose: Keras verbosity.
+            inputs: Model input dict.
+            verbose: Unused verbosity flag.
 
         Returns:
             Array-like slot scores.
         """
+
+
+SlotPredictor = nn.Module | _PredictProtocol
 
 
 @dataclasses.dataclass(frozen=True)
@@ -337,19 +342,40 @@ def predict_chart_slots(model: SlotPredictor, chart: datasets.DdclChart) -> np.n
     """Return slot probabilities for one chart.
 
     Args:
-        model: Trained placement model.
+        model: Trained PyTorch placement model or duck-typed predictor stub.
         chart: Loaded chart.
 
     Returns:
         Probabilities ``(n_beats, 48)``.
     """
     parts: list[np.ndarray] = []
-    for beat_idxs in datasets.iter_window_batches(chart):
-        inputs = datasets.windows_for_indices(chart, beat_idxs)
-        pred = np.asarray(model.predict(inputs, verbose=0), dtype=np.float32)
-        if pred.ndim == 1:
-            pred = pred.reshape(1, -1)
-        parts.append(pred)
+    if isinstance(model, nn.Module):
+        first_param = next(model.parameters(), None)
+        device = first_param.device if first_param is not None else torch.device("cpu")
+        was_training = model.training
+        model.eval()
+        try:
+            with torch.no_grad():
+                for beat_idxs in datasets.iter_window_batches(chart):
+                    inputs_np = datasets.windows_for_indices(chart, beat_idxs)
+                    inputs_t = {
+                        k: torch.as_tensor(v, dtype=torch.float32, device=device)
+                        for k, v in inputs_np.items()
+                    }
+                    pred = model(inputs_t).detach().float().cpu().numpy()
+                    if pred.ndim == 1:
+                        pred = pred.reshape(1, -1)
+                    parts.append(pred)
+        finally:
+            if was_training:
+                model.train()
+    else:
+        for beat_idxs in datasets.iter_window_batches(chart):
+            inputs = datasets.windows_for_indices(chart, beat_idxs)
+            pred = np.asarray(model.predict(inputs, verbose=0), dtype=np.float32)
+            if pred.ndim == 1:
+                pred = pred.reshape(1, -1)
+            parts.append(pred)
     return np.concatenate(parts, axis=0)
 
 

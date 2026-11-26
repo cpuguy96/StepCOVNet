@@ -112,6 +112,7 @@ class ArModelConfig(_DictSerializableMixin):
     pointer_qk_layernorm: bool = True
     density_meter_max: int = 32
     density_onset_hz_norm: float = 15.0
+    mert_hidden_size: int = constants.MERT_HIDDEN_SIZE
 
 
 @dataclasses.dataclass
@@ -257,8 +258,8 @@ class ArExperimentConfig:
         return (max_frames + patch_frames - 1) // patch_frames
 
     def patch_input_dim(self) -> int:
-        """Flattened MERT patch feature width ``P * 1024``."""
-        return int(self.model.patch_frames) * constants.MERT_HIDDEN_SIZE
+        """Flattened MERT patch feature width ``P * mert_hidden_size``."""
+        return int(self.model.patch_frames) * int(self.model.mert_hidden_size)
 
     def max_decoder_len(self) -> int:
         """Padded decoder sequence length including ``<EOS>``."""

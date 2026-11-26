@@ -327,6 +327,7 @@ def evaluate_ar_samples(
     *,
     tolerance_sec: float | None = None,
     max_decoder_len: int | None = None,
+    length_control: ArLengthControl | None = None,
     device: torch.device | None = None,
 ) -> ArEvalReport:
     """Evaluate free-run KV-cached AR decode on a list of samples.
@@ -336,6 +337,7 @@ def evaluate_ar_samples(
         samples: Evaluation samples.
         tolerance_sec: Onset matching tolerance in seconds.
         max_decoder_len: Optional decode step cap.
+        length_control: Optional ``<EOS>`` length constraints.
         device: Optional compute device.
 
     Returns:
@@ -356,6 +358,7 @@ def evaluate_ar_samples(
             sample.mert_patches,
             patch_mask,
             max_decoder_len=max_decoder_len,
+            length_control=length_control,
             density_scalar=sample.density_scalar,
             device=device,
         )
