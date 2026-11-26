@@ -9,13 +9,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wsl_common.sh"
 echo "=== uv python list ==="
 uv python list | tail -25
 
-echo "=== installing standalone CPython 3.12 ==="
-uv python install 3.12
+echo "=== installing standalone CPython 3.13 ==="
+uv python install 3.13
 
-PY312="$(uv python find 3.12)"
-echo "Found Python: $PY312"
-"$PY312" -c "import zlib, sys; print('zlib ok', sys.executable)"
+PY313="$(uv python find 3.13)"
+echo "Found Python: $PY313"
+"$PY313" -c "import zlib, sys; print('zlib ok', sys.executable)"
 
 rm -rf "$WSL_VENV"
-uv venv "$WSL_VENV" --python "$PY312"
+uv venv "$WSL_VENV" --python "$PY313"
 "$STEPCOVNET_WSL_PYTHON" -c "import zlib; print('venv zlib ok')"

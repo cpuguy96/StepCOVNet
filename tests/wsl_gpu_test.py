@@ -19,7 +19,7 @@ class WslGpuTest(unittest.TestCase):
             lib_dir = (
                 pathlib.Path(tmpdir)
                 / "lib"
-                / "python3.12"
+                / "python3.13"
                 / "site-packages"
                 / "nvidia"
                 / "cudnn"

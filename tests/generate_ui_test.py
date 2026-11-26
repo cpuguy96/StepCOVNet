@@ -952,6 +952,7 @@ class CacheButtonsTest(unittest.TestCase):
             ),
         ):
             self.app.refresh_cache_clicked()
+            self.app.result_queue.get(timeout=5)
         self.assertEqual(self.app.refresh_cache_btn["state"], tk.DISABLED)
         self.assertEqual(self.app.clear_cache_btn["state"], tk.DISABLED)
         self.assertEqual(self.app.status_var.get(), "Refreshing model cache…")
@@ -975,6 +976,7 @@ class CacheButtonsTest(unittest.TestCase):
             ),
         ):
             self.app.clear_cache_clicked()
+            self.app.result_queue.get(timeout=5)
         self.assertEqual(self.app.refresh_cache_btn["state"], tk.DISABLED)
         self.assertEqual(self.app.clear_cache_btn["state"], tk.DISABLED)
         self.assertEqual(self.app.status_var.get(), "Clearing cache…")
