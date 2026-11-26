@@ -638,16 +638,20 @@ def _apply_spec_augment(
     n_freq_bins, time_steps = spec.shape
 
     # Apply frequency masking
-    for _ in range(num_freq_masks):
-        f = np.random.randint(0, max_freq_mask)
-        f0 = np.random.randint(0, n_freq_bins - f)
-        spec_augmented[f0 : f0 + f, :] = 0
+    freq_cap = min(max_freq_mask, n_freq_bins)
+    if freq_cap > 0:
+        for _ in range(num_freq_masks):
+            f = np.random.randint(0, freq_cap)
+            f0 = np.random.randint(0, max(1, n_freq_bins - f))
+            spec_augmented[f0 : f0 + f, :] = 0
 
     # Apply time masking
-    for _ in range(num_time_masks):
-        t = np.random.randint(0, max_time_mask)
-        t0 = np.random.randint(0, time_steps - t)
-        spec_augmented[:, t0 : t0 + t] = 0
+    time_cap = min(max_time_mask, time_steps)
+    if time_cap > 0:
+        for _ in range(num_time_masks):
+            t = np.random.randint(0, time_cap)
+            t0 = np.random.randint(0, max(1, time_steps - t))
+            spec_augmented[:, t0 : t0 + t] = 0
 
     return spec_augmented
 

@@ -188,6 +188,14 @@ class PyTorchDataLoadersTest(unittest.TestCase):
             )
             self.assertEqual(tuple(r_cols.shape), (2, 4))
 
+    def test_spec_augment_handles_short_spectrograms(self):
+        short_spec = np.ones((8, 12), dtype=np.float32)
+        for _ in range(50):
+            aug = datasets._apply_spec_augment(
+                short_spec, max_freq_mask=32, max_time_mask=50
+            )
+            self.assertEqual(aug.shape, short_spec.shape)
+
 
 if __name__ == "__main__":
     unittest.main()
