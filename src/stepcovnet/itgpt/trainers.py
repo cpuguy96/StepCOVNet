@@ -203,12 +203,16 @@ def compile_placement_model(
             weight_decay=run_config.weight_decay,
             clipnorm=run_config.clipnorm,
             gradient_accumulation_steps=grad_accum,
+            use_ema=run_config.use_ema,
+            ema_momentum=run_config.ema_momentum,
         )
     else:
         optimizer = keras.optimizers.Adam(
             learning_rate=learning_rate,
             clipnorm=run_config.clipnorm,
             gradient_accumulation_steps=grad_accum,
+            use_ema=run_config.use_ema,
+            ema_momentum=run_config.ema_momentum,
         )
     use_custom_loss = (
         run_config.focal_gamma > 0.0
@@ -415,19 +419,25 @@ def train_placement(
             double_checkpoint=True,
             delete_checkpoint=True,
         ),
-        keras.callbacks.ModelCheckpoint(
-            filepath=str(last_path),
-            save_best_only=False,
-            verbose=0,
-        ),
-        keras.callbacks.ModelCheckpoint(
-            filepath=str(best_path),
-            monitor="val_loss",
-            mode="min",
-            save_best_only=True,
-            verbose=1,
-        ),
     ]
+    if experiment.run.use_ema:
+        callbacks.append(keras.callbacks.SwapEMAWeights(swap_on_epoch=True))
+    callbacks.extend(
+        [
+            keras.callbacks.ModelCheckpoint(
+                filepath=str(last_path),
+                save_best_only=False,
+                verbose=0,
+            ),
+            keras.callbacks.ModelCheckpoint(
+                filepath=str(best_path),
+                monitor="val_loss",
+                mode="min",
+                save_best_only=True,
+                verbose=1,
+            ),
+        ]
+    )
     if experiment.run.eval_slot_f1_every > 0:
         callbacks.append(
             ItgptValSlot48CheckpointCallback(

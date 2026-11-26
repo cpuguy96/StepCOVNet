@@ -431,6 +431,61 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             self.assertEqual(reloaded.optimizer.gradient_accumulation_steps, 4)
 
+    def test_train_placement_ema_swaps_and_reloads(self):
+        chart = _synthetic_chart()
+        report = mock.Mock()
+        report.f1_at_05 = 0.5
+        report.f1_max = 0.55
+        report.best_threshold = 0.45
+        report.as_dict.return_value = {"f1_at_05": 0.5, "f1_max": 0.55}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=2,
+                    steps_per_epoch=2,
+                    validation_steps=1,
+                    learning_rate=1e-4,
+                    min_learning_rate=1e-6,
+                    lr_schedule="cosine",
+                    warmup_epochs=0,
+                    use_ema=True,
+                    ema_momentum=0.995,
+                    eval_slot_f1_every=1,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="ema_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+            ):
+                model = trainers.train_placement(experiment)
+            self.assertTrue(model.optimizer.use_ema)
+            self.assertAlmostEqual(float(model.optimizer.ema_momentum), 0.995)
+            reloaded = trainers.load_placement_model(
+                pathlib.Path(tmpdir) / "models" / "best_slot_f1.keras"
+            )
+            self.assertTrue(reloaded.optimizer.use_ema)
+
 
 if __name__ == "__main__":
     unittest.main()

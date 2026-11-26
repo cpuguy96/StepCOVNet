@@ -6,6 +6,28 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
+### NOTE-20261125-09: `AdamW` EMA (`0.995`) sets new Dataset A single-checkpoint record (**0.7679** F1 / **+0.6871** ±20 ms skill / `last` **0.7638**) — promoted
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 20:19:51 |
+| **Topic** | Dataset A knob #4 win (`use_ema = true`, `ema_momentum = 0.995`) and synthesis of the 4-run Dataset A follow-up batch |
+
+**Context.** Motivated by our free checkpoint-soup finding (`best` ep 38 + `best_slot_f1` ep 40 → `0.7700` by canceling 3.4 pp P/R oscillation), we added built-in Keras 3 `AdamW` EMA (`ema_momentum = 0.995`, ~1 epoch averaging window) + `SwapEMAWeights(swap_on_epoch=True)` so validation and checkpointing evaluate/save EMA weights while training keeps all `12,800` `batch_size=1` updates.
+
+**Discovery.**
+
+- **New all-time Dataset A single-checkpoint champion (`EXP-20261125-09`):** `best_slot_f1` (ep 40, fp32) reached **0.7679** F1@0.5 (`+0.15 pp` vs `L2+6+10` `best` `0.7664`, `+0.34 pp` vs `best_slot_f1` `0.7645`), **+0.6871** ±20 ms `skill_event_f1` (`+0.34 pp`), `last` **0.7638** (`+0.40 pp`, staying `>=0.7636` from ep 40–64), and strong grounding (`shuffle −0.1419`, `zeros −0.1500`). Lifted `intro` `+3.6 pp` (`0.663`), `8th` `+2.2 pp` (`0.762`), `fraxtil_s_arrow_arrangements` **0.8413**, and `tsunamix_iii` **0.7166** (zero extra inference cost/RAM).
+- **4-run Dataset A batch summary (on top of `L2+6+10 + Cosine-64` `0.7664`):**
+  1. `continuous_beat_conv = true` (`EXP-20261125-06`): **0.7547** (`−1.17 pp`) — **REJECT** (per-beat zero-padding anchors downbeat phase).
+  2. Learnable 5-layer MERT mixer `(0,2,6,10,16)` (`EXP-20261125-07`): **0.7661** / `skill +0.6847` / `last 0.7633` / `16th 0.680` (`+4.8 pp`) / `shuffle −0.1457` — **INSIGHT** (`L10 > L6 > L16 > L2 > L0`, validating static multi-layer MERT centered on `L6–L16` + `L2`).
+  3. `gradient_accumulation_steps = 4` (`EXP-20261125-08`): **0.7491** (`−1.73 pp`) — **REJECT** (4× fewer updates under-trained recall at `lr=1e-4`).
+  4. `AdamW` EMA `0.995` (`EXP-20261125-09`): **0.7679** / `skill +0.6871` / `last 0.7638` — **PROMOTED**.
+
+**Implication.** Our **three promoted single-knob wins** all lie squarely on **Audio Representation + Optimization**: (1) **Multi-layer MERT** (`2,6,10` or `2,6,10,16`), (2) **Cosine-64 LR**, and (3) **`AdamW` EMA (`0.995`)** (plus free nearby-checkpoint weight souping at inference).
+
+**Related.** [EXP-20261125-09](EXPERIMENT_LOG.md#exp-20261125-09-adamw-ema-ema_momentum--0995--swapemaweights-sets-new-dataset-a-single-checkpoint-record-07679-f105--06871-20-ms-skill-last-07638--promoted) · [EXP-20261125-07](EXPERIMENT_LOG.md#exp-20261125-07-learnable-5-layer-mert-mixer-0261016-sets-new-dataset-a-skill16thlastshuffle-records-and-reveals-optimal-layer-ranking-l10--l6--l16--l2--l0) · [EXP-20261125-03](EXPERIMENT_LOG.md#exp-20261125-03-multi-layer-mert-layers-2610-lifts-dataset-a-084-pp-to-07664-f1--07697-max-f1-560-pp-over-log-mel-itgpt)
+
 ### NOTE-20261125-08: `gradient_accumulation_steps = 4` cuts optimizer updates 4× and under-trains recall (**−1.73 pp**)
 
 | Field | Value |
