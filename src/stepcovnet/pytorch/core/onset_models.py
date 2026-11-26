@@ -11,7 +11,7 @@ from torch.nn import functional as nn_func
 from stepcovnet import config, constants
 
 
-def _init_keras_style(module: nn.Module) -> None:
+def _init_xavier_uniform(module: nn.Module) -> None:
     """Initialize linear/conv layers with Xavier uniform weights and zero bias.
 
     Args:
@@ -24,7 +24,7 @@ def _init_keras_style(module: nn.Module) -> None:
 
 
 class CausalConv1d(nn.Module):
-    """1D convolution with left-only causal padding matching Keras ``padding='causal'``.
+    """1D convolution with left-only causal padding.
 
     Args:
         in_channels: Input channel width.
@@ -50,7 +50,7 @@ class CausalConv1d(nn.Module):
             dilation=int(dilation),
             padding=0,
         )
-        _init_keras_style(self.conv)
+        _init_xavier_uniform(self.conv)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply causal 1D convolution to ``(B, C, T)``.
@@ -94,8 +94,8 @@ class WaveNetResidualBlock(nn.Module):
         self.res_conv = nn.Conv1d(residual_channels, residual_channels, kernel_size=1)
         self.skip_conv = nn.Conv1d(residual_channels, skip_channels, kernel_size=1)
         self.ln = nn.LayerNorm(residual_channels, eps=1e-3)
-        _init_keras_style(self.res_conv)
-        _init_keras_style(self.skip_conv)
+        _init_xavier_uniform(self.res_conv)
+        _init_xavier_uniform(self.skip_conv)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply gated dilated conv, residual connection, and LayerNorm.
@@ -117,7 +117,7 @@ class WaveNetResidualBlock(nn.Module):
 
 
 class DenseOnsetOutputHead(nn.Module):
-    """Shared per-frame onset logit/probability head matching Keras dense models.
+    """Shared per-frame onset logit/probability head for dense onset models.
 
     Args:
         in_channels: Input feature width.
@@ -129,8 +129,8 @@ class DenseOnsetOutputHead(nn.Module):
         self.drop = nn.Dropout(dropout_rate)
         self.proj1 = nn.Linear(in_channels, 16)
         self.proj2 = nn.Linear(16, 1)
-        _init_keras_style(self.proj1)
-        _init_keras_style(self.proj2)
+        _init_xavier_uniform(self.proj1)
+        _init_xavier_uniform(self.proj2)
 
     def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
         """Return float32 per-frame logits ``(B, T, 1)``.
@@ -185,7 +185,7 @@ class _CoreTransformerBlock(nn.Module):
             self.ffn1,
             self.ffn2,
         ):
-            _init_keras_style(lin)
+            _init_xavier_uniform(lin)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply self-attention + ReLU FFN with residual LayerNorm.
@@ -244,7 +244,7 @@ class _UNetWaveNetStack(nn.Module):
             cur_f = initial_filters * (2**i)
             next_f = initial_filters * (2 ** (i + 1))
             proj = nn.Linear(in_ch, cur_f)
-            _init_keras_style(proj)
+            _init_xavier_uniform(proj)
             self.enc_projs.append(proj)
             self.enc_blocks.append(
                 nn.ModuleList(
@@ -255,13 +255,13 @@ class _UNetWaveNetStack(nn.Module):
                 )
             )
             down = nn.Conv1d(cur_f, next_f, kernel_size=3, stride=2, padding=1)
-            _init_keras_style(down)
+            _init_xavier_uniform(down)
             self.enc_downs.append(down)
             in_ch = next_f
 
         bn_f = initial_filters * (2**self.depth)
         self.bn_proj = nn.Linear(in_ch, bn_f)
-        _init_keras_style(self.bn_proj)
+        _init_xavier_uniform(self.bn_proj)
         self.bn_blocks = nn.ModuleList(
             [
                 WaveNetResidualBlock(bn_f, bn_f, rate, kernel_size)
@@ -285,10 +285,10 @@ class _UNetWaveNetStack(nn.Module):
                 padding=1,
                 output_padding=1,
             )
-            _init_keras_style(up)
+            _init_xavier_uniform(up)
             self.dec_ups.append(up)
             post_proj = nn.Linear(cur_f * 2, cur_f)
-            _init_keras_style(post_proj)
+            _init_xavier_uniform(post_proj)
             self.dec_projs.append(post_proj)
             self.dec_drops.append(nn.Dropout(dropout_rate))
             self.dec_blocks.append(
@@ -378,7 +378,7 @@ class TcnOnsetModel(nn.Module):
             "tcn_blocks": int(tcn_blocks),
         }
         self.input_proj = nn.Linear(input_features, initial_filters)
-        _init_keras_style(self.input_proj)
+        _init_xavier_uniform(self.input_proj)
         self.blocks = nn.ModuleList(
             [
                 nn.ModuleList(
@@ -464,7 +464,7 @@ class BiLstmOnsetModel(nn.Module):
             "recurrent_units": int(recurrent_units),
         }
         self.input_proj = nn.Linear(input_features, initial_filters)
-        _init_keras_style(self.input_proj)
+        _init_xavier_uniform(self.input_proj)
         self.lstms = nn.ModuleList()
         self.drops = nn.ModuleList()
         in_dim = initial_filters
@@ -541,7 +541,7 @@ class TransformerOnsetModel(nn.Module):
             "dropout_rate": float(dropout_rate),
         }
         self.input_proj = nn.Linear(input_features, initial_filters)
-        _init_keras_style(self.input_proj)
+        _init_xavier_uniform(self.input_proj)
         ff_dim = max(initial_filters * 4, 128)
         self.layers = nn.ModuleList(
             [
@@ -696,8 +696,8 @@ class UNetWaveNetWaveformModel(nn.Module):
         self.frame_refine = nn.Conv1d(
             frontend_filters, frontend_filters, kernel_size=3, padding=1
         )
-        _init_keras_style(self.frame_embed)
-        _init_keras_style(self.frame_refine)
+        _init_xavier_uniform(self.frame_embed)
+        _init_xavier_uniform(self.frame_refine)
         self.stack = _UNetWaveNetStack(
             frontend_filters,
             initial_filters=initial_filters,

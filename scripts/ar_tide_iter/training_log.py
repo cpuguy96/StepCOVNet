@@ -32,7 +32,9 @@ TEACHER_PERFECT_EPS = 1e-6
 
 
 def _val_metric(metrics: dict[str, float], canonical: str, legacy: str) -> float | None:
-    canonical_key = f"val_{canonical}" if not canonical.startswith("val_") else canonical
+    canonical_key = (
+        f"val_{canonical}" if not canonical.startswith("val_") else canonical
+    )
     legacy_key = f"val_{legacy}" if not legacy.startswith("val_") else legacy
     if canonical_key in metrics:
         return float(metrics[canonical_key])
@@ -122,7 +124,7 @@ def format_log_heading(exp_id: str, attempt: int, timestamp: str) -> str:
 
 
 def sanitize_line(line: str) -> str:
-    """Strip Keras progress-bar noise for readable console output."""
+    """Strip noisy progress-bar lines for readable console output."""
     text = _ANSI_RE.sub("", line)
     text = _PROGRESS_RE.sub("", text)
     return text.rstrip()
@@ -219,7 +221,9 @@ def format_status(status: dict) -> str:
     last_val = status.get("last_val")
     if last_val:
         gate = _val_metric(last_val, "gate_teacher", "overfit_gate") or 0.0
-        timing = _val_metric(last_val, "timing_match_teacher", "ordered_onset_match") or 0.0
+        timing = (
+            _val_metric(last_val, "timing_match_teacher", "ordered_onset_match") or 0.0
+        )
         aux_f1 = _val_metric(last_val, "aux_f1_hungarian", "event_onset_f1") or 0.0
         lines.append(
             "val_gate_teacher={gate:.4f} "

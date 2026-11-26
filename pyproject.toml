@@ -27,7 +27,7 @@ keywords = ["stepmania", "rhythm-game", "music", "neural-network", "deep-learnin
 # Core: library, scripts, and notebooks (run + execute)
 dependencies = [
     "tensorboard",
-    "tensorflow",
+    "torch",
     "librosa",
     "scipy",
     "matplotlib",
@@ -51,9 +51,9 @@ dev = [
     "setuptools>=68,<82",  # pkg_resources for simfile/fs on clean installs
     "simfile==2.1.1",
 ]
-gpu = ["tensorflow[and-cuda]"]
+gpu = []
 gpu-dev = ["stepcovnet[dev,gpu]"]
-ssl = ["torch", "transformers", "accelerate"]
+ssl = ["transformers", "accelerate"]
 ssl-dev = ["stepcovnet[dev,ssl]"]
 dataset-prep = ["simfile==2.1.1"]
 dataset-prep-dev = ["stepcovnet[dev,dataset-prep]"]

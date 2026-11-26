@@ -22,22 +22,22 @@ class EvalItgptPlacementScriptTest(unittest.TestCase):
             dataset=config.ItgptDatasetConfig(training_index_path="x.json"),
         )
         self.assertEqual(
-            eval_itgpt_placement._resolve_model_path(experiment, "ckpt.keras"),
-            "ckpt.keras",
+            eval_itgpt_placement._resolve_model_path(experiment, "ckpt.pt"),
+            "ckpt.pt",
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             model_dir = pathlib.Path(tmpdir)
-            (model_dir / "a.keras").write_bytes(b"x")
+            (model_dir / "a.pt").write_bytes(b"x")
             experiment.run.model_output_dir = str(model_dir)
             resolved = eval_itgpt_placement._resolve_model_path(experiment, "")
-            self.assertTrue(resolved.endswith("a.keras"))
-            (model_dir / "best.keras").write_bytes(b"best")
-            (model_dir / "last.keras").write_bytes(b"last")
+            self.assertTrue(resolved.endswith("a.pt"))
+            (model_dir / "best.pt").write_bytes(b"best")
+            (model_dir / "last.pt").write_bytes(b"last")
             resolved = eval_itgpt_placement._resolve_model_path(experiment, "")
-            self.assertTrue(resolved.endswith("best.keras"))
-            (model_dir / "b.keras").write_bytes(b"y")
-            (model_dir / "best.keras").unlink()
-            (model_dir / "last.keras").unlink()
+            self.assertTrue(resolved.endswith("best.pt"))
+            (model_dir / "b.pt").write_bytes(b"y")
+            (model_dir / "best.pt").unlink()
+            (model_dir / "last.pt").unlink()
             with self.assertRaises(FileNotFoundError):
                 eval_itgpt_placement._resolve_model_path(experiment, "")
 

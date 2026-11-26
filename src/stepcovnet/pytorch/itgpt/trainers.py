@@ -109,7 +109,7 @@ def build_optimizer(
 ) -> torch.optim.Optimizer:
     """Build AdamW (when ``weight_decay > 0``) or Adam matching ITGPT defaults.
 
-    Uses ``eps=1e-7`` to match Keras 3 ``Adam`` / ``AdamW`` defaults.
+    Uses ``eps=1e-7`` for numerical stability in ``Adam`` / ``AdamW``.
 
     Args:
         model: Model whose parameters will be optimized.

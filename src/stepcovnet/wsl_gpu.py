@@ -208,13 +208,13 @@ def nvidia_library_dirs(venv_path: pathlib.Path | None = None) -> list[pathlib.P
     return sorted(lib_dirs)
 
 
-def apply_tensorflow_gpu_library_path(venv_path: pathlib.Path | None = None) -> bool:
-    """Prepend NVIDIA wheel library paths for TensorFlow GPU inside WSL.
+def apply_gpu_library_path(venv_path: pathlib.Path | None = None) -> bool:
+    """Prepend NVIDIA wheel library paths for PyTorch CUDA inside WSL.
 
     Mirrors ``scripts/wsl_gpu_env.sh``. Must run **before the Python process
     starts** (e.g. ``source scripts/wsl_gpu_env.sh`` in the shell). Changing
-    ``LD_LIBRARY_PATH`` from Python after startup does not affect TensorFlow's
-    GPU loader; use :func:`reexec_with_tensorflow_gpu_env_if_needed` instead.
+    ``LD_LIBRARY_PATH`` from Python after startup does not affect dynamic
+    library loading; use :func:`reexec_with_gpu_env_if_needed` instead.
 
     Args:
         venv_path: Virtualenv root; defaults to ``~/stepcovnet-venv-wsl``.
@@ -234,10 +234,10 @@ def apply_tensorflow_gpu_library_path(venv_path: pathlib.Path | None = None) -> 
     return True
 
 
-def reexec_with_tensorflow_gpu_env_if_needed(argv: list[str]) -> None:
+def reexec_with_gpu_env_if_needed(argv: list[str]) -> None:
     """Re-exec the current script under ``wsl_gpu_env.sh`` when inside WSL.
 
-    TensorFlow only picks up NVIDIA wheel libraries when ``LD_LIBRARY_PATH`` is
+    NVIDIA wheel libraries are only discovered when ``LD_LIBRARY_PATH`` is
     set before Python starts. When ``STEPCOVNET_WSL_GPU_ENV=1`` is already set,
     this is a no-op.
 
@@ -262,26 +262,22 @@ def reexec_with_tensorflow_gpu_env_if_needed(argv: list[str]) -> None:
     os.execvp("bash", ["bash", "-lc", command])
 
 
-def require_tensorflow_gpu() -> None:
-    """Exit with an error when TensorFlow cannot see a GPU in WSL training.
+def require_pytorch_gpu() -> None:
+    """Exit with an error when PyTorch cannot see a GPU in WSL training."""
+    import torch  # noqa: PLC0415
 
-    Call after :func:`apply_tensorflow_gpu_library_path` and before training.
-    """
-    import tensorflow as tf  # noqa: PLC0415
-
-    gpus = tf.config.list_physical_devices("GPU")
-    if gpus:
-        print(f"TensorFlow GPU devices: {gpus}", flush=True)
+    if torch.cuda.is_available():
+        count = torch.cuda.device_count()
+        names = [torch.cuda.get_device_name(i) for i in range(count)]
+        print(f"PyTorch CUDA devices: {names}", flush=True)
         return
     if is_running_in_wsl():
         print(
-            "TensorFlow found no GPU in WSL. Run "
-            "`source scripts/wsl_gpu_env.sh` before training, or use "
-            "`wsl_gpu.apply_tensorflow_gpu_library_path()` before importing TensorFlow.",
+            "PyTorch found no CUDA GPU in WSL. Verify your CUDA PyTorch wheel and NVIDIA WSL driver.",
             flush=True,
         )
         raise SystemExit(1)
-    print("Warning: training without a visible TensorFlow GPU device.", flush=True)
+    print("Warning: training without a visible PyTorch CUDA GPU device.", flush=True)
 
 
 def _wsl_bash_command(
@@ -296,11 +292,7 @@ def _wsl_bash_command(
     gpu_env = f"{repo_root_wsl}/scripts/wsl_gpu_env.sh"
     quoted_args = " ".join(shlex.quote(arg) for arg in args)
     script_path = f"{repo_root_wsl}/{script_rel}"
-    lock_export = (
-        "export STEPCOVNET_GPU_LOCK_HELD=1 && "
-        if lock_held
-        else ""
-    )
+    lock_export = "export STEPCOVNET_GPU_LOCK_HELD=1 && " if lock_held else ""
     script_export = f"export STEPCOVNET_GPU_SCRIPT={shlex.quote(script_rel)} && "
     return (
         f"bash {shlex.quote(ensure)} && "
@@ -511,7 +503,7 @@ def assert_wsl_gpu_free_for_training(*, force: bool | None = None) -> None:
 
 
 def maybe_dispatch_for_training(script_rel: str, argv: list[str]) -> bool:
-    """Dispatch TensorFlow training to WSL on Windows when a GPU is available.
+    """Dispatch PyTorch GPU training to WSL on Windows when a GPU is available.
 
     Args:
         script_rel: Script path relative to repo root.
@@ -557,21 +549,30 @@ def bootstrap_gpu_script(
             maybe_dispatch_for_mert_extract(script_rel, argv)
         elif wsl_gpu_available():
             maybe_dispatch_for_training(script_rel, argv)
-    reexec_with_tensorflow_gpu_env_if_needed(argv)
+    reexec_with_gpu_env_if_needed(argv)
 
 
-def guard_tensorflow_gpu_job(script_file: str | None = None) -> None:
-    """Acquire the shared GPU lock when TensorFlow sees a GPU device."""
-    import tensorflow as tf  # noqa: PLC0415
+def guard_pytorch_gpu_job(script_file: str | None = None) -> None:
+    """Acquire the shared GPU lock when PyTorch sees a CUDA GPU device.
+
+    Args:
+        script_file: Optional script path used to name the lock holder.
+    """
+    import torch  # noqa: PLC0415
 
     from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
 
-    if tf.config.list_physical_devices("GPU"):
+    if torch.cuda.is_available():
         wsl_gpu_lock.ensure_gpu_job_lock(job_name_from_script(script_file))
 
 
 def guard_gpu_device_job(device: str, script_file: str | None = None) -> None:
-    """Acquire the shared GPU lock for CUDA/torch or similar device strings."""
+    """Acquire the shared GPU lock for CUDA/torch or similar device strings.
+
+    Args:
+        device: Requested compute device string.
+        script_file: Optional script path used to name the lock holder.
+    """
     from stepcovnet import wsl_gpu_lock  # noqa: PLC0415
 
     if device_requests_gpu(device):

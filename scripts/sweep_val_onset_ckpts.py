@@ -8,9 +8,8 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/sweep_val_onset_ckpts.py")
 
-import tensorflow as tf
-
-from stepcovnet import config, dense_overfit_eval
+from stepcovnet import config, dense_overfit_eval, trainers
+from stepcovnet.pytorch import runtime
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--pattern",
         required=True,
-        help="Glob for checkpoint paths (e.g. callbacks/.../VAL_ONSET_F1_SCORE*.keras)",
+        help="Glob for checkpoint paths (e.g. callbacks/.../VAL_ONSET_F1_SCORE*.pt)",
     )
     parser.add_argument(
         "--threshold",
@@ -27,8 +26,10 @@ def main(argv: list[str] | None = None) -> int:
         default=0.25,
         help="Peak-pick confidence threshold (default 0.25)",
     )
+    parser.add_argument("--device", default="auto")
     args = parser.parse_args(argv)
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
+    device = runtime.resolve_device(args.device)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
     pattern_path = pathlib.Path(args.pattern)
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     best_tag = ""
     best_micro = 0.0
     for path in paths:
-        model = tf.keras.models.load_model(str(path), compile=False)
+        model = trainers.load_onset_model(str(path), device=device)
         report = dense_overfit_eval.eval_dense_val_event_f1(
             model,
             experiment.dataset,

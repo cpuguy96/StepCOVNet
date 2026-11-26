@@ -375,7 +375,7 @@ def windows_for_indices(
         indices: Beat indices, shape ``(batch,)``.
 
     Returns:
-        Keras input dict with a leading batch axis.
+        Model input dict with a leading batch axis.
 
     Raises:
         ValueError: If ``indices`` is empty.
@@ -433,7 +433,7 @@ def chart_model_inputs(chart: DdclChart) -> dict[str, np.ndarray]:
         chart: Loaded chart.
 
     Returns:
-        Keras input dict with a leading batch axis equal to ``n_beats``.
+        Model input dict with a leading batch axis equal to ``n_beats``.
     """
     return windows_for_indices(chart, np.arange(chart.n_beats, dtype=np.int64))
 

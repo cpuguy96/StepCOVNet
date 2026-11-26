@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Evaluate DDCL placement ``M-slot48`` F1 at 0.5 and max-F1."""
+"""Evaluate PyTorch DDCL placement ``M-slot48`` F1 at 0.5 and max-F1."""
 
 from __future__ import annotations
 
@@ -11,15 +11,14 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/eval_ddcl_placement.py")
 
-import tensorflow as tf
-
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.ddcl import config, datasets, evaluation
+from stepcovnet.ddcl import config, datasets, evaluation, trainers
+from stepcovnet.pytorch import runtime
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Evaluate DDCL ConvLSTM placement: M-slot48 F1.",
+        description="Evaluate DDCL ConvLSTM/MERT placement: M-slot48 F1.",
     )
     parser.add_argument("--config", required=True)
     parser.add_argument("--model_path", default="")
@@ -52,56 +51,41 @@ def _build_parser() -> argparse.ArgumentParser:
         default=0.5,
         help="Slot occupancy cutoff for diagnostic modes (default: 0.5).",
     )
+    parser.add_argument("--device", default="auto")
     return parser
 
 
 def _resolve_model_path(
     experiment: config.DdclExperimentConfig, model_path: str
 ) -> str:
-    """Return an explicit checkpoint path or the saved experiment artifact.
-
-    Args:
-        experiment: Placement experiment config.
-        model_path: Optional override path.
-
-    Returns:
-        Path to a ``.keras`` file.
-
-    Raises:
-        FileNotFoundError: If no unique checkpoint exists.
-    """
+    """Return an explicit checkpoint path or the saved PyTorch artifact."""
     if model_path:
         return model_path
     model_dir = pathlib.Path(experiment.run.model_output_dir)
-    named = model_dir / f"{experiment.run.model_name}.keras"
+    named = model_dir / f"{experiment.run.model_name}.pt"
     preferred = (
-        model_dir / "best.keras",
+        model_dir / trainers.BEST_SLOT_F1_CHECKPOINT_FILENAME,
+        model_dir / trainers.BEST_CHECKPOINT_FILENAME,
         named,
-        model_dir / "last.keras",
+        model_dir / trainers.LAST_CHECKPOINT_FILENAME,
     )
     for candidate in preferred:
         if candidate.is_file():
             return str(candidate)
-    keras_files = sorted(path.name for path in model_dir.glob("*.keras"))
-    if len(keras_files) != 1:
+    pt_files = sorted(path.name for path in model_dir.glob("*.pt"))
+    if len(pt_files) != 1:
         raise FileNotFoundError(
-            f"expected best.keras, {named.name}, last.keras, or one .keras in "
-            f"{model_dir}, found {keras_files!r}"
+            f"expected best.pt, {named.name}, last.pt, or one .pt in "
+            f"{model_dir}, found {pt_files!r}"
         )
-    return str(model_dir / keras_files[0])
+    return str(model_dir / pt_files[0])
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run DDCL placement evaluation.
-
-    Args:
-        argv: Optional argument list.
-
-    Returns:
-        Process exit code.
-    """
+    """Run DDCL placement evaluation."""
     args = _build_parser().parse_args(argv)
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
+    device = runtime.resolve_device(args.device)
     experiment = config.DdclExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment, args.model_path)
     if args.diagnose_grounding:
@@ -113,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     output_path = args.output or str(
         pathlib.Path(experiment.run.model_output_dir) / default_filename
     )
-    model = tf.keras.models.load_model(model_path, compile=False)
+    model = trainers.load_placement_model(model_path, device=device)
     charts = datasets.load_split_charts(experiment.dataset, args.split)
     if args.diagnose_grounding:
         grounding_report = evaluation.evaluate_audio_grounding(

@@ -43,7 +43,7 @@ from stepcovnet import config, trainers, wsl_gpu  # noqa: E402
 
 wsl_gpu.bootstrap_gpu_script("scripts/hyperparameter_search_arrow.py")
 
-import tensorflow as tf  # noqa: E402
+import torch  # noqa: E402
 
 PARSER = argparse.ArgumentParser(
     description="Run ARROW hyperparameter search (grid or random). epoch and take_count configurable via sweep config or search_space."
@@ -460,18 +460,9 @@ def apply_overrides(
 
 
 def _clear_tf_memory() -> None:
-    """Clear TensorFlow/Keras session and run GC to free memory between runs.
-
-    TF keeps graph and allocator state across model builds; without this, each
-    training run in the same process adds memory (in-process sweep or
-    reused multiprocessing workers).
-    """
-    try:
-        backend = getattr(getattr(tf, "keras", None), "backend", None)
-        if backend is not None:
-            backend.clear_session(free_memory=True)
-    except Exception:  # noqa: BLE001
-        pass
+    """Clear PyTorch GPU cache and run GC to free memory between runs."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     gc.collect()
     gc.collect()
 
@@ -1098,7 +1089,7 @@ def _write_final_results_and_best(ctx: _SweepContext) -> None:
 
 def main() -> int:
     args = PARSER.parse_args()
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
     if not args.resume_from and not args.sweep_config:
         PARSER.error("--sweep_config is required unless --resume_from is set")
     if args.resume_from and args.sweep_config:

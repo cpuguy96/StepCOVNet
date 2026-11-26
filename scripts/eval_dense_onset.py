@@ -1,4 +1,4 @@
-"""Canonical peak-pick event-F1 evaluation for dense frame onset models."""
+"""Canonical peak-pick event-F1 evaluation for PyTorch dense frame onset models."""
 
 import argparse
 import json
@@ -9,21 +9,20 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/eval_dense_onset.py")
 
-import tensorflow as tf
-
-from stepcovnet import config, dense_overfit_eval
+from stepcovnet import config, dense_overfit_eval, trainers
+from stepcovnet.pytorch import runtime
 
 
 def _find_saved_model_path(model_output_dir: str) -> str:
     model_dir = pathlib.Path(model_output_dir)
-    keras_files = sorted(
-        path.name for path in model_dir.iterdir() if path.name.endswith(".keras")
+    pt_files = sorted(
+        path.name for path in model_dir.iterdir() if path.name.endswith(".pt")
     )
-    if len(keras_files) != 1:
+    if len(pt_files) != 1:
         raise FileNotFoundError(
-            f"expected one .keras in {model_output_dir}, found {keras_files!r}",
+            f"expected one .pt in {model_output_dir}, found {pt_files!r}",
         )
-    return str(model_dir / keras_files[0])
+    return str(model_dir / pt_files[0])
 
 
 def _resolve_model_path(
@@ -47,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         "--model_path",
         type=str,
         default="",
-        help="Checkpoint path; default is the sole .keras under run.model_output_dir.",
+        help="Checkpoint path; default is the sole .pt under run.model_output_dir.",
     )
     parser.add_argument(
         "--threshold",
@@ -68,8 +67,9 @@ def main(argv: list[str] | None = None) -> int:
         choices=dense_overfit_eval.CORRUPTION_KINDS,
         help="Audio grounding ablation applied to features before prediction.",
     )
+    parser.add_argument("--device", type=str, default="auto")
     args = parser.parse_args(argv)
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment, args.model_path)
@@ -80,7 +80,8 @@ def main(argv: list[str] | None = None) -> int:
         else experiment.run.confidence_threshold
     )
 
-    model = tf.keras.models.load_model(model_path, compile=False)
+    device = runtime.resolve_device(args.device)
+    model = trainers.load_onset_model(model_path, device=device)
     report = dense_overfit_eval.eval_dense_val_event_f1(
         model,
         experiment.dataset,

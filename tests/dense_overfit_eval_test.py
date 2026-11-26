@@ -2,7 +2,6 @@ import pathlib
 from types import SimpleNamespace
 from unittest import mock
 
-import keras
 import numpy as np
 import pytest
 
@@ -11,7 +10,7 @@ from stepcovnet.dataset_prep import training_index
 
 
 def _keras_model_stub(*, predict_return_value=None):
-    model = mock.create_autospec(keras.Model, instance=True)
+    model = mock.Mock()
     if predict_return_value is not None:
         model.predict.return_value = predict_return_value
     model.fit.return_value = SimpleNamespace(

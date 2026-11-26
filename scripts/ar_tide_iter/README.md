@@ -66,7 +66,7 @@ Retries log attempt 2+ with separate config/train snapshots when possible.
 
 ## Watching a run
 
-Training output goes to gitignored `logs/ar_tide_iter/train_logs/<id>.log` (Keras progress bars make it noisy). Use:
+Training output goes to gitignored `logs/ar_tide_iter/train_logs/<id>.log` (to keep console output clean). Use:
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/show_status.py --id iter30

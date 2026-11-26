@@ -115,7 +115,9 @@ class ItgptDatasetConfig(_DictSerializableMixin):
                 "MERT ITGPT requires n_frames_per_beat == "
                 f"{constants.CNN_FRAMES_OUT}, got {self.n_frames_per_beat}"
             )
-        if not self.mert_cache_suffix.startswith(".") or not self.mert_cache_suffix.endswith(".npy"):
+        if not self.mert_cache_suffix.startswith(
+            "."
+        ) or not self.mert_cache_suffix.endswith(".npy"):
             raise ValueError(
                 "mert_cache_suffix must start with '.' and end with '.npy', "
                 f"got {self.mert_cache_suffix!r}"
@@ -187,14 +189,14 @@ class ItgptRunConfig(_DictSerializableMixin):
         weight_decay: AdamW weight decay (ITGPT: 1e-2).
         clipnorm: Global gradient clip (ITGPT: 1.0).
         seed: Reproducibility seed.
-        model_output_dir: Directory for the saved ``.keras`` file.
+        model_output_dir: Directory for the saved ``.pt`` checkpoint.
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
-        resume: If True, ``BackupAndRestore`` continues an interrupted run.
-        mixed_precision: If True, use Keras ``mixed_float16`` (8 GB GPU).
-        jit_compile: If True, XLA-compile ``fit`` (can spike allocator workspace).
+        resume: If True, resume from saved backup checkpoints.
+        mixed_precision: If True, enable AMP mixed precision on CUDA.
+        jit_compile: If True, compile the training model with ``torch.compile``.
         eval_slot_f1_every: Evaluate full-val ``M-slot48`` every N epochs to log
-            ``val_slot_f1_at_05`` and save ``best_slot_f1.keras`` (0 disables).
+            ``val_slot_f1_at_05`` and save ``best_slot_f1.pt`` (0 disables).
         lr_schedule: Optimizer schedule (``constant`` or ``cosine``).
         warmup_epochs: Linear warmup epochs before cosine decay (0 disables warmup).
         min_learning_rate: Floor LR at warmup start and cosine end.
@@ -207,8 +209,7 @@ class ItgptRunConfig(_DictSerializableMixin):
         gradient_accumulation_steps: Number of micro-batches to accumulate
             before applying an optimizer update (``1`` disables accumulation).
         use_ema: If True, enable optimizer exponential moving average (EMA)
-            weight tracking and evaluate/checkpoint with EMA weights via
-            :class:`keras.callbacks.SwapEMAWeights`.
+            weight tracking and evaluate/checkpoint with EMA weights.
         ema_momentum: EMA decay factor in ``(0, 1)`` when ``use_ema`` is True
             (default ``0.99``).
         max_bar_shift: Maximum number of 4-beat bars of masked leading padding
@@ -259,9 +260,7 @@ class ItgptRunConfig(_DictSerializableMixin):
                 f"learning_rate must be positive, got {self.learning_rate}"
             )
         if self.weight_decay < 0.0:
-            raise ValueError(
-                f"weight_decay must be >= 0, got {self.weight_decay}"
-            )
+            raise ValueError(f"weight_decay must be >= 0, got {self.weight_decay}")
         if self.eval_slot_f1_every < 0:
             raise ValueError(
                 f"eval_slot_f1_every must be >= 0, got {self.eval_slot_f1_every}"
@@ -272,9 +271,7 @@ class ItgptRunConfig(_DictSerializableMixin):
                 f"got {self.lr_schedule!r}"
             )
         if self.warmup_epochs < 0:
-            raise ValueError(
-                f"warmup_epochs must be >= 0, got {self.warmup_epochs}"
-            )
+            raise ValueError(f"warmup_epochs must be >= 0, got {self.warmup_epochs}")
         if (
             self.lr_schedule == constants.LR_SCHEDULE_COSINE
             and self.warmup_epochs >= self.epoch
@@ -288,9 +285,7 @@ class ItgptRunConfig(_DictSerializableMixin):
                 f"got {self.min_learning_rate} vs {self.learning_rate}"
             )
         if self.focal_gamma < 0.0:
-            raise ValueError(
-                f"focal_gamma must be >= 0, got {self.focal_gamma}"
-            )
+            raise ValueError(f"focal_gamma must be >= 0, got {self.focal_gamma}")
         if self.grid_weight_24th <= 0.0:
             raise ValueError(
                 f"grid_weight_24th must be positive, got {self.grid_weight_24th}"
@@ -305,13 +300,9 @@ class ItgptRunConfig(_DictSerializableMixin):
                 f"got {self.gradient_accumulation_steps}"
             )
         if not 0.0 < self.ema_momentum < 1.0:
-            raise ValueError(
-                f"ema_momentum must be in (0, 1), got {self.ema_momentum}"
-            )
+            raise ValueError(f"ema_momentum must be in (0, 1), got {self.ema_momentum}")
         if self.max_bar_shift < 0:
-            raise ValueError(
-                f"max_bar_shift must be >= 0, got {self.max_bar_shift}"
-            )
+            raise ValueError(f"max_bar_shift must be >= 0, got {self.max_bar_shift}")
 
 
 @dataclasses.dataclass

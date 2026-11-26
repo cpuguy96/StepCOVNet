@@ -11,9 +11,16 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/investigate_bad_val_cases.py")
 
-import tensorflow as tf
+from typing import Any
 
-from stepcovnet import config, datasets, dense_overfit_eval, pairing, ssl_features
+from stepcovnet import (
+    config,
+    datasets,
+    dense_overfit_eval,
+    pairing,
+    ssl_features,
+    trainers,
+)
 from stepcovnet.onset_events import charts, metrics
 
 WORST_SONGS = (
@@ -46,7 +53,7 @@ def _pair_map(data_dir: str) -> dict[str, tuple[str, str]]:
 
 
 def _eval_at_threshold(
-    model: tf.keras.Model,
+    model: Any,
     audio_path: str,
     chart_path: str,
     experiment: config.OnsetExperimentConfig,
@@ -61,7 +68,7 @@ def _eval_at_threshold(
     )
     features = datasets.normalize_onset_spectrogram(features)
     pred_probs = np.asarray(
-        model.predict(np.expand_dims(features, 0), verbose=0)
+        dense_overfit_eval._predict_dense_model(model, np.expand_dims(features, 0))
     ).reshape(-1)
     pred_times, pred_conf = dense_overfit_eval.peak_times_and_confidence(
         pred_probs,
@@ -172,7 +179,7 @@ def _peak_timing_offset_ms(
 
 
 def _feature_profile(
-    model: tf.keras.Model,
+    model: Any,
     audio_path: str,
     chart_path: str,
     experiment: config.OnsetExperimentConfig,
@@ -186,7 +193,7 @@ def _feature_profile(
     )
     features_norm = datasets.normalize_onset_spectrogram(features)
     pred_probs = np.asarray(
-        model.predict(np.expand_dims(features_norm, 0), verbose=0)
+        dense_overfit_eval._predict_dense_model(model, np.expand_dims(features_norm, 0))
     ).reshape(-1)
     times = charts.load_onset_times(chart_path, max_steps=None)
     duration_audio = float(librosa.get_duration(path=audio_path))
@@ -240,7 +247,7 @@ def _feature_profile(
 
 
 def _threshold_sweep(
-    model: tf.keras.Model,
+    model: Any,
     experiment: config.OnsetExperimentConfig,
     val_pairs: dict[str, tuple[str, str]],
     songs: tuple[str, ...],
@@ -282,15 +289,13 @@ def main() -> int:
         default="models_wsl/dense_mert_v2_75train_200ep/investigate_bad_val.json",
     )
     args = parser.parse_args()
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
     model_dir = pathlib.Path(experiment.run.model_output_dir)
-    keras_files = [
-        path.name for path in model_dir.iterdir() if path.name.endswith(".keras")
-    ]
-    model_path = str(model_dir / keras_files[0])
-    model = tf.keras.models.load_model(model_path, compile=False)
+    pt_files = [path.name for path in model_dir.iterdir() if path.name.endswith(".pt")]
+    model_path = str(model_dir / pt_files[0])
+    model = trainers.load_onset_model(model_path)
 
     val_pairs = _pair_map(experiment.dataset.val_data_dir)
     sweep_worst = _threshold_sweep(model, experiment, val_pairs, WORST_SONGS)

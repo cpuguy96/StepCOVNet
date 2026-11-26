@@ -1783,7 +1783,9 @@ class WorkersOptionTest(unittest.TestCase):
                     "as_completed",
                     side_effect=ordered_as_completed,
                 ),
-                mock.patch.object(builtins, "print", side_effect=capture_print, autospec=True),
+                mock.patch.object(
+                    builtins, "print", side_effect=capture_print, autospec=True
+                ),
                 mock.patch.object(
                     sys,
                     "argv",

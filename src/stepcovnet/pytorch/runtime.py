@@ -110,10 +110,9 @@ def autocast_context(
 class ModelEMA:
     """Exponential moving average tracker for trainable model parameters.
 
-    Mirrors Keras 3 ``AdamW(use_ema=True, ema_momentum=...)`` +
-    ``SwapEMAWeights(swap_on_epoch=True)``: shadow weights are initialized from
-    the model and updated on every optimizer step as
-    ``shadow = momentum * shadow + (1 - momentum) * param``.
+    Maintains shadow weights initialized from the model parameters and updated
+    on every optimizer step as ``shadow = momentum * shadow + (1 - momentum) * param``;
+    swap shadow weights in for validation and checkpointing.
 
     Args:
         model: Model whose trainable parameters are tracked.
@@ -243,10 +242,8 @@ def compute_warmup_cosine_lr(
 ) -> float:
     """Compute step-level linear warmup + cosine decay learning rate.
 
-    Matches Keras 3 ``CosineDecay(initial_learning_rate=min_lr,
-    warmup_target=peak_lr, warmup_steps=warmup_steps,
-    decay_steps=max(1, total_steps - warmup_steps),
-    alpha=min_lr / peak_lr)``.
+    Linearly ramps from ``min_lr`` to ``peak_lr`` over ``warmup_steps`` and
+    then decays along a cosine curve back to ``min_lr`` over the remaining steps.
 
     Args:
         step: Zero-based global optimizer step index.

@@ -152,9 +152,7 @@ class DdcDatasetsTest(unittest.TestCase):
         entry = _entry("train", "song_a")
         pack = mock.Mock()
         pack.metadata.offset_sec = 0.0
-        pack.metadata.bpm_segments = [
-            prep_models.BpmSegment(start_beat=0.0, bpm=120.0)
-        ]
+        pack.metadata.bpm_segments = [prep_models.BpmSegment(start_beat=0.0, bpm=120.0)]
         with (
             mock.patch(
                 "stepcovnet.ddc.datasets.features.load_or_compute_ddc_logmel",
@@ -183,9 +181,7 @@ class DdcDatasetsTest(unittest.TestCase):
         spec = np.zeros((10, 80, 3), dtype=np.float32)
         pack = mock.Mock()
         pack.metadata.offset_sec = 0.0
-        pack.metadata.bpm_segments = [
-            prep_models.BpmSegment(start_beat=0.0, bpm=120.0)
-        ]
+        pack.metadata.bpm_segments = [prep_models.BpmSegment(start_beat=0.0, bpm=120.0)]
         with (
             mock.patch(
                 "stepcovnet.ddc.datasets.features.load_or_compute_ddc_logmel",

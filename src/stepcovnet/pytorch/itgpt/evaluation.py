@@ -1,4 +1,4 @@
-"""``M-slot48`` evaluation and audio-grounding for PyTorch ITGPT (zero TF/Keras)."""
+"""``M-slot48`` evaluation and audio-grounding for PyTorch ITGPT."""
 
 from __future__ import annotations
 
@@ -316,7 +316,7 @@ class TorchSlotPredictor:
 
         Args:
             inputs: Dictionary of NumPy arrays (``audio``, ``bpm``, ``difficulty``).
-            verbose: Unused compatibility parameter matching Keras ``Model.predict``.
+            verbose: Unused compatibility verbosity parameter.
 
         Returns:
             Float32 NumPy array of shape ``(batch, beats, 48)``.

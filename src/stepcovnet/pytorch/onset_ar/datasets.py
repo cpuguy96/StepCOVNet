@@ -250,19 +250,28 @@ def load_split_samples(
 def pack_ar_sample(
     sample: ArSample,
     *,
-    pad_patches: int,
-    pad_dec_len: int,
+    pad_patches: int | None = None,
+    pad_dec_len: int | None = None,
 ) -> dict[str, np.ndarray]:
     """Pad one :class:`ArSample` to ``(pad_patches, pad_dec_len)`` arrays.
 
     Args:
         sample: Unpadded AR sample.
-        pad_patches: Target encoder patch length.
-        pad_dec_len: Target decoder token length.
+        pad_patches: Target encoder patch length (defaults to ``sample.n_patches``).
+        pad_dec_len: Target decoder token length (defaults to ``len(decoder_input_ids)``).
 
     Returns:
         Dictionary of padded NumPy arrays ready for batching.
     """
+    seq = sample.token_seq
+    pad_patches = (
+        max(1, int(sample.n_patches)) if pad_patches is None else int(pad_patches)
+    )
+    pad_dec_len = (
+        max(1, int(seq.decoder_input_ids.size))
+        if pad_dec_len is None
+        else int(pad_dec_len)
+    )
     patch_dim = int(sample.mert_patches.shape[1])
     n_p = min(sample.n_patches, pad_patches)
     mert = np.zeros((pad_patches, patch_dim), dtype=np.float32)
@@ -270,7 +279,6 @@ def pack_ar_sample(
     patch_mask = np.zeros((pad_patches,), dtype=np.float32)
     patch_mask[:n_p] = 1.0
 
-    seq = sample.token_seq
     dec_len = min(int(seq.decoder_input_ids.size), pad_dec_len)
     n_onsets = min(seq.n_steps, max(0, pad_dec_len - 1))
 

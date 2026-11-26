@@ -1,4 +1,4 @@
-﻿---
+---
 description: Python code style — imports, third-party submodules, and docstrings
 globs: "**/*.py"
 alwaysApply: false
@@ -73,7 +73,7 @@ Refactor to break **circular imports** (extract a small shared module) instead o
 ```python
 # ✅ GOOD – top-level and submodule imports
 import numpy as np
-import tensorflow as tf
+import torch
 from stepcovnet import models
 from tkinter import filedialog, messagebox
 

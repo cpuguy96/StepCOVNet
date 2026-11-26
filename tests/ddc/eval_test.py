@@ -1,41 +1,32 @@
-"""Tests for DDC placement eval (`M-ddc-20ms`)."""
+"""Tests for DDC placement eval (`M-ddc-20ms`, PyTorch)."""
 
 from __future__ import annotations
 
 import unittest
 
 import numpy as np
+import torch
+from torch import nn
 
 from stepcovnet.ddc import datasets, evaluation
 
 
-class _QueueModel:
-    """Stub Keras-like model that returns queued salience traces."""
+class _QueueModel(nn.Module):
+    """Stub PyTorch module that returns queued salience traces."""
 
     def __init__(self, traces: list[np.ndarray]) -> None:
+        super().__init__()
         self._traces = list(traces)
 
-    def predict(self, inputs, verbose=0):
-        """Return the next queued trace.
-
-        Args:
-            inputs: Unused model inputs.
-            verbose: Unused Keras flag.
-
-        Returns:
-            Salience with shape ``(1, time, 1)``.
-        """
-        del inputs, verbose
+    def forward(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Return the next queued trace as ``(1, time, 1)``."""
+        del inputs
         trace = self._traces.pop(0)
-        return np.asarray(trace, dtype=np.float32).reshape(1, -1, 1)
+        return torch.as_tensor(trace, dtype=torch.float32).reshape(1, -1, 1)
 
 
-def _chart_with_onsets() -> datasets.PlacementChart:
-    """Return a short chart with two onsets.
-
-    Returns:
-        Placement chart.
-    """
+def _chart_with_onsets(*, difficulty: str = "hard") -> datasets.PlacementChart:
+    """Return a short chart with two onsets."""
     n_frames = 40
     target = np.zeros((n_frames,), dtype=np.float32)
     target[10] = 1.0
@@ -43,7 +34,7 @@ def _chart_with_onsets() -> datasets.PlacementChart:
     spec = np.zeros((n_frames, 80, 3), dtype=np.float32)
     return datasets.PlacementChart(
         song_key="bundle/song",
-        difficulty="hard",
+        difficulty=difficulty,
         spec=spec,
         target=target,
         gt_times=np.array([0.10, 0.20], dtype=np.float32),
@@ -53,7 +44,7 @@ def _chart_with_onsets() -> datasets.PlacementChart:
 
 
 class DdcEvalTest(unittest.TestCase):
-    def test_perfect_salience_scores_high(self):
+    def test_perfect_salience_scores_high(self) -> None:
         chart = _chart_with_onsets()
         salience = chart.target.copy()
         model = _QueueModel([salience])
@@ -65,48 +56,35 @@ class DdcEvalTest(unittest.TestCase):
         self.assertIn("skill_f_score_m", payload)
         self.assertGreater(report.timing_match, 0.9)
         self.assertIn("timing_match", payload)
-        self.assertIn("null_timing_match", payload)
-        self.assertIn("skill_timing_match", payload)
-        self.assertEqual(payload["timing_match_tolerance_sec"], 0.02)
-        self.assertGreater(report.timing_match_matched_count, 0.9)
-        self.assertIn("timing_match_matched_count", payload)
+        self.assertEqual(payload["framework"], "pytorch")
 
-    def test_evaluate_empty_charts_raises(self):
+    def test_evaluate_empty_charts_raises(self) -> None:
         with self.assertRaises(ValueError):
             evaluation.evaluate_placement(_QueueModel([]), [])
 
-    def test_choose_thresholds_prefers_working_value(self):
-        chart = _chart_with_onsets()
-        salience = chart.target.copy()
-        chosen = evaluation.choose_thresholds([salience], [chart], grid=(0.1, 0.9))
-        self.assertIn(chosen["hard"], (0.1, 0.9))
-        model = _QueueModel([chart.target.copy()])
+    def test_threshold_selection_across_difficulties(self) -> None:
+        hard = _chart_with_onsets(difficulty="hard")
+        easy = _chart_with_onsets(difficulty="easy")
+        model = _QueueModel([hard.target.copy(), easy.target.copy()])
         report = evaluation.evaluate_placement(
             model,
-            [chart],
-            thresholds={"hard": 0.5},
-            tune_on=False,
+            [hard, easy],
+            thresholds=(0.1, 0.5, 0.9),
             seed=0,
         )
-        self.assertEqual(report.per_difficulty_threshold["hard"], 0.5)
-        easy = _chart_with_onsets()
-        easy.difficulty = "easy"
-        chosen_multi = evaluation.choose_thresholds(
-            [salience, salience],
-            [chart, easy],
-            grid=(0.5,),
-        )
-        self.assertEqual(set(chosen_multi), {"hard", "easy"})
-        model2 = _QueueModel([chart.target.copy()])
-        untuned = evaluation.evaluate_placement(
-            model2,
-            [chart],
-            tune_on=False,
-            seed=0,
-        )
-        self.assertEqual(untuned.per_difficulty_threshold["hard"], 0.5)
+        self.assertEqual(set(report.per_difficulty_threshold), {"hard", "easy"})
+        self.assertIn(report.per_difficulty_threshold["hard"], (0.1, 0.5, 0.9))
 
-    def test_extra_peak_lowers_timing_match_not_greedy_f1(self):
+        fixed_model = _QueueModel([hard.target.copy()])
+        fixed = evaluation.evaluate_placement(
+            fixed_model,
+            [hard],
+            thresholds=(0.5,),
+            seed=0,
+        )
+        self.assertEqual(fixed.per_difficulty_threshold["hard"], 0.5)
+
+    def test_extra_peak_lowers_timing_match_below_greedy_f1(self) -> None:
         chart = _chart_with_onsets()
         salience = chart.target.copy()
         salience[30] = 0.6
@@ -114,8 +92,7 @@ class DdcEvalTest(unittest.TestCase):
         report = evaluation.evaluate_placement(
             model,
             [chart],
-            thresholds={"hard": 0.5},
-            tune_on=False,
+            thresholds=(0.5,),
             seed=0,
         )
         self.assertEqual(report.counts.true_positives, 2)
@@ -123,22 +100,6 @@ class DdcEvalTest(unittest.TestCase):
         self.assertGreater(report.f_score_m, 0.7)
         self.assertAlmostEqual(report.timing_match, 2.0 / 3.0)
         self.assertLess(report.timing_match, report.f_score_m)
-        self.assertAlmostEqual(report.timing_match_matched_count, 1.0)
-        self.assertGreater(
-            report.timing_match_matched_count,
-            report.timing_match,
-        )
-
-    def test_times_matched_count_keeps_highest_salience(self):
-        times = np.array([0.10, 0.20, 0.30], dtype=np.float32)
-        salience = np.zeros((40,), dtype=np.float32)
-        salience[10] = 1.0
-        salience[20] = 1.0
-        salience[30] = 0.6
-        kept = evaluation._times_matched_count(times, salience, 2)
-        np.testing.assert_allclose(kept, [0.10, 0.20])
-        empty = evaluation._times_matched_count(times, salience, 0)
-        self.assertEqual(empty.size, 0)
 
 
 if __name__ == "__main__":

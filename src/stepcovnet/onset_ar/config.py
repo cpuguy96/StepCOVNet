@@ -94,8 +94,7 @@ class ArModelConfig(_DictSerializableMixin):
     num_heads: int = 4
     dropout_rate: float = 0.1
     pointer_head: str = "content"
-    # False = Keras keep-valid masks. True only for rebuilding pre-2026-07-16
-    # checkpoints that were trained with inverted mask polarity.
+    # False = standard keep-valid masks. True only for legacy inverted mask polarity.
     legacy_inverted_attention_masks: bool = False
     density_conditioning: str = "none"
     # Content-pointer: keys from pre-position patch embeddings (not PE-laden memory).
@@ -112,6 +111,7 @@ class ArModelConfig(_DictSerializableMixin):
     pointer_qk_layernorm: bool = True
     density_meter_max: int = 32
     density_onset_hz_norm: float = 15.0
+    mert_hidden_size: int = constants.MERT_HIDDEN_SIZE
 
 
 @dataclasses.dataclass
@@ -181,8 +181,8 @@ def pointer_soft_distance_alpha(run: ArRunConfig) -> float:
 
     Absolute pointer: ``logits[p] -= α·max(0, p − prev)``.
     Gap head: ``logits[Δ] -= α·decode_delta(Δ)`` (skipped when ``prev == 0``).
-    Static config value (offline eval). During train with anneal, the live
-    ``tf.Variable`` on the training model is authoritative.
+    Static config value (offline eval). During training with annealing, the
+    active schedule value is authoritative.
     """
     return float(getattr(run, "pointer_soft_distance_alpha", 0.0) or 0.0)
 
@@ -257,8 +257,8 @@ class ArExperimentConfig:
         return (max_frames + patch_frames - 1) // patch_frames
 
     def patch_input_dim(self) -> int:
-        """Flattened MERT patch feature width ``P * 1024``."""
-        return int(self.model.patch_frames) * constants.MERT_HIDDEN_SIZE
+        """Flattened MERT patch feature width ``P * mert_hidden_size``."""
+        return int(self.model.patch_frames) * int(self.model.mert_hidden_size)
 
     def max_decoder_len(self) -> int:
         """Padded decoder sequence length including ``<EOS>``."""

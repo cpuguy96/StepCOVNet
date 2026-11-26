@@ -162,7 +162,10 @@ Ordered `timing_match` has a floor of ≈ 0 because it also requires the *k*-th 
 from stepcovnet import onset_null_baseline
 
 counts = onset_null_baseline.null_counts_for_song(
-    gt_times, duration_sec=duration, n_pred=n_pred_model, tolerance_sec=0.02,
+    gt_times,
+    duration_sec=duration,
+    n_pred=n_pred_model,
+    tolerance_sec=0.02,
 )
 floors = onset_null_baseline.aggregate_null_counts([counts])
 kind, floor = onset_null_baseline.strongest_null(floors)
@@ -196,7 +199,9 @@ skill = onset_null_baseline.skill_over_null(model_f1, floor)  # <= 0 means no sk
 from stepcovnet import timing_match
 
 report = timing_match.timing_match_report(
-    pred_times, ref_times, tolerance_sec=0.02,
+    pred_times,
+    ref_times,
+    tolerance_sec=0.02,
 )
 # report: n_matched, n_pred, n_ref, n_denom, rate, tolerance_sec
 

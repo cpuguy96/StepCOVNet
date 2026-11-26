@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+import torch
+
 _SCRIPT_DIR = str(
     pathlib.Path(pathlib.Path(__file__).resolve()).resolve().parent.parent / "scripts"
 )
@@ -12,17 +14,10 @@ if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
 import eval_dense_onset  # noqa: E402
-import keras
 
 
-def _keras_model_stub(*, predict_return_value=None):
-    model = mock.create_autospec(keras.Model, instance=True)
-    if predict_return_value is not None:
-        model.predict.return_value = predict_return_value
-    model.fit.return_value = mock.Mock(
-        history={"val_loss": [1.0], "loss": [1.0]},
-    )
-    return model
+def _torch_model_stub():
+    return mock.create_autospec(torch.nn.Module, instance=True)
 
 
 class EvalDenseOnsetScriptTest(unittest.TestCase):
@@ -30,9 +25,8 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             model_dir = pathlib.Path(tmpdir) / "models"
             pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
-            model_path = pathlib.Path(model_dir) / "best.keras"
-            with pathlib.Path(model_path).open("wb") as model_file:
-                model_file.write(b"keras")
+            model_path = pathlib.Path(model_dir) / "best.pt"
+            model_path.write_bytes(b"pt")
 
             config_path = pathlib.Path(tmpdir) / "config.json"
             with pathlib.Path(config_path).open("w", encoding="utf-8") as config_file:
@@ -86,7 +80,7 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
                 "eval_kwargs": {"confidence_threshold": 0.5},
                 "per_song": {},
             }
-            stub_model = _keras_model_stub()
+            stub_model = _torch_model_stub()
             argv = [
                 f"--config={config_path}",
                 f"--model_path={model_path}",
@@ -95,8 +89,8 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
             ]
             with (
                 mock.patch.object(
-                    eval_dense_onset.tf.keras.models,
-                    "load_model",
+                    eval_dense_onset.trainers,
+                    "load_onset_model",
                     return_value=stub_model,
                     autospec=True,
                 ),
@@ -118,18 +112,16 @@ class EvalDenseOnsetScriptTest(unittest.TestCase):
             self.assertEqual(report["config_path"], str(config_path))
             self.assertEqual(report["micro_event_f1"], 0.55)
 
-    def test_find_saved_model_path_requires_single_keras(self) -> None:
+    def test_find_saved_model_path_requires_single_pt(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             with self.assertRaises(FileNotFoundError):
                 eval_dense_onset._find_saved_model_path(tmpdir)
 
-            with (pathlib.Path(tmpdir) / "a.keras").open("wb") as model_file:
-                model_file.write(b"a")
-            with (pathlib.Path(tmpdir) / "b.keras").open("wb") as model_file:
-                model_file.write(b"b")
+            (pathlib.Path(tmpdir) / "a.pt").write_bytes(b"a")
+            (pathlib.Path(tmpdir) / "b.pt").write_bytes(b"b")
             with self.assertRaises(FileNotFoundError):
                 eval_dense_onset._find_saved_model_path(tmpdir)
 
-            (pathlib.Path(tmpdir) / "b.keras").unlink()
+            (pathlib.Path(tmpdir) / "b.pt").unlink()
             resolved = eval_dense_onset._find_saved_model_path(tmpdir)
-            self.assertTrue(resolved.endswith("a.keras"))
+            self.assertTrue(resolved.endswith("a.pt"))

@@ -15,7 +15,7 @@ from stepcovnet import config, constants
 from stepcovnet.pytorch.core.onset_models import (
     CausalConv1d,
     _CoreTransformerBlock,
-    _init_keras_style,
+    _init_xavier_uniform,
 )
 
 
@@ -138,8 +138,11 @@ class SnippetCNN(nn.Module):
 class PositionalEncoding(nn.Module):
     """Sinusoidal positional encoding matching ``stepcovnet.models.PositionalEncoding``.
 
+    Precomputes ``position`` steps into a non-persistent buffer and dynamically
+    extends the sinusoidal table whenever an input sequence exceeds ``position``.
+
     Args:
-        position: Maximum supported sequence length.
+        position: Initial precomputed sequence length.
         d_model: Even embedding dimension.
 
     Attributes:
@@ -151,20 +154,27 @@ class PositionalEncoding(nn.Module):
 
     pos_encoding: torch.Tensor
 
+    @staticmethod
+    def _build_table(length: int, d_model: int) -> torch.Tensor:
+        """Compute ``(1, length, d_model)`` float32 sinusoidal encodings."""
+        pos = np.arange(length, dtype=np.float32)[:, np.newaxis]
+        idx = np.arange(d_model, dtype=np.float32)[np.newaxis, :]
+        angles = pos / np.power(10000.0, (2.0 * (idx // 2.0)) / float(d_model))
+        table = np.zeros((length, d_model), dtype=np.float32)
+        table[:, 0::2] = np.sin(angles[:, 0::2])
+        table[:, 1::2] = np.cos(angles[:, 1::2])
+        return torch.from_numpy(table).unsqueeze(0)
+
     def __init__(self, position: int, d_model: int) -> None:
         super().__init__()
         if d_model % 2 != 0:
             raise ValueError("PositionalEncoding requires an even d_model.")
         self.position = int(position)
         self.d_model = int(d_model)
-        pos = np.arange(self.position, dtype=np.float32)[:, np.newaxis]
-        idx = np.arange(self.d_model, dtype=np.float32)[np.newaxis, :]
-        angles = pos / np.power(10000.0, (2.0 * (idx // 2.0)) / float(self.d_model))
-        table = np.zeros((self.position, self.d_model), dtype=np.float32)
-        table[:, 0::2] = np.sin(angles[:, 0::2])
-        table[:, 1::2] = np.cos(angles[:, 1::2])
         self.register_buffer(
-            "pos_encoding", torch.from_numpy(table).unsqueeze(0), persistent=False
+            "pos_encoding",
+            self._build_table(self.position, self.d_model),
+            persistent=False,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -177,7 +187,11 @@ class PositionalEncoding(nn.Module):
             Position-encoded tensor ``(B, S, d_model)``.
         """
         seq_len = int(x.shape[1])
-        return x + self.pos_encoding[:, :seq_len, :].to(x.dtype)
+        if seq_len <= int(self.pos_encoding.shape[1]):
+            pe = self.pos_encoding[:, :seq_len, :]
+        else:
+            pe = self._build_table(seq_len, self.d_model).to(device=x.device)
+        return x + pe.to(x.dtype)
 
 
 class ArrowInputEncoder(nn.Module):
@@ -205,7 +219,7 @@ class ArrowInputEncoder(nn.Module):
         self.scale_timing = bool(scale_timing)
 
         self.timing_proj = nn.Linear(1, self.embed_dim)
-        _init_keras_style(self.timing_proj)
+        _init_xavier_uniform(self.timing_proj)
 
         self.interval_proj: nn.Linear | None = None
         self.interval_log_proj: nn.Linear | None = None
@@ -214,27 +228,27 @@ class ArrowInputEncoder(nn.Module):
             enc = input_options.interval_encoding
             if enc == config.IntervalEncoding.DEFAULT:
                 self.interval_proj = nn.Linear(1, self.embed_dim)
-                _init_keras_style(self.interval_proj)
+                _init_xavier_uniform(self.interval_proj)
             elif enc == config.IntervalEncoding.LOG:
                 self.interval_log_proj = nn.Linear(1, self.embed_dim)
-                _init_keras_style(self.interval_log_proj)
+                _init_xavier_uniform(self.interval_log_proj)
             elif enc == config.IntervalEncoding.MULTI:
                 self.interval_log_proj = nn.Linear(1, self.embed_dim)
                 self.interval_next_proj = nn.Linear(1, self.embed_dim)
-                _init_keras_style(self.interval_log_proj)
-                _init_keras_style(self.interval_next_proj)
+                _init_xavier_uniform(self.interval_log_proj)
+                _init_xavier_uniform(self.interval_next_proj)
             else:
                 raise ValueError(f"Invalid interval encoding: {enc}")
 
         self.step_index_proj: nn.Linear | None = None
         if input_options.use_step_index:
             self.step_index_proj = nn.Linear(1, self.embed_dim)
-            _init_keras_style(self.step_index_proj)
+            _init_xavier_uniform(self.step_index_proj)
 
         self.beat_phase_proj: nn.Linear | None = None
         if input_options.use_beat_phase:
             self.beat_phase_proj = nn.Linear(1, self.embed_dim)
-            _init_keras_style(self.beat_phase_proj)
+            _init_xavier_uniform(self.beat_phase_proj)
 
         self.snippet_cnn: SnippetCNN | None = None
         self.snippet_proj: nn.Linear | None = None
@@ -242,13 +256,13 @@ class ArrowInputEncoder(nn.Module):
             n_frames = 2 * int(input_options.snippet_half_frames) + 1
             self.snippet_cnn = SnippetCNN(n_frames, constants.N_MELS, filters=32)
             self.snippet_proj = nn.Linear(32, self.embed_dim)
-            _init_keras_style(self.snippet_proj)
+            _init_xavier_uniform(self.snippet_proj)
 
     def required_input_names(self) -> list[str]:
         """Return ordered list of expected input dictionary keys.
 
         Returns:
-            Input key names matching Keras arrow model inputs.
+            Ordered input key names expected by the arrow sequence model.
         """
         names = ["timing_input"]
         if self.input_options.use_interval:
@@ -352,7 +366,7 @@ class ArrowSequenceModel(nn.Module):
             self.encoder = ArrowInputEncoder(d_model, input_options, scale_timing=True)
             if params.use_timing_position:
                 self.timing_pos_bias = nn.Linear(1, d_model)
-                _init_keras_style(self.timing_pos_bias)
+                _init_xavier_uniform(self.timing_pos_bias)
             else:
                 self.pos_enc = PositionalEncoding(constants.MAX_STEPS, d_model)
             self.transformer_layers = nn.ModuleList(
@@ -372,7 +386,7 @@ class ArrowSequenceModel(nn.Module):
             cur = hidden_dims[0]
             for dim in hidden_dims[1:]:
                 lin = nn.Linear(cur, dim)
-                _init_keras_style(lin)
+                _init_xavier_uniform(lin)
                 self.mlp_layers.append(lin)
                 self.mlp_drops.append(nn.Dropout(params.dropout_rate))
                 cur = dim
@@ -394,7 +408,7 @@ class ArrowSequenceModel(nn.Module):
                 cur = units * (2 if params.bidirectional else 1)
             head_w = max(units // 2, constants.N_ARROW_TYPES)
             self.head_dense = nn.Linear(cur, head_w)
-            _init_keras_style(self.head_dense)
+            _init_xavier_uniform(self.head_dense)
             self.head_drop = nn.Dropout(params.dropout_rate)
             out_dim = head_w
         elif self.model_type == "gru":
@@ -416,7 +430,7 @@ class ArrowSequenceModel(nn.Module):
                 attn_dim = int(params.attention_dim)
                 if cur != attn_dim:
                     self.gru_attn_proj = nn.Linear(cur, attn_dim)
-                    _init_keras_style(self.gru_attn_proj)
+                    _init_xavier_uniform(self.gru_attn_proj)
                 self.gru_attn = _CoreTransformerBlock(
                     attn_dim,
                     int(params.attention_heads),
@@ -428,7 +442,7 @@ class ArrowSequenceModel(nn.Module):
             else:
                 head_w = max(units // 2, constants.N_ARROW_TYPES)
             self.head_dense = nn.Linear(cur, head_w)
-            _init_keras_style(self.head_dense)
+            _init_xavier_uniform(self.head_dense)
             self.head_drop = nn.Dropout(params.dropout_rate)
             out_dim = head_w
         elif self.model_type == "tcn":
@@ -450,7 +464,7 @@ class ArrowSequenceModel(nn.Module):
             )
             head_w = max(filters // 2, constants.N_ARROW_TYPES)
             self.head_dense = nn.Linear(filters, head_w)
-            _init_keras_style(self.head_dense)
+            _init_xavier_uniform(self.head_dense)
             self.head_drop = nn.Dropout(params.dropout_rate)
             out_dim = head_w
         elif self.model_type == "cnn1d":
@@ -462,18 +476,18 @@ class ArrowSequenceModel(nn.Module):
             )
             head_w = max(filters // 2, constants.N_ARROW_TYPES)
             self.head_dense = nn.Linear(filters, head_w)
-            _init_keras_style(self.head_dense)
+            _init_xavier_uniform(self.head_dense)
             self.head_drop = nn.Dropout(params.dropout_rate)
             out_dim = head_w
         else:
             raise ValueError(f"Unsupported arrow model_type {model_type!r}")
 
         self.arrow_head = nn.Linear(out_dim, constants.N_ARROW_TYPES)
-        _init_keras_style(self.arrow_head)
+        _init_xavier_uniform(self.arrow_head)
         self.aux_interval_head: nn.Linear | None = None
         if output_options.use_aux_interval:
             self.aux_interval_head = nn.Linear(out_dim, 1)
-            _init_keras_style(self.aux_interval_head)
+            _init_xavier_uniform(self.aux_interval_head)
 
     def model_config(self) -> dict[str, Any]:
         """Return checkpoint serialization metadata.

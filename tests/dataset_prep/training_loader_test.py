@@ -138,7 +138,7 @@ class TrainingLoaderTest(unittest.TestCase):
                     split="train",
                     data_root=str(out_dir),
                 )
-                features, targets = next(iter(ds.take(1)))
+                features, targets = next(iter(ds))
             self.assertEqual(features.shape[0], 1)
             self.assertEqual(features.shape[2], 128)
             self.assertEqual(targets.shape[0], 1)

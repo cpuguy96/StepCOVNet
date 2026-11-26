@@ -11,9 +11,16 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/sweep_val_threshold.py")
 
-import tensorflow as tf
+from typing import Any
 
-from stepcovnet import config, datasets, dense_overfit_eval, pairing, ssl_features
+from stepcovnet import (
+    config,
+    datasets,
+    dense_overfit_eval,
+    pairing,
+    ssl_features,
+    trainers,
+)
 from stepcovnet.onset_events import charts, metrics
 
 THRESHOLDS = (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6)
@@ -47,7 +54,7 @@ def _micro_f1(tp: float, fp: float, fn: float) -> float:
 
 
 def _predict_probs(
-    model: tf.keras.Model,
+    model: Any,
     audio_path: str,
     experiment: config.OnsetExperimentConfig,
     data_root: str,
@@ -60,7 +67,7 @@ def _predict_probs(
     )
     features = datasets.normalize_onset_spectrogram(features)
     pred_probs = np.asarray(
-        model.predict(np.expand_dims(features, 0), verbose=0)
+        dense_overfit_eval._predict_dense_model(model, np.expand_dims(features, 0))
     ).reshape(-1)
     return pred_probs
 
@@ -290,15 +297,15 @@ def main() -> int:
         default="models_wsl/dense_mert_v2_75train_200ep/investigate_bad_val.json",
     )
     args = parser.parse_args()
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
 
     experiment = config.OnsetExperimentConfig.from_json(args.config)
     model_dir = pathlib.Path(experiment.run.model_output_dir)
-    keras_files = sorted(
-        path.name for path in model_dir.iterdir() if path.name.endswith(".keras")
+    pt_files = sorted(
+        path.name for path in model_dir.iterdir() if path.name.endswith(".pt")
     )
-    model_path = str(model_dir / keras_files[0])
-    model = tf.keras.models.load_model(model_path, compile=False)
+    model_path = str(model_dir / pt_files[0])
+    model = trainers.load_onset_model(model_path)
 
     val_pairs = _pair_map(experiment.dataset.val_data_dir)
     val_songs = sorted(val_pairs)

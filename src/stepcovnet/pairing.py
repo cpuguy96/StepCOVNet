@@ -1,4 +1,4 @@
-"""Audio/chart file pairing without TensorFlow dependencies."""
+"""Lightweight audio/chart file pairing with zero ML framework dependencies."""
 
 import os
 import pathlib

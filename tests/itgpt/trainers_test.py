@@ -1,4 +1,4 @@
-"""Tests for ITGPT placement trainers."""
+"""Tests for PyTorch ITGPT placement trainers."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 import numpy as np
+import torch
 
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
@@ -16,14 +17,7 @@ from stepcovnet.itgpt import config, constants, trainers
 
 
 def _synthetic_chart(*, n_beats: int = 6) -> ddcl_datasets.DdclChart:
-    """Return a short in-memory chart for trainer tests.
-
-    Args:
-        n_beats: Integer-beat length.
-
-    Returns:
-        DdclChart with BPM in stream column 1.
-    """
+    """Return a short in-memory chart for trainer tests."""
     slots = np.zeros((n_beats, constants.N_SLOTS), dtype=np.float32)
     slots[0, 0] = 1.0
     stream = np.zeros((n_beats, ddcl_constants.STREAM_DIM), dtype=np.float32)
@@ -47,18 +41,26 @@ def _synthetic_chart(*, n_beats: int = 6) -> ddcl_datasets.DdclChart:
     )
 
 
+def _mock_report(f1_at_05: float = 0.55, f1_max: float = 0.60) -> mock.Mock:
+    report = mock.Mock()
+    report.f1_at_05 = f1_at_05
+    report.f1_max = f1_max
+    report.best_threshold = 0.45
+    report.as_dict.return_value = {"f1_at_05": f1_at_05, "f1_max": f1_max}
+    return report
+
+
 class ItgptTrainersTest(unittest.TestCase):
-    def test_tensorboard_run_log_dir_is_timestamped_child(self):
+    def test_tensorboard_run_log_dir_is_timestamped_child(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = trainers.tensorboard_run_log_dir(tmpdir, "smoke")
             self.assertEqual(log_dir.parent, pathlib.Path(tmpdir) / "logs")
             self.assertTrue(log_dir.name.endswith("-smoke"))
             self.assertTrue(log_dir.is_dir())
 
-    def test_train_placement_writes_artifacts(self):
+    def test_train_placement_writes_artifacts(self) -> None:
         chart = _synthetic_chart()
-        report = mock.Mock()
-        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
+        report = _mock_report(0.1, 0.2)
         with tempfile.TemporaryDirectory() as tmpdir:
             experiment = config.ItgptExperimentConfig(
                 dataset=config.ItgptDatasetConfig(
@@ -84,18 +86,25 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ) as mock_eval,
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
             ):
-                trainers.train_placement(experiment)
-            saved = pathlib.Path(tmpdir) / "models" / "smoke.keras"
-            best = pathlib.Path(tmpdir) / "models" / "best.keras"
-            last = pathlib.Path(tmpdir) / "models" / "last.keras"
+                trainers.train_placement(experiment, device="cpu")
+            saved = pathlib.Path(tmpdir) / "models" / "smoke.pt"
+            best = pathlib.Path(tmpdir) / "models" / "best.pt"
+            last = pathlib.Path(tmpdir) / "models" / "last.pt"
             eval_path = pathlib.Path(tmpdir) / "models" / "eval_val_slot48.json"
             best_eval = pathlib.Path(tmpdir) / "models" / "eval_val_slot48_best.json"
             self.assertTrue(saved.is_file())
@@ -112,7 +121,7 @@ class ItgptTrainersTest(unittest.TestCase):
             self.assertEqual(len(run_dirs), 1)
             self.assertTrue(run_dirs[0].name.endswith("-smoke"))
 
-    def test_train_placement_rejects_empty_split(self):
+    def test_train_placement_rejects_empty_split(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             experiment = config.ItgptExperimentConfig(
                 dataset=config.ItgptDatasetConfig(
@@ -122,22 +131,22 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
                     return_value=[],
                 ),
                 self.assertRaises(ValueError),
             ):
-                trainers.train_placement(experiment)
+                trainers.train_placement(experiment, device="cpu")
             with (
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
                     side_effect=[[_synthetic_chart()], []],
                 ),
                 self.assertRaises(ValueError),
             ):
-                trainers.train_placement(experiment)
+                trainers.train_placement(experiment, device="cpu")
 
-    def test_train_placement_mert_and_periodic_slot_f1_checkpoint(self):
+    def test_train_placement_mert_and_periodic_slot_f1_checkpoint(self) -> None:
         n_beats = 6
         slots = np.zeros((n_beats, constants.N_SLOTS), dtype=np.float32)
         slots[0, 0] = 1.0
@@ -152,11 +161,7 @@ class ItgptTrainersTest(unittest.TestCase):
             slots=slots,
             memlen=0,
         )
-        report = mock.Mock()
-        report.f1_at_05 = 0.55
-        report.f1_max = 0.60
-        report.best_threshold = 0.45
-        report.as_dict.return_value = {"f1_at_05": 0.55, "f1_max": 0.60}
+        report = _mock_report(0.55, 0.60)
         with tempfile.TemporaryDirectory() as tmpdir:
             experiment = config.ItgptExperimentConfig(
                 dataset=config.ItgptDatasetConfig(
@@ -185,17 +190,24 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
                     return_value=[mert_chart],
                 ),
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ) as mock_eval,
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
             ):
-                model = trainers.train_placement(experiment)
-            self.assertEqual(model.optimizer.__class__.__name__, "Adam")
-            best_f1 = pathlib.Path(tmpdir) / "models" / "best_slot_f1.keras"
+                model = trainers.train_placement(experiment, device="cpu")
+            self.assertEqual(model.audio_feature_type, "mert")
+            best_f1 = pathlib.Path(tmpdir) / "models" / "best_slot_f1.pt"
             best_f1_eval = (
                 pathlib.Path(tmpdir) / "models" / "eval_val_slot48_best_f1.json"
             )
@@ -203,49 +215,92 @@ class ItgptTrainersTest(unittest.TestCase):
             self.assertTrue(best_f1_eval.is_file())
             payload = json.loads(best_f1_eval.read_text(encoding="utf-8"))
             self.assertEqual(payload["weights"], "best_slot_f1")
-            # 1 periodic callback eval + 3 final evals (last, best, best_slot_f1)
+            # 1 periodic eval + 3 final evals (last, best, best_slot_f1)
             self.assertEqual(mock_eval.call_count, 4)
 
-    def test_build_learning_rate_constant_and_cosine(self):
-        const_lr = trainers.build_learning_rate(
-            config.ItgptRunConfig(learning_rate=1e-4, lr_schedule="constant")
-        )
-        self.assertEqual(const_lr, 1e-4)
+    def test_learning_rate_for_step_constant_and_cosine(self) -> None:
+        const_cfg = config.ItgptRunConfig(learning_rate=1e-4, lr_schedule="constant")
+        self.assertEqual(trainers.learning_rate_for_step(const_cfg, 0), 1e-4)
+        self.assertEqual(trainers.learning_rate_for_step(const_cfg, 100), 1e-4)
 
-        no_warmup = trainers.build_learning_rate(
-            config.ItgptRunConfig(
-                epoch=10,
-                steps_per_epoch=4,
-                learning_rate=1e-4,
-                min_learning_rate=1e-6,
-                lr_schedule="cosine",
-                warmup_epochs=0,
-            )
+        no_warmup_cfg = config.ItgptRunConfig(
+            epoch=10,
+            steps_per_epoch=4,
+            learning_rate=1e-4,
+            min_learning_rate=1e-6,
+            lr_schedule="cosine",
+            warmup_epochs=0,
         )
-        self.assertAlmostEqual(float(no_warmup(0)), 1e-4, places=8)
-        self.assertAlmostEqual(float(no_warmup(20)), 5.05e-5, places=8)
-        self.assertAlmostEqual(float(no_warmup(40)), 1e-6, places=8)
-
-        with_warmup = trainers.build_learning_rate(
-            config.ItgptRunConfig(
-                epoch=10,
-                steps_per_epoch=4,
-                learning_rate=1e-4,
-                min_learning_rate=1e-6,
-                lr_schedule="cosine",
-                warmup_epochs=2,
-            )
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(no_warmup_cfg, 0), 1e-4, places=8
         )
-        self.assertAlmostEqual(float(with_warmup(0)), 1e-6, places=8)
-        self.assertAlmostEqual(float(with_warmup(4)), 5.05e-5, places=8)
-        self.assertAlmostEqual(float(with_warmup(8)), 1e-4, places=8)
-        self.assertAlmostEqual(float(with_warmup(24)), 5.05e-5, places=8)
-        self.assertAlmostEqual(float(with_warmup(40)), 1e-6, places=8)
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(no_warmup_cfg, 20), 5.05e-5, places=8
+        )
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(no_warmup_cfg, 40), 1e-6, places=8
+        )
 
-    def test_train_placement_cosine_schedule_saves_and_reloads(self):
+        with_warmup_cfg = config.ItgptRunConfig(
+            epoch=10,
+            steps_per_epoch=4,
+            learning_rate=1e-4,
+            min_learning_rate=1e-6,
+            lr_schedule="cosine",
+            warmup_epochs=2,
+        )
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(with_warmup_cfg, 0), 1e-6, places=8
+        )
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(with_warmup_cfg, 4), 5.05e-5, places=8
+        )
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(with_warmup_cfg, 8), 1e-4, places=8
+        )
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(with_warmup_cfg, 24), 5.05e-5, places=8
+        )
+        self.assertAlmostEqual(
+            trainers.learning_rate_for_step(with_warmup_cfg, 40), 1e-6, places=8
+        )
+
+    def test_focal_and_label_smoothing_loss_math(self) -> None:
+        y_true = torch.zeros((1, 4, constants.N_SLOTS), dtype=torch.float32)
+        y_true[0, 0, 0] = 1.0
+        y_true[0, 1, 12] = 1.0
+        probs = torch.full((1, 4, constants.N_SLOTS), 0.1, dtype=torch.float32)
+        probs[0, 0, 0] = 0.9
+        probs[0, 1, 12] = 0.4
+        logits = torch.logit(probs)
+        mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]], dtype=torch.float32)
+
+        plain_loss = trainers.ItgptPlacementLoss(focal_gamma=0.0, label_smoothing=0.0)
+        focal_loss = trainers.ItgptPlacementLoss(focal_gamma=1.0, label_smoothing=0.0)
+        plain_val = float(plain_loss(logits, y_true, mask).item())
+        focal_val = float(focal_loss(logits, y_true, mask).item())
+        self.assertGreater(plain_val, 0.0)
+        self.assertLess(focal_val, plain_val)
+
+        # Under label_smoothing=0.02, calibrated 0.99/0.01 incurs lower loss
+        # than over-confident 0.9999/1e-4.
+        y2 = torch.zeros((1, 2, constants.N_SLOTS), dtype=torch.float32)
+        y2[0, 0, 0] = 1.0
+        m2 = torch.ones((1, 2), dtype=torch.float32)
+        p_cal = torch.full((1, 2, constants.N_SLOTS), 0.01, dtype=torch.float32)
+        p_cal[0, 0, 0] = 0.99
+        p_over = torch.full((1, 2, constants.N_SLOTS), 1e-4, dtype=torch.float32)
+        p_over[0, 0, 0] = 0.9999
+        ls_loss = trainers.ItgptPlacementLoss(label_smoothing=0.02)
+        cal_val = float(ls_loss(torch.logit(p_cal), y2, m2).item())
+        over_val = float(ls_loss(torch.logit(p_over), y2, m2).item())
+        self.assertGreater(over_val, cal_val)
+
+    def test_train_placement_with_cosine_grad_accum_ema_and_label_smoothing(
+        self,
+    ) -> None:
         chart = _synthetic_chart()
-        report = mock.Mock()
-        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
+        report = _mock_report(0.5, 0.55)
         with tempfile.TemporaryDirectory() as tmpdir:
             experiment = config.ItgptExperimentConfig(
                 dataset=config.ItgptDatasetConfig(
@@ -261,295 +316,48 @@ class ItgptTrainersTest(unittest.TestCase):
                 ),
                 run=config.ItgptRunConfig(
                     epoch=2,
-                    steps_per_epoch=2,
-                    validation_steps=1,
-                    learning_rate=1e-4,
-                    min_learning_rate=1e-6,
-                    lr_schedule="cosine",
-                    warmup_epochs=1,
-                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
-                    callback_root_dir="",
-                    model_name="cosine_smoke",
-                    resume=False,
-                ),
-            )
-            with (
-                mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
-                    return_value=[chart],
-                ),
-                mock.patch(
-                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
-                    return_value=report,
-                ),
-            ):
-                model = trainers.train_placement(experiment)
-            self.assertEqual(
-                model.optimizer.get_config()["learning_rate"]["class_name"],
-                "CosineDecay",
-            )
-            self.assertAlmostEqual(float(model.optimizer.learning_rate), 1e-6, places=7)
-            reloaded = trainers.load_placement_model(
-                pathlib.Path(tmpdir) / "models" / "cosine_smoke.keras"
-            )
-            self.assertEqual(
-                reloaded.optimizer.get_config()["learning_rate"]["class_name"],
-                "CosineDecay",
-            )
-
-    def test_focal_loss_equivalence_modulation_and_reload(self):
-        y_true = np.zeros((1, 4, constants.N_SLOTS), dtype=np.float32)
-        y_true[0, 0, 0] = 1.0
-        y_true[0, 1, 12] = 1.0
-        y_pred = np.full((1, 4, constants.N_SLOTS), 0.1, dtype=np.float32)
-        y_pred[0, 0, 0] = 0.9
-        y_pred[0, 1, 12] = 0.4
-        mask = np.array([[1.0, 1.0, 0.0, 0.0]], dtype=np.float32)
-
-        plain_per_beat = np.asarray(
-            trainers.placement_binary_crossentropy(y_true, y_pred)
-        )
-        zero_focal = trainers.ItgptPlacementLoss(focal_gamma=0.0)
-        zero_per_beat = np.asarray(zero_focal.call(y_true, y_pred))
-        np.testing.assert_allclose(zero_per_beat, plain_per_beat, rtol=1e-6, atol=1e-6)
-
-        focal_1 = trainers.ItgptPlacementLoss(focal_gamma=1.0)
-        focal_per_beat = np.asarray(focal_1.call(y_true, y_pred))
-        self.assertTrue(np.all(focal_per_beat < plain_per_beat))
-        # Harder beat (slot 12 at p=0.4) retains a larger fraction of its loss
-        # than the easier beat (slot 0 at p=0.9).
-        self.assertGreater(
-            focal_per_beat[0, 1] / plain_per_beat[0, 1],
-            focal_per_beat[0, 0] / plain_per_beat[0, 0],
-        )
-        # Masked reduction matches Keras sum_over_batch_size used by the plain loss.
-        masked_loss = float(focal_1(y_true, y_pred, sample_weight=mask))
-        self.assertAlmostEqual(
-            masked_loss,
-            float(np.mean(focal_per_beat * mask)),
-            places=6,
-        )
-        self.assertAlmostEqual(
-            float(zero_focal(y_true, y_pred, sample_weight=mask)),
-            float(np.mean(plain_per_beat * mask)),
-            places=6,
-        )
-
-        chart = _synthetic_chart()
-        report = mock.Mock()
-        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
-        with tempfile.TemporaryDirectory() as tmpdir:
-            experiment = config.ItgptExperimentConfig(
-                dataset=config.ItgptDatasetConfig(
-                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
-                    max_beats=constants.CHUNK_ALIGN,
-                ),
-                model=config.ItgptModelConfig(
-                    d_model=32,
-                    n_heads=4,
-                    n_enc_layers=1,
-                    cnn_hidden=8,
-                    dropout_rate=0.0,
-                ),
-                run=config.ItgptRunConfig(
-                    epoch=1,
-                    steps_per_epoch=1,
-                    validation_steps=1,
-                    focal_gamma=1.0,
-                    grid_weight_24th=2.0,
-                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
-                    callback_root_dir="",
-                    model_name="focal_smoke",
-                    resume=False,
-                ),
-            )
-            with (
-                mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
-                    return_value=[chart],
-                ),
-                mock.patch(
-                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
-                    return_value=report,
-                ),
-            ):
-                trainers.train_placement(experiment)
-            reloaded = trainers.load_placement_model(
-                pathlib.Path(tmpdir) / "models" / "focal_smoke.keras"
-            )
-            self.assertIsInstance(reloaded.loss, trainers.ItgptPlacementLoss)
-            self.assertAlmostEqual(reloaded.loss.focal_gamma, 1.0)
-            self.assertAlmostEqual(reloaded.loss.grid_weight_24th, 2.0)
-
-    def test_train_placement_gradient_accumulation_saves_and_reloads(self):
-        chart = _synthetic_chart()
-        report = mock.Mock()
-        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
-        with tempfile.TemporaryDirectory() as tmpdir:
-            experiment = config.ItgptExperimentConfig(
-                dataset=config.ItgptDatasetConfig(
-                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
-                    max_beats=constants.CHUNK_ALIGN,
-                ),
-                model=config.ItgptModelConfig(
-                    d_model=32,
-                    n_heads=4,
-                    n_enc_layers=1,
-                    cnn_hidden=8,
-                    dropout_rate=0.0,
-                ),
-                run=config.ItgptRunConfig(
-                    epoch=1,
                     steps_per_epoch=4,
                     validation_steps=1,
                     learning_rate=1e-4,
                     min_learning_rate=1e-6,
                     lr_schedule="cosine",
-                    warmup_epochs=0,
-                    gradient_accumulation_steps=4,
-                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
-                    callback_root_dir="",
-                    model_name="gradaccum_smoke",
-                    resume=False,
-                ),
-            )
-            with (
-                mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
-                    return_value=[chart],
-                ),
-                mock.patch(
-                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
-                    return_value=report,
-                ),
-            ):
-                model = trainers.train_placement(experiment)
-            self.assertEqual(model.optimizer.gradient_accumulation_steps, 4)
-            self.assertEqual(int(model.optimizer.iterations), 1)
-            reloaded = trainers.load_placement_model(
-                pathlib.Path(tmpdir) / "models" / "gradaccum_smoke.keras"
-            )
-            self.assertEqual(reloaded.optimizer.gradient_accumulation_steps, 4)
-
-    def test_train_placement_ema_swaps_and_reloads(self):
-        chart = _synthetic_chart()
-        report = mock.Mock()
-        report.f1_at_05 = 0.5
-        report.f1_max = 0.55
-        report.best_threshold = 0.45
-        report.as_dict.return_value = {"f1_at_05": 0.5, "f1_max": 0.55}
-        with tempfile.TemporaryDirectory() as tmpdir:
-            experiment = config.ItgptExperimentConfig(
-                dataset=config.ItgptDatasetConfig(
-                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
-                    max_beats=constants.CHUNK_ALIGN,
-                ),
-                model=config.ItgptModelConfig(
-                    d_model=32,
-                    n_heads=4,
-                    n_enc_layers=1,
-                    cnn_hidden=8,
-                    dropout_rate=0.0,
-                ),
-                run=config.ItgptRunConfig(
-                    epoch=2,
-                    steps_per_epoch=2,
-                    validation_steps=1,
-                    learning_rate=1e-4,
-                    min_learning_rate=1e-6,
-                    lr_schedule="cosine",
-                    warmup_epochs=0,
+                    warmup_epochs=1,
+                    focal_gamma=1.0,
+                    grid_weight_24th=2.0,
+                    label_smoothing=0.02,
+                    gradient_accumulation_steps=2,
                     use_ema=True,
                     ema_momentum=0.995,
                     eval_slot_f1_every=1,
                     model_output_dir=str(pathlib.Path(tmpdir) / "models"),
                     callback_root_dir="",
-                    model_name="ema_smoke",
+                    model_name="full_smoke",
                     resume=False,
                 ),
             )
             with (
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ),
-            ):
-                model = trainers.train_placement(experiment)
-            self.assertTrue(model.optimizer.use_ema)
-            self.assertAlmostEqual(float(model.optimizer.ema_momentum), 0.995)
-            reloaded = trainers.load_placement_model(
-                pathlib.Path(tmpdir) / "models" / "best_slot_f1.keras"
-            )
-            self.assertTrue(reloaded.optimizer.use_ema)
-
-    def test_label_smoothing_math_and_reload(self):
-        y_true = np.zeros((1, 2, constants.N_SLOTS), dtype=np.float32)
-        y_true[0, 0, 0] = 1.0
-        y_pred = np.full((1, 2, constants.N_SLOTS), 0.01, dtype=np.float32)
-        y_pred[0, 0, 0] = 0.99
-        y_pred_overconf = np.full((1, 2, constants.N_SLOTS), 1e-4, dtype=np.float32)
-        y_pred_overconf[0, 0, 0] = 0.9999
-
-        plain = np.asarray(trainers.placement_binary_crossentropy(y_true, y_pred))
-        zero_ls = np.asarray(
-            trainers.ItgptPlacementLoss(label_smoothing=0.0).call(y_true, y_pred)
-        )
-        np.testing.assert_allclose(zero_ls, plain, rtol=1e-6, atol=1e-6)
-
-        ls_loss = trainers.ItgptPlacementLoss(label_smoothing=0.02)
-        # Optimal probability under label_smoothing=0.02 is 0.99 / 0.01, so
-        # over-confident 0.9999 / 1e-4 incurs higher loss than calibrated 0.99 / 0.01.
-        cal_val = float(np.mean(np.asarray(ls_loss.call(y_true, y_pred))))
-        over_val = float(np.mean(np.asarray(ls_loss.call(y_true, y_pred_overconf))))
-        self.assertGreater(over_val, cal_val)
-
-        chart = _synthetic_chart()
-        report = mock.Mock()
-        report.as_dict.return_value = {"f1_at_05": 0.1, "f1_max": 0.2}
-        with tempfile.TemporaryDirectory() as tmpdir:
-            experiment = config.ItgptExperimentConfig(
-                dataset=config.ItgptDatasetConfig(
-                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
-                    max_beats=constants.CHUNK_ALIGN,
-                ),
-                model=config.ItgptModelConfig(
-                    d_model=32,
-                    n_heads=4,
-                    n_enc_layers=1,
-                    cnn_hidden=8,
-                    dropout_rate=0.0,
-                ),
-                run=config.ItgptRunConfig(
-                    epoch=1,
-                    steps_per_epoch=1,
-                    validation_steps=1,
-                    label_smoothing=0.02,
-                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
-                    callback_root_dir="",
-                    model_name="ls_smoke",
-                    resume=False,
-                ),
-            )
-            with (
                 mock.patch(
-                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
-                    return_value=[chart],
-                ),
-                mock.patch(
-                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
-                    return_value=report,
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
                 ),
             ):
-                trainers.train_placement(experiment)
-            reloaded = trainers.load_placement_model(
-                pathlib.Path(tmpdir) / "models" / "ls_smoke.keras"
-            )
-            self.assertIsInstance(reloaded.loss, trainers.ItgptPlacementLoss)
-            self.assertAlmostEqual(reloaded.loss.label_smoothing, 0.02)
+                trainers.train_placement(experiment, device="cpu")
+            for name in ("full_smoke.pt", "best.pt", "best_slot_f1.pt"):
+                ckpt = pathlib.Path(tmpdir) / "models" / name
+                self.assertTrue(ckpt.is_file())
+                reloaded = trainers.load_placement_model(ckpt, device="cpu")
+                self.assertEqual(reloaded.d_model, 32)
 
 
 if __name__ == "__main__":

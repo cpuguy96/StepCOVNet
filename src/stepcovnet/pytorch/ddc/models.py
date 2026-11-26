@@ -9,8 +9,8 @@ from torch.nn import functional as nn_func
 from stepcovnet.ddc import constants
 
 
-def _init_keras_style(module: nn.Module) -> None:
-    """Apply Xavier/Glorot uniform + zero bias matching Keras defaults.
+def _init_xavier_uniform(module: nn.Module) -> None:
+    """Apply Xavier/Glorot uniform weights and zero bias.
 
     Args:
         module: Layer to initialize if linear or conv.
@@ -26,8 +26,7 @@ class DdcPerFrameCNN(nn.Module):
 
     Accepts channels-last ``(batch, time, 15, 80, 3)`` directly from
     :mod:`stepcovnet.ddc.datasets`, permutes internally for PyTorch ``Conv2d``,
-    and permutes back before flattening so the 1120-d feature vector matches
-    Keras ordering 1-to-1.
+    and permutes back before flattening into a channels-last 1120-d feature vector.
     """
 
     def __init__(self) -> None:
@@ -52,8 +51,8 @@ class DdcPerFrameCNN(nn.Module):
             kernel_size=constants.CNN_POOL,
             stride=constants.CNN_POOL,
         )
-        _init_keras_style(self.conv0)
-        _init_keras_style(self.conv1)
+        _init_xavier_uniform(self.conv0)
+        _init_xavier_uniform(self.conv1)
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
         """Encode each 15x80x3 window.
@@ -74,7 +73,7 @@ class DdcPerFrameCNN(nn.Module):
         hidden = frames.permute(0, 3, 1, 2).contiguous()
         hidden = self.pool0(nn_func.relu(self.conv0(hidden)))
         hidden = self.pool1(nn_func.relu(self.conv1(hidden)))
-        # (BT, 20, 7, 8) -> (BT, 7, 8, 20) -> (B, T, 1120) matching Keras Flatten.
+        # (BT, 20, 7, 8) -> (BT, 7, 8, 20) -> (B, T, 1120) channels-last flatten.
         hidden = hidden.permute(0, 2, 3, 1).contiguous()
         return hidden.reshape(batch_size, seq_len, -1)
 
@@ -115,7 +114,7 @@ class DdcClstmPlacementModel(nn.Module):
         self.rnn_proj = nn.Linear(
             cnn_out_dim + constants.N_DIFFICULTIES, self.lstm_units
         )
-        _init_keras_style(self.rnn_proj)
+        _init_xavier_uniform(self.rnn_proj)
 
         self.lstms = nn.ModuleList(
             [
@@ -136,12 +135,12 @@ class DdcClstmPlacementModel(nn.Module):
         in_dim = self.lstm_units
         for width in self.dnn_sizes:
             lin = nn.Linear(in_dim, width)
-            _init_keras_style(lin)
+            _init_xavier_uniform(lin)
             dnn_layers.extend([lin, nn.ReLU(), nn.Dropout(self.dropout_rate)])
             in_dim = width
         self.dnn = nn.Sequential(*dnn_layers)
         self.onset = nn.Linear(in_dim, 1)
-        _init_keras_style(self.onset)
+        _init_xavier_uniform(self.onset)
 
     def forward_logits(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
         """Compute per-frame float32 onset logits.

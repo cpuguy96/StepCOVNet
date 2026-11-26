@@ -76,7 +76,10 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
                 build_generate_ui_binary.subprocess,
                 "run",
                 return_value=subprocess.CompletedProcess(
-                    args=[], returncode=3, stdout=b"", stderr=b"",
+                    args=[],
+                    returncode=3,
+                    stdout=b"",
+                    stderr=b"",
                 ),
                 autospec=True,
             ) as run_mock,
@@ -100,7 +103,10 @@ class BuildGenerateUiBinaryMainTest(unittest.TestCase):
                 build_generate_ui_binary.subprocess,
                 "run",
                 return_value=subprocess.CompletedProcess(
-                    args=[], returncode=0, stdout=b"", stderr=b"",
+                    args=[],
+                    returncode=0,
+                    stdout=b"",
+                    stderr=b"",
                 ),
                 autospec=True,
             ) as run_mock,

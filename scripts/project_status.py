@@ -83,7 +83,7 @@ def _git_summary() -> dict[str, str | bool]:
 
 
 def _gpu_lock_summary() -> dict[str, object]:
-    """Report WSL GPU lock state without importing TensorFlow."""
+    """Report WSL GPU lock state without importing PyTorch."""
     lock_path = LOGS_DIR / "gpu_wsl.lock"
     if not lock_path.is_file():
         return {"held": False, "path": str(lock_path.relative_to(REPO))}

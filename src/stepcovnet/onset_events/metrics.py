@@ -1,7 +1,6 @@
 """Event-based onset precision, recall, and F1 at a time tolerance."""
 
 import numpy as np
-import tensorflow as tf
 
 from stepcovnet.onset_events import matching
 
@@ -316,97 +315,27 @@ def event_onset_f1_numpy(
     return _precision_recall_f1_from_counts(*counts)
 
 
-def _event_onset_f1_numpy_wrapper(
+def event_onset_f1(
     pred_times: np.ndarray,
     pred_confidence: np.ndarray,
     gt_times: np.ndarray,
     gt_mask: np.ndarray,
-    tolerance_sec: np.ndarray,
-    confidence_threshold: np.ndarray,
-    min_onset_distance_ms: np.ndarray,
+    tolerance_sec: float = DEFAULT_TOLERANCE_SEC,
+    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    min_onset_distance_ms: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Numpy wrapper for ``tf.numpy_function``."""
-    precision, recall, f1 = event_onset_f1_numpy(
+    """Compute event onset precision, recall, and F1 as numpy float32 scalars."""
+    p, r, f1 = event_onset_f1_numpy(
         pred_times,
         pred_confidence,
         gt_times,
         gt_mask,
-        tolerance_sec=float(tolerance_sec.reshape(-1)[0]),
-        confidence_threshold=float(confidence_threshold.reshape(-1)[0]),
-        min_onset_distance_ms=float(min_onset_distance_ms.reshape(-1)[0]),
-    )
-    return (
-        np.array(precision, dtype=np.float64),
-        np.array(recall, dtype=np.float64),
-        np.array(f1, dtype=np.float64),
-    )
-
-
-def event_onset_f1(
-    pred_times: np.ndarray | tf.Tensor,
-    pred_confidence: np.ndarray | tf.Tensor,
-    gt_times: np.ndarray | tf.Tensor,
-    gt_mask: np.ndarray | tf.Tensor,
-    tolerance_sec: float = DEFAULT_TOLERANCE_SEC,
-    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
-    min_onset_distance_ms: float = 0.0,
-) -> tuple[np.ndarray | tf.Tensor, np.ndarray | tf.Tensor, np.ndarray | tf.Tensor]:
-    """Compute event onset precision, recall, and F1.
-
-    Accepts NumPy arrays or TensorFlow tensors. Tensor inputs are evaluated via
-    ``tf.numpy_function`` wrapping :func:`event_onset_f1_numpy`.
-
-    Args:
-        pred_times: Predicted onset times in seconds; shape ``(batch, num_queries)``
-            or ``(num_queries,)``.
-        pred_confidence: Prediction confidences; same shape as ``pred_times``.
-        gt_times: Ground-truth onset times; shape ``(batch, n_max_onsets)`` or
-            ``(n_max_onsets,)``.
-        gt_mask: Ground-truth validity mask; same shape as ``gt_times``.
-        tolerance_sec: Maximum allowed absolute time error for a valid match.
-        confidence_threshold: Minimum confidence for a prediction to be counted.
-        min_onset_distance_ms: Minimum gap before matching; ``0`` uses all slots.
-
-    Returns:
-        Tuple of ``(precision, recall, f1)`` as floats (NumPy scalars or TF
-        rank-0 tensors).
-    """
-    if isinstance(pred_times, tf.Tensor) or isinstance(pred_confidence, tf.Tensor):
-        pred_times = tf.cast(tf.convert_to_tensor(pred_times), tf.float32)
-        pred_confidence = tf.cast(tf.convert_to_tensor(pred_confidence), tf.float32)
-        gt_times = tf.convert_to_tensor(gt_times, dtype=tf.float32)
-        gt_mask = tf.convert_to_tensor(gt_mask, dtype=tf.float32)
-
-        outputs = tf.numpy_function(
-            _event_onset_f1_numpy_wrapper,
-            [
-                pred_times,
-                pred_confidence,
-                gt_times,
-                gt_mask,
-                np.array([tolerance_sec], dtype=np.float64),
-                np.array([confidence_threshold], dtype=np.float64),
-                np.array([min_onset_distance_ms], dtype=np.float64),
-            ],
-            [tf.float64, tf.float64, tf.float64],
-        )
-        precision, recall, f1 = outputs
-        precision = tf.cast(precision, tf.float32)
-        recall = tf.cast(recall, tf.float32)
-        f1 = tf.cast(f1, tf.float32)
-        return precision, recall, f1
-
-    precision, recall, f1 = event_onset_f1_numpy(
-        np.asarray(pred_times),
-        np.asarray(pred_confidence),
-        np.asarray(gt_times),
-        np.asarray(gt_mask),
         tolerance_sec=tolerance_sec,
         confidence_threshold=confidence_threshold,
         min_onset_distance_ms=min_onset_distance_ms,
     )
     return (
-        np.array(precision, dtype=np.float64),
-        np.array(recall, dtype=np.float64),
-        np.array(f1, dtype=np.float64),
+        np.asarray(p, dtype=np.float32),
+        np.asarray(r, dtype=np.float32),
+        np.asarray(f1, dtype=np.float32),
     )

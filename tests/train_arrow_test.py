@@ -5,8 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-import keras
-import tensorflow as tf
+import torch
 
 from stepcovnet import config, models, trainers
 
@@ -700,10 +699,10 @@ class TrainArrowValidationTest(unittest.TestCase):
 
 
 class TrainArrowGpuBlockTest(unittest.TestCase):
-    """Test the module-level GPU block (mixed precision + XLA) is executed when GPU is present."""
+    """Test the module-level GPU block executes cleanly when CUDA is available."""
 
-    def test_gpu_block_runs_when_list_physical_devices_returns_non_empty(self):
-        """When tf.config.list_physical_devices('GPU') returns a device, the GPU block runs."""
+    def test_gpu_block_runs_when_cuda_available(self):
+        """When torch.cuda.is_available() returns True, the GPU block runs."""
         if "train_arrow" in sys.modules:
             del sys.modules["train_arrow"]
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -717,14 +716,10 @@ class TrainArrowGpuBlockTest(unittest.TestCase):
                     autospec=True,
                 ),
                 mock.patch.object(
-                    tf.config,
-                    "list_physical_devices",
-                    return_value=["GPU:0"],
+                    torch.cuda,
+                    "is_available",
+                    return_value=True,
                     autospec=True,
-                ),
-                mock.patch.object(tf.config.optimizer, "set_jit", autospec=True),
-                mock.patch.object(
-                    keras.mixed_precision, "set_global_policy", autospec=True
                 ),
             ):
                 import train_arrow  # noqa: E402

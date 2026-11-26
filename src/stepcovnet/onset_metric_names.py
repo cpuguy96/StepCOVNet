@@ -9,7 +9,7 @@ Tier prefixes make training logs and eval JSON scannable:
 - ``loss_*``       — optimization terms (not pass/fail)
 - ``diag_*``       — offline-only debugging fields
 
-Keras validation logs prefix metric names with ``val_`` (e.g. ``val_gate_teacher``).
+Validation logs prefix metric names with ``val_`` (e.g. ``val_gate_teacher``).
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ LOSS_TIME = "time_loss"
 LOSS_RESIDUAL = "residual_loss"
 LOSS_INCREMENTAL_CONSISTENCY = "incremental_consistency_loss"
 
-# Keras / TensorBoard metric name -> canonical name (no val_ prefix).
+# Training / TensorBoard metric name -> canonical name (no val_ prefix).
 LEGACY_METRIC_ALIASES: dict[str, str] = {
     "overfit_gate": GATE_TEACHER,
     "ordered_onset_match": TIMING_MATCH_TEACHER,
@@ -56,7 +56,7 @@ LEGACY_METRIC_ALIASES: dict[str, str] = {
     "onset_f1_score": "frame_onset_f1",  # dense frame metric (legacy)
 }
 
-# Canonical -> legacy Keras metric name (for dual-publish in logs).
+# Canonical -> legacy metric name (for dual-publish in logs).
 CANONICAL_TO_LEGACY_METRIC: dict[str, str] = {
     GATE_TEACHER: "overfit_gate",
     TIMING_MATCH_TEACHER: "ordered_onset_match",
@@ -99,12 +99,12 @@ EVAL_JSON_TIERS: dict[str, str] = {
 
 
 def val_name(metric: str) -> str:
-    """Keras validation log key for a canonical metric name."""
+    """Validation log key for a canonical metric name."""
     return metric if metric.startswith("val_") else f"val_{metric}"
 
 
 def resolve_checkpoint_metric(name: str) -> str:
-    """Map config ``checkpoint_metric`` to the Keras ``val_*`` monitor name."""
+    """Map config ``checkpoint_metric`` to the validation ``val_*`` monitor name."""
     canonical = LEGACY_CHECKPOINT_ALIASES.get(name, name.removeprefix("val_"))
     legacy = CANONICAL_TO_LEGACY_METRIC.get(canonical)
     if legacy is not None:
@@ -112,9 +112,9 @@ def resolve_checkpoint_metric(name: str) -> str:
     return name if name.startswith("val_") else val_name(canonical)
 
 
-def canonical_metric_name(keras_metric_name: str) -> str:
-    """Resolve a Keras metric name (no ``val_``) to its canonical form."""
-    return LEGACY_METRIC_ALIASES.get(keras_metric_name, keras_metric_name)
+def canonical_metric_name(metric_name: str) -> str:
+    """Resolve a logged metric name (no ``val_``) to its canonical form."""
+    return LEGACY_METRIC_ALIASES.get(metric_name, metric_name)
 
 
 def publish_legacy_val_aliases(logs: dict, *, val_prefix: bool = True) -> None:

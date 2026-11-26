@@ -1,9 +1,9 @@
 """PyTorch hierarchical transformer placement from ITGPT (`omalley2026itgpt`).
 
-Architecture matches :mod:`stepcovnet.itgpt.models` and upstream
-https://github.com/miguelomalley/ITGPT/blob/main/onset.py, while using
+Architecture follows upstream
+https://github.com/miguelomalley/ITGPT/blob/main/onset.py, using
 :func:`torch.nn.functional.scaled_dot_product_attention` (FlashAttention /
-cuDNN SDPA on CUDA) and Keras-compatible default weight initialization.
+cuDNN SDPA on CUDA) and Xavier uniform weight initialization.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def grid_importance_weights(
 
 
 def _init_linear_or_conv(module: nn.Module) -> None:
-    """Apply Glorot/Xavier uniform + zero bias matching Keras defaults.
+    """Apply Glorot/Xavier uniform weights and zero bias.
 
     Args:
         module: Layer to initialize if it is ``Linear``, ``Conv1d``, or ``Conv2d``.
@@ -120,9 +120,7 @@ class ItgptFFN(nn.Module):
 class ItgptMultiHeadSelfAttention(nn.Module):
     """Bidirectional multi-head self-attention backed by PyTorch SDPA.
 
-    Uses separate Q/K/V/O linear projections to match Keras
-    ``MultiHeadAttention(num_heads=n_heads, key_dim=d_model // n_heads)``
-    1-to-1 for exact weight parity while enabling FlashAttention / cuDNN SDPA.
+    Uses separate Q/K/V/O linear projections with FlashAttention / cuDNN SDPA.
 
     Args:
         d_model: Model width.
@@ -356,8 +354,8 @@ class ItgptBeatCNNEncoder(nn.Module):
 
     Accepts channels-last ``(BT, 32, 80, 3)`` to match
     :class:`stepcovnet.ddcl.datasets.DdclChart` directly, permutes internally
-    for PyTorch ``Conv2d``, and permutes back before flattening so ``proj0``
-    feature ordering matches Keras 1-to-1.
+    for PyTorch ``Conv2d``, and permutes back before flattening in channels-last
+    order for ``proj0``.
 
     Args:
         d_model: Projected output width.
@@ -409,7 +407,7 @@ class ItgptBeatCNNEncoder(nn.Module):
         hidden = nn_func.gelu(self.conv1(hidden))
         hidden = nn_func.gelu(self.conv2(hidden))
         hidden = nn_func.gelu(self.conv3(hidden))
-        # Permute (BT, 2H, 24, 8) -> (BT, 24, 8, 2H) to match Keras flatten order.
+        # Permute (BT, 2H, 24, 8) -> (BT, 24, 8, 2H) for channels-last flatten.
         hidden = hidden.permute(0, 2, 3, 1).contiguous()
         hidden = hidden.reshape(-1, constants.CNN_FRAMES_OUT, self.hidden * 16)
         return self.proj1(nn_func.gelu(self.proj0(hidden)))
@@ -968,7 +966,7 @@ class ItgptPlacementLoss(nn.Module):
             targets ``y -> y * (1 - eps) + 0.5 * eps`` (default ``0.0``).
         normalize_by_valid_beats: If True, divide masked beat losses by the
             number of real beats (``mask.sum()``). If False, divide by the
-            total padded beat count (matching Keras ``sum_over_batch_size``).
+            total padded beat count (mean over batch and beat axes).
 
     Raises:
         ValueError: If ``label_smoothing`` is outside ``[0, 1)``.

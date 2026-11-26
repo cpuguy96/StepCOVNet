@@ -1,17 +1,20 @@
-"""Data collection and preprocessing for StepCovNet.
+"""Data collection and preprocessing for StepCOVNet.
 
 This module provides functionality to load audio and StepMania chart files,
-process them into spectrograms and target vectors, and create a TensorFlow
-dataset for training.
+process them into spectrograms and target vectors, and create PyTorch
+datasets and data loaders for training.
 """
+
+from __future__ import annotations
 
 import pathlib
 from typing import Any, cast
 
 import librosa
 import numpy as np
-import tensorflow as tf
+import torch
 from scipy import interpolate
+from torch.utils.data import DataLoader, Dataset
 
 from stepcovnet import config, constants, mel_onset, pairing, ssl_features
 from stepcovnet.dataset_prep import training_index, training_loader
@@ -158,17 +161,17 @@ def list_dense_onset_samples(
 
 
 def select_song_pairs(
-    pairs: list[tuple[str, str]],
+    pairs: list[Any],
     max_songs: int = -1,
     seed: int | None = None,
-) -> list[tuple[str, str]]:
+) -> list[Any]:
     """Select a reproducible subset of audio/chart pairs for training.
 
     Pairs are sorted by audio path, shuffled with ``seed``, then truncated to
     ``max_songs``.
 
     Args:
-        pairs: Full list of ``(audio_path, chart_path)`` tuples.
+        pairs: Full list of ``(audio_path, chart_path, ...)`` tuples.
         max_songs: Maximum songs to keep (-1 for all).
         seed: Random seed for shuffling before truncation.
 
@@ -551,16 +554,20 @@ def load_onset_features(
 
 
 def _temporal_augment_scipy(
-    spec: np.ndarray,
-    labels_and_features: np.ndarray,
+    spec: np.ndarray | torch.Tensor,
+    labels_and_features: np.ndarray | torch.Tensor,
     n_features: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Random time warping augmentation for spec, labels, and extra features."""
-    spec = spec.numpy() if isinstance(spec, tf.Tensor) else spec  # type: ignore
+    spec = (
+        spec.detach().cpu().numpy()
+        if isinstance(spec, torch.Tensor)
+        else np.asarray(spec)
+    )
     labels_and_features = (
-        labels_and_features.numpy()  # type: ignore
-        if isinstance(labels_and_features, tf.Tensor)
-        else labels_and_features
+        labels_and_features.detach().cpu().numpy()
+        if isinstance(labels_and_features, torch.Tensor)
+        else np.asarray(labels_and_features)
     )
 
     original_length = spec.shape[1]
@@ -631,16 +638,20 @@ def _apply_spec_augment(
     n_freq_bins, time_steps = spec.shape
 
     # Apply frequency masking
-    for _ in range(num_freq_masks):
-        f = np.random.randint(0, max_freq_mask)
-        f0 = np.random.randint(0, n_freq_bins - f)
-        spec_augmented[f0 : f0 + f, :] = 0
+    freq_cap = min(max_freq_mask, n_freq_bins)
+    if freq_cap > 0:
+        for _ in range(num_freq_masks):
+            f = np.random.randint(0, freq_cap)
+            f0 = np.random.randint(0, max(1, n_freq_bins - f))
+            spec_augmented[f0 : f0 + f, :] = 0
 
     # Apply time masking
-    for _ in range(num_time_masks):
-        t = np.random.randint(0, max_time_mask)
-        t0 = np.random.randint(0, time_steps - t)
-        spec_augmented[:, t0 : t0 + t] = 0
+    time_cap = min(max_time_mask, time_steps)
+    if time_cap > 0:
+        for _ in range(num_time_masks):
+            t = np.random.randint(0, time_cap)
+            t0 = np.random.randint(0, max(1, time_steps - t))
+            spec_augmented[:, t0 : t0 + t] = 0
 
     return spec_augmented
 
@@ -790,86 +801,6 @@ def _load_and_preprocess_paths(
     return features.astype(np.float32), target.astype(np.float32)
 
 
-def _load_and_preprocess_py_callback(
-    audio_path_t: tf.Tensor,
-    chart_path_t: tf.Tensor,
-    chart_index_t: tf.Tensor,
-    use_gaussian_target: bool,
-    gaussian_sigma: float,
-    feature_source: config.FeatureSource,
-    mert_features_dir: str,
-    data_root: str,
-    density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Decode paths and delegate to _load_and_preprocess_paths (for tf.py_function)."""
-    audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
-    chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
-    chart_index = int(chart_index_t.numpy())
-    return _load_and_preprocess_paths(
-        audio_path,
-        chart_path,
-        use_gaussian_target,
-        gaussian_sigma,
-        feature_source,
-        mert_features_dir,
-        data_root,
-        chart_index=chart_index,
-        density_conditioning=density_conditioning,
-    )
-
-
-def _load_and_preprocess_tf_map(
-    audio_path_t: tf.Tensor,
-    chart_path_t: tf.Tensor,
-    chart_index_t: tf.Tensor,
-    use_gaussian_target: bool,
-    gaussian_sigma: float,
-    feature_source: config.FeatureSource,
-    mert_features_dir: str,
-    data_root: str,
-    n_features: int,
-    density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
-) -> tuple[tf.Tensor, tf.Tensor]:
-    """Map one (audio_path, chart_path, chart_index) to (features, target) tensors."""
-    features, target = tf.py_function(  # type: ignore[misc]
-        lambda ap, cp, ci: _load_and_preprocess_py_callback(
-            ap,
-            cp,
-            ci,
-            use_gaussian_target,
-            gaussian_sigma,
-            feature_source,
-            mert_features_dir,
-            data_root,
-            density_conditioning,
-        ),
-        [audio_path_t, chart_path_t, chart_index_t],
-        (tf.float32, tf.float32),
-    )
-    return _set_loaded_feature_shapes(
-        features,
-        target,
-        feature_source=feature_source,
-        n_features=n_features,
-    )
-
-
-def _set_loaded_feature_shapes(
-    features: tf.Tensor,
-    target: tf.Tensor,
-    *,
-    feature_source: config.FeatureSource,
-    n_features: int,
-) -> tuple[tf.Tensor, tf.Tensor]:
-    """Apply static shape hints after loading one (features, target) pair."""
-    if feature_source == config.FeatureSource.WAVEFORM:
-        features.set_shape([None])
-    else:
-        features.set_shape([None, n_features])
-    target.set_shape([None, _N_TARGET])
-    return features, target
-
-
 def _augment_features_numpy(
     features: np.ndarray,
     target: np.ndarray,
@@ -897,46 +828,9 @@ def _augment_features_numpy(
     return final_features.astype(np.float32), final_target.astype(np.float32)
 
 
-def _augment_py_callback(
-    features_t: tf.Tensor,
-    target_t: tf.Tensor,
-    temp_aug: bool,
-    spec_aug: bool,
-    n_features: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Convert tensors to numpy and delegate to _augment_features_numpy."""
-    features = features_t.numpy()  # type: ignore[union-attr]
-    target = target_t.numpy()  # type: ignore[union-attr]
-    return _augment_features_numpy(features, target, temp_aug, spec_aug, n_features)
-
-
-def _apply_augmentations_tf_map(
-    features: tf.Tensor,
-    target: tf.Tensor,
-    apply_temporal_augment: bool,
-    should_apply_spec_augment: bool,
-    n_features: int,
-    feature_source: config.FeatureSource,
-) -> tuple[tf.Tensor, tf.Tensor]:
-    """Map (features, target) to augmented (features, target) tensors."""
-    aug_features, aug_target = tf.py_function(  # type: ignore[misc]
-        lambda f, t: _augment_py_callback(
-            f, t, apply_temporal_augment, should_apply_spec_augment, n_features
-        ),
-        [features, target],
-        (tf.float32, tf.float32),
-    )
-    return _set_loaded_feature_shapes(
-        aug_features,
-        aug_target,
-        feature_source=feature_source,
-        n_features=n_features,
-    )
-
-
-def _load_arrow_pair_py_callback(
-    audio_path_t: tf.Tensor,
-    chart_path_t: tf.Tensor,
+def _load_arrow_pair_numpy(
+    audio_path: str,
+    chart_path: str,
     snippet_half_frames: int,
     use_interval: bool,
     interval_encoding: config.IntervalEncoding,
@@ -954,42 +848,12 @@ def _load_arrow_pair_py_callback(
     np.ndarray,
     np.ndarray,
 ]:
-    """Decode (audio_path, chart_path) tensors and load arrow data for tf.py_function.
-
-    Parses chart, optionally loads audio and extracts mel snippets when
-    snippet_half_frames > 0, and optionally computes normalized step index and
-    extra features (step index, beat phase, aux target).
-    Returns a fixed 9-tuple for tf.py_function.
-
-    Args:
-        audio_path_t: Tensor containing the audio path.
-        chart_path_t: Tensor containing the chart path.
-        snippet_half_frames: Half-window of frames around each onset (total = 2*snippet_half_frames+1).
-        use_interval: If True, include interval_input (time since previous step) in the batch dict.
-        interval_encoding: IntervalEncoding (DEFAULT, LOG, or MULTI). Must match model config.
-        use_step_index: If True, include step_index_input (normalized position in sequence).
-        use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
-        use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
-
-    Returns:
-        times: (n_steps,) float32, normalized to [0, 1].
-        intervals: (n_steps,) float32, normalized when use_interval else zeros.
-        interval_log: (n_steps,) float32, log-normalized when interval_encoding multi else zeros.
-        snippets: (n_steps, n_frames, n_mels) or (n_steps, 0, n_mels).
-        cols: (n_steps,) int32.
-        step_index: (n_steps,) float32, normalized [0,1] when use_step_index else zeros.
-        beat_phase: (n_steps,) float32, phase when use_beat_phase else zeros.
-        aux_interval: (n_steps,) float32, next-step interval target when use_aux else zeros.
-        aux_interval_mask: (n_steps,) float32, 1.0 for valid steps, 0.0 for last step (for loss masking).
-    """
-    audio_path = audio_path_t.numpy().decode()  # type: ignore[union-attr]
-    chart_path = chart_path_t.numpy().decode()  # type: ignore[union-attr]
-
+    """Load and featurize one ``(audio_path, chart_path)`` pair for arrow training."""
     if use_beat_phase:
         times, cols, bpm = _parse_step_chart_with_bpm(chart_path, binary_timings=False)
     else:
         times, cols = _parse_step_chart(chart_path, binary_timings=False)
-        bpm = 120.0  # unused when not use_beat_phase
+        bpm = 120.0
 
     times = np.asarray(times, dtype=np.float64)
     cols = np.asarray(cols, dtype=np.int32)
@@ -1007,7 +871,7 @@ def _load_arrow_pair_py_callback(
             zeros_n,
             zeros_n,
             zeros_n,
-            np.array([], dtype=np.float32),  # aux_interval_mask
+            np.array([], dtype=np.float32),
         )
 
     times_norm = (times / (np.max(times) + 1e-9)).astype(np.float32)
@@ -1037,7 +901,7 @@ def _load_arrow_pair_py_callback(
     if use_aux_interval_target:
         aux_interval = aux_interval_target_from_times(times)
         aux_interval_mask = np.ones(n_steps, dtype=np.float32)
-        aux_interval_mask[-1] = 0.0  # last step has no next interval
+        aux_interval_mask[-1] = 0.0
     else:
         aux_interval = zeros_n.copy()
         aux_interval_mask = zeros_n.copy()
@@ -1072,7 +936,7 @@ def _arrow_use_dict_output(
     use_beat_phase: bool,
     use_aux_interval_target: bool,
 ) -> bool:
-    """Return True if arrow dataset should yield (dict of inputs/targets, cols); else (times, cols)."""
+    """Return True if arrow dataset should yield ``(dict, cols)``; else ``(times, cols)``."""
     return (
         snippet_half_frames > 0
         or use_interval
@@ -1093,21 +957,18 @@ def _apply_timing_jitter_py_callback(
     use_interval: bool,
     interval_encoding: config.IntervalEncoding,
 ) -> tuple[dict[str, np.ndarray] | np.ndarray, np.ndarray]:
-    """Apply Gaussian jitter to timing_input and recompute intervals from jittered times.
-
-    Used only during training; called from an uncached map so each epoch sees new noise.
-    Jittered values are clipped to [0, 1] and timing order is enforced so intervals stay non-negative.
+    """Apply Gaussian jitter to ``timing_input`` and recompute intervals.
 
     Args:
-        features: Either a dict of (n_steps, 1) arrays or a single (n_steps, 1) times array.
-        cols: (n_steps,) column labels, returned unchanged.
-        sigma: Gaussian std for jitter in [0, 1]; applied to timing_input only.
-        use_dict: True if features is a dict.
-        use_interval: True if interval inputs are present and should be recomputed from jittered times.
+        features: Dict of ``(n_steps, 1)`` arrays or single ``(n_steps, 1)`` array.
+        cols: ``(n_steps,)`` column labels, returned unchanged.
+        sigma: Gaussian std for jitter in ``[0, 1]``.
+        use_dict: True if ``features`` is a dict.
+        use_interval: True if interval inputs should be recomputed.
         interval_encoding: How intervals are encoded (DEFAULT, LOG, MULTI).
 
     Returns:
-        (features_jittered, cols) with same structure as input.
+        ``(features_jittered, cols)`` with the same structure as input.
 
     Raises:
         ValueError: If interval encoding is invalid.
@@ -1129,14 +990,12 @@ def _apply_timing_jitter_py_callback(
 
     if not use_dict:
         times = np.asarray(features, dtype=np.float32)
-        jittered = _jitter_and_clip(times)
-        jittered = _enforce_order(jittered)
+        jittered = _enforce_order(_jitter_and_clip(times))
         return jittered, cols
 
     out = dict(features)
     timing = np.asarray(out["timing_input"], dtype=np.float32)
-    jittered_timing = _jitter_and_clip(timing)
-    jittered_timing = _enforce_order(jittered_timing)
+    jittered_timing = _enforce_order(_jitter_and_clip(timing))
     out["timing_input"] = jittered_timing
 
     has_interval = (
@@ -1164,231 +1023,275 @@ def _apply_timing_jitter_py_callback(
     return out, cols
 
 
-# Order of optional dict keys for jitter map flatten/unflatten (must match TF map).
-_JITTER_OPTIONAL_KEYS = [
-    "step_index_input",
-    "interval_input",
-    "interval_log_input",
-    "interval_next_input",
-    "beat_phase_input",
-    "snippet_input",
-    "aux_interval_target",
-    "aux_interval_mask",
-]
-
-
-def _apply_timing_jitter_tf_map(
-    features: tf.Tensor | dict[str, tf.Tensor],
-    cols: tf.Tensor,
-    sigma: float,
-    use_dict_output: bool,
-    use_interval: bool,
-    interval_encoding: config.IntervalEncoding,
-    n_frames_window: int,
-) -> tuple[tf.Tensor | dict[str, tf.Tensor], tf.Tensor]:
-    """Apply timing jitter via py_function; used only when sigma > 0 after cache."""
-    # Flatten inputs so tf.py_function gets one list of tensors: [timing, cols, ...optional keys].
-    empty_01 = tf.constant([], shape=(0, 1), dtype=tf.float32)
-    empty_snippet = tf.zeros((0, n_frames_window, _N_MELS), dtype=tf.float32)
-
-    def _default_tf(key: str) -> tf.Tensor:
-        return empty_snippet if key == "snippet_input" else empty_01
-
-    timing_t = features["timing_input"] if use_dict_output else features
-    flat = [timing_t, cols] + [
-        features.get(k, _default_tf(k)) if use_dict_output else _default_tf(k)
-        for k in _JITTER_OPTIONAL_KEYS
-    ]
-
-    def _py_jitter(
-        timing_t: tf.Tensor, cols_t: tf.Tensor, *optional_t: tf.Tensor
-    ) -> tuple:
-        # arrs[0]=timing, arrs[1]=cols, arrs[2:]=optionals in _JITTER_OPTIONAL_KEYS order.
-        empty_01_np = np.array([], dtype=np.float32).reshape(0, 1)
-        empty_snippet_np = np.zeros((0, n_frames_window, _N_MELS), dtype=np.float32)
-
-        def _empty(key: str) -> np.ndarray:
-            return empty_snippet_np if key == "snippet_input" else empty_01_np
-
-        arrs = [timing_t.numpy(), cols_t.numpy()] + [t.numpy() for t in optional_t]
-        # Dict vs non-dict must follow use_dict_output: step_index can be empty while intervals/other optionals exist.
-        if not use_dict_output:
-            feats_out, cols_out = _apply_timing_jitter_py_callback(
-                arrs[0],
-                arrs[1],
-                sigma,
-                False,
-                use_interval,
-                interval_encoding,
-            )
-            return (feats_out, cols_out) + tuple(
-                _empty(k) for k in _JITTER_OPTIONAL_KEYS
-            )
-        # Dict path: build feature dict, jitter, then return flat list again.
-        feats_dict: dict[str, np.ndarray] = {"timing_input": arrs[0]}
-        for i, key in enumerate(_JITTER_OPTIONAL_KEYS):
-            if arrs[i + 2].size > 0:
-                feats_dict[key] = arrs[i + 2]
-        feats_out, cols_out = _apply_timing_jitter_py_callback(
-            feats_dict,
-            arrs[1],
-            sigma,
-            True,
-            use_interval,
-            interval_encoding,
-        )
-        return (feats_out["timing_input"], cols_out) + tuple(
-            feats_out.get(k, _empty(k)) for k in _JITTER_OPTIONAL_KEYS
-        )
-
-    res = tf.py_function(  # type: ignore[misc]
-        _py_jitter,
-        flat,
-        (tf.float32, tf.int32) + (tf.float32,) * len(_JITTER_OPTIONAL_KEYS),
-    )
-    out_timing = tf.ensure_shape(res[0], flat[0].shape)
-    out_cols = tf.ensure_shape(res[1], flat[1].shape)
-    if use_dict_output:
-        out_dict: dict[str, tf.Tensor] = {"timing_input": out_timing}
-        for i, key in enumerate(_JITTER_OPTIONAL_KEYS):
-            t = res[i + 2]
-            # Include keys that were present in the original features dict OR
-            # were created by the jitter callback (non-empty tensor).
-            if key in features or t.shape[0] != 0:
-                t = (
-                    tf.ensure_shape(t, (None, n_frames_window, _N_MELS))
-                    if key == "snippet_input"
-                    else tf.ensure_shape(t, (None, 1))
-                )
-                out_dict[key] = t
-        return out_dict, out_cols
-    return out_timing, out_cols
-
-
-def _process_arrow_pair_tf_map(
-    audio_path_t: tf.Tensor,
-    chart_path_t: tf.Tensor,
-    snippet_half_frames: int,
-    use_interval: bool,
-    interval_encoding: config.IntervalEncoding,
-    use_step_index: bool,
-    use_beat_phase: bool,
-    use_aux_interval_target: bool,
-) -> tuple[tf.Tensor | dict[str, tf.Tensor], tf.Tensor]:
-    """Map (audio_path, chart_path) to arrow inputs and cols.
-
-    Uses _load_arrow_pair_py_callback; builds dict or (times, cols) from the
-    returned 8-tuple based on config flags.
-    """
-    (
-        times,
-        intervals,
-        interval_log,
-        snippets,
-        cols,
-        step_index,
-        beat_phase,
-        aux_interval,
-        aux_interval_mask,
-    ) = tf.py_function(  # type: ignore[misc]
-        lambda ap, cp: _load_arrow_pair_py_callback(
-            ap,
-            cp,
-            snippet_half_frames,
-            use_interval,
-            interval_encoding,
-            use_step_index,
-            use_beat_phase,
-            use_aux_interval_target,
-        ),
-        [audio_path_t, chart_path_t],
-        (
-            tf.float32,
-            tf.float32,
-            tf.float32,
-            tf.float32,
-            tf.int32,
-            tf.float32,
-            tf.float32,
-            tf.float32,
-            tf.float32,
-        ),
-    )
-    times = tf.ensure_shape(times, [None])
-    times = tf.expand_dims(times, axis=-1)
-    cols = tf.ensure_shape(cols, [None])
-
-    use_snippets = snippet_half_frames > 0
-    use_dict = _arrow_use_dict_output(
-        snippet_half_frames,
-        use_interval,
-        use_step_index,
-        use_beat_phase,
-        use_aux_interval_target,
-    )
-
-    if use_dict:
-        out: dict[str, tf.Tensor] = {"timing_input": times}
-        if use_interval:
-            intervals = tf.ensure_shape(intervals, [None])
-            if interval_encoding == config.IntervalEncoding.DEFAULT:
-                out["interval_input"] = tf.expand_dims(intervals, axis=-1)
-            elif interval_encoding == config.IntervalEncoding.LOG:
-                out["interval_log_input"] = tf.expand_dims(intervals, axis=-1)
-            elif interval_encoding == config.IntervalEncoding.MULTI:
-                interval_log = tf.ensure_shape(interval_log, [None])
-                out["interval_log_input"] = tf.expand_dims(interval_log, axis=-1)
-                out["interval_next_input"] = tf.expand_dims(intervals, axis=-1)
-        if use_step_index:
-            step_index = tf.ensure_shape(step_index, [None])
-            out["step_index_input"] = tf.expand_dims(step_index, axis=-1)
-        if use_beat_phase:
-            beat_phase = tf.ensure_shape(beat_phase, [None])
-            out["beat_phase_input"] = tf.expand_dims(beat_phase, axis=-1)
-        if use_snippets:
-            n_frames_window = 2 * snippet_half_frames + 1
-            snippets = tf.ensure_shape(snippets, [None, n_frames_window, _N_MELS])
-            out["snippet_input"] = snippets
-        if use_aux_interval_target:
-            aux_interval = tf.ensure_shape(aux_interval, [None])
-            out["aux_interval_target"] = tf.expand_dims(aux_interval, axis=-1)
-            aux_interval_mask = tf.ensure_shape(aux_interval_mask, [None])
-            out["aux_interval_mask"] = tf.expand_dims(aux_interval_mask, axis=-1)
-        return out, cols
-
-    return times, cols
-
-
-def _random_crop_frames(
-    features: tf.Tensor,
-    target: tf.Tensor,
+def _random_crop_frames_numpy(
+    features: np.ndarray,
+    target: np.ndarray,
     window_frames: int,
-) -> tuple[tf.Tensor, tf.Tensor]:
-    """Crop a random fixed-length window from one (features, target) song pair.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Crop a random fixed-length window from one ``(features, target)`` song pair."""
+    n_frames = features.shape[0]
+    if n_frames < window_frames:
+        pad = window_frames - n_frames
+        features = np.pad(features, ((0, pad), (0, 0)), mode="constant")
+        target = np.pad(target, ((0, pad), (0, 0)), mode="constant")
+        n_frames = window_frames
+    max_start = n_frames - window_frames
+    start = int(np.random.randint(0, max_start + 1)) if max_start > 0 else 0
+    return (
+        features[start : start + window_frames].astype(np.float32),
+        target[start : start + window_frames].astype(np.float32),
+    )
 
-    Songs shorter than the window are zero-padded to the window length first,
-    so the output shape is always ``(window_frames, ...)``.
 
-    Args:
-        features: Frame features of shape ``(T, n_features)``.
-        target: Frame targets of shape ``(T, 1)``.
-        window_frames: Fixed crop length in frames.
+class DenseOnsetDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
+    """PyTorch dataset for dense onset detection with in-memory feature caching."""
 
-    Returns:
-        Cropped ``(features, target)`` pair with static length ``window_frames``.
-    """
-    n_frames = tf.shape(features)[0]
-    pad = tf.maximum(0, window_frames - n_frames)
-    paddings = tf.stack([tf.stack([0, pad]), tf.constant([0, 0])])
-    features = tf.pad(features, paddings)
-    target = tf.pad(target, paddings)
-    max_start = tf.shape(features)[0] - window_frames
-    start = tf.random.uniform([], 0, max_start + 1, dtype=tf.int32)
-    features = features[start : start + window_frames]
-    target = target[start : start + window_frames]
-    features = tf.ensure_shape(features, (window_frames, None))
-    target = tf.ensure_shape(target, (window_frames, 1))
-    return features, target
+    def __init__(
+        self,
+        samples: list[tuple[str, str, int]],
+        *,
+        use_gaussian_target: bool = False,
+        gaussian_sigma: float = 1.0,
+        feature_source: config.FeatureSource = config.FeatureSource.MEL,
+        mert_features_dir: str = "",
+        data_root: str = "",
+        n_features: int = _N_MELS,
+        apply_temporal_augment: bool = False,
+        should_apply_spec_augment: bool = False,
+        window_frames: int = 0,
+        windows_per_song: int = 1,
+        density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
+    ) -> None:
+        self.samples = list(samples)
+        self.use_gaussian_target = use_gaussian_target
+        self.gaussian_sigma = gaussian_sigma
+        self.feature_source = feature_source
+        self.mert_features_dir = mert_features_dir
+        self.data_root = data_root
+        self.n_features = n_features
+        self.apply_temporal_augment = apply_temporal_augment
+        self.should_apply_spec_augment = should_apply_spec_augment
+        self.window_frames = int(window_frames)
+        self.windows_per_song = max(1, int(windows_per_song))
+        self.density_conditioning = density_conditioning
+        self._cache: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+    def __len__(self) -> int:
+        mult = self.windows_per_song if self.window_frames > 0 else 1
+        return len(self.samples) * mult
+
+    def _get_cached(self, song_idx: int) -> tuple[np.ndarray, np.ndarray]:
+        if song_idx not in self._cache:
+            audio_path, chart_path, chart_index = self.samples[song_idx]
+            self._cache[song_idx] = _load_and_preprocess_paths(
+                audio_path,
+                chart_path,
+                self.use_gaussian_target,
+                self.gaussian_sigma,
+                self.feature_source,
+                self.mert_features_dir,
+                self.data_root,
+                chart_index=chart_index,
+                density_conditioning=self.density_conditioning,
+            )
+        return self._cache[song_idx]
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        song_idx = index % len(self.samples)
+        features, target = self._get_cached(song_idx)
+        if self.window_frames > 0:
+            features, target = _random_crop_frames_numpy(
+                features, target, self.window_frames
+            )
+        if self.apply_temporal_augment or self.should_apply_spec_augment:
+            features, target = _augment_features_numpy(
+                features,
+                target,
+                self.apply_temporal_augment,
+                self.should_apply_spec_augment,
+                self.n_features,
+            )
+        return (
+            torch.from_numpy(np.ascontiguousarray(features, dtype=np.float32)),
+            torch.from_numpy(np.ascontiguousarray(target, dtype=np.float32)),
+        )
+
+
+def _collate_dense_onset(
+    batch: list[tuple[torch.Tensor, torch.Tensor]],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if len(batch) == 1:
+        x, y = batch[0]
+        return x.unsqueeze(0), y.unsqueeze(0)
+    feats = [item[0] for item in batch]
+    targets = [item[1] for item in batch]
+    max_t = max(t.shape[0] for t in targets)
+    max_x = max(x.shape[0] for x in feats)
+    if feats[0].ndim == 1:
+        x_out = torch.zeros((len(batch), max_x), dtype=torch.float32)
+        for i, x in enumerate(feats):
+            x_out[i, : x.shape[0]] = x
+    else:
+        feat_dim = feats[0].shape[1]
+        x_out = torch.zeros((len(batch), max_x, feat_dim), dtype=torch.float32)
+        for i, x in enumerate(feats):
+            x_out[i, : x.shape[0]] = x
+    y_out = torch.zeros((len(batch), max_t, targets[0].shape[-1]), dtype=torch.float32)
+    for i, y in enumerate(targets):
+        y_out[i, : y.shape[0]] = y
+    return x_out, y_out
+
+
+class ArrowSequenceDataset(Dataset[tuple[Any, torch.Tensor]]):
+    """PyTorch dataset for arrow classification with in-memory caching and jitter."""
+
+    def __init__(
+        self,
+        pairs: list[tuple[str, str]],
+        *,
+        snippet_half_frames: int = 0,
+        use_interval: bool = False,
+        interval_encoding: config.IntervalEncoding = config.IntervalEncoding.DEFAULT,
+        use_step_index: bool = False,
+        use_beat_phase: bool = False,
+        use_aux_interval_target: bool = False,
+        timing_jitter_sigma: float = 0.0,
+    ) -> None:
+        self.pairs = list(pairs)
+        self.snippet_half_frames = int(snippet_half_frames)
+        self.use_interval = bool(use_interval)
+        self.interval_encoding = interval_encoding
+        self.use_step_index = bool(use_step_index)
+        self.use_beat_phase = bool(use_beat_phase)
+        self.use_aux_interval_target = bool(use_aux_interval_target)
+        self.timing_jitter_sigma = float(timing_jitter_sigma)
+        self.use_dict_output = _arrow_use_dict_output(
+            self.snippet_half_frames,
+            self.use_interval,
+            self.use_step_index,
+            self.use_beat_phase,
+            self.use_aux_interval_target,
+        )
+        self._cache: dict[
+            int, tuple[dict[str, np.ndarray] | np.ndarray, np.ndarray]
+        ] = {}
+
+    def __len__(self) -> int:
+        return len(self.pairs)
+
+    def _get_cached(
+        self, index: int
+    ) -> tuple[dict[str, np.ndarray] | np.ndarray, np.ndarray]:
+        if index not in self._cache:
+            audio_path, chart_path = self.pairs[index]
+            (
+                times,
+                intervals,
+                interval_log,
+                snippets,
+                cols,
+                step_index,
+                beat_phase,
+                aux_interval,
+                aux_interval_mask,
+            ) = _load_arrow_pair_numpy(
+                audio_path,
+                chart_path,
+                self.snippet_half_frames,
+                self.use_interval,
+                self.interval_encoding,
+                self.use_step_index,
+                self.use_beat_phase,
+                self.use_aux_interval_target,
+            )
+            times_col = times[:, np.newaxis]
+            if self.use_dict_output:
+                out: dict[str, np.ndarray] = {"timing_input": times_col}
+                if self.use_interval:
+                    if self.interval_encoding == config.IntervalEncoding.DEFAULT:
+                        out["interval_input"] = intervals[:, np.newaxis]
+                    elif self.interval_encoding == config.IntervalEncoding.LOG:
+                        out["interval_log_input"] = intervals[:, np.newaxis]
+                    elif self.interval_encoding == config.IntervalEncoding.MULTI:
+                        out["interval_log_input"] = interval_log[:, np.newaxis]
+                        out["interval_next_input"] = intervals[:, np.newaxis]
+                if self.use_step_index:
+                    out["step_index_input"] = step_index[:, np.newaxis]
+                if self.use_beat_phase:
+                    out["beat_phase_input"] = beat_phase[:, np.newaxis]
+                if self.snippet_half_frames > 0:
+                    out["snippet_input"] = snippets
+                if self.use_aux_interval_target:
+                    out["aux_interval_target"] = aux_interval[:, np.newaxis]
+                    out["aux_interval_mask"] = aux_interval_mask[:, np.newaxis]
+                self._cache[index] = (out, cols)
+            else:
+                self._cache[index] = (times_col, cols)
+        return self._cache[index]
+
+    def __getitem__(
+        self, index: int
+    ) -> tuple[dict[str, torch.Tensor] | torch.Tensor, torch.Tensor]:
+        features, cols = self._get_cached(index)
+        if self.timing_jitter_sigma > 0:
+            features, cols = _apply_timing_jitter_py_callback(
+                features,
+                cols,
+                self.timing_jitter_sigma,
+                self.use_dict_output,
+                self.use_interval,
+                self.interval_encoding,
+            )
+        cols_t = torch.from_numpy(np.ascontiguousarray(cols, dtype=np.int64))
+        if isinstance(features, dict):
+            feats_t = {
+                k: torch.from_numpy(np.ascontiguousarray(v, dtype=np.float32))
+                for k, v in features.items()
+            }
+            return feats_t, cols_t
+        return torch.from_numpy(
+            np.ascontiguousarray(features, dtype=np.float32)
+        ), cols_t
+
+
+def _collate_arrow_batch(
+    batch: list[tuple[dict[str, torch.Tensor] | torch.Tensor, torch.Tensor]],
+) -> tuple[dict[str, torch.Tensor] | torch.Tensor, torch.Tensor]:
+    if len(batch) == 1:
+        feats, cols = batch[0]
+        if isinstance(feats, dict):
+            return {k: v.unsqueeze(0) for k, v in feats.items()}, cols.unsqueeze(0)
+        return feats.unsqueeze(0), cols.unsqueeze(0)
+
+    max_len = max(int(cols.shape[0]) for _, cols in batch)
+    cols_out = torch.full(
+        (len(batch), max_len),
+        constants.ARROW_PADDING_CLASS,
+        dtype=torch.long,
+    )
+    for i, (_, cols) in enumerate(batch):
+        cols_out[i, : cols.shape[0]] = cols
+
+    first_feats = batch[0][0]
+    if isinstance(first_feats, dict):
+        dict_out: dict[str, torch.Tensor] = {}
+        for key in first_feats:
+            tail_shape = first_feats[key].shape[1:]
+            padded = torch.zeros(
+                (len(batch), max_len, *tail_shape), dtype=torch.float32
+            )
+            for i, (feats, _) in enumerate(batch):
+                assert isinstance(feats, dict)
+                t = feats[key]
+                padded[i, : t.shape[0]] = t
+            dict_out[key] = padded
+        return dict_out, cols_out
+
+    padded_t = torch.zeros((len(batch), max_len, 1), dtype=torch.float32)
+    for i, (feats, _) in enumerate(batch):
+        assert isinstance(feats, torch.Tensor)
+        padded_t[i, : feats.shape[0]] = feats
+    return padded_t, cols_out
 
 
 def create_dataset(
@@ -1408,22 +1311,42 @@ def create_dataset(
     window_frames: int = 0,
     windows_per_song: int = 1,
     density_conditioning: str = config.DENSITY_CONDITIONING_NONE,
-) -> tf.data.Dataset:
-    """
-    Creates a TensorFlow dataset pipeline with a proper caching strategy.
-    Deterministic preprocessing is cached, while random augmentations are applied
-    on the fly in each epoch.
+) -> DataLoader[Any]:
+    """Create a PyTorch DataLoader for dense onset training or validation.
 
-    When ``window_frames`` > 0, each epoch yields ``windows_per_song`` random
-    fixed-length crops per song (shuffled across songs) instead of whole songs,
-    which gives uniform shapes and efficient batching for training. Requires a
-    frame feature source (not WAVEFORM).
+    Args:
+        data_dir: Directory or training manifest path.
+        batch_size: Batch size.
+        apply_temporal_augment: Apply random time-warping augmentation.
+        should_apply_spec_augment: Apply SpecAugment masking.
+        use_gaussian_target: Generate Gaussian-smoothed onset targets.
+        gaussian_sigma: Gaussian target standard deviation in frames.
+        feature_source: Feature source (MEL, MERT, or WAVEFORM).
+        mert_features_dir: Directory of precomputed MERT features.
+        n_features: Optional input feature dimension override.
+        max_songs: Maximum songs to select (``-1`` keeps all).
+        song_selection_seed: Optional seed for song subset selection.
+        split: Optional manifest split (``train`` or ``val``).
+        data_root: Optional data root directory.
+        window_frames: Random crop window length (``0`` disables cropping).
+        windows_per_song: Random crops drawn per song per epoch.
+        density_conditioning: Density conditioning mode.
+
+    Returns:
+        PyTorch :class:`DataLoader` yielding ``(features, targets)`` tensor batches.
+
+    Raises:
+        ValueError: If no audio-chart pairs are found or ``window_frames`` is used
+            with ``FeatureSource.WAVEFORM``.
     """
     if n_features is None:
         if feature_source == config.FeatureSource.MERT:
             n_features = constants.MERT_HIDDEN_SIZE
         else:
             n_features = _N_MELS
+
+    if window_frames > 0 and feature_source == config.FeatureSource.WAVEFORM:
+        raise ValueError("window_frames requires a frame feature source (mel/mert)")
 
     root = data_root or data_dir
     samples = select_song_pairs(
@@ -1434,102 +1357,29 @@ def create_dataset(
     if not samples:
         raise ValueError("No audio-chart pairs found.")
 
-    audio_paths, chart_paths, chart_indices = zip(*samples, strict=True)
-    ds = tf.data.Dataset.from_tensor_slices(
-        (
-            list(audio_paths),
-            list(chart_paths),
-            list(chart_indices),
-        )
+    ds = DenseOnsetDataset(
+        samples,
+        use_gaussian_target=use_gaussian_target,
+        gaussian_sigma=gaussian_sigma,
+        feature_source=feature_source,
+        mert_features_dir=mert_features_dir,
+        data_root=root,
+        n_features=n_features,
+        apply_temporal_augment=apply_temporal_augment,
+        should_apply_spec_augment=should_apply_spec_augment,
+        window_frames=window_frames,
+        windows_per_song=windows_per_song,
+        density_conditioning=density_conditioning,
     )
-    ds = ds.map(
-        lambda audio_path, chart_path, chart_index: _load_and_preprocess_tf_map(
-            audio_path,
-            chart_path,
-            chart_index,
-            use_gaussian_target,
-            gaussian_sigma,
-            feature_source,
-            mert_features_dir,
-            root,
-            n_features,
-            density_conditioning,
-        ),
-        num_parallel_calls=tf.data.AUTOTUNE,
+    shuffle = window_frames > 0
+    drop_last = window_frames > 0 and len(ds) >= batch_size
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=drop_last,
+        collate_fn=_collate_dense_onset,
     )
-    ds = ds.cache()
-
-    # The augmentation map is a tf.py_function: it holds the GIL, so
-    # num_parallel_calls buys no real parallelism, and every call copies the
-    # whole tensor into Python and back. With augmentation disabled it is a
-    # no-op that still pays that cost once per element per epoch, so skip it.
-    augment_enabled = apply_temporal_augment or should_apply_spec_augment
-
-    def _augment(features: tf.Tensor, target: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
-        return _apply_augmentations_tf_map(
-            features,
-            target,
-            apply_temporal_augment,
-            should_apply_spec_augment,
-            n_features,
-            feature_source,
-        )
-
-    if window_frames > 0:
-        if feature_source == config.FeatureSource.WAVEFORM:
-            raise ValueError("window_frames requires a frame feature source (mel/mert)")
-        if windows_per_song > 1:
-            # Repeat the song list rather than each song in place: every epoch
-            # still draws windows_per_song crops per song, but they are spread
-            # across the epoch instead of arriving in consecutive runs.
-            ds = ds.repeat(windows_per_song)
-        ds = ds.map(
-            lambda features, target: _random_crop_frames(
-                features,
-                target,
-                window_frames,
-            ),
-            num_parallel_calls=tf.data.AUTOTUNE,
-        )
-        # Augment after cropping: the py_function then handles one window
-        # instead of a whole song, and each crop gets independent noise.
-        if augment_enabled:
-            ds = ds.map(_augment, num_parallel_calls=tf.data.AUTOTUNE)
-        # Each buffered element is a full window (window_frames x n_features), so a
-        # large buffer costs GBs of RAM and refills at every epoch boundary. A few
-        # batches' worth is enough to break up song ordering after the crop.
-        total_windows = len(samples) * windows_per_song
-        shuffle_buffer = max(batch_size * 4, 32)
-        ds = ds.shuffle(buffer_size=min(total_windows, shuffle_buffer))
-        ds = ds.batch(batch_size, drop_remainder=total_windows >= batch_size)
-        ds = ds.prefetch(tf.data.AUTOTUNE)
-        return ds
-
-    if augment_enabled:
-        ds = ds.map(_augment, num_parallel_calls=tf.data.AUTOTUNE)
-
-    if batch_size > 1:
-        feature_pad_shape = (
-            (None,)
-            if feature_source == config.FeatureSource.WAVEFORM
-            else (None, n_features)
-        )
-        ds = ds.padded_batch(
-            batch_size,
-            padded_shapes=(
-                feature_pad_shape,
-                (None, 1),
-            ),
-            padding_values=(
-                (0.0),
-                0.0,
-            ),
-        )
-    else:
-        ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)
-
-    ds = ds.prefetch(tf.data.AUTOTUNE)
-    return ds
 
 
 def create_arrow_dataset(
@@ -1542,124 +1392,43 @@ def create_arrow_dataset(
     use_beat_phase: bool = False,
     use_aux_interval_target: bool = False,
     timing_jitter_sigma: float = 0.0,
-) -> tf.data.Dataset:
-    """Creates a TensorFlow dataset for arrow prediction.
-
-    Step times are always normalized (critical for training and inference).
-    Sequences are padded to constants.MAX_STEPS so batches have fixed shape (required for XLA).
-    When timing_jitter_sigma > 0, Gaussian jitter is applied to timing_input after cache
-    (uncached map) so each epoch sees new noise; validation should use timing_jitter_sigma=0.
+) -> DataLoader[Any]:
+    """Create a PyTorch DataLoader for arrow classification.
 
     Args:
         data_dir: Directory containing audio and chart files.
-        batch_size: Number of samples per batch.
-        snippet_half_frames: Half-window of frames around each onset (total = 2*snippet_half_frames+1).
-            When > 0, load audio and yield mel snippets per step; when 0, timing only.
-        use_interval: If True, include interval_input (time since previous step) in the batch dict.
-        interval_encoding: IntervalEncoding (DEFAULT, LOG, or MULTI). Must match model config.
-        use_step_index: If True, include step_index_input (normalized position in sequence).
-        use_beat_phase: If True, include beat_phase_input (BPM from chart txt).
-        use_aux_interval_target: If True, include aux_interval_target (next-step interval) for aux loss.
-        timing_jitter_sigma: If > 0, add Gaussian jitter to timing_input (training only).
-            0 disables jitter. Apply 0 for validation.
+        batch_size: Number of songs per batch.
+        snippet_half_frames: Half-window of mel frames around each onset.
+        use_interval: Include inter-step interval features.
+        interval_encoding: Interval encoding variant (DEFAULT, LOG, MULTI).
+        use_step_index: Include normalized step index input.
+        use_beat_phase: Include beat phase input.
+        use_aux_interval_target: Include auxiliary next-interval targets and mask.
+        timing_jitter_sigma: Gaussian jitter sigma applied to timings on the fly.
 
     Returns:
-        Dataset yielding (dict of inputs/targets, cols) when any extra feature is used,
-        else (times, cols). Dict may contain timing_input, interval_input, interval_log_input,
-        interval_next_input, step_index_input, beat_phase_input, snippet_input, aux_interval_target.
+        PyTorch :class:`DataLoader` yielding ``(inputs, cols)`` batches.
+
+    Raises:
+        ValueError: If no audio-chart pairs are found.
     """
     pairs = _load_and_pair_files(data_dir)
     if not pairs:
         raise ValueError("No audio-chart pairs found in the specified directory.")
 
-    ds = tf.data.Dataset.from_tensor_slices(pairs)
-    n_frames_window = 2 * snippet_half_frames + 1
-
-    ds = ds.map(
-        lambda pair: _process_arrow_pair_tf_map(
-            pair[0],
-            pair[1],
-            snippet_half_frames,
-            use_interval,
-            interval_encoding,
-            use_step_index,
-            use_beat_phase,
-            use_aux_interval_target,
-        ),
-        num_parallel_calls=tf.data.AUTOTUNE,
+    ds = ArrowSequenceDataset(
+        pairs,
+        snippet_half_frames=snippet_half_frames,
+        use_interval=use_interval,
+        interval_encoding=interval_encoding,
+        use_step_index=use_step_index,
+        use_beat_phase=use_beat_phase,
+        use_aux_interval_target=use_aux_interval_target,
+        timing_jitter_sigma=timing_jitter_sigma,
     )
-
-    ds = ds.cache()
-
-    use_dict_output = _arrow_use_dict_output(
-        snippet_half_frames,
-        use_interval,
-        use_step_index,
-        use_beat_phase,
-        use_aux_interval_target,
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=_collate_arrow_batch,
     )
-
-    if timing_jitter_sigma > 0:
-        ds = ds.map(
-            lambda feats, c: _apply_timing_jitter_tf_map(
-                feats,
-                c,
-                timing_jitter_sigma,
-                use_dict_output,
-                use_interval,
-                interval_encoding,
-                n_frames_window,
-            ),
-            num_parallel_calls=tf.data.AUTOTUNE,
-        )
-
-    if batch_size > 1:
-        if use_dict_output:
-            padded_shapes_dict: dict[str, tuple[Any, ...]] = {"timing_input": (None, 1)}
-            padding_values_dict: dict[str, float | int] = {"timing_input": 0.0}
-            if snippet_half_frames > 0:
-                padded_shapes_dict["snippet_input"] = (
-                    None,
-                    n_frames_window,
-                    _N_MELS,
-                )
-                padding_values_dict["snippet_input"] = 0.0
-            if use_interval:
-                if interval_encoding == config.IntervalEncoding.DEFAULT:
-                    padded_shapes_dict["interval_input"] = (None, 1)
-                    padding_values_dict["interval_input"] = 0.0
-                elif interval_encoding == config.IntervalEncoding.LOG:
-                    padded_shapes_dict["interval_log_input"] = (None, 1)
-                    padding_values_dict["interval_log_input"] = 0.0
-                elif interval_encoding == config.IntervalEncoding.MULTI:
-                    padded_shapes_dict["interval_log_input"] = (None, 1)
-                    padding_values_dict["interval_log_input"] = 0.0
-                    padded_shapes_dict["interval_next_input"] = (None, 1)
-                    padding_values_dict["interval_next_input"] = 0.0
-            if use_step_index:
-                padded_shapes_dict["step_index_input"] = (None, 1)
-                padding_values_dict["step_index_input"] = 0.0
-            if use_beat_phase:
-                padded_shapes_dict["beat_phase_input"] = (None, 1)
-                padding_values_dict["beat_phase_input"] = 0.0
-            if use_aux_interval_target:
-                padded_shapes_dict["aux_interval_target"] = (None, 1)
-                padding_values_dict["aux_interval_target"] = 0.0
-                padded_shapes_dict["aux_interval_mask"] = (None, 1)
-                padding_values_dict["aux_interval_mask"] = 0.0
-            ds = ds.padded_batch(
-                batch_size,
-                padded_shapes=(padded_shapes_dict, (None,)),
-                padding_values=(padding_values_dict, constants.ARROW_PADDING_CLASS),
-            )
-        else:
-            ds = ds.padded_batch(
-                batch_size,
-                padded_shapes=((None, 1), (None,)),
-                padding_values=(0.0, constants.ARROW_PADDING_CLASS),
-            )
-    else:
-        ds = ds.batch(batch_size, num_parallel_calls=tf.data.AUTOTUNE)
-
-    ds = ds.prefetch(tf.data.AUTOTUNE)
-    return ds

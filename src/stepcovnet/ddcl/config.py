@@ -106,7 +106,9 @@ class DdclDatasetConfig(_DictSerializableMixin):
             raise ValueError(
                 f"n_frames_per_beat must be at least 1, got {self.n_frames_per_beat}"
             )
-        if not self.mert_cache_suffix.startswith(".") or not self.mert_cache_suffix.endswith(".npy"):
+        if not self.mert_cache_suffix.startswith(
+            "."
+        ) or not self.mert_cache_suffix.endswith(".npy"):
             raise ValueError(
                 "mert_cache_suffix must start with '.' and end with '.npy', "
                 f"got {self.mert_cache_suffix!r}"
@@ -157,9 +159,7 @@ class DdclModelConfig(_DictSerializableMixin):
                 f"mert_conv_filters must be at least 1, got {self.mert_conv_filters}"
             )
         if self.mert_noise_std < 0.0:
-            raise ValueError(
-                f"mert_noise_std must be >= 0, got {self.mert_noise_std}"
-            )
+            raise ValueError(f"mert_noise_std must be >= 0, got {self.mert_noise_std}")
 
 
 @dataclasses.dataclass
@@ -174,13 +174,12 @@ class DdclRunConfig(_DictSerializableMixin):
         clipnorm: Global gradient clip (DDCL: 1.0).
         weight_decay: Decoupled AdamW weight decay (0.0 keeps plain Adam).
         eval_slot_f1_every: Evaluate full-val ``M-slot48`` every N epochs to log
-            ``val_slot_f1_at_05`` and save ``best_slot_f1.keras`` (0 disables).
+            ``val_slot_f1_at_05`` and save ``best_slot_f1.pt`` (0 disables).
         seed: Reproducibility seed.
-        model_output_dir: Directory for the saved ``.keras`` file.
+        model_output_dir: Directory for the saved ``.pt`` checkpoint.
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
-        resume: If True, ``BackupAndRestore`` continues an interrupted run
-            in ``model_output_dir``.
+        resume: If True, resume from saved backup checkpoints in ``model_output_dir``.
     """
 
     epoch: int = 8
@@ -210,9 +209,7 @@ class DdclRunConfig(_DictSerializableMixin):
                 f"learning_rate must be positive, got {self.learning_rate}"
             )
         if self.weight_decay < 0.0:
-            raise ValueError(
-                f"weight_decay must be >= 0, got {self.weight_decay}"
-            )
+            raise ValueError(f"weight_decay must be >= 0, got {self.weight_decay}")
         if self.eval_slot_f1_every < 0:
             raise ValueError(
                 f"eval_slot_f1_every must be >= 0, got {self.eval_slot_f1_every}"

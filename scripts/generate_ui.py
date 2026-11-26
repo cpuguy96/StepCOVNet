@@ -3,7 +3,7 @@ r"""Simple UI for generating a StepMania chart from an audio file.
 Launch with:
     python scripts/generate_ui.py
 
-Onset and arrow models (.keras) are optional; leave blank to download from Google Drive and cache.
+Onset and arrow models (.pt) are optional; leave blank to download from Google Drive and cache.
 """
 
 import atexit
@@ -19,12 +19,10 @@ import tkinter as tk
 import typing
 from tkinter import filedialog, messagebox
 
-import keras
-
 from stepcovnet import (
     generator,
-    models,  # noqa: F401 - required for custom Keras layer registration
     pretrained,
+    trainers,
 )
 
 AUDIO_TYPES = [
@@ -32,7 +30,7 @@ AUDIO_TYPES = [
     ("All files", "*.*"),
 ]
 MODEL_TYPES = [
-    ("Keras models", "*.keras"),
+    ("PyTorch models", "*.pt"),
     ("All files", "*.*"),
 ]
 TXT_TYPES = [
@@ -99,14 +97,14 @@ def _run_generation(
     try:
         onset_path = pretrained.resolve_onset_model_path(onset_model_path)
         arrow_path = pretrained.resolve_arrow_model_path(arrow_model_path)
-        onset_model = keras.models.load_model(filepath=onset_path, compile=False)
-        arrow_model = keras.models.load_model(filepath=arrow_path, compile=False)
+        onset_model = trainers.load_onset_model(onset_path)
+        arrow_model = trainers.load_arrow_model(arrow_path)
         output_data = generator.generate_output_data(
             audio_path=audio_path,
             song_title=song_title,
             bpm=bpm,
-            onset_model=onset_model,  # type: ignore[arg-type]
-            arrow_model=arrow_model,  # type: ignore[arg-type]
+            onset_model=onset_model,
+            arrow_model=arrow_model,
             use_post_processing=use_post_processing,
         )
         with pathlib.Path(output_path).open("w") as f:
@@ -204,10 +202,10 @@ class _GeneratorApp:
         self._add_row("Song title:", self.song_title_var)
         self._add_row("BPM (optional; leave blank to detect from audio):", self.bpm_var)
         self._add_row(
-            "Onset model (.keras, optional):", self.onset_model_var, self.browse_onset
+            "Onset model (.pt, optional):", self.onset_model_var, self.browse_onset
         )
         self._add_row(
-            "Arrow model (.keras, optional):", self.arrow_model_var, self.browse_arrow
+            "Arrow model (.pt, optional):", self.arrow_model_var, self.browse_arrow
         )
         cache_row = tk.Frame(main_frame)
         cache_row.grid(row=self._row, column=0, sticky=tk.W, pady=(6, 8))
