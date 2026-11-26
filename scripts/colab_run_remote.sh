@@ -51,6 +51,7 @@ RCLONE="$(find_bin rclone)"
 REMOTE="${COLAB_RCLONE_REMOTE:-gdrive}"
 DRIVE_ROOT="${COLAB_DRIVE_ROOT:-StepCOVNet}"
 LOCAL_RUNS_DIR="${COLAB_LOCAL_RUNS_DIR:-$REPO_ROOT/experiments/colab}"
+SCRIPT_START_TS="$(date +%s)"
 
 SESSION=""
 GPU="L4"
@@ -131,17 +132,59 @@ if [[ -n "$COLAB_STATE_CONFIG" ]]; then
   COLAB_GLOBAL+=(--config "$COLAB_STATE_CONFIG")
 fi
 
-# Retry wrapper around `colab exec` with hard timeout to survive transient WebSocket drops
+# Retry wrapper around `colab exec` with hard timeout + fail-fast on dead WebSocket.
+# colab-cli leaves a non-daemon WebSocket thread alive after printing
+# "RuntimeError: Connection was lost.", which otherwise hangs until hard_timeout.
 colab_exec_retry() {
   local max_attempts="$1"
   local hard_timeout="$2"
   shift 2
   local attempt=1
   while true; do
-    if timeout "$hard_timeout" "$COLAB" "${COLAB_GLOBAL[@]}" exec -s "$SESSION" "$@"; then
+    local rc=0
+    python3 - "$hard_timeout" "$COLAB" "${COLAB_GLOBAL[@]}" exec -s "$SESSION" "$@" <<'PYEOF' || rc=$?
+import os, select, subprocess, sys, time
+
+hard_timeout = float(sys.argv[1])
+cmd = sys.argv[2:]
+proc = subprocess.Popen(
+    cmd,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    bufsize=0,
+)
+assert proc.stdout is not None
+fd = proc.stdout.fileno()
+deadline = time.monotonic() + hard_timeout
+buf = b""
+lost = False
+while True:
+    left = deadline - time.monotonic()
+    if left <= 0:
+        proc.kill()
+        proc.wait()
+        sys.exit(124)
+    r, _, _ = select.select([fd], [], [], min(left, 1.0))
+    if r:
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            break
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+        buf = (buf + chunk)[-2048:]
+        if b"Connection was lost." in buf:
+            lost = True
+            proc.kill()
+            proc.wait()
+            sys.exit(125)
+    elif proc.poll() is not None:
+        break
+rc = proc.wait()
+sys.exit(125 if lost else rc)
+PYEOF
+    if [[ "$rc" -eq 0 ]]; then
       return 0
     fi
-    local rc=$?
     if [[ "$attempt" -ge "$max_attempts" ]]; then
       echo "[colab-remote] ERROR: colab exec failed after ${max_attempts} attempts (rc=${rc})." >&2
       return "$rc"
@@ -154,6 +197,9 @@ colab_exec_retry() {
 
 TMPD="$(mktemp -d)"
 STOPPED="0"
+REMOTE_RUNNING="0"
+LOG_OFFSET="0"
+OFFSET_FILE=""
 cleanup() {
   rm -rf "$TMPD"
   if [[ "$KEEP_SESSION" == "0" && "$STOPPED" == "0" ]]; then
@@ -162,7 +208,20 @@ cleanup() {
     STOPPED="1"
   fi
 }
+on_signal() {
+  if [[ "$REMOTE_RUNNING" == "1" ]]; then
+    if [[ -n "$OFFSET_FILE" ]]; then
+      mkdir -p "$(dirname "$OFFSET_FILE")" 2>/dev/null || true
+      echo "$LOG_OFFSET" > "$OFFSET_FILE" 2>/dev/null || true
+    fi
+    STOPPED="1"
+    echo "[colab-remote] Detached on signal; remote training continues on '${SESSION}'. Re-attach with --attach." >&2
+    exit 143
+  fi
+  exit 143
+}
 trap cleanup EXIT
+trap on_signal TERM INT
 
 if [[ "$ATTACH_ONLY" == "0" ]]; then
 # 1. Provision (or auto-reuse) Colab GPU session
@@ -410,8 +469,10 @@ colab_exec_retry 3 90 --timeout 60 \
   --env "STEPCOVNET_EVAL_CMD=${EVAL_CMD}" \
   --env "STEPCOVNET_DOWNLOAD_ALL=${DOWNLOAD_ALL}" \
   -f "$TMPD/start_train.py"
+REMOTE_RUNNING="1"
 else
   echo "[colab-remote] Attaching to running job '${RUN_NAME}' on session '${SESSION}'..."
+  REMOTE_RUNNING="1"
 fi
 
 # Poll remote detached process, streaming concise epoch/eval lines (filtering \r progress-bar spam)
@@ -485,14 +546,13 @@ TRAIN_RC="1"
 CONSEC_ERR="0"
 POLL_TICK="0"
 TB_DRIVE_ANNOUNCED="0"
-POLL_START_TS="$(date +%s)"
 while true; do
   if [[ "$MAX_POLL_SECONDS" -gt 0 ]]; then
     NOW_TS="$(date +%s)"
-    if (( NOW_TS - POLL_START_TS >= MAX_POLL_SECONDS )); then
+    if (( NOW_TS - SCRIPT_START_TS >= MAX_POLL_SECONDS )); then
       echo "$LOG_OFFSET" > "$OFFSET_FILE"
       STOPPED="1"
-      echo "[colab-remote] Poll window (${MAX_POLL_SECONDS}s) elapsed; training still running on '${SESSION}'. Re-attach with --attach."
+      echo "[colab-remote] Wall window (${MAX_POLL_SECONDS}s) elapsed; training still running on '${SESSION}'. Re-attach with --attach."
       exit 75
     fi
   fi
@@ -503,7 +563,7 @@ while true; do
     DO_TB="1"
   fi
   POLL_OUT=""
-  if POLL_OUT="$(timeout 45 "$COLAB" "${COLAB_GLOBAL[@]}" exec -s "$SESSION" --timeout 30 \
+  if POLL_OUT="$(timeout --kill-after=5 45 "$COLAB" "${COLAB_GLOBAL[@]}" exec -s "$SESSION" --timeout 30 \
     --env "STEPCOVNET_RUN_NAME=${RUN_NAME}" \
     --env "STEPCOVNET_LOG_OFFSET=${LOG_OFFSET}" \
     --env "STEPCOVNET_SYNC_TB=${DO_TB}" \
@@ -524,7 +584,7 @@ PYEOF
       read -r P_STATE LOG_OFFSET P_RC P_TB <<< "$PARSED"
       echo "$LOG_OFFSET" > "$OFFSET_FILE"
       if [[ "${P_TB:-0}" -gt 0 ]]; then
-        if timeout 30 "$COLAB" "${COLAB_GLOBAL[@]}" download -s "$SESSION" /content/_tb_sync.tar.gz "$TMPD/_tb_sync.tar.gz" >/dev/null 2>&1; then
+        if timeout --kill-after=5 30 "$COLAB" "${COLAB_GLOBAL[@]}" download -s "$SESSION" /content/_tb_sync.tar.gz "$TMPD/_tb_sync.tar.gz" >/dev/null 2>&1; then
           python3 - "$TMPD/_tb_sync.tar.gz" "$TB_LOCAL_DIR" <<'PYEOF' 2>/dev/null || true
 import pathlib, tarfile, sys
 tar_path, dst_root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
@@ -558,11 +618,13 @@ PYEOF
         fi
       fi
       if [[ "$P_STATE" == "done" ]]; then
+        REMOTE_RUNNING="0"
         TRAIN_RC="${P_RC:-0}"
         rm -f "$OFFSET_FILE"
         echo "[colab-remote] Remote training completed with exit code ${TRAIN_RC}."
         break
       elif [[ "$P_STATE" == "crashed" ]]; then
+        REMOTE_RUNNING="0"
         TRAIN_RC="1"
         echo "[colab-remote] ERROR: Remote runner process exited unexpectedly without train.done." >&2
         break

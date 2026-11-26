@@ -50,7 +50,7 @@ dev = [
     "pre-commit",
     "psutil",
 ]
-ssl = ["transformers"]
+ssl = ["transformers>=4.40,<5"]
 ssl-dev = ["stepcovnet[dev,ssl]"]
 
 [project.urls]
