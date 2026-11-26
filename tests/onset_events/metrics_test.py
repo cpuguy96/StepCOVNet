@@ -1,7 +1,6 @@
 import unittest
 
 import numpy as np
-import tensorflow as tf
 
 from stepcovnet.onset_events import matching, metrics
 
@@ -218,26 +217,6 @@ class MetricsTest(unittest.TestCase):
         self.assertAlmostEqual(float(precision), 1.0)
         self.assertAlmostEqual(float(recall), 1.0)
         self.assertAlmostEqual(float(f1), 1.0)
-
-    def test_event_onset_f1_tensorflow_matches_numpy(self):
-        pred_times = np.array([[0.5, 1.0, 5.0]], dtype=np.float32)
-        pred_confidence = np.array([[0.9, 0.8, 0.7]], dtype=np.float32)
-        gt_times = np.array([[0.51, 1.01, 0.0]], dtype=np.float32)
-        gt_mask = np.array([[1.0, 1.0, 0.0]], dtype=np.float32)
-
-        numpy_precision, numpy_recall, numpy_f1 = metrics.event_onset_f1_numpy(
-            pred_times, pred_confidence, gt_times, gt_mask
-        )
-        tf_precision, tf_recall, tf_f1 = metrics.event_onset_f1(
-            tf.constant(pred_times),
-            tf.constant(pred_confidence),
-            tf.constant(gt_times),
-            tf.constant(gt_mask),
-        )
-
-        self.assertAlmostEqual(float(tf_precision.numpy()), numpy_precision)
-        self.assertAlmostEqual(float(tf_recall.numpy()), numpy_recall)
-        self.assertAlmostEqual(float(tf_f1.numpy()), numpy_f1)
 
     def test_invalid_tolerance_raises(self):
         pred_times = np.array([1.0], dtype=np.float32)

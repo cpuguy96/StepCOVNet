@@ -226,7 +226,9 @@ class DdclDatasetsTest(unittest.TestCase):
             )
             loaded = datasets.load_split_charts(cfg, "train")
             self.assertEqual(len(loaded), 2)
-            self.assertTrue(np.shares_memory(loaded[0].beat_audio, loaded[1].beat_audio))
+            self.assertTrue(
+                np.shares_memory(loaded[0].beat_audio, loaded[1].beat_audio)
+            )
             np.testing.assert_array_equal(
                 loaded[1].beat_audio,
                 loaded[0].beat_audio[: loaded[1].n_beats],

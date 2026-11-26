@@ -299,7 +299,7 @@ class MertDatasetIntegrationTest(unittest.TestCase):
                 mert_features_dir=tmpdir,
                 n_features=constants.MERT_HIDDEN_SIZE,
             )
-            features, targets = next(iter(ds.take(1)))  # type: ignore[misc]
+            features, targets = next(iter(ds))
             self.assertEqual(features.shape[0], 1)
             self.assertEqual(features.shape[2], constants.MERT_HIDDEN_SIZE)
             self.assertEqual(features.shape[1], targets.shape[1])

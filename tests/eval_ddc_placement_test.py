@@ -22,16 +22,16 @@ class EvalDdcPlacementScriptTest(unittest.TestCase):
             dataset=config.PlacementDatasetConfig(training_index_path="x.json"),
         )
         self.assertEqual(
-            eval_ddc_placement._resolve_model_path(experiment, "ckpt.keras"),
-            "ckpt.keras",
+            eval_ddc_placement._resolve_model_path(experiment, "ckpt.pt"),
+            "ckpt.pt",
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             model_dir = pathlib.Path(tmpdir)
-            (model_dir / "a.keras").write_bytes(b"x")
+            (model_dir / "a.pt").write_bytes(b"x")
             experiment.run.model_output_dir = str(model_dir)
             resolved = eval_ddc_placement._resolve_model_path(experiment, "")
-            self.assertTrue(resolved.endswith("a.keras"))
-            (model_dir / "b.keras").write_bytes(b"y")
+            self.assertTrue(resolved.endswith("a.pt"))
+            (model_dir / "b.pt").write_bytes(b"y")
             with self.assertRaises(FileNotFoundError):
                 eval_ddc_placement._resolve_model_path(experiment, "")
 

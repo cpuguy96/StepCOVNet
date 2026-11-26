@@ -1,7 +1,6 @@
 import unittest
 
 import numpy as np
-import tensorflow as tf
 
 from stepcovnet.onset_events import matching
 
@@ -157,58 +156,6 @@ class MatchingTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             matching.match_onsets_numpy(pred_times, gt_times, gt_mask)
 
-    def test_match_onsets_tensorflow_matches_numpy(self):
-        pred_times = np.array([[0.5, 1.0, 5.0]], dtype=np.float32)
-        gt_times = np.array([[0.51, 1.01, 0.0]], dtype=np.float32)
-        gt_mask = np.array([[1.0, 1.0, 0.0]], dtype=np.float32)
-
-        numpy_result = matching.match_onsets_numpy(pred_times, gt_times, gt_mask)
-        tf_result = matching.match_onsets(
-            tf.constant(pred_times),
-            tf.constant(gt_times),
-            tf.constant(gt_mask),
-        )
-
-        matched_pred, matched_gt, num_matches, pred_unmatched, gt_unmatched = tf_result
-        self.assertEqual(int(num_matches.numpy()[0]), int(numpy_result.num_matches[0]))
-        np.testing.assert_array_equal(
-            matched_pred.numpy(), numpy_result.matched_pred_indices
-        )
-        np.testing.assert_array_equal(
-            matched_gt.numpy(), numpy_result.matched_gt_indices
-        )
-        np.testing.assert_array_equal(
-            pred_unmatched.numpy(), numpy_result.pred_unmatched_mask
-        )
-        np.testing.assert_array_equal(
-            gt_unmatched.numpy(), numpy_result.gt_unmatched_mask
-        )
-
-    def test_match_onsets_tensorflow_batch(self):
-        pred_times = tf.constant(
-            [[0.5, 1.0], [10.0, 11.0]],
-            dtype=tf.float32,
-        )
-        gt_times = tf.constant(
-            [[0.51, 1.01, 0.0], [10.01, 11.01, 0.0]],
-            dtype=tf.float32,
-        )
-        gt_mask = tf.constant(
-            [[1.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
-            dtype=tf.float32,
-        )
-        pred_confidence = tf.constant([[0.8, 0.7], [0.6, 0.5]], dtype=tf.float32)
-
-        _, _, num_matches, pred_unmatched, _ = matching.match_onsets(
-            pred_times,
-            gt_times,
-            gt_mask,
-            pred_confidence=pred_confidence,
-        )
-
-        self.assertEqual(num_matches.numpy().tolist(), [2, 2])
-        self.assertFalse(pred_unmatched.numpy().any())
-
     def test_assign_onset_pairs_ordered_pairs_by_sorted_gt_index(self):
         pred_times = np.array([9.0, 0.5], dtype=np.float64)
         gt_times = np.array([0.5, 3.0, 0.0], dtype=np.float64)
@@ -234,34 +181,6 @@ class MatchingTest(unittest.TestCase):
 
         self.assertEqual(int(result.num_matches[0]), 1)
         self.assertTrue(result.gt_unmatched_mask[0, 1])
-
-    def test_assign_onset_pairs_ordered_tensorflow_matches_numpy(self):
-        pred_times = np.array([[0.1, 0.3, 0.5]], dtype=np.float64)
-        gt_times = np.array([[0.1, 0.3, 0.5, 0.0]], dtype=np.float64)
-        gt_mask = np.array([[1.0, 1.0, 1.0, 0.0]], dtype=np.float64)
-        numpy_result = matching.assign_onset_pairs_ordered_numpy(
-            pred_times, gt_times, gt_mask
-        )
-        tf_result = matching.assign_onset_pairs_ordered(
-            tf.constant(pred_times, dtype=tf.float32),
-            tf.constant(gt_times, dtype=tf.float32),
-            tf.constant(gt_mask, dtype=tf.float32),
-        )
-
-        matched_pred, matched_gt, num_matches, pred_unmatched, gt_unmatched = tf_result
-        self.assertEqual(int(num_matches.numpy()[0]), int(numpy_result.num_matches[0]))
-        np.testing.assert_array_equal(
-            matched_pred.numpy(), numpy_result.matched_pred_indices
-        )
-        np.testing.assert_array_equal(
-            matched_gt.numpy(), numpy_result.matched_gt_indices
-        )
-        np.testing.assert_array_equal(
-            pred_unmatched.numpy(), numpy_result.pred_unmatched_mask
-        )
-        np.testing.assert_array_equal(
-            gt_unmatched.numpy(), numpy_result.gt_unmatched_mask
-        )
 
 
 if __name__ == "__main__":

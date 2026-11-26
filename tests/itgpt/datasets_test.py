@@ -108,7 +108,7 @@ class ItgptDatasetsTest(unittest.TestCase):
             n_frames_per_beat=24,
         )
         with mock.patch(
-            "stepcovnet.itgpt.datasets.ddcl_datasets.load_split_charts",
+            "stepcovnet.ddcl.datasets.load_split_charts",
             return_value=[chart],
         ) as mock_load:
             loaded = datasets.load_split_charts(dataset_config, "train")
@@ -121,16 +121,17 @@ class ItgptDatasetsTest(unittest.TestCase):
         self.assertEqual(ddcl_cfg.audio_feature_type, "mert")
         self.assertEqual(ddcl_cfg.n_frames_per_beat, 24)
 
-    def test_tf_dataset_yields_variable_beat_lengths(self):
+    def test_build_dataloader_yields_variable_beat_lengths(self):
         short_chart = _chart(n_beats=6)
         long_chart = _chart(n_beats=70)
-        ds = datasets.tf_dataset([short_chart, long_chart], max_beats=128, seed=0)
-        seen_lengths = {
-            int(batch[0]["audio"].shape[1]) for batch in ds.take(12)
-        }
+        loader = datasets.build_dataloader(
+            [short_chart, long_chart], max_beats=128, seed=0
+        )
+        it = iter(loader)
+        seen_lengths = {int(next(it)[0]["audio"].shape[1]) for _ in range(12)}
         self.assertEqual(seen_lengths, {64, 128})
         with self.assertRaises(ValueError):
-            datasets.tf_dataset([], max_beats=128, seed=0)
+            datasets.build_dataloader([], max_beats=128, seed=0)
 
     def test_pack_chart_and_generator_bar_shift_augmentation(self):
         chart = _chart(n_beats=6)
@@ -147,9 +148,7 @@ class ItgptDatasetsTest(unittest.TestCase):
         self.assertEqual(float(slots[0, 8, 0]), 1.0)
         self.assertEqual(float(slots[0, 0, 0]), 0.0)
 
-        gen = datasets.batch_generator(
-            [chart], max_beats=128, seed=42, max_bar_shift=4
-        )
+        gen = datasets.batch_generator([chart], max_beats=128, seed=42, max_bar_shift=4)
         leads = set()
         for _ in range(32):
             _, _, step_mask = next(gen)

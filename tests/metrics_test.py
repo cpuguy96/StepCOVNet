@@ -1,7 +1,7 @@
 import unittest
 
 import numpy as np
-import tensorflow as tf
+import torch
 
 from stepcovnet import constants, metrics
 
@@ -15,35 +15,35 @@ class OnsetF1MetricTest(unittest.TestCase):
         y_pred = np.array([[0, 1, 0, 0, 1]])
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 1.0)
+        self.assertAlmostEqual(float(result), 1.0)
 
     def test_update_state_within_tolerance(self):
         y_true = np.array([[0, 1, 0, 0, 0]])
         y_pred = np.array([[0, 0, 1, 0, 0]])  # Shifted by 1, within tolerance
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 1.0, places=6)
+        self.assertAlmostEqual(float(result), 1.0, places=6)
 
     def test_update_state_outside_tolerance(self):
         y_true = np.array([[0, 1, 0, 0, 0]])
         y_pred = np.array([[0, 0, 0, 1, 0]])  # Shifted by 2, outside tolerance
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 0.0)
+        self.assertAlmostEqual(float(result), 0.0)
 
     def test_update_state_false_positive(self):
         y_true = np.array([[0, 0, 0, 0, 0]])
         y_pred = np.array([[0, 1, 0, 0, 0]])
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 0.0)
+        self.assertAlmostEqual(float(result), 0.0)
 
     def test_update_state_false_negative(self):
         y_true = np.array([[0, 1, 0, 0, 0]])
         y_pred = np.array([[0, 0, 0, 0, 0]])
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 0.0)
+        self.assertAlmostEqual(float(result), 0.0)
 
     def test_gaussian_target_scores_peak_not_tails(self):
         # Gaussian sigma=1.0 targets spread one onset over 7 nonzero frames.
@@ -57,8 +57,8 @@ class OnsetF1MetricTest(unittest.TestCase):
         blob_metric = metrics.OnsetF1Metric(tolerance=1, threshold=0.5)
         blob_metric.update_state(y_true, blob)
 
-        self.assertAlmostEqual(spike_metric.result().numpy(), 1.0, places=5)
-        self.assertLess(blob_metric.result().numpy(), spike_metric.result().numpy())
+        self.assertAlmostEqual(spike_metric.result(), 1.0, places=5)
+        self.assertLess(blob_metric.result(), spike_metric.result())
 
     def test_target_threshold_is_serialized(self):
         metric = metrics.OnsetF1Metric(tolerance=2, threshold=0.4, target_threshold=0.5)
@@ -70,7 +70,7 @@ class OnsetF1MetricTest(unittest.TestCase):
         y_pred = np.array([[0, 1, 0]])
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 1.0, places=6)
+        self.assertAlmostEqual(float(result), 1.0, places=6)
 
     def test_update_state_rank_3_input(self):
         # Shape (batch, time, 1)
@@ -78,7 +78,7 @@ class OnsetF1MetricTest(unittest.TestCase):
         y_pred = np.array([[[0], [1], [0]]])
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 1.0, places=6)
+        self.assertAlmostEqual(float(result), 1.0, places=6)
 
     def test_update_state_rank_4_input(self):
         # Shape (batch, time, 1, 1)
@@ -86,7 +86,7 @@ class OnsetF1MetricTest(unittest.TestCase):
         y_pred = np.array([[[[0]], [[1]], [[0]]]])
         self.metric.update_state(y_true, y_pred)
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 1.0, places=6)
+        self.assertAlmostEqual(float(result), 1.0, places=6)
 
     def test_reset_state(self):
         y_true = np.array([[0, 1, 0]])
@@ -94,7 +94,7 @@ class OnsetF1MetricTest(unittest.TestCase):
         self.metric.update_state(y_true, y_pred)
         self.metric.reset_state()
         result = self.metric.result()
-        self.assertAlmostEqual(result.numpy(), 0.0)
+        self.assertAlmostEqual(float(result), 0.0)
 
     def test_get_config(self):
         config = self.metric.get_config()
@@ -425,42 +425,42 @@ class ChartValidityAuxiliaryLossTest(unittest.TestCase):
 
     def test_returns_scalar_and_non_negative(self):
         batch, seq, num_classes = 2, 10, constants.N_ARROW_TYPES
-        y_true = tf.constant(
+        y_true = torch.tensor(
             [[1, 128, 192, 0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0, 0, 0]]
         )
-        y_pred = tf.random.uniform((batch, seq, num_classes))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        y_pred = torch.rand((batch, seq, num_classes))
+        y_pred = y_pred / y_pred.sum(dim=-1, keepdim=True)
         loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertGreaterEqual(loss.numpy(), 0.0)
+        self.assertGreaterEqual(float(loss), 0.0)
 
     def test_padding_masked(self):
         # All padding (0) -> no valid positions, loss should be 0
-        y_true = tf.constant([[0, 0, 0]])
-        y_pred = tf.random.uniform((1, 3, constants.N_ARROW_TYPES))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        y_true = torch.tensor([[0, 0, 0]])
+        y_pred = torch.rand((1, 3, constants.N_ARROW_TYPES))
+        y_pred = y_pred / y_pred.sum(dim=-1, keepdim=True)
         loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertAlmostEqual(loss.numpy(), 0.0, places=5)
+        self.assertAlmostEqual(float(loss), 0.0, places=5)
 
     def test_valid_sequence_low_penalty(self):
         # Perfect prediction: valid hold (128=hold start col0, 192=hold end col0).
         # Soft penalties (sigmoid etc.) can yield a tiny non-zero value; expect low loss.
-        y_true = tf.constant([[1, 1]], dtype=tf.int32)
+        y_true = torch.tensor([[1, 1]], dtype=torch.long)
         y_pred = _one_hot_pred(1, 2, constants.N_ARROW_TYPES, np.array([[128, 192]]))
-        y_pred = tf.constant(y_pred)
+        y_pred = torch.tensor(y_pred)
         loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertLess(loss.numpy(), 0.01, "valid sequence should have low penalty")
+        self.assertLess(float(loss), 0.01, "valid sequence should have low penalty")
 
     def test_invalid_orphan_tail_higher_penalty(self):
         # Predict orphan 3 (192) at first step -> penalty > 0
-        y_true = tf.constant([[1, 1]], dtype=tf.int32)
+        y_true = torch.tensor([[1, 1]], dtype=torch.long)
         y_pred = _one_hot_pred(1, 2, constants.N_ARROW_TYPES, np.array([[192, 1]]))
-        y_pred = tf.constant(y_pred)
+        y_pred = torch.tensor(y_pred)
         loss = metrics.chart_validity_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertGreater(loss.numpy(), 0.01)
+        self.assertGreater(float(loss), 0.01)
 
 
 class ChartValidityLossMetricAlignmentTest(unittest.TestCase):
@@ -474,9 +474,9 @@ class ChartValidityLossMetricAlignmentTest(unittest.TestCase):
         metric.update_state(y_true, y_pred)
         self.assertAlmostEqual(float(metric.result()), 1.0, places=5)
         loss = metrics.chart_validity_auxiliary_loss(
-            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+            torch.tensor(y_true), torch.tensor(y_pred), ignore_class=0
         )
-        self.assertLess(loss.numpy(), 0.01)
+        self.assertLess(float(loss), 0.01)
 
     def test_invalid_sequence_metric_below_one_loss_positive(self):
         # Orphan 3 at first step: metric < 1, loss > 0
@@ -486,9 +486,9 @@ class ChartValidityLossMetricAlignmentTest(unittest.TestCase):
         metric.update_state(y_true, y_pred)
         self.assertLess(float(metric.result()), 1.0)
         loss = metrics.chart_validity_auxiliary_loss(
-            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+            torch.tensor(y_true), torch.tensor(y_pred), ignore_class=0
         )
-        self.assertGreater(loss.numpy(), 0.01)
+        self.assertGreater(float(loss), 0.01)
 
 
 class ChartValidityAuxiliaryLossMetricTest(unittest.TestCase):
@@ -500,11 +500,9 @@ class ChartValidityAuxiliaryLossMetricTest(unittest.TestCase):
         metric = metrics.ChartValidityAuxiliaryLossMetric(ignore_class=0)
         metric.update_state(y_true, y_pred)
         expected = metrics.chart_validity_auxiliary_loss(
-            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+            torch.tensor(y_true), torch.tensor(y_pred), ignore_class=0
         )
-        self.assertAlmostEqual(
-            float(metric.result()), float(expected.numpy()), places=5
-        )
+        self.assertAlmostEqual(float(metric.result()), float(float(expected)), places=5)
 
     def test_reset_state(self):
         metric = metrics.ChartValidityAuxiliaryLossMetric(ignore_class=0)
@@ -535,7 +533,7 @@ class ChartValidityPerBatchTest(unittest.TestCase):
         y_true = np.array([[1, 1]], dtype=np.int32)
         y_pred = _one_hot_pred(1, 2, 256, np.array([[128, 192]]))
         result = metrics.chart_validity_per_batch(
-            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+            torch.tensor(y_true), torch.tensor(y_pred), ignore_class=0
         )
         self.assertAlmostEqual(float(result), 1.0, places=5)
 
@@ -543,7 +541,7 @@ class ChartValidityPerBatchTest(unittest.TestCase):
         y_true = np.array([[1, 1]], dtype=np.int32)
         y_pred = _one_hot_pred(1, 2, 256, np.array([[192, 0]]))
         result = metrics.chart_validity_per_batch(
-            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+            torch.tensor(y_true), torch.tensor(y_pred), ignore_class=0
         )
         expected = 1.0 - 1.0 / 8.0
         self.assertAlmostEqual(float(result), expected, places=4)
@@ -553,7 +551,7 @@ class ChartValidityPerBatchTest(unittest.TestCase):
         y_true = np.array([[1, 128, 192]], dtype=np.int32)
         y_pred = _one_hot_pred(1, 3, 256, np.array([[1, 128, 192]]))
         per_batch = metrics.chart_validity_per_batch(
-            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+            torch.tensor(y_true), torch.tensor(y_pred), ignore_class=0
         )
         m = metrics.ChartValidityMetric(ignore_class=0)
         m.update_state(y_true, y_pred)
@@ -624,43 +622,43 @@ class NoteKindBalanceAuxiliaryLossTest(unittest.TestCase):
 
     def test_returns_scalar_and_non_negative(self):
         batch, seq, num_classes = 2, 10, constants.N_ARROW_TYPES
-        y_true = tf.constant(
+        y_true = torch.tensor(
             [[1, 128, 192, 0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0, 0, 0]]
         )
-        y_pred = tf.random.uniform((batch, seq, num_classes))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        y_pred = torch.rand((batch, seq, num_classes))
+        y_pred = y_pred / y_pred.sum(dim=-1, keepdim=True)
         loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertGreaterEqual(loss.numpy(), 0.0)
+        self.assertGreaterEqual(float(loss), 0.0)
 
     def test_padding_masked(self):
         # All padding -> no valid steps; denominator uses max(1, mask_count) so loss = 0
-        y_true = tf.constant([[0, 0, 0]])
-        y_pred = tf.random.uniform((1, 3, constants.N_ARROW_TYPES))
-        y_pred = y_pred / tf.reduce_sum(y_pred, axis=-1, keepdims=True)
+        y_true = torch.tensor([[0, 0, 0]])
+        y_pred = torch.rand((1, 3, constants.N_ARROW_TYPES))
+        y_pred = y_pred / y_pred.sum(dim=-1, keepdim=True)
         loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertAlmostEqual(loss.numpy(), 0.0, places=5)
+        self.assertAlmostEqual(float(loss), 0.0, places=5)
 
     def test_perfect_match_zero_loss(self):
         # y_pred one-hot matching y_true -> pred_hold_rate = true_hold_rate -> MSE = 0
-        y_true = tf.constant(
-            [[1, 128, 192]], dtype=tf.int32
+        y_true = torch.tensor(
+            [[1, 128, 192]], dtype=torch.long
         )  # tap, hold start, hold end
         y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 128, 192]]))
-        y_pred = tf.constant(y_pred)
+        y_pred = torch.tensor(y_pred)
         loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertAlmostEqual(loss.numpy(), 0.0, places=5)
+        self.assertAlmostEqual(float(loss), 0.0, places=5)
 
     def test_mismatch_positive_loss(self):
         # Labels have holds (128, 192); predict all taps (1) -> hold rate mismatch -> loss > 0
-        y_true = tf.constant([[1, 128, 192]], dtype=tf.int32)
+        y_true = torch.tensor([[1, 128, 192]], dtype=torch.long)
         y_pred = _one_hot_pred(1, 3, constants.N_ARROW_TYPES, np.array([[1, 1, 1]]))
-        y_pred = tf.constant(y_pred)
+        y_pred = torch.tensor(y_pred)
         loss = metrics.note_kind_balance_auxiliary_loss(y_true, y_pred, ignore_class=0)
         self.assertEqual(loss.shape, ())
-        self.assertGreater(loss.numpy(), 0.0)
+        self.assertGreater(float(loss), 0.0)
 
 
 class NoteKindBalanceAuxiliaryLossMetricTest(unittest.TestCase):
@@ -672,11 +670,9 @@ class NoteKindBalanceAuxiliaryLossMetricTest(unittest.TestCase):
         metric = metrics.NoteKindBalanceAuxiliaryLossMetric(ignore_class=0)
         metric.update_state(y_true, y_pred)
         expected = metrics.note_kind_balance_auxiliary_loss(
-            tf.constant(y_true), tf.constant(y_pred), ignore_class=0
+            torch.tensor(y_true), torch.tensor(y_pred), ignore_class=0
         )
-        self.assertAlmostEqual(
-            float(metric.result()), float(expected.numpy()), places=5
-        )
+        self.assertAlmostEqual(float(metric.result()), float(float(expected)), places=5)
 
     def test_reset_state(self):
         metric = metrics.NoteKindBalanceAuxiliaryLossMetric(ignore_class=0)

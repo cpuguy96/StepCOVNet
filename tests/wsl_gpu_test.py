@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-import tensorflow
+import torch
 
 from stepcovnet import wsl_gpu
 
@@ -44,20 +44,20 @@ class WslGpuTest(unittest.TestCase):
             wsl_gpu.reexec_with_tensorflow_gpu_env_if_needed(["/repo/script.py"])
             execvp.assert_not_called()
 
-    def test_require_tensorflow_gpu_exits_in_wsl_when_no_device(self):
+    def test_require_pytorch_gpu_exits_in_wsl_when_no_device(self):
         with (
             mock.patch.object(
                 wsl_gpu, "is_running_in_wsl", return_value=True, autospec=True
             ),
             mock.patch.object(
-                tensorflow.config,
-                "list_physical_devices",
-                return_value=[],
+                torch.cuda,
+                "is_available",
+                return_value=False,
                 autospec=True,
             ),
             self.assertRaises(SystemExit),
         ):
-            wsl_gpu.require_tensorflow_gpu()
+            wsl_gpu.require_pytorch_gpu()
 
     def test_wsl_gpu_compute_busy_when_active_apps(self):
         with mock.patch.object(

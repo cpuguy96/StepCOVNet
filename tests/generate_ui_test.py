@@ -16,7 +16,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import generate_ui  # noqa: E402
-import keras
+import torch
 
 TEST_DATA_DIR = pathlib.Path(__file__).resolve().parent / "testdata"
 
@@ -29,13 +29,10 @@ class _GenerateOutputDataStub:
         return self._text
 
 
-def _keras_model_stub(*, predict_return_value=None):
-    model = mock.create_autospec(keras.Model, instance=True)
+def _torch_model_stub(*, predict_return_value=None):
+    model = mock.create_autospec(torch.nn.Module, instance=True)
     if predict_return_value is not None:
-        model.predict.return_value = predict_return_value
-    model.fit.return_value = SimpleNamespace(
-        history={"val_loss": [1.0], "loss": [1.0]},
-    )
+        model.return_value = predict_return_value
     return model
 
 
@@ -198,19 +195,25 @@ class RunGenerationTest(unittest.TestCase):
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_onset_model_path",
-                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.keras",
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.pt",
                     autospec=True,
                 ),
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_arrow_model_path",
-                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.keras",
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.pt",
                     autospec=True,
                 ),
                 mock.patch.object(
-                    generate_ui.keras.models,
-                    "load_model",
-                    return_value=_keras_model_stub(),
+                    generate_ui.trainers,
+                    "load_onset_model",
+                    return_value=_torch_model_stub(),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    generate_ui.trainers,
+                    "load_arrow_model",
+                    return_value=_torch_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -224,8 +227,8 @@ class RunGenerationTest(unittest.TestCase):
                     audio_path="/nonexistent/audio.mp3",
                     song_title="Test",
                     bpm=120,
-                    onset_model_path="/p/onset.keras",
-                    arrow_model_path="/p/arrow.keras",
+                    onset_model_path="/p/onset.pt",
+                    arrow_model_path="/p/arrow.pt",
                     output_path=output_path,
                     use_post_processing=False,
                     result_queue=result_queue,
@@ -249,19 +252,25 @@ class RunGenerationTest(unittest.TestCase):
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_onset_model_path",
-                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.keras",
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.pt",
                     autospec=True,
                 ),
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_arrow_model_path",
-                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.keras",
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.pt",
                     autospec=True,
                 ),
                 mock.patch.object(
-                    generate_ui.keras.models,
-                    "load_model",
-                    return_value=_keras_model_stub(),
+                    generate_ui.trainers,
+                    "load_onset_model",
+                    return_value=_torch_model_stub(),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    generate_ui.trainers,
+                    "load_arrow_model",
+                    return_value=_torch_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -275,8 +284,8 @@ class RunGenerationTest(unittest.TestCase):
                     audio_path="/a.mp3",
                     song_title="Song",
                     bpm=None,
-                    onset_model_path="/o.keras",
-                    arrow_model_path="/ar.keras",
+                    onset_model_path="/o.pt",
+                    arrow_model_path="/ar.pt",
                     output_path=output_path,
                     use_post_processing=False,
                     result_queue=result_queue,
@@ -302,19 +311,25 @@ class RunGenerationTest(unittest.TestCase):
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_onset_model_path",
-                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.keras",
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "onset.pt",
                     autospec=True,
                 ),
                 mock.patch.object(
                     generate_ui.pretrained,
                     "resolve_arrow_model_path",
-                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.keras",
+                    side_effect=lambda p: p or pathlib.Path(tmpdir) / "arrow.pt",
                     autospec=True,
                 ),
                 mock.patch.object(
-                    generate_ui.keras.models,
-                    "load_model",
-                    return_value=_keras_model_stub(),
+                    generate_ui.trainers,
+                    "load_onset_model",
+                    return_value=_torch_model_stub(),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    generate_ui.trainers,
+                    "load_arrow_model",
+                    return_value=_torch_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
@@ -328,8 +343,8 @@ class RunGenerationTest(unittest.TestCase):
                     audio_path="/a.mp3",
                     song_title="My Song",
                     bpm=128,
-                    onset_model_path="/o.keras",
-                    arrow_model_path="/ar.keras",
+                    onset_model_path="/o.pt",
+                    arrow_model_path="/ar.pt",
                     output_path=output_path,
                     use_post_processing=True,
                     result_queue=result_queue,
@@ -346,22 +361,22 @@ class RunGenerationTest(unittest.TestCase):
             self.assertIn("DIFFICULTY Challenge", content)
 
     def test_run_generation_load_model_raises(self):
-        """When load_model raises, queue receives (False, error_message)."""
+        """When load_onset_model raises, queue receives (False, error_message)."""
         result_queue = queue.Queue()
         with (
             mock.patch.object(
                 generate_ui.pretrained,
                 "resolve_onset_model_path",
-                side_effect=lambda p: p or "/resolved/onset.keras",
+                side_effect=lambda p: p or "/resolved/onset.pt",
             ),
             mock.patch.object(
                 generate_ui.pretrained,
                 "resolve_arrow_model_path",
-                side_effect=lambda p: p or "/resolved/arrow.keras",
+                side_effect=lambda p: p or "/resolved/arrow.pt",
             ),
             mock.patch.object(
-                generate_ui.keras.models,
-                "load_model",
+                generate_ui.trainers,
+                "load_onset_model",
                 side_effect=OSError("No such file"),
             ),
         ):
@@ -369,8 +384,8 @@ class RunGenerationTest(unittest.TestCase):
                 audio_path="/a.mp3",
                 song_title="Song",
                 bpm=120,
-                onset_model_path="/onset.keras",
-                arrow_model_path="/arrow.keras",
+                onset_model_path="/onset.pt",
+                arrow_model_path="/arrow.pt",
                 output_path="/out.txt",
                 use_post_processing=False,
                 result_queue=result_queue,
@@ -388,17 +403,23 @@ class RunGenerationTest(unittest.TestCase):
             mock.patch.object(
                 generate_ui.pretrained,
                 "resolve_onset_model_path",
-                side_effect=lambda p: p or "/resolved/onset.keras",
+                side_effect=lambda p: p or "/resolved/onset.pt",
             ),
             mock.patch.object(
                 generate_ui.pretrained,
                 "resolve_arrow_model_path",
-                side_effect=lambda p: p or "/resolved/arrow.keras",
+                side_effect=lambda p: p or "/resolved/arrow.pt",
             ),
             mock.patch.object(
-                generate_ui.keras.models,
-                "load_model",
-                return_value=_keras_model_stub(),
+                generate_ui.trainers,
+                "load_onset_model",
+                return_value=_torch_model_stub(),
+                autospec=True,
+            ),
+            mock.patch.object(
+                generate_ui.trainers,
+                "load_arrow_model",
+                return_value=_torch_model_stub(),
                 autospec=True,
             ),
             mock.patch.object(
@@ -411,8 +432,8 @@ class RunGenerationTest(unittest.TestCase):
                 audio_path="/a.mp3",
                 song_title="Song",
                 bpm=120,
-                onset_model_path="/o.keras",
-                arrow_model_path="/a.keras",
+                onset_model_path="/o.pt",
+                arrow_model_path="/a.pt",
                 output_path="/out.txt",
                 use_post_processing=False,
                 result_queue=result_queue,
@@ -429,8 +450,8 @@ class RunGenerationTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = pathlib.Path(tmpdir) / "output.txt"
-            onset_resolved = pathlib.Path(tmpdir) / "onset.keras"
-            arrow_resolved = pathlib.Path(tmpdir) / "arrow.keras"
+            onset_resolved = pathlib.Path(tmpdir) / "onset.pt"
+            arrow_resolved = pathlib.Path(tmpdir) / "arrow.pt"
             result_queue = queue.Queue()
             with (
                 mock.patch.object(
@@ -446,9 +467,15 @@ class RunGenerationTest(unittest.TestCase):
                     autospec=True,
                 ) as m_resolve_arrow,
                 mock.patch.object(
-                    generate_ui.keras.models,
-                    "load_model",
-                    return_value=_keras_model_stub(),
+                    generate_ui.trainers,
+                    "load_onset_model",
+                    return_value=_torch_model_stub(),
+                    autospec=True,
+                ),
+                mock.patch.object(
+                    generate_ui.trainers,
+                    "load_arrow_model",
+                    return_value=_torch_model_stub(),
                     autospec=True,
                 ),
                 mock.patch.object(
