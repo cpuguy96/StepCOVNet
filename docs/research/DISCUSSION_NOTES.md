@@ -6,6 +6,23 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
+### NOTE-20261125-10: Static 2D MERT `layers 2,6,10,16` + EMA sets new Dataset A highs (**0.7680** F1@0.5 / **8,182** errors / **0.7709** `last` max-F1) — promoted
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-25 23:01:26 |
+| **Topic** | Dataset A batch 2 #1: pre-averaged `layers 2,6,10,16` (guided by `EXP-20261125-07`'s learned ranking) on top of Cosine-64 + EMA `0.995` |
+
+**Context.** Run 2's learnable softmax mixer ranked MERT layers `L10 (0.223) > L6 (0.208) > L16 (0.204) > L2 (0.186) > L0 (0.180)`. We tested dropping `L0` and pre-averaging `(2, 6, 10, 16)` into a standard 2D `(T, 1024)` cache on top of our `0.7679` EMA champion (`EXP-20261125-09`).
+
+**Discovery.**
+
+- **Clean win across peak, `last`, `F1_max`, errors, and silence grounding (`EXP-20261125-10`):** `best.keras` (ep 41, fp32) hit **0.7680** F1@0.5 with **8,182** total errors (lowest ever, `−172` fewer than `L2+6+10 + EMA`), `zeros` drop strengthened `−0.1500 → −0.2308`, and `last.keras` (ep 64) reached **0.7650** F1@0.5 / **0.7709** max-F1 (peaking at **0.7723** max-F1 @ ep 48 — first single checkpoint past `0.770`). Both `fraxtil_s_arrow_arrangements` (**0.8427**) and `tsunamix_iii` (**0.7180**) set new highs, and `<=1 slot` micro-jitter dropped `6.9%/7.4% → 6.0%/5.3%`.
+
+**Implication.** **Promote `layers 2,6,10,16` as our standard MERT extraction recipe** (1× disk/RAM/speed, zero extra params). Proceeding immediately to batch 2 #2 (hybrid MERT + 3-band spectral flux side-channel) on top of this new `0.7680` champion.
+
+**Related.** [EXP-20261125-10](EXPERIMENT_LOG.md#exp-20261125-10-static-2d-mert-layers-261016--cosine-64--ema-sets-new-dataset-a-records-07680-f105--8182-errors--last-07650--07709-max-f1--promoted) · [EXP-20261125-09](EXPERIMENT_LOG.md#exp-20261125-09-adamw-ema-ema_momentum--0995--swapemaweights-sets-new-dataset-a-single-checkpoint-record-07679-f105--06871-20-ms-skill-last-07638--promoted) · [EXP-20261125-07](EXPERIMENT_LOG.md#exp-20261125-07-learnable-5-layer-mert-mixer-0261016-sets-new-dataset-a-skill16thlastshuffle-records-and-reveals-optimal-layer-ranking-l10--l6--l16--l2--l0)
+
 ### NOTE-20261125-09: `AdamW` EMA (`0.995`) sets new Dataset A single-checkpoint record (**0.7679** F1 / **+0.6871** ±20 ms skill / `last` **0.7638**) — promoted
 
 | Field | Value |
