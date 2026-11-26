@@ -4,6 +4,25 @@ Insights, Q&A, and design reasoning (newest entries first) from research convers
 
 **Related:** [experiment log](EXPERIMENT_LOG.md) · [paper ledger](PAPER_LEDGER.md) · [paper outline](PAPER_OUTLINE.md) · [pipeline architecture](PIPELINE_ARCHITECTURE.md) · [AR onset design](AR_ONSET_DESIGN.md) · [decisions checklist](DECISIONS_CHECKLIST.md)
 
+## Session 2026-11-26 — Hybrid spectral-flux & bar-shift augmentation ablations
+
+### NOTE-20261126-01: Appending 100 Hz spectral flux/energy to MERT regresses **−0.78 pp** — pure MERT `2,6,10,16` wins cleanly
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-26 00:55:14 |
+| **Topic** | Dataset A batch 2 #2 negative result (`mert_spectral_flux = true`: `0.7680 → 0.7602`) |
+
+**Context.** To test whether sub-10 ms acoustic attack contrast improves on MERT's 75 Hz frontend, we appended 6 z-scored 100 Hz 3-band positive spectral-flux + energy channels (from cached `*.ddc_mel.npy`) onto our `L2+6+10+16 + Cosine-64 + EMA` champion (`0.7680`).
+
+**Discovery.**
+
+- **Clear regression and halved silence grounding (`EXP-20261126-01`):** `best_slot_f1` (ep 40, fp32) fell **−0.78 pp** to **0.7602** (`last 0.7532`, `−1.18 pp`; `val_loss 0.04842` vs `0.04661`; `zeros` drop `−0.2308 → −0.1076`), hurting `quarter` (`0.848 → 0.836`), `intro` (`0.622 → 0.580`), and low meters (`meter 01 0.496 → 0.416`, `meter 03 0.628 → 0.499`) despite a small `16th` uptick (`0.600 → 0.621`).
+
+**Implication.** **Keep `mert_spectral_flux = false`** — pure multi-layer MERT (`layers 2,6,10,16`) generalizes better and avoids generating `*.ddc_mel.npy` caches on full `final_data`. Moving immediately to batch 2 #3 (random bar-aligned beat-shift augmentation) on top of the `0.7680` champion.
+
+**Related.** [EXP-20261126-01](EXPERIMENT_LOG.md#exp-20261126-01-hybrid-mert--3-band-spectral-flux-side-channel-regresses-l261016--ema-by-078-pp-07602-vs-07680--rejected) · [EXP-20261125-10](EXPERIMENT_LOG.md#exp-20261125-10-static-2d-mert-layers-261016--cosine-64--ema-sets-new-dataset-a-records-07680-f105--8182-errors--last-07650--07709-max-f1--promoted)
+
 ## Session 2026-11-25 — Early FiLM ablation, Dataset A Cosine-64 & pre-scaling ablations
 
 ### NOTE-20261125-10: Static 2D MERT `layers 2,6,10,16` + EMA sets new Dataset A highs (**0.7680** F1@0.5 / **8,182** errors / **0.7709** `last` max-F1) — promoted

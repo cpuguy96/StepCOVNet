@@ -67,6 +67,9 @@ class ItgptDatasetConfig(_DictSerializableMixin):
         n_frames_per_beat: Sub-beat frames per beat (32 for logmel, 24 for MERT).
         mert_cache_suffix: Sibling filename suffix for cached MERT arrays
             (default ``.mert.npy``).
+        mert_spectral_flux: If True when ``audio_feature_type == "mert"``,
+            append 6 z-scored 100 Hz 3-band spectral-flux/energy channels
+            derived from ``*.ddc_mel.npy`` onto each MERT frame.
     """
 
     training_index_path: str
@@ -80,6 +83,7 @@ class ItgptDatasetConfig(_DictSerializableMixin):
     audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
     mert_cache_suffix: str = ddcl_constants.MERT_CACHE_SUFFIX
+    mert_spectral_flux: bool = False
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.

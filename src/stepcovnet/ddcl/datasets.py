@@ -159,6 +159,7 @@ def load_ddcl_chart(
     audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL,
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
     mert_cache_suffix: str = constants.MERT_CACHE_SUFFIX,
+    mert_spectral_flux: bool = False,
 ) -> DdclChart:
     """Load beat-grid features and ``M-slot48`` targets for one chart.
 
@@ -174,6 +175,9 @@ def load_ddcl_chart(
         audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
         n_frames_per_beat: Sub-beat frames resampled per beat.
         mert_cache_suffix: Sibling filename suffix for cached MERT arrays.
+        mert_spectral_flux: If True when ``audio_feature_type == "mert"``,
+            append 6 z-scored 100 Hz spectral-flux/energy channels from
+            ``*.ddc_mel.npy``.
 
     Returns:
         In-memory chart example.
@@ -214,6 +218,11 @@ def load_ddcl_chart(
                 spec = features.load_mert_features(
                     audio_path, cache_suffix=mert_cache_suffix
                 )
+                if mert_spectral_flux:
+                    logmel = features.load_or_compute_logmel(
+                        audio_path, cache=cache_features
+                    )
+                    spec = features.append_spectral_flux(spec, logmel)
             beat_audio = features.beats_to_mert_tensor(
                 spec,
                 beat_times,
@@ -290,6 +299,12 @@ def load_split_charts(
             spec = features.load_mert_features(
                 audio_key, cache_suffix=dataset_config.mert_cache_suffix
             )
+            if dataset_config.mert_spectral_flux:
+                logmel = features.load_or_compute_logmel(
+                    audio_key, cache=dataset_config.cache_features
+                )
+                spec = features.append_spectral_flux(spec, logmel)
+                del logmel
             max_n_beats = 0
             for entry in group:
                 if 0 <= entry.chart_index < len(pack.charts):
@@ -333,6 +348,7 @@ def load_split_charts(
                     audio_feature_type=dataset_config.audio_feature_type,
                     n_frames_per_beat=dataset_config.n_frames_per_beat,
                     mert_cache_suffix=dataset_config.mert_cache_suffix,
+                    mert_spectral_flux=dataset_config.mert_spectral_flux,
                 )
             )
         del spec

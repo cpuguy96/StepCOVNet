@@ -92,6 +92,7 @@ def load_split_charts(
         audio_feature_type=dataset_config.audio_feature_type,
         n_frames_per_beat=dataset_config.n_frames_per_beat,
         mert_cache_suffix=dataset_config.mert_cache_suffix,
+        mert_spectral_flux=dataset_config.mert_spectral_flux,
     )
     return ddcl_datasets.load_split_charts(ddcl_dataset, split)
 

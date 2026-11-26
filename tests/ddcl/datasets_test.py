@@ -231,6 +231,26 @@ class DdclDatasetsTest(unittest.TestCase):
                 loaded[1].beat_audio,
                 loaded[0].beat_audio[: loaded[1].n_beats],
             )
+            # With mert_spectral_flux=True, 6 flux/energy channels are appended.
+            rng = np.random.default_rng(5)
+            logmel = rng.standard_normal((398, 80, 3)).astype(np.float32)
+            logmel[50, :20, 0] += 20.0  # strong low-band onset spike
+            np.save(song_dir / "song.ddc_mel.npy", logmel)
+            cfg_flux = config.DdclDatasetConfig(
+                training_index_path=str(idx_path),
+                data_root=str(root),
+                audio_feature_type="mert",
+                n_frames_per_beat=8,
+                memlen=0,
+                mert_spectral_flux=True,
+            )
+            loaded_flux = datasets.load_split_charts(cfg_flux, "train")
+            self.assertEqual(loaded_flux[0].beat_audio.shape[-1], 4 + 6)
+            flux = features.compute_spectral_flux_channels(logmel, target_frames=400)
+            self.assertEqual(flux.shape, (400, 6))
+            self.assertEqual(int(np.argmax(flux[:, 0])), 50)
+            np.testing.assert_allclose(np.mean(flux, axis=0), 0.0, atol=1e-5)
+            np.testing.assert_allclose(np.std(flux, axis=0), 1.0, atol=1e-4)
 
 
 if __name__ == "__main__":

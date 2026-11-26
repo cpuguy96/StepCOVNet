@@ -20,6 +20,7 @@ class ItgptConfigTest(unittest.TestCase):
                 audio_feature_type="mert",
                 n_frames_per_beat=24,
                 mert_cache_suffix=".mert_l2_6_10.npy",
+                mert_spectral_flux=True,
             ),
             model=config.ItgptModelConfig(
                 d_model=32,
@@ -52,6 +53,10 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.dataset.audio_feature_type, "mert")
         self.assertEqual(loaded.dataset.n_frames_per_beat, 24)
         self.assertEqual(loaded.dataset.mert_cache_suffix, ".mert_l2_6_10.npy")
+        self.assertTrue(loaded.dataset.mert_spectral_flux)
+        self.assertFalse(
+            config.ItgptDatasetConfig(training_index_path="x.json").mert_spectral_flux
+        )
         self.assertEqual(loaded.model.d_model, 32)
         self.assertEqual(loaded.model.n_heads, 4)
         self.assertTrue(loaded.model.early_film)
