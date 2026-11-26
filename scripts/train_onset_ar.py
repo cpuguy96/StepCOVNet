@@ -103,24 +103,26 @@ def _apply_overrides(
 
 def main() -> None:
     args = PARSER.parse_args()
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
     experiment_config = config.ArExperimentConfig.from_json(args.config)
     _apply_overrides(experiment_config, args)
 
     if args.verify_only:
-        summary, _sample = datasets.verify_config_loads_one_batch(experiment_config)
+        samples = datasets.load_split_samples(experiment_config, "train")
+        batch = datasets.pack_ar_sample(samples[0])
+        summary = {
+            "num_train_samples": len(samples),
+            "first_chart_path": samples[0].chart_path,
+            "mert_patches_shape": list(batch["mert_patches"].shape),
+            "decoder_input_ids_shape": list(batch["decoder_input_ids"].shape),
+        }
         print(json.dumps(summary, indent=2))
         return
 
     if not experiment_config.run.model_output_dir:
         PARSER.error("--model_output_dir is required (config or CLI)")
 
-    take_count = -1 if args.take_count is None else args.take_count
-    val_take_count = -1 if args.val_take_count is None else args.val_take_count
-    trainers.train_ar_onset(
-        experiment_config,
-        take_count=take_count,
-        val_take_count=val_take_count,
-    )
+    trainers.train_ar_onset(experiment_config)
 
 
 if __name__ == "__main__":

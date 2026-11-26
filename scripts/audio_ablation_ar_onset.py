@@ -1,12 +1,7 @@
-"""Audio-grounding ablation gate for AR onset checkpoints.
+"""Audio-grounding ablation gate for PyTorch AR onset checkpoints.
 
 Teacher-forced eval under corrupted encoder input. Pointer timing and token
 accuracy must collapse under shuffle/zeros or the run does not count.
-
-    venv\\Scripts\\python.exe scripts/audio_ablation_ar_onset.py \\
-        --config configs/ar/ladder_50t_50v_content_pointer.json --split val --limit 12
-    venv\\Scripts\\python.exe scripts/audio_ablation_ar_onset.py \\
-        --config configs/ar/tide_overfit_content_pointer.json --split overfit --gate
 """
 
 from __future__ import annotations
@@ -21,9 +16,9 @@ SCRIPT_REL = "scripts/audio_ablation_ar_onset.py"
 wsl_gpu.bootstrap_gpu_script(SCRIPT_REL)
 
 import numpy as np
-import tensorflow as tf
 
-from stepcovnet.onset_ar import audio_ablation, config, datasets
+from stepcovnet.onset_ar import audio_ablation, config, datasets, trainers
+from stepcovnet.pytorch import runtime
 
 VARIANTS = audio_ablation.VARIANTS
 
@@ -33,10 +28,8 @@ def _load_batch(
     sample: tuple[str, str, int] | None,
 ) -> dict[str, np.ndarray]:
     if sample is None:
-        return datasets.sample_to_training_batch(
-            datasets.load_overfit_sample(experiment_config),
-            experiment_config,
-        )
+        loaded = datasets.load_split_samples(experiment_config, "train")[0]
+        return datasets.pack_ar_sample(loaded)
     audio_path, chart_path, chart_index = sample
     loaded = datasets.load_ar_sample(
         audio_path,
@@ -47,7 +40,7 @@ def _load_batch(
         gap_vocab=experiment_config.build_gap_vocab(),
         chart_index=chart_index,
     )
-    return datasets.sample_to_training_batch(loaded, experiment_config)
+    return datasets.pack_ar_sample(loaded)
 
 
 def main() -> int:
@@ -58,6 +51,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=12)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", default="")
+    parser.add_argument("--device", default="auto")
     parser.add_argument(
         "--gate",
         action="store_true",
@@ -65,32 +59,29 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
+    device = runtime.resolve_device(args.device)
     experiment_config = config.ArExperimentConfig.from_json(args.config)
     model_path = args.model_path or str(
-        pathlib.Path(experiment_config.run.model_output_dir) / "ar_onset_model.keras",
+        pathlib.Path(experiment_config.run.model_output_dir) / "ar_onset_model.pt",
     )
-    model = tf.keras.models.load_model(model_path, compile=False)
+    model = trainers.load_ar_onset_model(model_path, device=device)
 
     if args.split == "overfit":
-        samples = [None]
+        loaded_samples = datasets.load_split_samples(experiment_config, "train")[:1]
     else:
-        samples = datasets._filter_valid_ar_samples(  # noqa: SLF001
-            datasets.list_ar_training_samples(experiment_config, split=args.split),
-            experiment_config.dataset,
-        )
+        loaded_samples = datasets.load_split_samples(experiment_config, args.split)
         if args.limit > 0:
-            samples = samples[: args.limit]
+            loaded_samples = loaded_samples[: args.limit]
+    batches = [datasets.pack_ar_sample(s) for s in loaded_samples]
     print(f"model: {model_path}")
-    print(f"songs: {len(samples)} ({args.split})")
+    print(f"songs: {len(batches)} ({args.split})")
 
     rng = np.random.default_rng(args.seed)
     totals = audio_ablation.empty_variant_totals()
 
-    for i, sample in enumerate(samples):
-        batch = _load_batch(experiment_config, sample)
-        donor_sample = samples[(i + 1) % len(samples)]
-        donor_batch = _load_batch(experiment_config, donor_sample)
+    for i, batch in enumerate(batches):
+        donor_batch = batches[(i + 1) % len(batches)]
         donor_patches = donor_batch["mert_patches"]
         donor_valid = int(donor_batch["patch_mask"][0].sum())
         n_valid = int(batch["patch_mask"][0].sum())
@@ -131,10 +122,9 @@ def main() -> int:
                 else None,
             )
         batch["mert_patches"] = base_patches
-        label = "overfit" if sample is None else pathlib.Path(sample[0]).stem
-        print(f"  [{i + 1}/{len(samples)}] {label}")
+        print(f"  [{i + 1}/{len(batches)}] {loaded_samples[i].chart_path}")
 
-    single_song = len(samples) < 2
+    single_song = len(batches) < 2
     rows = audio_ablation.summarize_variants(
         totals,
         skip_cross_song=single_song,

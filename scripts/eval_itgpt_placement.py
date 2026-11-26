@@ -47,14 +47,14 @@ def _build_parser() -> argparse.ArgumentParser:
 def _resolve_model_path(
     experiment: config.ItgptExperimentConfig, model_path: str
 ) -> str:
-    """Return an explicit checkpoint path or the saved experiment artifact.
+    """Return an explicit checkpoint path or the saved PyTorch artifact.
 
     Args:
         experiment: Placement experiment config.
         model_path: Optional override path.
 
     Returns:
-        Path to a ``.keras`` file.
+        Path to a ``.pt`` file.
 
     Raises:
         FileNotFoundError: If no unique checkpoint exists.
@@ -62,8 +62,9 @@ def _resolve_model_path(
     if model_path:
         return model_path
     model_dir = pathlib.Path(experiment.run.model_output_dir)
-    named = model_dir / f"{experiment.run.model_name}.keras"
+    named = model_dir / f"{experiment.run.model_name}.pt"
     preferred = (
+        model_dir / trainers.BEST_SLOT_F1_CHECKPOINT_FILENAME,
         model_dir / trainers.BEST_CHECKPOINT_FILENAME,
         named,
         model_dir / trainers.LAST_CHECKPOINT_FILENAME,
@@ -71,13 +72,13 @@ def _resolve_model_path(
     for candidate in preferred:
         if candidate.is_file():
             return str(candidate)
-    keras_files = sorted(path.name for path in model_dir.glob("*.keras"))
-    if len(keras_files) != 1:
+    pt_files = sorted(path.name for path in model_dir.glob("*.pt"))
+    if len(pt_files) != 1:
         raise FileNotFoundError(
-            f"expected best.keras, {named.name}, last.keras, or one .keras in "
-            f"{model_dir}, found {keras_files!r}"
+            f"expected best_slot_f1.pt, best.pt, {named.name}, last.pt, or one .pt in "
+            f"{model_dir}, found {pt_files!r}"
         )
-    return str(model_dir / keras_files[0])
+    return str(model_dir / pt_files[0])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -90,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code.
     """
     args = _build_parser().parse_args(argv)
-    wsl_gpu.guard_tensorflow_gpu_job(__file__)
+    wsl_gpu.guard_pytorch_gpu_job(__file__)
     experiment = config.ItgptExperimentConfig.from_json(args.config)
     model_path = _resolve_model_path(experiment, args.model_path)
     model = trainers.load_placement_model(model_path)
@@ -121,9 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     output_file = pathlib.Path(output)
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    output_file.write_text(
-        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
-    )
+    output_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(payload, indent=2))
     return 0
 

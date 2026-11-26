@@ -15,7 +15,7 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/train_arrow.py")
 
-import tensorflow as tf
+import torch
 
 from stepcovnet import config, trainers
 
@@ -104,19 +104,8 @@ def apply_overrides_from_cli(
     return config.ArrowExperimentConfig.from_dict(d)
 
 
-if tf.config.list_physical_devices("GPU"):
-    import keras
-
+if torch.cuda.is_available():
     print("Training with GPU.")
-
-    keras.mixed_precision.set_global_policy(
-        keras.mixed_precision.Policy("mixed_float16")
-    )
-
-    # Enable XLA (Accelerated Linear Algebra) for TensorFlow, which can improve
-    # performance by compiling TensorFlow graphs into highly optimized
-    # machine code.
-    tf.config.optimizer.set_jit("autoclustering")
 
 
 def main():

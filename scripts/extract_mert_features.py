@@ -250,7 +250,9 @@ def _log_plan(
     _log("MERT extraction")
     _log(f"  source:  {source}")
     _log(f"  audios:  {total} total ({pending} to extract, {skipped} cached)")
-    layer_desc = f"layers {args.layers}" if str(args.layers).strip() else f"layer {args.layer}"
+    layer_desc = (
+        f"layers {args.layers}" if str(args.layers).strip() else f"layer {args.layer}"
+    )
     _log(f"  model:   {args.model_name} ({layer_desc})")
     _log(f"  device:  {args.device}")
     _log(f"  output:  {output}")

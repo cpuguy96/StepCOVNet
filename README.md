@@ -76,8 +76,8 @@ Generate a StepMania chart (`.txt` format) from an audio file using pre-trained 
 python scripts/generate.py \
   --audio_path "path/to/song.mp3" \
   --song_title "My Song" \
-  --onset_model_path "models/onset.keras" \
-  --arrow_model_path "models/arrow.keras" \
+  --onset_model_path "models/onset.pt" \
+  --arrow_model_path "models/arrow.pt" \
   --output_file "output/chart.txt"
 ```
 
@@ -86,14 +86,14 @@ python scripts/generate.py \
 | `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, etc.)                                |
 | `--song_title`          | Title of the song                                                                  |
 | `--bpm`                 | Beats per minute (optional; estimated from audio when omitted)                     |
-| `--onset_model_path`    | Path to the onset detection model (`.keras`); optional—omit to download and cache  |
-| `--arrow_model_path`    | Path to the arrow prediction model (`.keras`); optional—omit to download and cache |
+| `--onset_model_path`    | Path to the onset detection model (`.pt`); optional—omit to download and cache     |
+| `--arrow_model_path`    | Path to the arrow prediction model (`.pt`); optional—omit to download and cache    |
 | `--output_file`         | Path where the generated chart text file will be saved                             |
 | `--use_post_processing` | Refine onset timings with peak-picking (recommended for cleaner charts)            |
 
 #### Generator UI
 
-A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset and arrow models (`.keras`)—or leave those fields blank to have default models downloaded from Google Drive and cached—enter the song title and optionally BPM (leave BPM blank to detect it from the audio), pick an output path, and run. Launch it with:
+A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset and arrow models (`.pt`)—or leave those fields blank to have default models downloaded from Google Drive and cached—enter the song title and optionally BPM (leave BPM blank to detect it from the audio), pick an output path, and run. Launch it with:
 
 ```bash
 python scripts/generate_ui.py

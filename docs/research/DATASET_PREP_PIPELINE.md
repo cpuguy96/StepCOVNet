@@ -170,7 +170,7 @@ from simfile.timing import TimingData
 
 sim = simfile.open("pack/sm.ssc")
 chart = ...  # selected chart
-timing = TimingData(sim, chart)       # handles SSC split timing
+timing = TimingData(sim, chart)  # handles SSC split timing
 note_data = NoteData(chart)
 timed = list(time_notes(note_data, timing))  # SongTime + Note per row
 ```
@@ -343,8 +343,9 @@ Field-level **why** for every exported key: **§6.3** (schema versions + rationa
 ```python
 @dataclass
 class BpmSegment:
-    start_beat: float             # beat index from simfile #BPMS
+    start_beat: float  # beat index from simfile #BPMS
     bpm: float
+
 
 @dataclass
 class SimfileMetadata:
@@ -352,41 +353,44 @@ class SimfileMetadata:
     artist: str
     subtitle: str
     music_filename: str
-    offset_sec: float             # from simfile; chart times from TimingData only (§15.7)
-    initial_bpm: float            # bpm_segments[0].bpm; skip pack if #BPMS empty
+    offset_sec: float  # from simfile; chart times from TimingData only (§15.7)
+    initial_bpm: float  # bpm_segments[0].bpm; skip pack if #BPMS empty
     bpm_segments: list[BpmSegment]  # full #BPMS ladder; per-chart times use TimingData
     selectable: bool
+
 
 @dataclass
 class ChartSummary:
     stepstype: str
-    difficulty: str               # lowercase
-    difficulty_kind: str          # "standard" | "custom"
-    meter: int                    # raw from simfile; cross-artist normalization deferred
+    difficulty: str  # lowercase
+    difficulty_kind: str  # "standard" | "custom"
+    meter: int  # raw from simfile; cross-artist normalization deferred
     chart_name: str
     credit: str
     num_steps: int
+
 
 @dataclass
 class ParsedChart:
     summary: ChartSummary
     times_sec: list[float]
-    arrow_rows: list[str]       # "0100", "0130", …
-    column_codes: list[int]     # base-4 int (arrow model compat)
+    arrow_rows: list[str]  # "0100", "0130", …
+    column_codes: list[int]  # base-4 int (arrow model compat)
+
 
 @dataclass
 class ParsedSongPack:
-    schema_version: int         # start at 1
-    normalized_bundle: str      # slug of source bundle folder (§7.1)
-    normalized_id: str          # slug of song within bundle (§7.2)
+    schema_version: int  # start at 1
+    normalized_bundle: str  # slug of source bundle folder (§7.1)
+    normalized_id: str  # slug of song within bundle (§7.2)
     source_pack_relpath: str
     source_simfile: str
     metadata: SimfileMetadata
-    charts: list[ParsedChart]   # all exported dance-single charts
-    default_chart_index: int    # highest ladder rank present (C>H>M>E>B>custom)
+    charts: list[ParsedChart]  # all exported dance-single charts
+    default_chart_index: int  # highest ladder rank present (C>H>M>E>B>custom)
     available_charts: list[ChartSummary]  # non-dance-single charts only (inventory)
-    audio_filename: str         # basename in output dir (keeps source ext)
-    audio_source: str           # "music_tag" | "inferred"
+    audio_filename: str  # basename in output dir (keeps source ext)
+    audio_source: str  # "music_tag" | "inferred"
     audio_resolved_relpath: str  # path within pack dir that was used
     warnings: list[str]
 ```
