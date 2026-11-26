@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from simfile import notes
+from stepcovnet.dataset_prep import simfile_parser
 
 _ARROW_CHAR_RANK = {"0": 0, "1": 1, "2": 2, "3": 3}
 
@@ -26,30 +26,36 @@ class EncodeChartStats:
     beats_dropped_empty: int = 0
 
 
-def note_type_to_arrow_char(note_type: notes.NoteType) -> str | None:
+def note_type_to_arrow_char(note_type: simfile_parser.NoteType) -> str | None:
     """Map a simfile note type to a quaternary arrow character.
 
     Args:
-        note_type: Simfile note type from ``NoteData``.
+        note_type: Simfile note type from ``simfile_parser``.
 
     Returns:
         ``1``, ``2``, or ``3`` for encodable types; ``None`` otherwise.
     """
-    if note_type == notes.NoteType.TAP:
+    if note_type == simfile_parser.NoteType.TAP:
         return "1"
-    if note_type in (notes.NoteType.HOLD_HEAD, notes.NoteType.ROLL_HEAD):
+    if note_type in (
+        simfile_parser.NoteType.HOLD_HEAD,
+        simfile_parser.NoteType.ROLL_HEAD,
+    ):
         return "2"
-    if note_type == notes.NoteType.TAIL:
+    if note_type == simfile_parser.NoteType.TAIL:
         return "3"
     return None
 
 
-def _count_non_encodable(note_type: notes.NoteType, stats: EncodeChartStats) -> None:
-    if note_type == notes.NoteType.MINE:
+def _count_non_encodable(
+    note_type: simfile_parser.NoteType,
+    stats: EncodeChartStats,
+) -> None:
+    if note_type == simfile_parser.NoteType.MINE:
         stats.mine_notes_unencoded += 1
-    elif note_type == notes.NoteType.FAKE:
+    elif note_type == simfile_parser.NoteType.FAKE:
         stats.fake_notes_unencoded += 1
-    elif note_type == notes.NoteType.LIFT:
+    elif note_type == simfile_parser.NoteType.LIFT:
         stats.lift_notes_unencoded += 1
 
 
@@ -61,7 +67,7 @@ def _apply_char_to_row(row: list[str], column: int, char: str) -> None:
         row[column] = char
 
 
-def build_arrow_row(beat_notes: list[notes.Note]) -> str | None:
+def build_arrow_row(beat_notes: list[simfile_parser.Note]) -> str | None:
     """Merge notes on one beat into a quaternary arrow row.
 
     Args:
@@ -83,18 +89,18 @@ def build_arrow_row(beat_notes: list[notes.Note]) -> str | None:
 
 
 def encode_timed_chart_rows(
-    timed_notes: list,
+    timed_notes: list[simfile_parser.TimedNote],
 ) -> tuple[list[float], list[str], list[int], EncodeChartStats]:
     """Group timed notes by beat and build chart row sequences.
 
     Args:
-        timed_notes: Iterable of ``TimedNote`` objects from ``time_notes``.
+        timed_notes: Iterable of ``TimedNote`` objects from ``time_chart_notes``.
 
     Returns:
         ``times_sec``, ``arrow_rows``, ``column_codes``, and encoding stats.
     """
     stats = EncodeChartStats()
-    by_beat: dict[float, list[notes.Note]] = {}
+    by_beat: dict[float, list[simfile_parser.Note]] = {}
     beat_to_time: dict[float, float] = {}
 
     for timed_note in timed_notes:

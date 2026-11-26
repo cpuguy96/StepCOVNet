@@ -8,6 +8,7 @@ from stepcovnet.dataset_prep import (
     normalize,
     pipeline,
     simfile_adapter,
+    simfile_parser,
     training_index,
     training_loader,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "run_normalization",
     "run_preprocess",
     "simfile_adapter",
+    "simfile_parser",
     "training_index",
     "training_loader",
 ]

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stepcovnet"
-version = "2.0.0"
-description = "Audio to StepMania note generator using convolutional neural networks"
+version = "2.1.0"
+description = "Audio to StepMania chart generator using deep learning"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "Apache License 2.0" }
@@ -49,15 +49,9 @@ dev = [
     "nbmake",
     "pre-commit",
     "psutil",
-    "stepcovnet[dataset-prep]",
 ]
 ssl = ["transformers"]
 ssl-dev = ["stepcovnet[dev,ssl]"]
-dataset-prep = [
-    "setuptools>=68,<82",  # pkg_resources for simfile/fs on clean installs
-    "simfile==2.1.1",
-]
-dataset-prep-dev = ["stepcovnet[dev,dataset-prep]"]
 
 [project.urls]
 Homepage = "https://github.com/cpuguy96/StepCOVNet"

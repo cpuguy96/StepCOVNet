@@ -6,9 +6,6 @@ import dataclasses
 import pathlib
 
 import numpy as np
-import simfile
-from simfile import notes, timing, types
-from simfile.notes import timed
 
 from stepcovnet.dataset_prep import (
     arrow_rows,
@@ -18,6 +15,7 @@ from stepcovnet.dataset_prep import (
     export,
     models,
     pack_results,
+    simfile_parser,
 )
 
 
@@ -53,7 +51,7 @@ class ParsePackResult:
     chart_skips: list[ChartSkip]
 
 
-def open_simfile(sim_path: str | pathlib.Path) -> types.Simfile:
+def open_simfile(sim_path: str | pathlib.Path) -> simfile_parser.ParsedSimfile:
     """Open a simfile with encoding retries from ``constants.ENCODING_RETRIES``.
 
     Args:
@@ -68,30 +66,18 @@ def open_simfile(sim_path: str | pathlib.Path) -> types.Simfile:
         FileNotFoundError: If ``sim_path`` does not exist.
     """
     path = pathlib.Path(sim_path)
-    last_error: UnicodeDecodeError | None = None
-    for encoding in constants.ENCODING_RETRIES:
-        try:
-            sim, _encoding = simfile.open_with_detected_encoding(
-                str(path),
-                try_encodings=[encoding],
-            )
-            return sim
-        except UnicodeDecodeError as exc:
-            last_error = exc
-        except Exception as exc:
-            raise ValueError(f"simfile parse failed: {path}: {exc}") from exc
-    if last_error is not None:
-        raise UnicodeDecodeError(
-            last_error.encoding,
-            last_error.object,
-            last_error.start,
-            last_error.end,
-            last_error.reason,
-        ) from last_error
-    raise FileNotFoundError(f"simfile not found: {path}")
+    try:
+        return simfile_parser.load_simfile_path(
+            path,
+            encodings=constants.ENCODING_RETRIES,
+        )
+    except (FileNotFoundError, UnicodeDecodeError):
+        raise
+    except Exception as exc:
+        raise ValueError(f"simfile parse failed: {path}: {exc}") from exc
 
 
-def parse_bpm_segments(sim: types.Simfile) -> list[models.BpmSegment]:
+def parse_bpm_segments(sim: simfile_parser.ParsedSimfile) -> list[models.BpmSegment]:
     """Parse simfile ``#BPMS`` into segment objects.
 
     Args:
@@ -100,7 +86,7 @@ def parse_bpm_segments(sim: types.Simfile) -> list[models.BpmSegment]:
     Returns:
         BPM segments sorted by ``start_beat``.
     """
-    beat_values = timing.BeatValues.from_str(sim.bpms)
+    beat_values = simfile_parser.parse_beat_values(sim.bpms)
     segments = [
         models.BpmSegment(start_beat=float(item.beat), bpm=float(item.value))
         for item in beat_values
@@ -109,7 +95,7 @@ def parse_bpm_segments(sim: types.Simfile) -> list[models.BpmSegment]:
     return segments
 
 
-def parse_metadata(sim: types.Simfile) -> models.SimfileMetadata:
+def parse_metadata(sim: simfile_parser.ParsedSimfile) -> models.SimfileMetadata:
     """Parse song-level simfile tags into ``SimfileMetadata``.
 
     Args:
@@ -157,7 +143,7 @@ def normalize_difficulty(difficulty: str) -> tuple[str, str, list[str]]:
     )
 
 
-def is_dance_single(chart: types.Chart) -> bool:
+def is_dance_single(chart: simfile_parser.ParsedChartBlock) -> bool:
     """Return True when chart stepstype is ``dance-single``.
 
     Args:
@@ -177,7 +163,11 @@ def _chart_credit(chart) -> str:
     return str(getattr(chart, "credit", None) or "").strip()
 
 
-def build_chart_summary(chart: types.Chart, *, num_steps: int) -> models.ChartSummary:
+def build_chart_summary(
+    chart: simfile_parser.ParsedChartBlock,
+    *,
+    num_steps: int,
+) -> models.ChartSummary:
     """Build a ``ChartSummary`` from a simfile chart block.
 
     Args:
@@ -201,7 +191,9 @@ def build_chart_summary(chart: types.Chart, *, num_steps: int) -> models.ChartSu
     )
 
 
-def build_available_charts(sim: types.Simfile) -> list[models.ChartSummary]:
+def build_available_charts(
+    sim: simfile_parser.ParsedSimfile,
+) -> list[models.ChartSummary]:
     """Summarize non-dance-single charts for inventory export.
 
     Args:
@@ -258,8 +250,8 @@ def _append_encode_warnings(
 
 
 def encode_chart(
-    sim: types.Simfile,
-    chart: types.Chart,
+    sim: simfile_parser.ParsedSimfile,
+    chart: simfile_parser.ParsedChartBlock,
     *,
     max_steps_per_chart: int,
     allow_over_cap: bool,
@@ -282,9 +274,7 @@ def encode_chart(
     warnings.extend(difficulty_warnings)
     meter = int(chart.meter or 0)
 
-    timing_data = timing.TimingData(sim, chart)
-    note_data = notes.NoteData(chart)
-    timed_notes = list(timed.time_notes(note_data, timing_data))
+    timed_notes = simfile_parser.time_chart_notes(sim, chart)
     times_sec, arrow_rows_out, column_codes, stats = arrow_rows.encode_timed_chart_rows(
         timed_notes
     )

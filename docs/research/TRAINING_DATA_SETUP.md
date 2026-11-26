@@ -36,7 +36,7 @@ data/raw_literature/
 Prep (Windows CPU, from repo root):
 
 ```powershell
-venv\Scripts\python.exe -m pip install -e ".[dataset-prep]"
+venv\Scripts\python.exe -m pip install -e .
 
 venv\Scripts\python.exe scripts/preprocess_dataset.py `
   --input-dir data/raw_literature `
@@ -164,7 +164,7 @@ Disk: allow **~5 GB** for the three zips plus extracted audio (ITL ~1.3 GB, Mizu
 From repo root:
 
 ```powershell
-venv\Scripts\python.exe -m pip install -e ".[dataset-prep]"
+venv\Scripts\python.exe -m pip install -e .
 ```
 
 ---

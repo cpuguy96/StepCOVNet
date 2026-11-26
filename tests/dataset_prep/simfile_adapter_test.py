@@ -341,7 +341,7 @@ class ParseSongPackTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             pack = _write_pack(pathlib.Path(tmpdir), sim_text=sim_text)
             with unittest.mock.patch(
-                "stepcovnet.dataset_prep.simfile_adapter.simfile.open_with_detected_encoding",
+                "stepcovnet.dataset_prep.simfile_adapter.simfile_parser.load_simfile_path",
                 side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid"),
             ):
                 result = simfile_adapter.parse_song_pack(

@@ -135,7 +135,7 @@ preprocessed into nested `{bundle}/{song}/` directories with audio + `.chart.jso
 
 ```bash
 # From repository root (activate your project virtual environment first):
-pip install -e ".[dataset-prep]"
+pip install -e .
 python scripts/preprocess_dataset.py \
   --input-dir data/raw_data \
   --output-dir data/final_data \

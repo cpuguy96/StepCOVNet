@@ -188,17 +188,6 @@ for sub in ("src", "scripts", "configs"):
     if p.exists():
         shutil.rmtree(p)
 subprocess.run(["tar", "-xzf", "/content/code.tar.gz", "-C", str(work)], check=True)
-extra_pkgs = []
-try:
-    import simfile  # noqa: F401
-except ImportError:
-    extra_pkgs.append("simfile==2.1.1")
-try:
-    import pkg_resources  # noqa: F401
-except ImportError:
-    extra_pkgs.append("setuptools>=68,<82")
-if extra_pkgs:
-    subprocess.run(["pip", "install", "-q", *extra_pkgs], check=True)
 subprocess.run(["pip", "install", "-q", "-e", str(work), "--no-deps"], check=True)
 gpu = subprocess.check_output(
     ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],

@@ -28,4 +28,4 @@ PY="$STEPCOVNET_WSL_PYTHON"
 "$PY" -c "import zlib"
 
 "$UV" pip install --python "$PY" -U pip -q
-"$UV" pip install --python "$PY" -e ".[ssl,dataset-prep]" -q
+"$UV" pip install --python "$PY" -e ".[ssl]" -q
