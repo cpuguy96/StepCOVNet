@@ -16,6 +16,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | **Research autoresearch** (one-prompt goal + budget loop) | [.cursor/skills/autoresearch/SKILL.md](.cursor/skills/autoresearch/SKILL.md) |
 | **AR tide overfit** (gate **PASS** — champion v8) | [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase · champion: [configs/ar/tide_overfit.json](configs/ar/tide_overfit.json) |
 | GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| **Colab GPU training & Drive sync** (parallel cloud runs, never GitHub) | [.cursor/skills/colab-gpu-stepcovnet/SKILL.md](.cursor/skills/colab-gpu-stepcovnet/SKILL.md) |
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |
 | Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |
 | **Recreate training data** (SMO downloads → prep) | [docs/research/TRAINING_DATA_SETUP.md](docs/research/TRAINING_DATA_SETUP.md) |
@@ -48,6 +49,8 @@ North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commit` — ruff on commit only. Pre-push full-suite hook stays disabled (too slow); run full `pre_submit.py` manually before push when it matters.
 
 **WSL GPU:** `source scripts/wsl_gpu_env.sh` after `bash scripts/wsl_ensure_env.sh` — see tracked `scripts/wsl_*.sh`.
+
+**Colab sync (proactive, private Drive only — never GitHub):** Whenever preparing experiments or checking Colab results, proactively open and follow [.cursor/skills/colab-gpu-stepcovnet/SKILL.md](.cursor/skills/colab-gpu-stepcovnet/SKILL.md) without waiting to be asked.
 
 ---
 

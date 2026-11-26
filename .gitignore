@@ -219,6 +219,9 @@ scripts/*
 !scripts/project_status.py
 !scripts/visualize_arrow_data.py
 !scripts/wsl_*.sh
+!scripts/colab_sync.sh
+!scripts/colab_run_remote.sh
+!scripts/colab_worktree.sh
 
 # WSL helper tests (portable; module lives in src/stepcovnet/wsl_gpu.py)
 tests/wsl_*

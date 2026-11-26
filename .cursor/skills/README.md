@@ -26,6 +26,7 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | what to do now, what's next, where are we, project status, orientation; **do it** after whats-next | whats-next                  | [whats-next/SKILL.md](whats-next/SKILL.md)                               |
 | start research session, log EXP/NOTE, add paper citations                  | research-session-workflow | [research-session-workflow/SKILL.md](research-session-workflow/SKILL.md) |
 | WSL GPU training, MERT extract, TensorFlow CUDA on Windows               | wsl-gpu-stepcovnet        | [wsl-gpu-stepcovnet/SKILL.md](wsl-gpu-stepcovnet/SKILL.md)               |
+| Colab GPU training, parallel cloud runs, private Drive sync (`rclone` / `colab` CLI) | colab-gpu-stepcovnet      | [colab-gpu-stepcovnet/SKILL.md](colab-gpu-stepcovnet/SKILL.md)           |
 | agent mistake, process improvement, new repeated workflow                | agent-self-improvement    | [agent-self-improvement/SKILL.md](agent-self-improvement/SKILL.md)       |
 | steering correction, remember this, optimize agent brain / context       | steering-correction-promotion | [steering-correction-promotion/SKILL.md](steering-correction-promotion/SKILL.md) |
 | refresh all rules, refresh agent brain, audit rules/skills, sync catalogs | agent-brain-refresh       | [agent-brain-refresh/SKILL.md](agent-brain-refresh/SKILL.md)               |

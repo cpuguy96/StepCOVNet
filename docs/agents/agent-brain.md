@@ -45,3 +45,4 @@ audits — not duplicated into [AGENTS.md](../../AGENTS.md) as prose.
 | tide-ablations                | [SKILL.md](../../.cursor/skills/tide-ablations/SKILL.md)                |
 | tide-overfit-protocol         | [SKILL.md](../../.cursor/skills/tide-overfit-protocol/SKILL.md)         |
 | wsl-gpu-stepcovnet            | [SKILL.md](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md)            |
+| colab-gpu-stepcovnet          | [SKILL.md](../../.cursor/skills/colab-gpu-stepcovnet/SKILL.md)          |
