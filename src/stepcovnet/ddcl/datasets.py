@@ -2,15 +2,75 @@
 
 from __future__ import annotations
 
+import collections
 import dataclasses
 import pathlib
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 
 import numpy as np
 
 from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.dataset_prep import training_index
 from stepcovnet.ddcl import config, constants, features, slots
+
+
+class _LazyMertBeatCache:
+    """Thread-safe bounded LRU cache of per-song beat-aligned MERT tensors."""
+
+    def __init__(self, max_songs: int) -> None:
+        """Initialize the cache with a positive song capacity.
+
+        Args:
+            max_songs: Maximum number of songs kept resident in RAM.
+
+        Raises:
+            ValueError: If ``max_songs`` is less than 1.
+        """
+        if max_songs < 1:
+            raise ValueError(f"max_songs must be >= 1, got {max_songs}")
+        self._max_songs = int(max_songs)
+        self._lock = threading.Lock()
+        self._cache: collections.OrderedDict[str, np.ndarray] = (
+            collections.OrderedDict()
+        )
+
+    @property
+    def cached_song_count(self) -> int:
+        """Return the number of songs currently resident in the LRU cache."""
+        with self._lock:
+            return len(self._cache)
+
+    def get_or_load(
+        self,
+        song_key: str,
+        loader: Callable[[], np.ndarray],
+    ) -> np.ndarray:
+        """Return cached beat-aligned MERT tensor or load and cache it.
+
+        Args:
+            song_key: Unique ``bundle/id`` song identifier.
+            loader: Zero-argument callable producing ``(max_beats, n_frames, ...)``.
+
+        Returns:
+            Read-only beat-aligned MERT array for ``song_key``.
+        """
+        with self._lock:
+            cached = self._cache.get(song_key)
+            if cached is not None:
+                self._cache.move_to_end(song_key)
+                return cached
+        loaded = loader()
+        loaded.setflags(write=False)
+        with self._lock:
+            existing = self._cache.get(song_key)
+            if existing is not None:
+                self._cache.move_to_end(song_key)
+                return existing
+            self._cache[song_key] = loaded
+            while len(self._cache) > self._max_songs:
+                self._cache.popitem(last=False)
+            return loaded
 
 
 @dataclasses.dataclass
@@ -24,7 +84,8 @@ class DdclChart:
         song_key: ``bundle/id`` identifier.
         difficulty: Lowercase DDR difficulty label.
         meter: Chart ``#METER``.
-        beat_audio: Z-scored per-beat log-mel ``(n_beats, 32, 80, 3)``.
+        beat_audio: Z-scored per-beat log-mel ``(n_beats, 32, 80, 3)`` or
+            beat-aligned MERT embeddings ``(n_beats, n_frames, feature_dim)``.
         stream: Per-beat ``[meter, bpm]`` ``(n_beats, 2)``.
         slots: Binary ``M-slot48`` targets ``(n_beats, 48)``.
         memlen: Context beats besides the current one (paper: 15).
@@ -45,6 +106,22 @@ class DdclChart:
     gt_times_sec: np.ndarray = dataclasses.field(
         default_factory=lambda: np.zeros(0, dtype=np.float64)
     )
+    _beat_audio_loader: Callable[[], np.ndarray] | None = dataclasses.field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def __getattribute__(self, name: str):
+        """Materialize ``beat_audio`` on demand for lazy-loaded MERT charts."""
+        if name == "beat_audio":
+            value = object.__getattribute__(self, "beat_audio")
+            if value.size == 0:
+                loader = object.__getattribute__(self, "_beat_audio_loader")
+                if loader is not None:
+                    return loader()
+            return value
+        return object.__getattribute__(self, name)
 
     @property
     def n_beats(self) -> int:
@@ -147,6 +224,40 @@ def resolve_data_root(dataset_config: config.DdclDatasetConfig) -> str:
     return str(training_index.resolve_output_dir(index, index_path))
 
 
+def _make_lazy_song_loader(
+    *,
+    cache: _LazyMertBeatCache,
+    song_key: str,
+    audio_key: str,
+    beat_times: np.ndarray,
+    n_frames: int,
+    mert_cache_suffix: str,
+    mert_spectral_flux: bool,
+    cache_features: bool,
+) -> Callable[[int], np.ndarray]:
+    """Build a per-song lazy MERT loader backed by ``cache``."""
+
+    def _load_full_song() -> np.ndarray:
+        spec = features.load_mert_features(
+            audio_key,
+            cache_suffix=mert_cache_suffix,
+            mmap=not mert_spectral_flux,
+        )
+        if mert_spectral_flux:
+            logmel = features.load_or_compute_logmel(audio_key, cache=cache_features)
+            spec = features.append_spectral_flux(spec, logmel)
+        return features.beats_to_mert_tensor(
+            spec,
+            beat_times,
+            n_frames=n_frames,
+        )
+
+    def _load_prefix(n_beats: int) -> np.ndarray:
+        return cache.get_or_load(song_key, _load_full_song)[:n_beats]
+
+    return _load_prefix
+
+
 def load_ddcl_chart(
     entry: training_index.TrainingIndexEntry,
     data_root: str,
@@ -155,6 +266,7 @@ def load_ddcl_chart(
     cache_features: bool = True,
     spec: np.ndarray | None = None,
     shared_beat_audio: np.ndarray | None = None,
+    lazy_beat_audio_loader: Callable[[int], np.ndarray] | None = None,
     pack: prep_models.ParsedSongPack | None = None,
     audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL,
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
@@ -171,6 +283,8 @@ def load_ddcl_chart(
         spec: Optional precomputed audio features shared across difficulties.
         shared_beat_audio: Optional per-song beat-aligned MERT tensor sliced
             zero-copy to ``[:n_beats]`` across difficulties of the same song.
+        lazy_beat_audio_loader: Optional callable ``(n_beats) -> beat_audio``
+            that defers MERT disk loading until ``chart.beat_audio`` is read.
         pack: Optional preloaded parsed song metadata/charts.
         audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
         n_frames_per_beat: Sub-beat frames resampled per beat.
@@ -180,7 +294,8 @@ def load_ddcl_chart(
             ``*.ddc_mel.npy``.
 
     Returns:
-        In-memory chart example.
+        In-memory chart example (or lazy MERT chart when
+        ``lazy_beat_audio_loader`` is provided).
 
     Raises:
         ValueError: If the chart has no onsets or ``audio_feature_type`` is invalid.
@@ -205,15 +320,26 @@ def load_ddcl_chart(
         pack.metadata.bpm_segments,
     )
     n_beats = slot_matrix.shape[0]
-    beat_times = slots.beat_times_sec(
-        n_beats,
-        pack.metadata.offset_sec,
-        pack.metadata.bpm_segments,
-    )
+    beat_audio_loader: Callable[[], np.ndarray] | None = None
     if audio_feature_type == constants.AUDIO_FEATURE_MERT:
-        if shared_beat_audio is not None and shared_beat_audio.shape[0] >= n_beats:
+        if lazy_beat_audio_loader is not None:
+            beat_audio = np.empty(0, dtype=np.float32)
+
+            def _resolve_beats(
+                _loader: Callable[[int], np.ndarray] = lazy_beat_audio_loader,
+                _n_beats: int = n_beats,
+            ) -> np.ndarray:
+                return _loader(_n_beats)
+
+            beat_audio_loader = _resolve_beats
+        elif shared_beat_audio is not None and shared_beat_audio.shape[0] >= n_beats:
             beat_audio = shared_beat_audio[:n_beats]
         else:
+            beat_times = slots.beat_times_sec(
+                n_beats,
+                pack.metadata.offset_sec,
+                pack.metadata.bpm_segments,
+            )
             if spec is None:
                 spec = features.load_mert_features(
                     audio_path, cache_suffix=mert_cache_suffix
@@ -229,6 +355,11 @@ def load_ddcl_chart(
                 n_frames=n_frames_per_beat,
             )
     elif audio_feature_type == constants.AUDIO_FEATURE_LOGMEL:
+        beat_times = slots.beat_times_sec(
+            n_beats,
+            pack.metadata.offset_sec,
+            pack.metadata.bpm_segments,
+        )
         if spec is None:
             spec = features.load_or_compute_logmel(audio_path, cache=cache_features)
         beat_audio = features.zscore_beats(
@@ -259,6 +390,7 @@ def load_ddcl_chart(
         offset_sec=float(pack.metadata.offset_sec),
         bpm_segments=tuple(pack.metadata.bpm_segments),
         gt_times_sec=np.sort(times),
+        _beat_audio_loader=beat_audio_loader,
     )
 
 
@@ -285,8 +417,18 @@ def load_split_charts(
             grouped[key] = []
             song_order.append(key)
         grouped[key].append(entry)
+    use_lazy_mert = (
+        dataset_config.audio_feature_type == constants.AUDIO_FEATURE_MERT
+        and dataset_config.lazy_mert_cache_size > 0
+    )
+    lazy_cache = (
+        _LazyMertBeatCache(dataset_config.lazy_mert_cache_size)
+        if use_lazy_mert
+        else None
+    )
     charts: list[DdclChart] = []
-    for song_key in song_order:
+    verbose_songs = len(song_order) <= 100
+    for song_idx, song_key in enumerate(song_order, start=1):
         group = grouped[song_key]
         audio_key = str(pathlib.Path(data_root) / group[0].audio_relpath)
         pack = prep_models.load_parsed_song(
@@ -294,17 +436,10 @@ def load_split_charts(
             group[0].normalized_bundle,
             group[0].normalized_id,
         )
+        spec: np.ndarray | None = None
         shared_beat_audio: np.ndarray | None = None
+        lazy_loader: Callable[[int], np.ndarray] | None = None
         if dataset_config.audio_feature_type == constants.AUDIO_FEATURE_MERT:
-            spec = features.load_mert_features(
-                audio_key, cache_suffix=dataset_config.mert_cache_suffix
-            )
-            if dataset_config.mert_spectral_flux:
-                logmel = features.load_or_compute_logmel(
-                    audio_key, cache=dataset_config.cache_features
-                )
-                spec = features.append_spectral_flux(spec, logmel)
-                del logmel
             max_n_beats = 0
             for entry in group:
                 if 0 <= entry.chart_index < len(pack.charts):
@@ -319,17 +454,47 @@ def load_split_charts(
                             pack.metadata.bpm_segments,
                         ).shape[0]
                         max_n_beats = max(max_n_beats, n_beats_i)
-            if max_n_beats > 0:
-                shared_beat_audio = features.beats_to_mert_tensor(
-                    spec,
-                    slots.beat_times_sec(
+            if lazy_cache is not None:
+                features.validate_mert_features(
+                    audio_key, cache_suffix=dataset_config.mert_cache_suffix
+                )
+                if max_n_beats > 0:
+                    song_beat_times = slots.beat_times_sec(
                         max_n_beats,
                         pack.metadata.offset_sec,
                         pack.metadata.bpm_segments,
-                    ),
-                    n_frames=dataset_config.n_frames_per_beat,
+                    )
+                    lazy_loader = _make_lazy_song_loader(
+                        cache=lazy_cache,
+                        song_key=song_key,
+                        audio_key=audio_key,
+                        beat_times=song_beat_times,
+                        n_frames=dataset_config.n_frames_per_beat,
+                        mert_cache_suffix=dataset_config.mert_cache_suffix,
+                        mert_spectral_flux=dataset_config.mert_spectral_flux,
+                        cache_features=dataset_config.cache_features,
+                    )
+            else:
+                spec = features.load_mert_features(
+                    audio_key, cache_suffix=dataset_config.mert_cache_suffix
                 )
-                shared_beat_audio.setflags(write=False)
+                if dataset_config.mert_spectral_flux:
+                    logmel = features.load_or_compute_logmel(
+                        audio_key, cache=dataset_config.cache_features
+                    )
+                    spec = features.append_spectral_flux(spec, logmel)
+                    del logmel
+                if max_n_beats > 0:
+                    shared_beat_audio = features.beats_to_mert_tensor(
+                        spec,
+                        slots.beat_times_sec(
+                            max_n_beats,
+                            pack.metadata.offset_sec,
+                            pack.metadata.bpm_segments,
+                        ),
+                        n_frames=dataset_config.n_frames_per_beat,
+                    )
+                    shared_beat_audio.setflags(write=False)
         else:
             spec = features.load_or_compute_logmel(
                 audio_key,
@@ -344,6 +509,7 @@ def load_split_charts(
                     cache_features=dataset_config.cache_features,
                     spec=spec,
                     shared_beat_audio=shared_beat_audio,
+                    lazy_beat_audio_loader=lazy_loader,
                     pack=pack,
                     audio_feature_type=dataset_config.audio_feature_type,
                     n_frames_per_beat=dataset_config.n_frames_per_beat,
@@ -352,11 +518,13 @@ def load_split_charts(
                 )
             )
         del spec
-        print(
-            f"loaded {split} {song_key}: {len(group)} charts, "
-            f"{charts[-1].n_beats} beats",
-            flush=True,
-        )
+        if verbose_songs or song_idx % 100 == 0 or song_idx == len(song_order):
+            mode_tag = " [lazy]" if lazy_cache is not None else ""
+            print(
+                f"loaded {split} {song_idx}/{len(song_order)} {song_key}: "
+                f"{len(group)} charts, {charts[-1].n_beats} beats{mode_tag}",
+                flush=True,
+            )
     print(
         f"loaded {len(charts)} {split} charts from {len(song_order)} songs",
         flush=True,

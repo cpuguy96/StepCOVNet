@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import tempfile
@@ -253,6 +254,69 @@ class DdclDatasetsTest(unittest.TestCase):
             self.assertEqual(int(np.argmax(flux[:, 0])), 50)
             np.testing.assert_allclose(np.mean(flux, axis=0), 0.0, atol=1e-5)
             np.testing.assert_allclose(np.std(flux, axis=0), 1.0, atol=1e-4)
+
+            # Lazy MERT loading matches eager bit-for-bit, shares memory per song,
+            # keeps raw beat_audio empty before access, and works with corruption.
+            cfg_lazy = config.DdclDatasetConfig(
+                training_index_path=str(idx_path),
+                data_root=str(root),
+                audio_feature_type="mert",
+                n_frames_per_beat=8,
+                memlen=0,
+                lazy_mert_cache_size=1,
+            )
+            lazy_loaded = datasets.load_split_charts(cfg_lazy, "train")
+            self.assertEqual(len(lazy_loaded), 2)
+            # Raw stored array is 0-byte placeholder until accessed via property.
+            self.assertEqual(
+                object.__getattribute__(lazy_loaded[0], "beat_audio").size, 0
+            )
+            np.testing.assert_array_equal(
+                lazy_loaded[0].beat_audio, loaded[0].beat_audio
+            )
+            np.testing.assert_array_equal(
+                lazy_loaded[1].beat_audio, loaded[1].beat_audio
+            )
+            self.assertTrue(
+                np.shares_memory(lazy_loaded[0].beat_audio, lazy_loaded[1].beat_audio)
+            )
+            # Replacing beat_audio (as in grounding corruption) overrides loader.
+            zeroed = dataclasses.replace(
+                lazy_loaded[0],
+                beat_audio=np.zeros_like(lazy_loaded[0].beat_audio),
+            )
+            np.testing.assert_array_equal(
+                zeroed.beat_audio, np.zeros_like(loaded[0].beat_audio)
+            )
+            # Bounded LRU cache evicts oldest song when capacity is exceeded.
+            cache = datasets._LazyMertBeatCache(max_songs=1)
+            calls: list[str] = []
+            a1 = cache.get_or_load(
+                "s1",
+                lambda: (calls.append("s1"), np.ones((2, 4, 3), dtype=np.float32))[1],
+            )
+            a2 = cache.get_or_load(
+                "s1",
+                lambda: (
+                    calls.append("s1_again"),
+                    np.zeros((2, 4, 3), dtype=np.float32),
+                )[1],
+            )
+            self.assertIs(a1, a2)
+            self.assertEqual(calls, ["s1"])
+            cache.get_or_load(
+                "s2",
+                lambda: (calls.append("s2"), np.full((2, 4, 3), 2.0, dtype=np.float32))[
+                    1
+                ],
+            )
+            self.assertEqual(cache.cached_song_count, 1)
+            # Negative cache size is rejected.
+            with self.assertRaises(ValueError):
+                config.DdclDatasetConfig(
+                    training_index_path=str(idx_path),
+                    lazy_mert_cache_size=-1,
+                )
 
 
 if __name__ == "__main__":

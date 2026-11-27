@@ -71,6 +71,9 @@ class DdclDatasetConfig(_DictSerializableMixin):
         mert_spectral_flux: If True when ``audio_feature_type == "mert"``,
             concatenate 6 z-scored 100 Hz 3-band spectral-flux/energy channels
             derived from ``*.ddc_mel.npy`` onto each MERT frame.
+        lazy_mert_cache_size: Optional bounded per-split LRU song cache size for
+            on-demand MERT loading (0 = eager preload in RAM; >0 loads per-song
+            MERT tensors lazily from disk on first access).
     """
 
     training_index_path: str
@@ -85,13 +88,15 @@ class DdclDatasetConfig(_DictSerializableMixin):
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
     mert_cache_suffix: str = constants.MERT_CACHE_SUFFIX
     mert_spectral_flux: bool = False
+    lazy_mert_cache_size: int = 0
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.
 
         Raises:
             ValueError: If ``batch_size``, ``memlen``, ``n_frames_per_beat``,
-                ``audio_feature_type``, or ``mert_cache_suffix`` is invalid.
+                ``audio_feature_type``, ``mert_cache_suffix``, or
+                ``lazy_mert_cache_size`` is invalid.
         """
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {self.batch_size}")
@@ -112,6 +117,10 @@ class DdclDatasetConfig(_DictSerializableMixin):
             raise ValueError(
                 "mert_cache_suffix must start with '.' and end with '.npy', "
                 f"got {self.mert_cache_suffix!r}"
+            )
+        if self.lazy_mert_cache_size < 0:
+            raise ValueError(
+                f"lazy_mert_cache_size must be >= 0, got {self.lazy_mert_cache_size}"
             )
 
 

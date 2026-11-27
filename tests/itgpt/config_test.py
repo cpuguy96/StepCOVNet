@@ -21,6 +21,7 @@ class ItgptConfigTest(unittest.TestCase):
                 n_frames_per_beat=24,
                 mert_cache_suffix=".mert_l2_6_10.npy",
                 mert_spectral_flux=True,
+                lazy_mert_cache_size=128,
             ),
             model=config.ItgptModelConfig(
                 d_model=32,
@@ -56,6 +57,13 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.dataset.n_frames_per_beat, 24)
         self.assertEqual(loaded.dataset.mert_cache_suffix, ".mert_l2_6_10.npy")
         self.assertTrue(loaded.dataset.mert_spectral_flux)
+        self.assertEqual(loaded.dataset.lazy_mert_cache_size, 128)
+        self.assertEqual(
+            config.ItgptDatasetConfig(
+                training_index_path="x.json"
+            ).lazy_mert_cache_size,
+            0,
+        )
         self.assertFalse(
             config.ItgptDatasetConfig(training_index_path="x.json").mert_spectral_flux
         )

@@ -218,10 +218,43 @@ def window_at_beat(
     return out
 
 
+def validate_mert_features(
+    audio_path: str | pathlib.Path,
+    *,
+    cache_suffix: str = constants.MERT_CACHE_SUFFIX,
+) -> tuple[int, ...]:
+    """Validate that a cached MERT ``.npy`` file exists and is 2D/3D via header.
+
+    Uses ``mmap_mode="r"`` so large multi-song splits validate in milliseconds
+    without reading feature arrays into RAM.
+
+    Args:
+        audio_path: Path to the song audio file; resolves sibling cache file.
+        cache_suffix: Sibling filename suffix (default ``.mert.npy``).
+
+    Returns:
+        Shape tuple of the cached MERT array.
+
+    Raises:
+        FileNotFoundError: If the sibling MERT cache file does not exist.
+        ValueError: If the cached array is neither rank-2 nor rank-3.
+    """
+    mert_path = pathlib.Path(audio_path).with_suffix(cache_suffix)
+    if not mert_path.is_file():
+        raise FileNotFoundError(f"missing cached MERT features: {mert_path}")
+    raw = np.load(mert_path, mmap_mode="r")
+    if raw.ndim not in (2, 3):
+        raise ValueError(
+            f"expected 2D or 3D MERT array in {mert_path}, got {raw.shape}"
+        )
+    return tuple(int(dim) for dim in raw.shape)
+
+
 def load_mert_features(
     audio_path: str | pathlib.Path,
     *,
     cache_suffix: str = constants.MERT_CACHE_SUFFIX,
+    mmap: bool = False,
 ) -> np.ndarray:
     """Load precomputed 100 Hz MERT embeddings beside ``audio_path``.
 
@@ -232,6 +265,8 @@ def load_mert_features(
     Args:
         audio_path: Path to the song audio file; resolves sibling cache file.
         cache_suffix: Sibling filename suffix (default ``.mert.npy``).
+        mmap: If True, open read-only memory-mapped array when dtype already
+            matches the target dtype (avoids full-array copy before beat slicing).
 
     Returns:
         Array of shape ``(time, feature_dim)`` or
@@ -244,7 +279,7 @@ def load_mert_features(
     mert_path = pathlib.Path(audio_path).with_suffix(cache_suffix)
     if not mert_path.is_file():
         raise FileNotFoundError(f"missing cached MERT features: {mert_path}")
-    raw = np.load(mert_path)
+    raw = np.load(mert_path, mmap_mode="r" if mmap else None)
     if raw.ndim not in (2, 3):
         raise ValueError(
             f"expected 2D or 3D MERT array in {mert_path}, got {raw.shape}"
@@ -252,6 +287,8 @@ def load_mert_features(
     target_dtype = (
         np.float16 if (raw.ndim == 3 and raw.dtype == np.float16) else np.float32
     )
+    if mmap and raw.dtype == target_dtype:
+        return raw
     return np.asarray(raw, dtype=target_dtype)
 
 

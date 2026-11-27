@@ -73,6 +73,9 @@ class ItgptDatasetConfig(_DictSerializableMixin):
         difficulty_source: Scalar conditioning signal passed as ``difficulty``
             (``"meter"`` uses chart ``#METER``; ``"density"`` uses scale-invariant
             chart mean steps per beat in ``[0, 6]``).
+        lazy_mert_cache_size: Optional bounded per-split LRU song cache size for
+            on-demand MERT loading (0 = eager preload in RAM; >0 loads per-song
+            MERT tensors lazily from disk on first access).
     """
 
     training_index_path: str
@@ -88,13 +91,14 @@ class ItgptDatasetConfig(_DictSerializableMixin):
     mert_cache_suffix: str = ddcl_constants.MERT_CACHE_SUFFIX
     mert_spectral_flux: bool = False
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER
+    lazy_mert_cache_size: int = 0
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.
 
         Raises:
             ValueError: If sizes, ``audio_feature_type``, ``mert_cache_suffix``,
-                or ``difficulty_source`` are invalid.
+                ``difficulty_source``, or ``lazy_mert_cache_size`` are invalid.
         """
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {self.batch_size}")
@@ -130,6 +134,10 @@ class ItgptDatasetConfig(_DictSerializableMixin):
             raise ValueError(
                 "difficulty_source must be one of "
                 f"{constants.DIFFICULTY_SOURCES}, got {self.difficulty_source!r}"
+            )
+        if self.lazy_mert_cache_size < 0:
+            raise ValueError(
+                f"lazy_mert_cache_size must be >= 0, got {self.lazy_mert_cache_size}"
             )
 
 
