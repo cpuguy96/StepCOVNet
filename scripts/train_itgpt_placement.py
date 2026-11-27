@@ -21,6 +21,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--steps_per_epoch", type=int, default=None)
     parser.add_argument("--model_output_dir", type=str, default=None)
     parser.add_argument(
+        "--init_weights",
+        type=str,
+        default=None,
+        help=(
+            "Optional .pt checkpoint path to initialize model weights for "
+            "fine-tuning (optimizer/EMA start fresh)."
+        ),
+    )
+    parser.add_argument(
         "--fresh",
         action="store_true",
         help="Ignore BackupAndRestore state and start from epoch 0.",
@@ -46,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
         experiment.run.steps_per_epoch = args.steps_per_epoch
     if args.model_output_dir:
         experiment.run.model_output_dir = args.model_output_dir
+    if args.init_weights:
+        experiment.run.init_weights_path = args.init_weights
     if args.fresh:
         experiment.run.resume = False
     trainers.train_placement(experiment)

@@ -23,6 +23,17 @@ class TrainItgptPlacementScriptTest(unittest.TestCase):
         )
         self.assertTrue(args.config.endswith("itgpt_placement_fraxtil_exp_smoke.json"))
         self.assertFalse(args.fresh)
+        self.assertIsNone(args.init_weights)
+
+        ft_args = parser.parse_args(
+            [
+                "--config",
+                "configs/ddc/itgpt_placement_fraxtil_exp_smoke.json",
+                "--init_weights",
+                "models/pretrained.pt",
+            ]
+        )
+        self.assertEqual(ft_args.init_weights, "models/pretrained.pt")
 
 
 if __name__ == "__main__":

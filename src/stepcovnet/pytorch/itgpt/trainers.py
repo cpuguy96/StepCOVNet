@@ -367,11 +367,45 @@ def train_placement(
         feature_dim = ddcl_constants.MERT_FEATURE_DIM
         n_mert_layers = 1
 
+    output_dir = pathlib.Path(experiment.run.model_output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = output_dir / BACKUP_DIRNAME
+    backup_path = backup_dir / BACKUP_FILENAME
+    if not experiment.run.resume and backup_dir.exists():
+        shutil.rmtree(backup_dir)
+    will_resume = bool(experiment.run.resume and backup_path.is_file())
+
     raw_model = build_model(
         experiment,
         feature_dim=feature_dim,
         n_mert_layers=n_mert_layers,
     ).to(target_device)
+
+    if experiment.run.init_weights_path and not will_resume:
+        init_path = pathlib.Path(experiment.run.init_weights_path)
+        if not init_path.is_file():
+            raise FileNotFoundError(
+                f"init_weights_path checkpoint not found: {init_path}"
+            )
+        init_payload = torch.load(init_path, map_location="cpu", weights_only=False)
+        raw_state = (
+            init_payload["state_dict"]
+            if isinstance(init_payload, dict) and "state_dict" in init_payload
+            else init_payload
+        )
+        cleaned_state = {
+            (key[10:] if key.startswith("_orig_mod.") else key): value
+            for key, value in raw_state.items()
+        }
+        raw_model.load_state_dict(cleaned_state, strict=True)
+        init_epoch = (
+            init_payload.get("epoch") if isinstance(init_payload, dict) else None
+        )
+        print(
+            f"Initialized model weights from {init_path} "
+            f"(checkpoint_epoch={init_epoch})",
+            flush=True,
+        )
 
     if jit_enabled:
         compile_placement_blocks(raw_model)
@@ -391,13 +425,6 @@ def train_placement(
         else None
     )
 
-    output_dir = pathlib.Path(experiment.run.model_output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    backup_dir = output_dir / BACKUP_DIRNAME
-    backup_path = backup_dir / BACKUP_FILENAME
-    if not experiment.run.resume and backup_dir.exists():
-        shutil.rmtree(backup_dir)
-
     best_path = output_dir / BEST_CHECKPOINT_FILENAME
     best_slot_f1_path = output_dir / BEST_SLOT_F1_CHECKPOINT_FILENAME
     last_path = output_dir / LAST_CHECKPOINT_FILENAME
@@ -408,7 +435,7 @@ def train_placement(
     best_slot_f1: float | None = None
     best_slot_f1_epoch: int | None = None
 
-    if experiment.run.resume and backup_path.is_file():
+    if will_resume:
         resume_state = torch.load(backup_path, map_location="cpu", weights_only=False)
         raw_model.load_state_dict(resume_state["state_dict"])
         optimizer.load_state_dict(resume_state["optimizer_state_dict"])

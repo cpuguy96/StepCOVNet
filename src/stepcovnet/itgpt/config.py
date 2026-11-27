@@ -274,6 +274,10 @@ class ItgptRunConfig(_DictSerializableMixin):
         rdrop_kl_weight: Non-negative weight on the bidirectional Bernoulli
             R-Drop KL consistency loss between two stochastic forward passes
             during training (``0.0`` disables).
+        init_weights_path: Optional path to a saved ``.pt`` checkpoint used to
+            initialize model weights before fine-tuning (optimizer, schedule,
+            and EMA start fresh from the loaded weights; ignored when resuming
+            from an existing backup checkpoint).
     """
 
     epoch: int = 8
@@ -304,6 +308,7 @@ class ItgptRunConfig(_DictSerializableMixin):
     max_bar_shift: int = 0
     beat_aux_loss_weight: float = 0.0
     rdrop_kl_weight: float = 0.0
+    init_weights_path: str = ""
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.

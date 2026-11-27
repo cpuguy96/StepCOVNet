@@ -613,6 +613,83 @@ class ItgptTrainersTest(unittest.TestCase):
                 (pathlib.Path(tmpdir) / "models" / "rdrop_smoke.pt").is_file()
             )
 
+    def test_train_placement_init_weights_path_loads_before_ema(self) -> None:
+        chart = _synthetic_chart()
+        report = _mock_report(0.61, 0.65)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_cfg = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    learning_rate=1e-9,
+                    weight_decay=0.0,
+                    use_ema=True,
+                    ema_momentum=0.999,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "ft_models"),
+                    callback_root_dir="",
+                    model_name="ft_smoke",
+                    resume=False,
+                ),
+            )
+            from stepcovnet.pytorch.itgpt import trainers as pt_trainers
+
+            pretrained = pt_trainers.build_model(base_cfg)
+            with torch.no_grad():
+                for param in pretrained.parameters():
+                    param.fill_(0.25)
+            init_ckpt = pathlib.Path(tmpdir) / "pretrained.pt"
+            pt_trainers.save_checkpoint(pretrained, init_ckpt, extra={"epoch": 8})
+            base_cfg.run.init_weights_path = str(init_ckpt)
+
+            with (
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
+            ):
+                trained = trainers.train_placement(base_cfg, device="cpu")
+            # With lr=1e-9 and EMA initialized from pretrained 0.25 weights,
+            # final parameters must remain close to 0.25 (not random init).
+            first_param = next(iter(trained.parameters())).detach().cpu()
+            self.assertTrue(
+                torch.allclose(
+                    first_param, torch.full_like(first_param, 0.25), atol=1e-3
+                )
+            )
+
+            base_cfg.run.init_weights_path = str(pathlib.Path(tmpdir) / "missing.pt")
+            with (
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                self.assertRaises(FileNotFoundError),
+            ):
+                trainers.train_placement(base_cfg, device="cpu")
+
 
 if __name__ == "__main__":
     unittest.main()
