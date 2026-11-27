@@ -51,6 +51,11 @@ dev = [
     "psutil",
 ]
 ssl = ["transformers>=4.40,<5"]
+beat-tracking = [
+    "soxr",
+    "rotary-embedding-torch",
+    "beat_this @ https://github.com/CPJKU/beat_this/archive/main.zip",
+]
 ssl-dev = ["stepcovnet[dev,ssl]"]
 
 [project.urls]

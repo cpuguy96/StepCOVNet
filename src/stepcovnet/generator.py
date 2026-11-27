@@ -10,7 +10,7 @@ import numpy as np
 import scipy.signal
 import torch
 
-from stepcovnet import constants, datasets
+from stepcovnet import beat_tracking, constants, datasets
 
 
 @dataclasses.dataclass(frozen=True)
@@ -114,11 +114,18 @@ def _create_txt_mapping(onsets: list, arrows: list) -> list[tuple[str, str]]:
     return note_data
 
 
-def _estimate_bpm_from_audio(audio_path: str) -> int:
-    """Estimate BPM from an audio file using librosa beat tracking.
+def _estimate_bpm_from_audio(
+    audio_path: str,
+    *,
+    beat_tracker: str = beat_tracking.TRACKER_LIBROSA,
+) -> int:
+    """Estimate BPM from an audio file using the configured beat tracker.
 
     Args:
         audio_path: Path to the input audio file.
+        beat_tracker: Beat tracker backend (``"librosa"``, ``"beat_this"``, or
+            ``"auto"``). Defaults to ``"librosa"`` when called directly for
+            backwards compatibility.
 
     Returns:
         Estimated integer BPM clamped to ``[1, 9999]``.
@@ -126,12 +133,24 @@ def _estimate_bpm_from_audio(audio_path: str) -> int:
     Raises:
         ValueError: If tempo cannot be estimated.
     """
+    if beat_tracker != beat_tracking.TRACKER_LIBROSA:
+        grid = beat_tracking.estimate_beats(audio_path, tracker=beat_tracker)
+        return max(1, min(9999, int(round(grid.bpm))))
     y, sr = librosa.load(audio_path, sr=constants.TARGET_SR)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
     tempo_f = float(np.atleast_1d(tempo)[0])
     if not (tempo_f > 0 and np.isfinite(tempo_f)):
         raise ValueError("Could not estimate BPM from audio; please provide --bpm.")
     return max(1, min(9999, int(round(tempo_f))))
+
+
+def _is_itgpt_placement_model(model: Any) -> bool:
+    """Return True if ``model`` is a beat-slot ITGPT placement model."""
+    return (
+        callable(getattr(model, "forward_logits", None))
+        and hasattr(model, "n_enc_layers")
+        and hasattr(model, "audio_feature_type")
+    )
 
 
 def _model_device(model: Any) -> torch.device:
@@ -197,16 +216,32 @@ def generate_output_data(
     onset_model: Any,
     arrow_model: Any,
     use_post_processing: bool = False,
+    beat_tracker: str = beat_tracking.TRACKER_AUTO,
+    snap_beats: bool = False,
+    target_density: float = 2.0,
+    meter: int = 10,
+    threshold: float = 0.5,
 ) -> OutputData:
     """Generate step chart data for an audio file using PyTorch models.
+
+    Supports both legacy frame-level dense onset models and beat-slot
+    ITGPT-MERT placement models (automatically using ``beat_this`` when
+    installed, with a ``librosa`` fallback, to extract the beat grid from
+    raw audio).
 
     Args:
         audio_path: Path to the input audio file.
         song_title: Song title written into the output header.
         bpm: Optional song BPM; estimated from audio when omitted.
-        onset_model: Trained PyTorch dense onset model.
+        onset_model: Trained PyTorch dense onset or ITGPT placement model.
         arrow_model: Trained PyTorch arrow sequence model.
-        use_post_processing: Whether to apply peak picking to onset probabilities.
+        use_post_processing: Whether to apply peak picking to dense onset probabilities.
+        beat_tracker: Beat tracker backend (``"auto"``, ``"beat_this"``, ``"librosa"``).
+        snap_beats: Align estimated beats to audio onset-strength peaks via a
+            constant song-level phase offset.
+        target_density: Target steps per beat for density-conditioned ITGPT models.
+        meter: Difficulty meter for meter-conditioned ITGPT models.
+        threshold: Onset probability threshold.
 
     Returns:
         Populated :class:`OutputData`.
@@ -214,17 +249,37 @@ def generate_output_data(
     Raises:
         ValueError: If no onsets are predicted or BPM cannot be estimated.
     """
-    if bpm is None:
-        bpm = _estimate_bpm_from_audio(audio_path)
-    spec = datasets.audio_to_spectrogram(audio_path).T
-    normalized_spec = datasets.normalize_onset_spectrogram(spec)
-    onset_pred = _run_onset_inference(onset_model, normalized_spec)
+    required_arrow = _required_arrow_inputs(arrow_model)
+    normalized_spec: np.ndarray | None = None
 
-    if use_post_processing:
-        onsets = _post_process_predictions(onset_pred[0])
+    if _is_itgpt_placement_model(onset_model):
+        onsets, beat_grid = beat_tracking.predict_itgpt_onsets_from_audio(
+            audio_path,
+            onset_model,
+            beat_tracker=beat_tracker,
+            snap_beats=snap_beats,
+            target_density=target_density,
+            meter=meter,
+            threshold=threshold,
+            device=_model_device(onset_model),
+        )
+        if bpm is None:
+            bpm = max(1, min(9999, int(round(beat_grid.bpm))))
+        if "snippet_input" in required_arrow:
+            spec = datasets.audio_to_spectrogram(audio_path).T
+            normalized_spec = datasets.normalize_onset_spectrogram(spec)
     else:
-        probs_1d = np.asarray(onset_pred[0]).reshape(-1)
-        onsets = np.where(probs_1d > 0.5)[0] * datasets.HOP_COEFF
+        if bpm is None:
+            bpm = _estimate_bpm_from_audio(audio_path, beat_tracker=beat_tracker)
+        spec = datasets.audio_to_spectrogram(audio_path).T
+        normalized_spec = datasets.normalize_onset_spectrogram(spec)
+        onset_pred = _run_onset_inference(onset_model, normalized_spec)
+
+        if use_post_processing:
+            onsets = _post_process_predictions(onset_pred[0], threshold=threshold)
+        else:
+            probs_1d = np.asarray(onset_pred[0]).reshape(-1)
+            onsets = np.where(probs_1d > threshold)[0] * datasets.HOP_COEFF
 
     if not onsets.shape[0]:
         raise ValueError("Failed to predict any onsets for the audio file.")
@@ -236,7 +291,7 @@ def generate_output_data(
     )
 
     arrow_feed: dict[str, np.ndarray] = {}
-    for base in _required_arrow_inputs(arrow_model):
+    for base in required_arrow:
         if base == "timing_input":
             arrow_feed[base] = normalized_onsets
         elif base == "interval_input":
@@ -255,6 +310,7 @@ def generate_output_data(
             beat_ph = datasets.beat_phase_from_times_bpm(onsets, float(bpm))
             arrow_feed[base] = np.expand_dims(beat_ph, axis=(0, -1))
         elif base == "snippet_input":
+            assert normalized_spec is not None
             in_opts = getattr(arrow_model, "input_options", None)
             half_frames = int(getattr(in_opts, "snippet_half_frames", 0))
             snippets = datasets.extract_snippets_from_spec(
