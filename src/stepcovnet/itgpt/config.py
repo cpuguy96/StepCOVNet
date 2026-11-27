@@ -157,6 +157,14 @@ class ItgptModelConfig(_DictSerializableMixin):
             zeroed per beat during training (``0`` disables time masking).
         mert_channel_dropout: Channel-wise dropout probability across the MERT
             feature axis per beat during training (``0.0`` disables).
+        mert_time_mask_preserve_downbeat: If True, keep beat frame ``0``
+            unmasked when sampling MERT SpecAugment time masks (sampling starts
+            in ``[1, n_frames)`` so quarter-note downbeat transients remain
+            intact).
+        use_nps_condition: If True (requires ``difficulty_source == "density"``),
+            prepend a 3rd scalar condition token for notes per second
+            (``steps_per_beat * bpm / 60`` scaled on ``[0, 20]``) before
+            ``level6``.
     """
 
     d_model: int = constants.D_MODEL
@@ -169,6 +177,8 @@ class ItgptModelConfig(_DictSerializableMixin):
     continuous_beat_conv: bool = False
     mert_time_mask_max_frames: int = 0
     mert_channel_dropout: float = 0.0
+    mert_time_mask_preserve_downbeat: bool = False
+    use_nps_condition: bool = False
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.

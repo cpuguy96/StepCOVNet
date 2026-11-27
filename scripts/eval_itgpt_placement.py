@@ -60,6 +60,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--diagnose_decoding",
+        action="store_true",
+        help=(
+            "Compare zero-training decoding strategies (fixed 0.5, top-K density "
+            "matching, clamped top-K, LOSO subdivision thresholds, and combined)."
+        ),
+    )
+    parser.add_argument(
         "--threshold",
         type=float,
         default=0.5,
@@ -163,6 +171,22 @@ def main(argv: list[str] | None = None) -> int:
         payload["model_path"] = model_path
         payload["config_path"] = args.config
         default_filename = "eval_val_slices.json"
+        output = args.output or str(
+            pathlib.Path(experiment.run.model_output_dir) / default_filename
+        )
+        output_file = pathlib.Path(output)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(payload, indent=2))
+    elif args.diagnose_decoding:
+        payload = evaluation.evaluate_decoding_strategies(
+            model,
+            charts,
+            max_beats=experiment.dataset.max_beats,
+        )
+        payload["model_path"] = model_path
+        payload["config_path"] = args.config
+        default_filename = "eval_val_decoding.json"
         output = args.output or str(
             pathlib.Path(experiment.run.model_output_dir) / default_filename
         )

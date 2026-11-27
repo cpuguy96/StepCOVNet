@@ -1,0 +1,55 @@
+{
+  "dataset": {
+    "training_index_path": "data/final_data/training_index_ladder_v1_300t_50v.json",
+    "data_root": "data/final_data",
+    "batch_size": 1,
+    "max_train_songs": -1,
+    "max_val_songs": -1,
+    "cache_features": true,
+    "max_beats": 1024,
+    "audio_feature_type": "mert",
+    "n_frames_per_beat": 24,
+    "mert_cache_suffix": ".mert_l2_6_10_16.npy",
+    "difficulty_source": "density",
+    "exclude_normalized_ids": [
+      "hold_release_rakshasa_and_carcasses",
+      "pantomime",
+      "the_rampage_of_hatsune_miku",
+      "vrosteroid",
+      "news_39",
+      "viva_happy"
+    ]
+  },
+  "model": {
+    "d_model": 256,
+    "n_heads": 8,
+    "n_enc_layers": 8,
+    "cnn_hidden": 32,
+    "dropout_rate": 0.1,
+    "mert_time_mask_max_frames": 4,
+    "mert_channel_dropout": 0.15,
+    "mert_time_mask_preserve_downbeat": true,
+    "use_nps_condition": true
+  },
+  "run": {
+    "epoch": 64,
+    "steps_per_epoch": 294,
+    "validation_steps": 20,
+    "learning_rate": 0.0001,
+    "min_learning_rate": 1e-06,
+    "lr_schedule": "cosine",
+    "warmup_epochs": 4,
+    "weight_decay": 0.01,
+    "clipnorm": 1.0,
+    "use_ema": true,
+    "ema_momentum": 0.995,
+    "seed": 42,
+    "mixed_precision": true,
+    "jit_compile": true,
+    "eval_slot_f1_every": 4,
+    "model_output_dir": "models_wsl/ddc/itgpt_mert_placement_ladder_300t_50v_cosine64_l2_6_10_16_ema_density_specaug_keep0_nps",
+    "callback_root_dir": "callbacks/ddc/itgpt_placement",
+    "model_name": "itgpt_mert_placement_ladder_300t_50v_cosine64_l2_6_10_16_ema_density_specaug_keep0_nps",
+    "resume": false
+  }
+}

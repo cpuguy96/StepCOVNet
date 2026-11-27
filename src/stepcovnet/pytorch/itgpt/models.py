@@ -425,6 +425,8 @@ class ItgptBeatMertEncoder(nn.Module):
             zeroed per beat during training (``0`` disables time masking).
         mert_channel_dropout: Channel-wise dropout probability across the MERT
             feature axis per beat during training (``0.0`` disables).
+        mert_time_mask_preserve_downbeat: If True, sample time-mask starts in
+            ``[1, n_frames)`` so frame ``0`` (beat downbeat) is never zeroed.
     """
 
     def __init__(
@@ -435,6 +437,7 @@ class ItgptBeatMertEncoder(nn.Module):
         n_mert_layers: int = 1,
         mert_time_mask_max_frames: int = 0,
         mert_channel_dropout: float = 0.0,
+        mert_time_mask_preserve_downbeat: bool = False,
     ) -> None:
         super().__init__()
         self.feature_dim = int(feature_dim)
@@ -443,6 +446,7 @@ class ItgptBeatMertEncoder(nn.Module):
         self.n_mert_layers = int(n_mert_layers)
         self.mert_time_mask_max_frames = int(mert_time_mask_max_frames)
         self.mert_channel_dropout = float(mert_channel_dropout)
+        self.mert_time_mask_preserve_downbeat = bool(mert_time_mask_preserve_downbeat)
         if self.n_mert_layers > 1:
             self.layer_logits: nn.Parameter | None = nn.Parameter(
                 torch.zeros(self.n_mert_layers, dtype=torch.float32)
@@ -479,9 +483,14 @@ class ItgptBeatMertEncoder(nn.Module):
             if self.mert_time_mask_max_frames > 0:
                 n_items = hidden.shape[0]
                 n_frames = hidden.shape[1]
-                max_w = min(self.mert_time_mask_max_frames, n_frames)
+                start_low = (
+                    1 if self.mert_time_mask_preserve_downbeat and n_frames > 1 else 0
+                )
+                max_w = min(self.mert_time_mask_max_frames, n_frames - start_low)
                 widths = torch.randint(0, max_w + 1, (n_items, 1), device=hidden.device)
-                starts = torch.randint(0, n_frames, (n_items, 1), device=hidden.device)
+                starts = torch.randint(
+                    start_low, n_frames, (n_items, 1), device=hidden.device
+                )
                 pos = torch.arange(n_frames, device=hidden.device).unsqueeze(0)
                 time_keep = (pos < starts) | (pos >= (starts + widths))
                 hidden = hidden * time_keep.unsqueeze(-1).to(hidden.dtype)
@@ -648,6 +657,11 @@ class ItgptPlacementModel(nn.Module):
             zeroed per beat during training (``0`` disables).
         mert_channel_dropout: Channel-wise dropout probability across the MERT
             feature axis per beat during training (``0.0`` disables).
+        mert_time_mask_preserve_downbeat: If True, keep beat frame ``0``
+            unmasked when sampling MERT SpecAugment time masks.
+        use_nps_condition: If True (requires ``difficulty_source == "density"``),
+            prepend a 3rd scalar condition token for notes per second
+            (``steps_per_beat * bpm / 60`` scaled on ``[0, 20]``).
         difficulty_source: Scalar conditioning signal passed as ``difficulty``
             (``"meter"`` uses ``[1, 50]`` bounds; ``"density"`` uses ``[0, 6]``
             mean steps per beat bounds).
@@ -674,6 +688,8 @@ class ItgptPlacementModel(nn.Module):
         continuous_beat_conv: bool = False,
         mert_time_mask_max_frames: int = 0,
         mert_channel_dropout: float = 0.0,
+        mert_time_mask_preserve_downbeat: bool = False,
+        use_nps_condition: bool = False,
         difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
     ) -> None:
         super().__init__()
@@ -712,6 +728,14 @@ class ItgptPlacementModel(nn.Module):
                 "difficulty_source must be one of "
                 f"{constants.DIFFICULTY_SOURCES}, got {difficulty_source!r}"
             )
+        if (
+            use_nps_condition
+            and difficulty_source != constants.DIFFICULTY_SOURCE_DENSITY
+        ):
+            raise ValueError(
+                "use_nps_condition=True requires difficulty_source == 'density', "
+                f"got {difficulty_source!r}"
+            )
 
         self.d_model = int(d_model)
         self.n_heads = int(n_heads)
@@ -728,6 +752,8 @@ class ItgptPlacementModel(nn.Module):
         self.continuous_beat_conv = bool(continuous_beat_conv)
         self.mert_time_mask_max_frames = int(mert_time_mask_max_frames)
         self.mert_channel_dropout = float(mert_channel_dropout)
+        self.mert_time_mask_preserve_downbeat = bool(mert_time_mask_preserve_downbeat)
+        self.use_nps_condition = bool(use_nps_condition)
         self.difficulty_source = str(difficulty_source)
 
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
@@ -740,6 +766,7 @@ class ItgptPlacementModel(nn.Module):
                 n_mert_layers=self.n_mert_layers,
                 mert_time_mask_max_frames=self.mert_time_mask_max_frames,
                 mert_channel_dropout=self.mert_channel_dropout,
+                mert_time_mask_preserve_downbeat=self.mert_time_mask_preserve_downbeat,
             )
         else:
             self.beat_cnn = ItgptBeatCNNEncoder(self.d_model, self.cnn_hidden)
@@ -758,6 +785,11 @@ class ItgptPlacementModel(nn.Module):
             self.d_model,
             constants.MIN_BPM,
             constants.MAX_BPM,
+        )
+        self.nps_proj: ItgptConditionProj | None = (
+            ItgptConditionProj(self.d_model, constants.MIN_NPS, constants.MAX_NPS)
+            if self.use_nps_condition
+            else None
         )
 
         self.early_film_subbeat: ItgptConditionFilm | None = None
@@ -913,13 +945,16 @@ class ItgptPlacementModel(nn.Module):
                 + self.phrase_pos_emb(beat_idx % 16)
             )
         global_h = global_h + pos.to(global_h.dtype).unsqueeze(0)
-        global_h = torch.cat(
-            [diff_tok.to(global_h.dtype), bpm_tok.to(global_h.dtype), global_h],
-            dim=1,
-        )
+        cond_tokens = [diff_tok.to(global_h.dtype), bpm_tok.to(global_h.dtype)]
+        if self.nps_proj is not None:
+            nps = inputs["difficulty"] * (inputs["bpm"] / 60.0)
+            nps_tok = self.nps_proj(nps)
+            cond_tokens.append(nps_tok.to(global_h.dtype))
+        n_cond = len(cond_tokens)
+        global_h = torch.cat([*cond_tokens, global_h], dim=1)
         for block in self.level6:
             global_h = block(global_h)
-        global_h = global_h[:, 2:, :]
+        global_h = global_h[:, n_cond:, :]
         global_h = self.conv_head(global_h)
         # Keep onset head in fp32 for numerical stability under autocast.
         return nn_func.linear(
@@ -961,6 +996,8 @@ class ItgptPlacementModel(nn.Module):
             "continuous_beat_conv": self.continuous_beat_conv,
             "mert_time_mask_max_frames": self.mert_time_mask_max_frames,
             "mert_channel_dropout": self.mert_channel_dropout,
+            "mert_time_mask_preserve_downbeat": self.mert_time_mask_preserve_downbeat,
+            "use_nps_condition": self.use_nps_condition,
             "difficulty_source": self.difficulty_source,
         }
 
@@ -982,6 +1019,8 @@ def build_itgpt_placement_model(
     continuous_beat_conv: bool = False,
     mert_time_mask_max_frames: int = 0,
     mert_channel_dropout: float = 0.0,
+    mert_time_mask_preserve_downbeat: bool = False,
+    use_nps_condition: bool = False,
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> ItgptPlacementModel:
     """Build the PyTorch ITGPT placement network.
@@ -1005,6 +1044,10 @@ def build_itgpt_placement_model(
             zeroed per beat during training (``0`` disables).
         mert_channel_dropout: Channel-wise dropout probability across the MERT
             feature axis per beat during training (``0.0`` disables).
+        mert_time_mask_preserve_downbeat: If True, keep beat frame ``0``
+            unmasked when sampling MERT SpecAugment time masks.
+        use_nps_condition: If True (requires ``difficulty_source == "density"``),
+            prepend a 3rd scalar condition token for notes per second.
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"``).
 
@@ -1027,6 +1070,8 @@ def build_itgpt_placement_model(
         continuous_beat_conv=continuous_beat_conv,
         mert_time_mask_max_frames=mert_time_mask_max_frames,
         mert_channel_dropout=mert_channel_dropout,
+        mert_time_mask_preserve_downbeat=mert_time_mask_preserve_downbeat,
+        use_nps_condition=use_nps_condition,
         difficulty_source=difficulty_source,
     )
 

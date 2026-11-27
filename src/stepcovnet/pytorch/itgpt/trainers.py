@@ -271,6 +271,8 @@ def build_model(
         continuous_beat_conv=experiment.model.continuous_beat_conv,
         mert_time_mask_max_frames=experiment.model.mert_time_mask_max_frames,
         mert_channel_dropout=experiment.model.mert_channel_dropout,
+        mert_time_mask_preserve_downbeat=experiment.model.mert_time_mask_preserve_downbeat,
+        use_nps_condition=experiment.model.use_nps_condition,
         difficulty_source=experiment.dataset.difficulty_source,
     )
 

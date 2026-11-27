@@ -414,6 +414,73 @@ class ItgptModelsTest(unittest.TestCase):
                 difficulty_source="invalid",
             )
 
+    def test_mert_specaug_preserve_downbeat_roundtrip(self):
+        model = models.build_itgpt_placement_model(
+            d_model=16,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=constants.CHUNK_ALIGN,
+            audio_feature_type=ddcl_constants.AUDIO_FEATURE_MERT,
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=8,
+            mert_time_mask_max_frames=4,
+            mert_channel_dropout=0.15,
+            mert_time_mask_preserve_downbeat=True,
+        )
+        self.assertTrue(model.mert_time_mask_preserve_downbeat)
+        assert model.beat_mert is not None
+        self.assertTrue(model.beat_mert.mert_time_mask_preserve_downbeat)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = trainers.save_checkpoint(model, pathlib.Path(tmpdir) / "keep0.pt")
+            reloaded = trainers.load_placement_model(ckpt, device="cpu")
+            self.assertTrue(reloaded.mert_time_mask_preserve_downbeat)
+            assert reloaded.beat_mert is not None
+            self.assertTrue(reloaded.beat_mert.mert_time_mask_preserve_downbeat)
+
+    def test_nps_condition_forward_validation_and_roundtrip(self):
+        with self.assertRaises(ValueError):
+            models.build_itgpt_placement_model(
+                d_model=16,
+                n_heads=4,
+                n_enc_layers=1,
+                difficulty_source=constants.DIFFICULTY_SOURCE_METER,
+                use_nps_condition=True,
+            )
+        model = models.build_itgpt_placement_model(
+            d_model=16,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=constants.CHUNK_ALIGN,
+            audio_feature_type=ddcl_constants.AUDIO_FEATURE_MERT,
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=8,
+            difficulty_source=constants.DIFFICULTY_SOURCE_DENSITY,
+            use_nps_condition=True,
+        )
+        self.assertTrue(model.use_nps_condition)
+        self.assertIsNotNone(model.nps_proj)
+        inputs = {
+            "audio": torch.zeros(
+                (1, constants.CHUNK_ALIGN, constants.CNN_FRAMES_OUT, 8),
+                dtype=torch.float32,
+            ),
+            "bpm": torch.tensor([[150.0]], dtype=torch.float32),
+            "difficulty": torch.tensor([[2.0]], dtype=torch.float32),
+        }
+        model.eval()
+        with torch.no_grad():
+            out_a = model(inputs).numpy()
+        self.assertEqual(out_a.shape, (1, constants.CHUNK_ALIGN, constants.N_SLOTS))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = trainers.save_checkpoint(model, pathlib.Path(tmpdir) / "nps.pt")
+            reloaded = trainers.load_placement_model(ckpt, device="cpu")
+            self.assertTrue(reloaded.use_nps_condition)
+            with torch.no_grad():
+                out_b = reloaded(inputs).numpy()
+        np.testing.assert_allclose(out_a, out_b, atol=1e-6)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -289,6 +289,46 @@ class ItgptEvaluationTest(unittest.TestCase):
         for val in captured:
             self.assertAlmostEqual(val, expected_density)
 
+    def test_decode_topk_and_evaluate_decoding_strategies(self):
+        scores = np.array([[0.1, 0.9, 0.4, 0.7]], dtype=np.float32)
+        topk = evaluation.decode_topk_slots(scores, 2)
+        np.testing.assert_array_equal(topk, np.array([[0.0, 1.0, 0.0, 1.0]]))
+
+        chart_a = _mert_grounding_chart(n_beats=16)
+        import dataclasses
+
+        chart_b = dataclasses.replace(chart_a, song_key="pack_b/song_2")
+
+        class _LowScalePredictor:
+            def predict(self, inputs: object, verbose: int = 0) -> np.ndarray:
+                del verbose
+                assert isinstance(inputs, dict)
+                probs = _AudioSensitivePredictor().predict(inputs)
+                return probs * 0.4
+
+        report = evaluation.evaluate_decoding_strategies(
+            _LowScalePredictor(),
+            [chart_a, chart_b],
+            max_beats=constants.CHUNK_ALIGN,
+        )
+        strategies = report["strategies"]
+        assert isinstance(strategies, dict)
+        self.assertEqual(
+            set(strategies.keys()),
+            {
+                "fixed_05",
+                "topk_density",
+                "topk_clamped",
+                "loso_subdiv",
+                "loso_subdiv_topk",
+            },
+        )
+        self.assertAlmostEqual(float(strategies["fixed_05"]["overall"]["f1"]), 0.0)
+        self.assertAlmostEqual(float(strategies["topk_density"]["overall"]["f1"]), 1.0)
+        self.assertAlmostEqual(
+            float(strategies["topk_density"]["overall"]["density_ratio"]), 1.0
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
