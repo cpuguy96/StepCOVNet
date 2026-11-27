@@ -325,6 +325,7 @@ class ItgptTrainersTest(unittest.TestCase):
                     focal_gamma=1.0,
                     grid_weight_24th=2.0,
                     label_smoothing=0.02,
+                    dice_loss_weight=0.25,
                     gradient_accumulation_steps=2,
                     use_ema=True,
                     ema_momentum=0.995,
@@ -487,6 +488,130 @@ class ItgptTrainersTest(unittest.TestCase):
         self.assertEqual([mod for mod, _ in compiled_targets], expected)
         self.assertTrue(all(dyn for _, dyn in compiled_targets))
         self.assertEqual(list(model.state_dict().keys()), keys_before)
+
+    def test_train_placement_with_beat_aux_head_and_loss_weight(self) -> None:
+        chart = _synthetic_chart()
+        report = _mock_report(0.52, 0.57)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                    beat_aux_head=True,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=2,
+                    validation_steps=1,
+                    beat_aux_loss_weight=0.15,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="beataux_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
+            ):
+                model = trainers.train_placement(experiment, device="cpu")
+            self.assertTrue(model.beat_aux_head)
+            self.assertIsNotNone(model.beat_aux)
+            saved = pathlib.Path(tmpdir) / "models" / "beataux_smoke.pt"
+            self.assertTrue(saved.is_file())
+            reloaded = trainers.load_placement_model(saved, device="cpu")
+            self.assertTrue(reloaded.beat_aux_head)
+
+    def test_train_placement_with_rdrop_kl_weight(self) -> None:
+        chart = _synthetic_chart()
+        report = _mock_report(0.54, 0.59)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exp_rdrop = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.2,
+                    beat_aux_head=True,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=2,
+                    validation_steps=1,
+                    beat_aux_loss_weight=0.10,
+                    rdrop_kl_weight=2.0,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="rdrop_smoke",
+                    resume=False,
+                ),
+            )
+            orig_fwd = models.ItgptPlacementModel.forward_with_aux
+            train_fwd_calls = 0
+
+            def _counting_fwd(
+                self_mod: models.ItgptPlacementModel,
+                inputs: dict[str, torch.Tensor],
+            ) -> tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+                nonlocal train_fwd_calls
+                if self_mod.training:
+                    train_fwd_calls += 1
+                return orig_fwd(self_mod, inputs)
+
+            with (
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+                mock.patch(
+                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
+                mock.patch.object(
+                    models.ItgptPlacementModel,
+                    "forward_with_aux",
+                    autospec=True,
+                    side_effect=_counting_fwd,
+                ),
+            ):
+                model = trainers.train_placement(exp_rdrop, device="cpu")
+            self.assertEqual(train_fwd_calls, 4)
+            self.assertTrue(model.beat_aux_head)
+            self.assertTrue(
+                (pathlib.Path(tmpdir) / "models" / "rdrop_smoke.pt").is_file()
+            )
 
 
 if __name__ == "__main__":

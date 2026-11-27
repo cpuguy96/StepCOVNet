@@ -481,6 +481,300 @@ class ItgptModelsTest(unittest.TestCase):
                 out_b = reloaded(inputs).numpy()
         np.testing.assert_allclose(out_a, out_b, atol=1e-6)
 
+    def test_beat_aux_head_zero_init_aux_loss_and_roundtrip(self) -> None:
+        n_beats = constants.CHUNK_ALIGN
+        feature_dim = 16
+        runtime.set_seed(0)
+        base_model = models.build_itgpt_placement_model(
+            d_model=32,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=n_beats,
+            audio_feature_type=ddcl_constants.AUDIO_FEATURE_MERT,
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=feature_dim,
+            beat_aux_head=False,
+        )
+        runtime.set_seed(0)
+        aux_model = models.build_itgpt_placement_model(
+            d_model=32,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=n_beats,
+            audio_feature_type=ddcl_constants.AUDIO_FEATURE_MERT,
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=feature_dim,
+            beat_aux_head=True,
+        )
+        self.assertFalse(base_model.beat_aux_head)
+        self.assertIsNone(base_model.beat_aux)
+        self.assertTrue(aux_model.beat_aux_head)
+        self.assertIsNotNone(aux_model.beat_aux)
+
+        aux_state = aux_model.state_dict()
+        for key, value in base_model.state_dict().items():
+            aux_state[key] = value.clone()
+        aux_model.load_state_dict(aux_state)
+
+        rng = np.random.default_rng(73)
+        inputs = {
+            "audio": torch.as_tensor(
+                rng.standard_normal(
+                    (1, n_beats, constants.CNN_FRAMES_OUT, feature_dim)
+                ).astype(np.float32)
+            ),
+            "bpm": torch.tensor([[145.0]], dtype=torch.float32),
+            "difficulty": torch.tensor([[2.0]], dtype=torch.float32),
+        }
+        labels = torch.zeros((1, n_beats, constants.N_SLOTS), dtype=torch.float32)
+        labels[0, 0, 0] = 1.0
+        labels[0, 0, 24] = 1.0
+        labels[0, 3, 12] = 1.0
+        mask = torch.ones((1, n_beats), dtype=torch.float32)
+        mask[0, -8:] = 0.0
+
+        base_model.eval()
+        aux_model.eval()
+        with torch.no_grad():
+            base_logits_init = base_model.forward_logits(inputs).numpy()
+            aux_logits_init, aux_preds = aux_model.forward_with_aux(inputs)
+            aux_probs_init = aux_model(inputs).numpy()
+        self.assertEqual(aux_logits_init.shape, (1, n_beats, constants.N_SLOTS))
+        self.assertEqual(aux_probs_init.shape, (1, n_beats, constants.N_SLOTS))
+        self.assertIsNotNone(aux_preds)
+        assert aux_preds is not None
+        self.assertEqual(tuple(aux_preds["beat_active_logit"].shape), (1, n_beats))
+        self.assertEqual(tuple(aux_preds["beat_count_pred"].shape), (1, n_beats))
+        np.testing.assert_allclose(aux_logits_init.numpy(), base_logits_init, atol=1e-6)
+
+        # Verify masked aux loss ignores masked-out beats and trains all aux layers.
+        run_cfg = config.ItgptRunConfig(learning_rate=1e-2, weight_decay=0.0)
+        optimizer_aux = trainers.build_optimizer(aux_model, run_cfg)
+        criterion = models.ItgptPlacementLoss()
+        aux_model.train()
+        optimizer_aux.zero_grad()
+        logits, aux_out = aux_model.forward_with_aux(inputs)
+        assert aux_out is not None
+        aux_loss = models.compute_beat_aux_loss(
+            aux_out["beat_active_logit"],
+            aux_out["beat_count_pred"],
+            labels,
+            mask,
+        )
+        self.assertTrue(np.isfinite(float(aux_loss.detach().item())))
+        self.assertGreater(float(aux_loss.detach().item()), 0.0)
+        total_loss = criterion(logits, labels, mask) + 0.15 * aux_loss
+        total_loss.backward()
+        assert aux_model.beat_aux is not None
+        assert aux_model.beat_aux.aux_proj.weight.grad is not None
+        assert aux_model.beat_aux.gate_proj.weight.grad is not None
+        assert aux_model.beat_aux.hidden.weight.grad is not None
+        self.assertGreater(
+            float(aux_model.beat_aux.aux_proj.weight.grad.abs().max().item()), 0.0
+        )
+        self.assertGreater(
+            float(aux_model.beat_aux.gate_proj.weight.grad.abs().max().item()), 0.0
+        )
+        self.assertGreater(
+            float(aux_model.beat_aux.hidden.weight.grad.abs().max().item()), 0.0
+        )
+        optimizer_aux.step()
+
+        aux_model.eval()
+        with torch.no_grad():
+            aux_out_after = aux_model.forward_logits(inputs).numpy()
+        self.assertGreater(
+            float(np.max(np.abs(aux_out_after - base_logits_init))),
+            1e-4,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = trainers.save_checkpoint(
+                aux_model, pathlib.Path(tmpdir) / "beat_aux.pt"
+            )
+            reloaded = trainers.load_placement_model(ckpt, device="cpu")
+            self.assertTrue(reloaded.beat_aux_head)
+            self.assertIsNotNone(reloaded.beat_aux)
+            with torch.no_grad():
+                reloaded_out = reloaded.forward_logits(inputs).numpy()
+        np.testing.assert_allclose(aux_out_after, reloaded_out, atol=1e-5)
+
+    def test_placement_loss_dice_term_masking_gradients_and_validation(self) -> None:
+        with self.assertRaises(ValueError):
+            models.ItgptPlacementLoss(dice_loss_weight=-0.1)
+
+        rng = np.random.default_rng(123)
+        logits_data = rng.standard_normal((1, 4, constants.N_SLOTS)).astype(np.float32)
+        targets = torch.zeros((1, 4, constants.N_SLOTS), dtype=torch.float32)
+        targets[0, 0, 0] = 1.0
+        targets[0, 1, 24] = 1.0
+        mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]], dtype=torch.float32)
+
+        # dice_loss_weight=0.0 matches existing loss bit-for-bit.
+        base_loss_fn = models.ItgptPlacementLoss(label_smoothing=0.01)
+        zero_dice_fn = models.ItgptPlacementLoss(
+            label_smoothing=0.01, dice_loss_weight=0.0
+        )
+        logits_a = torch.tensor(logits_data, requires_grad=True)
+        logits_b = torch.tensor(logits_data, requires_grad=True)
+        loss_a = base_loss_fn(logits_a, targets, mask)
+        loss_b = zero_dice_fn(logits_b, targets, mask)
+        self.assertTrue(torch.equal(loss_a, loss_b))
+        loss_a.backward()
+        loss_b.backward()
+        assert logits_a.grad is not None and logits_b.grad is not None
+        self.assertTrue(torch.equal(logits_a.grad, logits_b.grad))
+
+        # dice_loss_weight > 0 changes loss and gradients cleanly using raw targets.
+        dice_weight = 0.25
+        dice_loss_fn = models.ItgptPlacementLoss(
+            label_smoothing=0.01, dice_loss_weight=dice_weight
+        )
+        logits_c = torch.tensor(logits_data, requires_grad=True)
+        loss_c = dice_loss_fn(logits_c, targets, mask)
+        with torch.no_grad():
+            probs = torch.sigmoid(torch.tensor(logits_data))
+            slot_mask = mask.unsqueeze(-1)
+            eps = 1e-6
+            expected_dice = 1.0 - (
+                2.0 * torch.sum(probs * targets * slot_mask) + eps
+            ) / (torch.sum(probs * slot_mask) + torch.sum(targets * slot_mask) + eps)
+            expected_total = loss_a.detach() + dice_weight * expected_dice
+        self.assertAlmostEqual(
+            float(loss_c.detach().item()), float(expected_total.item()), places=6
+        )
+        self.assertGreater(float(loss_c.detach().item()), float(loss_a.detach().item()))
+        loss_c.backward()
+        assert logits_c.grad is not None
+        self.assertTrue(torch.isfinite(logits_c.grad).all())
+        self.assertGreater(
+            float(torch.max(torch.abs(logits_c.grad - logits_a.grad)).item()), 0.0
+        )
+        # Padded beats must have exact zero gradients.
+        self.assertEqual(
+            float(torch.max(torch.abs(logits_c.grad[:, 2:, :])).item()), 0.0
+        )
+
+        # Mutating logits and targets on padded beats must not affect loss or real grads.
+        logits_pad_mut = torch.tensor(logits_data, requires_grad=True)
+        with torch.no_grad():
+            logits_pad_mut[:, 2:, :] = 10.0
+        targets_pad_mut = targets.clone()
+        targets_pad_mut[:, 2:, :] = 1.0
+        loss_pad_mut = dice_loss_fn(logits_pad_mut, targets_pad_mut, mask)
+        self.assertAlmostEqual(
+            float(loss_pad_mut.detach().item()), float(loss_c.detach().item()), places=6
+        )
+        loss_pad_mut.backward()
+        assert logits_pad_mut.grad is not None
+        np.testing.assert_allclose(
+            logits_pad_mut.grad[:, :2, :].numpy(),
+            logits_c.grad[:, :2, :].numpy(),
+            atol=1e-6,
+        )
+        self.assertEqual(
+            float(torch.max(torch.abs(logits_pad_mut.grad[:, 2:, :])).item()), 0.0
+        )
+
+    def test_placement_loss_bce_pos_weight_baseline_shift_and_validation(self) -> None:
+        with self.assertRaises(ValueError):
+            models.ItgptPlacementLoss(bce_pos_weight=0.0)
+        with self.assertRaises(ValueError):
+            models.ItgptPlacementLoss(bce_pos_weight=-1.0)
+
+        rng = np.random.default_rng(77)
+        logits_data = rng.standard_normal((1, 4, constants.N_SLOTS)).astype(np.float32)
+        targets = torch.zeros((1, 4, constants.N_SLOTS), dtype=torch.float32)
+        targets[0, 0, 0] = 1.0
+        targets[0, 1, 24] = 1.0
+        mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]], dtype=torch.float32)
+
+        base_fn = models.ItgptPlacementLoss(label_smoothing=0.01, dice_loss_weight=0.05)
+        unit_pw_fn = models.ItgptPlacementLoss(
+            label_smoothing=0.01, dice_loss_weight=0.05, bce_pos_weight=1.0
+        )
+        logits_a = torch.tensor(logits_data, requires_grad=True)
+        logits_b = torch.tensor(logits_data, requires_grad=True)
+        loss_a = base_fn(logits_a, targets, mask)
+        loss_b = unit_pw_fn(logits_b, targets, mask)
+        self.assertTrue(torch.equal(loss_a, loss_b))
+        loss_a.backward()
+        loss_b.backward()
+        assert logits_a.grad is not None and logits_b.grad is not None
+        self.assertTrue(torch.equal(logits_a.grad, logits_b.grad))
+
+        # bce_pos_weight > 1.0 increases positive-slot loss and pulls logits upward.
+        pw_fn = models.ItgptPlacementLoss(
+            label_smoothing=0.01, dice_loss_weight=0.05, bce_pos_weight=1.35
+        )
+        logits_c = torch.tensor(logits_data, requires_grad=True)
+        loss_c = pw_fn(logits_c, targets, mask)
+        self.assertGreater(float(loss_c.detach().item()), float(loss_a.detach().item()))
+        loss_c.backward()
+        assert logits_c.grad is not None
+        self.assertLess(float(logits_c.grad[0, 0, 0]), float(logits_a.grad[0, 0, 0]))
+        # Negative slots have identical BCE gradient (only Dice denom/target term is unchanged).
+        # Compare gradient-descent updated logits on positive slots.
+        updated_a = logits_data - 0.1 * logits_a.grad.numpy()
+        updated_c = logits_data - 0.1 * logits_c.grad.numpy()
+        self.assertGreater(float(updated_c[0, 0, 0]), float(updated_a[0, 0, 0]))
+        self.assertGreater(float(updated_c[0, 1, 24]), float(updated_a[0, 1, 24]))
+
+        # On all-zero targets without label smoothing, pos_weight > 1.0 leaves loss unchanged.
+        neg_base = models.ItgptPlacementLoss(label_smoothing=0.0, dice_loss_weight=0.0)
+        neg_pw = models.ItgptPlacementLoss(
+            label_smoothing=0.0, dice_loss_weight=0.0, bce_pos_weight=1.35
+        )
+        zero_targets = torch.zeros_like(targets)
+        self.assertTrue(
+            torch.equal(
+                neg_base(torch.tensor(logits_data), zero_targets, mask),
+                neg_pw(torch.tensor(logits_data), zero_targets, mask),
+            )
+        )
+
+    def test_bernoulli_rdrop_kl_symmetry_stability_and_masking(self) -> None:
+        torch.manual_seed(41)
+        z1 = torch.randn(2, 8, constants.N_SLOTS, requires_grad=True)
+        z2 = torch.randn(2, 8, constants.N_SLOTS, requires_grad=True)
+        mask = torch.zeros((2, 8), dtype=torch.float32)
+        mask[0, :5] = 1.0
+        mask[1, :3] = 1.0
+
+        kl_zero = models.compute_bernoulli_rdrop_kl(z1, z1.detach(), mask)
+        self.assertAlmostEqual(float(kl_zero.item()), 0.0, places=6)
+
+        kl_12 = models.compute_bernoulli_rdrop_kl(z1, z2, mask)
+        kl_21 = models.compute_bernoulli_rdrop_kl(z2, z1, mask)
+        self.assertGreater(float(kl_12.item()), 0.0)
+        torch.testing.assert_close(kl_12, kl_21, atol=1e-6, rtol=1e-6)
+        kl_12.backward()
+        assert z1.grad is not None and z2.grad is not None
+        self.assertTrue(torch.isfinite(z1.grad).all())
+        self.assertTrue(torch.isfinite(z2.grad).all())
+
+        # Masked tail beats do not contribute.
+        z1_tail = z1.detach().clone()
+        z2_tail = z2.detach().clone()
+        z1_tail[0, 5:] += 20.0
+        z2_tail[1, 3:] -= 20.0
+        kl_tail = models.compute_bernoulli_rdrop_kl(z1_tail, z2_tail, mask)
+        torch.testing.assert_close(kl_12.detach(), kl_tail, atol=1e-6, rtol=1e-6)
+
+        # Extreme logits stay finite.
+        ext1 = torch.full((1, 4, constants.N_SLOTS), 30.0, requires_grad=True)
+        ext2 = torch.full((1, 4, constants.N_SLOTS), -30.0, requires_grad=True)
+        kl_ext = models.compute_bernoulli_rdrop_kl(
+            ext1, ext2, torch.ones((1, 4)), normalize_by_valid_beats=True
+        )
+        self.assertTrue(torch.isfinite(kl_ext).item())
+        kl_ext.backward()
+        assert ext1.grad is not None and ext2.grad is not None
+        self.assertTrue(torch.isfinite(ext1.grad).all())
+        self.assertTrue(torch.isfinite(ext2.grad).all())
+
 
 if __name__ == "__main__":
     unittest.main()

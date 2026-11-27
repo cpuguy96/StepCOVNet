@@ -173,6 +173,9 @@ class ItgptModelConfig(_DictSerializableMixin):
             prepend a 3rd scalar condition token for notes per second
             (``steps_per_beat * bpm / 60`` scaled on ``[0, 20]``) before
             ``level6``.
+        beat_aux_head: If True, add an auxiliary per-beat head on post-
+            ``conv_head`` features predicting beat activity and log-count plus
+            a zero-initialized residual slot modulation.
     """
 
     d_model: int = constants.D_MODEL
@@ -187,6 +190,7 @@ class ItgptModelConfig(_DictSerializableMixin):
     mert_channel_dropout: float = 0.0
     mert_time_mask_preserve_downbeat: bool = False
     use_nps_condition: bool = False
+    beat_aux_head: bool = False
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.
@@ -249,6 +253,11 @@ class ItgptRunConfig(_DictSerializableMixin):
             ``(8, 16, 32, 40)`` (default ``1.0``).
         label_smoothing: Binary label smoothing factor in ``[0, 1)`` mapping
             targets ``y -> y * (1 - eps) + 0.5 * eps`` (``0.0`` disables).
+        dice_loss_weight: Non-negative weight for an additive masked soft-Dice
+            term over real-beat slot probabilities and raw binary targets
+            (``0.0`` disables).
+        bce_pos_weight: Positive class weight passed to
+            ``binary_cross_entropy_with_logits`` (``1.0`` disables).
         gradient_accumulation_steps: Number of micro-batches to accumulate
             before applying an optimizer update (``1`` disables accumulation).
         use_ema: If True, enable optimizer exponential moving average (EMA)
@@ -259,6 +268,12 @@ class ItgptRunConfig(_DictSerializableMixin):
             randomly prepended to each training chart (``0`` disables shift
             augmentation; e.g. ``15`` shifts by ``0..60`` beats across a
             64-beat ``level5`` chunk).
+        beat_aux_loss_weight: Weight on the masked per-beat activity BCE +
+            log-count SmoothL1 auxiliary loss when ``model.beat_aux_head`` is
+            True (``0.0`` disables).
+        rdrop_kl_weight: Non-negative weight on the bidirectional Bernoulli
+            R-Drop KL consistency loss between two stochastic forward passes
+            during training (``0.0`` disables).
     """
 
     epoch: int = 8
@@ -281,10 +296,14 @@ class ItgptRunConfig(_DictSerializableMixin):
     focal_gamma: float = 0.0
     grid_weight_24th: float = constants.GRID_WEIGHT_24TH
     label_smoothing: float = 0.0
+    dice_loss_weight: float = 0.0
+    bce_pos_weight: float = 1.0
     gradient_accumulation_steps: int = 1
     use_ema: bool = False
     ema_momentum: float = 0.99
     max_bar_shift: int = 0
+    beat_aux_loss_weight: float = 0.0
+    rdrop_kl_weight: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
@@ -293,8 +312,10 @@ class ItgptRunConfig(_DictSerializableMixin):
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
                 ``eval_slot_f1_every``, LR schedule, ``focal_gamma``,
                 ``grid_weight_24th``, ``label_smoothing``,
-                ``gradient_accumulation_steps``, ``ema_momentum``, or
-                ``max_bar_shift`` fields are invalid.
+                ``dice_loss_weight``, ``bce_pos_weight``,
+                ``gradient_accumulation_steps``, ``ema_momentum``,
+                ``max_bar_shift``, ``beat_aux_loss_weight``, or
+                ``rdrop_kl_weight`` fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -337,6 +358,14 @@ class ItgptRunConfig(_DictSerializableMixin):
             raise ValueError(
                 f"label_smoothing must be in [0, 1), got {self.label_smoothing}"
             )
+        if self.dice_loss_weight < 0.0:
+            raise ValueError(
+                f"dice_loss_weight must be >= 0, got {self.dice_loss_weight}"
+            )
+        if self.bce_pos_weight <= 0.0:
+            raise ValueError(
+                f"bce_pos_weight must be positive, got {self.bce_pos_weight}"
+            )
         if self.gradient_accumulation_steps < 1:
             raise ValueError(
                 "gradient_accumulation_steps must be at least 1, "
@@ -346,6 +375,14 @@ class ItgptRunConfig(_DictSerializableMixin):
             raise ValueError(f"ema_momentum must be in (0, 1), got {self.ema_momentum}")
         if self.max_bar_shift < 0:
             raise ValueError(f"max_bar_shift must be >= 0, got {self.max_bar_shift}")
+        if self.beat_aux_loss_weight < 0.0:
+            raise ValueError(
+                f"beat_aux_loss_weight must be >= 0, got {self.beat_aux_loss_weight}"
+            )
+        if self.rdrop_kl_weight < 0.0:
+            raise ValueError(
+                f"rdrop_kl_weight must be >= 0, got {self.rdrop_kl_weight}"
+            )
 
 
 @dataclasses.dataclass

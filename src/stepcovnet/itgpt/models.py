@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from stepcovnet.pytorch.itgpt.models import (
+    ItgptBeatAuxHead,
     ItgptBeatCNNEncoder,
     ItgptBeatMertEncoder,
     ItgptConditionFilm,
@@ -16,10 +17,13 @@ from stepcovnet.pytorch.itgpt.models import (
     ItgptPlacementModel,
     ItgptRmsNorm,
     build_itgpt_placement_model,
+    compute_beat_aux_loss,
+    compute_bernoulli_rdrop_kl,
     grid_importance_weights,
 )
 
 __all__ = [
+    "ItgptBeatAuxHead",
     "ItgptBeatCNNEncoder",
     "ItgptBeatMertEncoder",
     "ItgptConditionFilm",
@@ -33,5 +37,7 @@ __all__ = [
     "ItgptPlacementModel",
     "ItgptRmsNorm",
     "build_itgpt_placement_model",
+    "compute_beat_aux_loss",
+    "compute_bernoulli_rdrop_kl",
     "grid_importance_weights",
 ]

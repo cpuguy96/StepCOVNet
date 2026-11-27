@@ -632,6 +632,115 @@ class ItgptConditionFilm(nn.Module):
         return modulated.reshape(batch_size * n_beats, frames_per_beat, self.d_model)
 
 
+class ItgptBeatAuxHead(nn.Module):
+    """Auxiliary per-beat activity/density head with zero-init slot modulation.
+
+    Predicts per-beat activity logits and ``log1p(step_count)`` from
+    post-``conv_head`` beat representations while adding a zero-initialized
+    residual logit modulation into the 48 slot logits so step-0 output matches
+    the baseline exactly.
+
+    Args:
+        d_model: Incoming beat feature width.
+        n_slots: Number of intra-beat slots (default 48).
+        hidden_dim: Optional hidden width (defaults to ``max(32, d_model // 2)``).
+
+    Raises:
+        ValueError: If dimensions are non-positive.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_slots: int = constants.N_SLOTS,
+        *,
+        hidden_dim: int | None = None,
+    ) -> None:
+        super().__init__()
+        if d_model < 1:
+            raise ValueError(f"d_model must be positive, got {d_model}")
+        if n_slots < 1:
+            raise ValueError(f"n_slots must be positive, got {n_slots}")
+        resolved_hidden = (
+            max(32, int(d_model) // 2) if hidden_dim is None else int(hidden_dim)
+        )
+        if resolved_hidden < 1:
+            raise ValueError(f"hidden_dim must be positive, got {resolved_hidden}")
+        self.d_model = int(d_model)
+        self.n_slots = int(n_slots)
+        self.hidden_dim = resolved_hidden
+        self.norm = ItgptRmsNorm(self.d_model)
+        self.hidden = nn.Linear(self.d_model, self.hidden_dim)
+        self.aux_proj = nn.Linear(self.hidden_dim, 2)
+        self.gate_proj = nn.Linear(self.hidden_dim, self.n_slots)
+        _init_linear_or_conv(self.hidden)
+        _init_linear_or_conv(self.aux_proj)
+        nn.init.zeros_(self.gate_proj.weight)
+        nn.init.zeros_(self.gate_proj.bias)
+
+    def forward(
+        self, global_h: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Compute beat auxiliary predictions and zero-init slot residual.
+
+        Args:
+            global_h: Post-``conv_head`` beat features ``(B, T, d_model)``.
+
+        Returns:
+            Tuple ``(beat_active_logit, beat_count_pred, slot_delta)`` in
+            float32 with shapes ``(B, T)``, ``(B, T)``, and ``(B, T, n_slots)``.
+        """
+        feat = nn_func.gelu(self.hidden(self.norm(global_h)))
+        feat_fp32 = feat.float()
+        aux = nn_func.linear(
+            feat_fp32,
+            self.aux_proj.weight.float(),
+            self.aux_proj.bias.float() if self.aux_proj.bias is not None else None,
+        )
+        slot_delta = nn_func.linear(
+            feat_fp32,
+            self.gate_proj.weight.float(),
+            self.gate_proj.bias.float() if self.gate_proj.bias is not None else None,
+        )
+        return aux[..., 0], aux[..., 1], slot_delta
+
+
+def compute_beat_aux_loss(
+    beat_active_logit: torch.Tensor,
+    beat_count_pred: torch.Tensor,
+    targets: torch.Tensor,
+    beat_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Compute masked auxiliary beat-activity BCE + log-count SmoothL1 loss.
+
+    Args:
+        beat_active_logit: Per-beat activity logits ``(B, T)``.
+        beat_count_pred: Per-beat ``log1p(step_count)`` predictions ``(B, T)``.
+        targets: Binary slot targets ``(B, T, 48)``.
+        beat_mask: Real-beat mask ``(B, T)`` with 1 on real beats.
+
+    Returns:
+        Scalar float32 auxiliary loss averaged over valid beats.
+    """
+    targets_fp32 = targets.float()
+    mask_fp32 = beat_mask.float()
+    denom = torch.clamp(mask_fp32.sum(), min=1.0)
+    active_target = (targets_fp32.amax(dim=-1) >= 0.5).float()
+    active_bce = nn_func.binary_cross_entropy_with_logits(
+        beat_active_logit.float(),
+        active_target,
+        reduction="none",
+    )
+    count_target = torch.log1p(targets_fp32.sum(dim=-1))
+    count_l1 = nn_func.smooth_l1_loss(
+        beat_count_pred.float(),
+        count_target,
+        reduction="none",
+    )
+    per_beat = 0.5 * (active_bce + count_l1)
+    return (per_beat * mask_fp32).sum() / denom
+
+
 class ItgptPlacementModel(nn.Module):
     """PyTorch ITGPT hierarchical placement network (dynamic beat length).
 
@@ -662,6 +771,9 @@ class ItgptPlacementModel(nn.Module):
         use_nps_condition: If True (requires ``difficulty_source == "density"``),
             prepend a 3rd scalar condition token for notes per second
             (``steps_per_beat * bpm / 60`` scaled on ``[0, 20]``).
+        beat_aux_head: If True, add an auxiliary per-beat activity/density head
+            on post-``conv_head`` features with a zero-initialized residual slot
+            modulation.
         difficulty_source: Scalar conditioning signal passed as ``difficulty``
             (``"meter"`` uses ``[1, 50]`` bounds; ``"density"`` uses ``[0, 6]``
             mean steps per beat bounds).
@@ -690,6 +802,7 @@ class ItgptPlacementModel(nn.Module):
         mert_channel_dropout: float = 0.0,
         mert_time_mask_preserve_downbeat: bool = False,
         use_nps_condition: bool = False,
+        beat_aux_head: bool = False,
         difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
     ) -> None:
         super().__init__()
@@ -754,6 +867,7 @@ class ItgptPlacementModel(nn.Module):
         self.mert_channel_dropout = float(mert_channel_dropout)
         self.mert_time_mask_preserve_downbeat = bool(mert_time_mask_preserve_downbeat)
         self.use_nps_condition = bool(use_nps_condition)
+        self.beat_aux_head = bool(beat_aux_head)
         self.difficulty_source = str(difficulty_source)
 
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
@@ -855,15 +969,25 @@ class ItgptPlacementModel(nn.Module):
         self.conv_head = ItgptConvHead(self.d_model, self.dropout_rate)
         self.onset_head = nn.Linear(self.d_model, constants.N_SLOTS)
         _init_linear_or_conv(self.onset_head)
+        self.beat_aux: ItgptBeatAuxHead | None = (
+            ItgptBeatAuxHead(self.d_model, constants.N_SLOTS)
+            if self.beat_aux_head
+            else None
+        )
 
-    def forward_logits(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
-        """Run the hierarchical encoder and return float32 slot logits.
+    def forward_with_aux(
+        self, inputs: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+        """Run the hierarchical encoder and return float32 logits plus optional aux.
 
         Args:
             inputs: Dict with ``audio``, ``bpm``, and ``difficulty`` tensors.
 
         Returns:
-            Float32 logits tensor of shape ``(batch, beats, 48)``.
+            Tuple ``(logits, aux)`` where ``logits`` has shape
+            ``(batch, beats, 48)`` in float32 and ``aux`` is a dict with
+            ``beat_active_logit`` and ``beat_count_pred`` when
+            ``beat_aux_head`` is True, else None.
 
         Raises:
             RuntimeError: If the active beat encoder was not initialized.
@@ -957,11 +1081,32 @@ class ItgptPlacementModel(nn.Module):
         global_h = global_h[:, n_cond:, :]
         global_h = self.conv_head(global_h)
         # Keep onset head in fp32 for numerical stability under autocast.
-        return nn_func.linear(
+        logits = nn_func.linear(
             global_h.float(),
             self.onset_head.weight.float(),
             self.onset_head.bias.float() if self.onset_head.bias is not None else None,
         )
+        aux: dict[str, torch.Tensor] | None = None
+        if self.beat_aux is not None:
+            beat_active_logit, beat_count_pred, slot_delta = self.beat_aux(global_h)
+            logits = logits + slot_delta
+            aux = {
+                "beat_active_logit": beat_active_logit,
+                "beat_count_pred": beat_count_pred,
+            }
+        return logits, aux
+
+    def forward_logits(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Run the hierarchical encoder and return float32 slot logits.
+
+        Args:
+            inputs: Dict with ``audio``, ``bpm``, and ``difficulty`` tensors.
+
+        Returns:
+            Float32 logits tensor of shape ``(batch, beats, 48)``.
+        """
+        logits, _ = self.forward_with_aux(inputs)
+        return logits
 
     def forward(self, inputs: dict[str, torch.Tensor]) -> torch.Tensor:
         """Run the hierarchical encoder and return float32 slot probabilities.
@@ -998,6 +1143,7 @@ class ItgptPlacementModel(nn.Module):
             "mert_channel_dropout": self.mert_channel_dropout,
             "mert_time_mask_preserve_downbeat": self.mert_time_mask_preserve_downbeat,
             "use_nps_condition": self.use_nps_condition,
+            "beat_aux_head": self.beat_aux_head,
             "difficulty_source": self.difficulty_source,
         }
 
@@ -1021,6 +1167,7 @@ def build_itgpt_placement_model(
     mert_channel_dropout: float = 0.0,
     mert_time_mask_preserve_downbeat: bool = False,
     use_nps_condition: bool = False,
+    beat_aux_head: bool = False,
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> ItgptPlacementModel:
     """Build the PyTorch ITGPT placement network.
@@ -1048,6 +1195,9 @@ def build_itgpt_placement_model(
             unmasked when sampling MERT SpecAugment time masks.
         use_nps_condition: If True (requires ``difficulty_source == "density"``),
             prepend a 3rd scalar condition token for notes per second.
+        beat_aux_head: If True, add an auxiliary per-beat activity/density head
+            on post-``conv_head`` features with a zero-initialized residual slot
+            modulation.
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"``).
 
@@ -1072,12 +1222,13 @@ def build_itgpt_placement_model(
         mert_channel_dropout=mert_channel_dropout,
         mert_time_mask_preserve_downbeat=mert_time_mask_preserve_downbeat,
         use_nps_condition=use_nps_condition,
+        beat_aux_head=beat_aux_head,
         difficulty_source=difficulty_source,
     )
 
 
 class ItgptPlacementLoss(nn.Module):
-    """Masked grid-weighted slot BCE-with-logits with optional focal and smoothing.
+    """Masked grid-weighted slot BCE-with-logits with optional focal, smoothing, and Dice.
 
     Matches :class:`stepcovnet.itgpt.trainers.ItgptPlacementLoss` while taking
     raw float32 logits for numerical stability.
@@ -1088,12 +1239,19 @@ class ItgptPlacementLoss(nn.Module):
         grid_weight_24th: Loss weight for 24th/triplet slots (default ``1.0``).
         label_smoothing: Binary label smoothing factor in ``[0, 1)`` mapping
             targets ``y -> y * (1 - eps) + 0.5 * eps`` (default ``0.0``).
+        dice_loss_weight: Non-negative weight for an additive masked soft-Dice
+            term computed on ``sigmoid(logits)`` and raw binary targets over
+            real beats (``0.0`` disables).
+        bce_pos_weight: Positive class weight passed to
+            ``binary_cross_entropy_with_logits`` (``1.0`` disables).
         normalize_by_valid_beats: If True, divide masked beat losses by the
             number of real beats (``mask.sum()``). If False, divide by the
             total padded beat count (mean over batch and beat axes).
 
     Raises:
-        ValueError: If ``label_smoothing`` is outside ``[0, 1)``.
+        ValueError: If ``label_smoothing`` is outside ``[0, 1)``,
+            ``dice_loss_weight`` is negative, or ``bce_pos_weight`` is not
+            positive.
     """
 
     def __init__(
@@ -1101,6 +1259,8 @@ class ItgptPlacementLoss(nn.Module):
         focal_gamma: float = 0.0,
         grid_weight_24th: float = constants.GRID_WEIGHT_24TH,
         label_smoothing: float = 0.0,
+        dice_loss_weight: float = 0.0,
+        bce_pos_weight: float = 1.0,
         *,
         normalize_by_valid_beats: bool = False,
     ) -> None:
@@ -1109,9 +1269,15 @@ class ItgptPlacementLoss(nn.Module):
             raise ValueError(
                 f"label_smoothing must be in [0, 1), got {label_smoothing}"
             )
+        if float(dice_loss_weight) < 0.0:
+            raise ValueError(f"dice_loss_weight must be >= 0, got {dice_loss_weight}")
+        if float(bce_pos_weight) <= 0.0:
+            raise ValueError(f"bce_pos_weight must be positive, got {bce_pos_weight}")
         self.focal_gamma = float(focal_gamma)
         self.grid_weight_24th = float(grid_weight_24th)
         self.label_smoothing = float(label_smoothing)
+        self.dice_loss_weight = float(dice_loss_weight)
+        self.bce_pos_weight = float(bce_pos_weight)
         self.normalize_by_valid_beats = bool(normalize_by_valid_beats)
         self.register_buffer(
             "grid_weights",
@@ -1125,7 +1291,7 @@ class ItgptPlacementLoss(nn.Module):
         targets: torch.Tensor,
         beat_mask: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute scalar masked slot-weighted BCE loss.
+        """Compute scalar masked slot-weighted BCE loss plus optional soft Dice.
 
         Args:
             logits: Raw logits ``(batch, beats, 48)``.
@@ -1136,20 +1302,33 @@ class ItgptPlacementLoss(nn.Module):
             Scalar float32 loss tensor.
         """
         logits_fp32 = logits.float()
-        targets_fp32 = targets.float()
+        raw_targets_fp32 = targets.float()
+        targets_fp32 = raw_targets_fp32
         if self.label_smoothing > 0.0:
             targets_fp32 = (
-                targets_fp32 * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+                raw_targets_fp32 * (1.0 - self.label_smoothing)
+                + 0.5 * self.label_smoothing
             )
         mask_fp32 = beat_mask.float()
+        pos_weight = (
+            torch.tensor(
+                self.bce_pos_weight, dtype=torch.float32, device=logits_fp32.device
+            )
+            if self.bce_pos_weight != 1.0
+            else None
+        )
         per_slot = nn_func.binary_cross_entropy_with_logits(
             logits_fp32,
             targets_fp32,
+            pos_weight=pos_weight,
             reduction="none",
         )
+        focal_probs: torch.Tensor | None = None
         if self.focal_gamma > 0.0:
-            probs = torch.sigmoid(logits_fp32)
-            p_t = targets_fp32 * probs + (1.0 - targets_fp32) * (1.0 - probs)
+            focal_probs = torch.sigmoid(logits_fp32)
+            p_t = targets_fp32 * focal_probs + (1.0 - targets_fp32) * (
+                1.0 - focal_probs
+            )
             per_slot = per_slot * torch.pow(
                 torch.clamp(1.0 - p_t, min=1e-7), self.focal_gamma
             )
@@ -1158,5 +1337,66 @@ class ItgptPlacementLoss(nn.Module):
         masked = per_beat * mask_fp32
         if self.normalize_by_valid_beats:
             denom = torch.clamp(mask_fp32.sum(), min=1.0)
-            return masked.sum() / denom
-        return masked.mean()
+            bce_loss = masked.sum() / denom
+        else:
+            bce_loss = masked.mean()
+        if self.dice_loss_weight == 0.0:
+            return bce_loss
+        dice_probs = (
+            focal_probs if focal_probs is not None else torch.sigmoid(logits_fp32)
+        )
+        slot_mask = mask_fp32.unsqueeze(-1)
+        masked_probs = dice_probs * slot_mask
+        masked_targets = raw_targets_fp32 * slot_mask
+        eps = 1e-6
+        intersection = torch.sum(masked_probs * masked_targets)
+        dice_denom = torch.sum(masked_probs) + torch.sum(masked_targets) + eps
+        dice_loss = 1.0 - (2.0 * intersection + eps) / dice_denom
+        return bce_loss + self.dice_loss_weight * dice_loss
+
+
+def compute_bernoulli_rdrop_kl(
+    logits1: torch.Tensor,
+    logits2: torch.Tensor,
+    beat_mask: torch.Tensor,
+    grid_weights: torch.Tensor | None = None,
+    *,
+    normalize_by_valid_beats: bool = False,
+) -> torch.Tensor:
+    """Compute masked grid-weighted bidirectional Bernoulli KL for R-Drop.
+
+    Args:
+        logits1: First stochastic pass logits ``(batch, beats, n_slots)``.
+        logits2: Second stochastic pass logits ``(batch, beats, n_slots)``.
+        beat_mask: Real-beat mask ``(batch, beats)`` with 1 on real beats.
+        grid_weights: Optional per-slot importance weights ``(n_slots,)``.
+            Defaults to :func:`grid_importance_weights` on ``logits1``'s device.
+        normalize_by_valid_beats: If True, average over valid beats
+            (``beat_mask.sum()``); otherwise average over all padded beats to
+            match :class:`ItgptPlacementLoss` default scaling.
+
+    Returns:
+        Scalar float32 symmetric KL loss tensor.
+    """
+    z1 = logits1.float()
+    z2 = logits2.float()
+    p1 = torch.sigmoid(z1)
+    p2 = torch.sigmoid(z2)
+    log_p1 = nn_func.logsigmoid(z1)
+    log_1mp1 = nn_func.logsigmoid(-z1)
+    log_p2 = nn_func.logsigmoid(z2)
+    log_1mp2 = nn_func.logsigmoid(-z2)
+    kl_12 = p1 * (log_p1 - log_p2) + (1.0 - p1) * (log_1mp1 - log_1mp2)
+    kl_21 = p2 * (log_p2 - log_p1) + (1.0 - p2) * (log_1mp2 - log_1mp1)
+    sym_kl = 0.5 * (kl_12 + kl_21)
+    weights = (
+        grid_importance_weights(device=z1.device)
+        if grid_weights is None
+        else grid_weights.to(device=z1.device, dtype=torch.float32)
+    )
+    per_beat = torch.mean(sym_kl * weights, dim=-1)
+    masked = per_beat * beat_mask.float()
+    if normalize_by_valid_beats:
+        denom = torch.clamp(beat_mask.float().sum(), min=1.0)
+        return masked.sum() / denom
+    return masked.mean()

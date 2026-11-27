@@ -273,6 +273,7 @@ def build_model(
         mert_channel_dropout=experiment.model.mert_channel_dropout,
         mert_time_mask_preserve_downbeat=experiment.model.mert_time_mask_preserve_downbeat,
         use_nps_condition=experiment.model.use_nps_condition,
+        beat_aux_head=experiment.model.beat_aux_head,
         difficulty_source=experiment.dataset.difficulty_source,
     )
 
@@ -380,6 +381,8 @@ def train_placement(
         focal_gamma=experiment.run.focal_gamma,
         grid_weight_24th=experiment.run.grid_weight_24th,
         label_smoothing=experiment.run.label_smoothing,
+        dice_loss_weight=experiment.run.dice_loss_weight,
+        bce_pos_weight=experiment.run.bce_pos_weight,
     ).to(target_device)
     optimizer = build_optimizer(raw_model, experiment.run)
     ema = (
@@ -455,6 +458,29 @@ def train_placement(
         difficulty_source=experiment.dataset.difficulty_source,
     )
 
+    beat_aux_weight = float(experiment.run.beat_aux_loss_weight)
+    use_beat_aux = bool(experiment.model.beat_aux_head and beat_aux_weight > 0.0)
+    rdrop_kl_weight = float(experiment.run.rdrop_kl_weight)
+
+    def _forward_and_loss(
+        batch_inputs: dict[str, torch.Tensor],
+        batch_slots: torch.Tensor,
+        batch_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if use_beat_aux:
+            logits, aux_preds = raw_model.forward_with_aux(batch_inputs)
+            step_loss = criterion(logits, batch_slots, batch_mask)
+            if aux_preds is not None:
+                step_loss = step_loss + beat_aux_weight * models.compute_beat_aux_loss(
+                    aux_preds["beat_active_logit"],
+                    aux_preds["beat_count_pred"],
+                    batch_slots,
+                    batch_mask,
+                )
+            return logits, step_loss
+        logits = forward_logits_fn(batch_inputs)
+        return logits, criterion(logits, batch_slots, batch_mask)
+
     try:
         for epoch_idx in range(start_epoch, total_epochs):
             epoch_num = epoch_idx + 1
@@ -470,8 +496,20 @@ def train_placement(
                 inputs, slots, mask = _move_batch(next(train_iter), target_device)
 
                 with runtime.autocast_context(target_device, amp_dtype):
-                    logits = forward_logits_fn(inputs)
-                    loss = criterion(logits, slots, mask)
+                    logits1, loss1 = _forward_and_loss(inputs, slots, mask)
+                    if rdrop_kl_weight > 0.0:
+                        logits2, loss2 = _forward_and_loss(inputs, slots, mask)
+                        grid_w: torch.Tensor = criterion.grid_weights  # type: ignore[assignment]
+                        kl_loss = models.compute_bernoulli_rdrop_kl(
+                            logits1,
+                            logits2,
+                            mask,
+                            grid_weights=grid_w,
+                            normalize_by_valid_beats=criterion.normalize_by_valid_beats,
+                        )
+                        loss = 0.5 * (loss1 + loss2) + rdrop_kl_weight * kl_loss
+                    else:
+                        loss = loss1
 
                 train_loss_sum += float(loss.detach().item())
                 scaled_loss = loss / float(grad_accum)

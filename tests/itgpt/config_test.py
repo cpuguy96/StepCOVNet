@@ -30,6 +30,7 @@ class ItgptConfigTest(unittest.TestCase):
                 early_film=True,
                 cyclic_measure_pos=True,
                 continuous_beat_conv=True,
+                beat_aux_head=True,
             ),
             run=config.ItgptRunConfig(
                 epoch=10,
@@ -41,10 +42,14 @@ class ItgptConfigTest(unittest.TestCase):
                 focal_gamma=1.0,
                 grid_weight_24th=2.0,
                 label_smoothing=0.02,
+                dice_loss_weight=0.25,
+                bce_pos_weight=1.35,
                 gradient_accumulation_steps=4,
                 use_ema=True,
                 ema_momentum=0.995,
                 max_bar_shift=15,
+                beat_aux_loss_weight=0.15,
+                rdrop_kl_weight=2.0,
             ),
         )
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -72,9 +77,11 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertTrue(loaded.model.early_film)
         self.assertTrue(loaded.model.cyclic_measure_pos)
         self.assertTrue(loaded.model.continuous_beat_conv)
+        self.assertTrue(loaded.model.beat_aux_head)
         self.assertFalse(config.ItgptModelConfig().early_film)
         self.assertFalse(config.ItgptModelConfig().cyclic_measure_pos)
         self.assertFalse(config.ItgptModelConfig().continuous_beat_conv)
+        self.assertFalse(config.ItgptModelConfig().beat_aux_head)
         self.assertEqual(loaded.run.weight_decay, 0.0)
         self.assertEqual(loaded.run.eval_slot_f1_every, 16)
         self.assertEqual(loaded.run.lr_schedule, "cosine")
@@ -84,6 +91,10 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertAlmostEqual(loaded.run.grid_weight_24th, 2.0)
         self.assertAlmostEqual(loaded.run.label_smoothing, 0.02)
         self.assertAlmostEqual(config.ItgptRunConfig().label_smoothing, 0.0)
+        self.assertAlmostEqual(loaded.run.dice_loss_weight, 0.25)
+        self.assertAlmostEqual(config.ItgptRunConfig().dice_loss_weight, 0.0)
+        self.assertAlmostEqual(loaded.run.bce_pos_weight, 1.35)
+        self.assertAlmostEqual(config.ItgptRunConfig().bce_pos_weight, 1.0)
         self.assertEqual(loaded.run.gradient_accumulation_steps, 4)
         self.assertEqual(config.ItgptRunConfig().gradient_accumulation_steps, 1)
         self.assertTrue(loaded.run.use_ema)
@@ -91,6 +102,10 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertFalse(config.ItgptRunConfig().use_ema)
         self.assertEqual(loaded.run.max_bar_shift, 15)
         self.assertEqual(config.ItgptRunConfig().max_bar_shift, 0)
+        self.assertAlmostEqual(loaded.run.beat_aux_loss_weight, 0.15)
+        self.assertAlmostEqual(config.ItgptRunConfig().beat_aux_loss_weight, 0.0)
+        self.assertAlmostEqual(loaded.run.rdrop_kl_weight, 2.0)
+        self.assertAlmostEqual(config.ItgptRunConfig().rdrop_kl_weight, 0.0)
         self.assertFalse(loaded.run.mixed_precision)
         self.assertFalse(loaded.run.jit_compile)
 
@@ -148,6 +163,12 @@ class ItgptConfigTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(label_smoothing=1.0)
         with self.assertRaises(ValueError):
+            config.ItgptRunConfig(dice_loss_weight=-0.1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(bce_pos_weight=0.0)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(bce_pos_weight=-0.5)
+        with self.assertRaises(ValueError):
             config.ItgptRunConfig(gradient_accumulation_steps=0)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(ema_momentum=1.0)
@@ -155,6 +176,10 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(ema_momentum=0.0)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(max_bar_shift=-1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(beat_aux_loss_weight=-0.1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(rdrop_kl_weight=-0.1)
         with self.assertRaises(ValueError):
             config.ItgptDatasetConfig(
                 training_index_path="x.json", mert_cache_suffix="bad_suffix"
