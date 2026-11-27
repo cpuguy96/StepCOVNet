@@ -27,8 +27,12 @@ Pre-push CI mirror: `python pre_submit.py` (from repository root).
 | ---- | -------- |
 | `src/stepcovnet/ddc/` | DDC C-LSTM placement (`donahue2017ddc`, `M-ddc-20ms`) |
 | `src/stepcovnet/ddcl/` | DDCL ConvLSTM placement (`omalley2025ddcl`, `M-slot48`) |
+| `src/stepcovnet/itgpt/` | ITGPT hierarchical transformer placement (`omalley2026itgpt`, `M-slot48`) |
+| `src/stepcovnet/pytorch/` | PyTorch model/trainer/eval implementations (`core/`, `ddc/`, `ddcl/`, `itgpt/`, `onset_ar/`) |
+| `src/stepcovnet/beat_this_model.py` | Self-contained pure-PyTorch Beat This! neural beat/downbeat tracker (`foscarin2024beatthis`, MIT) |
+| `src/stepcovnet/beat_tracking.py` | `BeatGrid`, Beat This! / `librosa` backends, offline fallback, transient snapping, ITGPT raw-audio inference |
 | `src/stepcovnet/onset_events/` | K-query event onset pipeline (research track) |
-| `src/stepcovnet/onset_ar/` | Autoregressive onset (`gate-tide-overfit` …); design [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md); **Phase 0+1 implemented** — gate failing (EXP-20260627-02) |
+| `src/stepcovnet/onset_ar/` | Autoregressive onset (`gate-tide-overfit` …); design [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
 | `src/stepcovnet/dataset_prep/` | Raw simfile → `final_data` preprocessing, `training_index`, `training_loader` (P8–P9) |
 | `src/stepcovnet/pairing.py` | Audio/chart pairing; `list_training_samples` for `final_data` |
 | `src/stepcovnet/mel_onset.py` | Mel spectrogram helpers (shared by dense path; breaks import cycles) |

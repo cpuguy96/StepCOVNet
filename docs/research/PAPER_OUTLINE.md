@@ -1,6 +1,6 @@
 # StepCOVNet — Paper Outline (Draft)
 
-**Status:** Active paper draft outline backed by verified claims `C1`–`C12` in [PAPER_LEDGER.md](PAPER_LEDGER.md). Lab logs stay in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) and [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md).
+**Status:** Active paper draft outline backed by verified claims `C1`–`C16` in [PAPER_LEDGER.md](PAPER_LEDGER.md). Lab logs stay in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) and [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md).
 
 **Citations and claim tracking:** [PAPER_LEDGER.md](PAPER_LEDGER.md) · [paper.bib](paper.bib). Every citation key below has a matching BibTeX entry in `paper.bib` and a ledger row in `PAPER_LEDGER.md`.
 
@@ -10,27 +10,29 @@
 
 ## Working title
 
-**Representation Over Architecture — and How to Tell If Your Chart Generator Listens to the Music: Beat-Aligned SSL Step Placement and Audio-Grounding Diagnostics for DDR/ITG**
+**Representation Over Architecture — and How to Tell If Your Chart Generator Listens to the Music: Beat-Aligned SSL Step Placement, Audio-Grounding Diagnostics, and Raw-Audio Robustness for DDR/ITG**
 
 ---
 
 ## Abstract (draft)
 
-Automatic step-chart placement for four-panel rhythm games (DDR/ITG) has progressed from 10 ms spectrogram classifiers (`donahue2017ddc`) to beat-aligned 48-slot models using ConvLSTMs (`omalley2025ddcl`) and hierarchical Transformers (`omalley2026itgpt`). Yet two basic questions remain unmeasured: (1) how much of a beat-grid model's high slot F1 actually depends on audio versus beat-grid and difficulty/BPM priors, and (2) whether architectural scaling or pretrained music representations drive real gains. We introduce an architecture-agnostic **audio-grounding diagnostic** (`M-grounding`) pairing distribution-preserving beat-audio permutation (`shuffle`) and silence (`zeros`) with decoded ±20 ms bipartite event skill (`M-event-20ms`) and train→val audio transfer ratios. First, we show that beat-grid checkpoints selected on early `val_loss` can retain 95.8% of predicted steps under zeroed audio (`0.727 → 0.722` F1) while looking strong on raw `M-slot48`. Second, on a controlled **2×2 factorization** on Original Fraxtil (`D-frax-orig`, 81/9 train/val songs, 45 val charts), replacing scratch multi-scale log-mel features with beat-aligned pretrained **MERT** embeddings (`li2024mert`) lifts DDCL by **+7.07 pp** (`0.6804 → 0.7511` F1@0.5) and ITGPT by **+4.15 pp** (`0.7104 → 0.7519`, max-F1 **0.7633**, ±20 ms `skill_event_f1` **+0.6638**). Under scratch log-mel, ITGPT's +3.00 pp edge over DDCL traces to a **6.6×** audio-grounding gap (`−0.1192` vs `−0.0181` `shuffle` drop); once both models share MERT, DDCL's grounding jumps **7.3×** (`−0.1312`, 100% silence suppression) and the architecture gap narrows to **+0.08 pp** F1@0.5 (**+0.79 pp** max-F1). Finally, on a harder multi-pack corpus (`D-final`, frozen 48 val charts), beat-aligned MERT triples train→val audio transfer (`11.6% → 33.6%`), full-song hierarchical attention (`ITGPT-MERT`) beats BiLSTM (`0.7719` vs `0.7647`), and scaling training charts across `48 → 197 → 294` monotonically lifts val F1@0.5 to **0.8276** (**0.8324** max-F1, **+0.7462** ±20 ms `skill_event_f1`, `shuffle` drop **−0.1189** on `last`, audio transfer **32.0% → 42.3% → 44.7%**) while the `shuffle` prior floor remains flat (~`0.70–0.71`).
+Automatic step-chart placement for four-panel rhythm games (DDR/ITG) has progressed from 10 ms spectrogram classifiers (`donahue2017ddc`) to beat-aligned 48-slot models using ConvLSTMs (`omalley2025ddcl`) and hierarchical Transformers (`omalley2026itgpt`). Yet three fundamental questions remain unmeasured: (1) how much of a beat-grid model's high slot F1 actually depends on audio versus beat-grid and difficulty/BPM priors, (2) whether architectural scaling or pretrained music representations and training signals drive real gains, and (3) how well beat-grid placement survives real-world raw audio without oracle `.sm` beat grids. We introduce an architecture-agnostic **audio-grounding diagnostic** (`M-grounding`) pairing distribution-preserving beat-audio permutation (`shuffle`) and silence (`zeros`) with decoded ±20 ms bipartite event skill (`M-event-20ms`) and train→val audio transfer ratios. First, we show that beat-grid checkpoints selected on early `val_loss` can retain 95.8% of predicted steps under zeroed audio (`0.727 → 0.722` F1) while looking strong on raw `M-slot48`. Second, on a controlled **2×2 factorization** on Original Fraxtil (`D-frax-orig`, 81/9 train/val songs, 45 val charts), replacing scratch multi-scale log-mel features with beat-aligned pretrained **MERT** embeddings (`li2024mert`) lifts DDCL by **+7.07 pp** (`0.6804 → 0.7511` F1@0.5) and ITGPT by **+4.15 pp** (`0.7104 → 0.7519`, max-F1 **0.7633**), proving representation dominates architecture and tracing log-mel ITGPT's +3.00 pp edge over DDCL to a **6.6×** audio-grounding gap (`−0.1192` vs `−0.0181`). Third, adding multi-layer MERT `(2, 6, 10, 16)`, chart density conditioning, downbeat-preserving SpecAugment (`park2019specaugment`), auxiliary beat-activity + soft-Dice + positive-weighted BCE supervision, and R-Drop (`liang2021rdrop`) lifts from-scratch Dataset A ITGPT-MERT to **0.7797** peak (**0.7759 ± 0.0034** 3-run mean, **0.8009** ±20 ms `evF1`, **+6.93 pp** over log-mel ITGPT) with zero extra inference parameters. Fourth, scaling across `48 → 197 → 294 → 1,713` non-Fraxtil multi-pack charts (`D-final`, 1,109 songs) lifts frozen 48-chart val F1 to **0.8649** (`10,507` errors, `16th_off 0.7635`, `24th 0.5922`) and achieves **0.7787** F1@0.5 (**0.8034** `evF1`) **zero-shot** on Dataset A (beating in-domain from-scratch MERT mean); fine-tuning onto Dataset A (`81` songs) reaches **0.7857** F1@0.5 @ `0.50` exact (**0.8083** `evF1`, **7,909–7,946** errors, **+7.53 pp** over log-mel ITGPT; **0.8092** `evF1` ensembled), with `8/9` validation songs scoring **0.8193** while one fractional-BPM gimmick song (`tsunamix_iii/isis`) drives 21.4% of all errors. Finally, evaluating end-to-end on raw audio with zero oracle `.sm` beats shows classical `librosa` beat tracking collapses at ±20 ms (`0.0369` `evF1`), whereas neural beat tracking (`foscarin2024beatthis`) retains **95.2%** of oracle `evF1` at ±50 ms (`0.7747` vs `0.8138`) and matches ±20 ms oracle jitter (`0.5804` / `0.6155` octave-matched).
 
 ---
 
 ## 1. Introduction
 
 - **Problem (`C1`):** StepMania / DDR / ITG chart generation decomposes into **step placement** (when notes occur) and **step selection** (which arrows/holds occur; `donahue2017ddc`). Placement errors cascade directly into unplayable or off-beat charts.
-- **Hidden failure modes in onset placement (`C8`, `C9`):**
+- **Hidden failure modes in onset placement (`C8`, `C9`, `C15`, `C16`):**
   1. High `M-slot48` F1 on a beat-aligned grid does **not** guarantee audio grounding: a model conditioning on beat position, BPM, and chart meter can score >0.72 F1 while ignoring `beat_audio` almost completely (`EXP-20261119-01`).
-  2. Conversely, naive ordered `timing_match` collapses near zero on real placement models even at strong ±20 ms timing precision because any single `FP` or `FN` shifts all subsequent indices (`EXP-20261118-01`).
-- **Contributions (`C8`–`C12`):**
+  2. Naive ordered `timing_match` collapses near zero on real placement models even at strong ±20 ms timing precision because any single `FP` or `FN` shifts all subsequent indices (`EXP-20261118-01`), while fractional-beat BPM gimmicks (`tsunamix_iii/isis`) can collapse `M-slot48` (`0.3274`) even when continuous-time ±20 ms `evF1` doubles (`0.6564`; `EXP-20261127-06`).
+  3. Standard beat-grid benchmarks assume oracle `.sm` beat grids unavailable on raw user audio; classical beat trackers collapse end-to-end timing (`0.0369` ±20 ms `evF1`).
+- **Contributions (`C8`–`C16`):**
   1. **Reproducible Dataset A baseline suite (`T-repro`):** Paper-faithful reimplementations of DDC (`donahue2017ddc`), DDCL (`omalley2025ddcl`), and ITGPT (`omalley2026itgpt`) on a documented song-grouped split (`D-frax-orig`, seed 42), separating published-split citations from same-split comparisons (`C5`).
   2. **Audio-grounding & transfer-ratio protocol (`M-grounding`, `C9`):** Distribution-preserving beat permutation (`shuffle`) vs silence (`zeros`) paired with decoded ±20 ms bipartite skill (`M-event-20ms`) and train→val audio transfer ratios.
-  3. **Dataset A 2×2 factorization (`T-frax-2x2`, `C10`):** Isolating audio representation (scratch log-mel vs beat-aligned `MERT-v1-330M`, `li2024mert`) from placement architecture (DDCL BiLSTM vs ITGPT hierarchical Transformer), showing representation dominates architecture and explaining log-mel ITGPT's lead as a 6.6× audio-grounding gap.
-  4. **Multi-pack generalization & scaling (`T-ladder-scale`, `C11`, `C12`):** Demonstrating on `D-final` that MERT triples audio transfer, heavy audio-path regularization asymmetrically hurts grounding, and 4× data scaling converts memorized audio features cleanly into **0.8181** val F1 (**42.3%** audio transfer).
+  3. **Dataset A 2×2 factorization & zero-param champion recipe (`T-frax-2x2`, `C10`, `C13`):** Isolating audio representation (scratch log-mel vs beat-aligned `MERT-v1-330M`, `li2024mert`) from placement architecture (DDCL vs ITGPT), then demonstrating cumulative gains from multi-layer MERT `(2, 6, 10, 16)`, density conditioning, downbeat-preserving SpecAugment (`park2019specaugment`), `beat_aux + dice + pw` loss synergy, and R-Drop (`liang2021rdrop`) while falsifying 14 extra-parameter architectural hypotheses (`EXP-20261127-03`).
+  4. **Multi-pack scaling & cross-corpus transfer (`T-ladder-scale`, `T-transfer-scaling`, `C11`, `C14`):** 4-point scaling (`48 → 197 → 294 → 1,713` charts, `48v 0.86493`), zero-shot transfer beating in-domain Fraxtil MERT mean (`0.77870` / `0.80337` `evF1`), and fine-tuned Dataset A transfer (`0.78574` / `0.80834` `evF1`, `7,909` errors; `0.80918` ensembled).
+  5. **Per-song error audit & real-world raw-audio beat tracking (`T-error-audit`, `T-raw-audio-beats`, `C15`, `C16`):** Identifying the `tsunamix_iii/isis` fractional-BPM artifact (`8/9` songs at `0.8193`) and validating end-to-end raw-audio inference with a self-contained pure-PyTorch Beat This! (`foscarin2024beatthis`) tracker retaining `95.2%` of oracle ±50 ms `evF1`.
 
 ---
 
@@ -39,7 +41,8 @@ Automatic step-chart placement for four-panel rhythm games (DDR/ITG) has progres
 All keys verified in [PAPER_LEDGER.md](PAPER_LEDGER.md) and [paper.bib](paper.bib):
 
 - **DDR/ITG chart generation (`C1`, `C2`):** Placement-then-selection with 10 ms C-LSTM (`donahue2017ddc`), beat-aligned 48-slot ConvLSTM (`omalley2025ddcl`), hierarchical full-song Transformer (`omalley2026itgpt`), and beat-aligned sequence generation (`yi2023goct`). Adjacent rhythm-game work: `halina2021taikonation`, `lin2018generationmania`, `tsujino2018ddg`, `okeeffe2003dancingmonkeys`.
-- **Musical onset detection & audio frontends:** Classical spectral onset detection (`bello2005onset`), BLSTM (`eyben2010blstm`), CNN on multi-scale 80-band log-mel spectrograms (`schluter2014onset`, `hamel2012multiscale`), beat tracking (`vandewetering2016bpm`), and self-supervised music foundation models (`li2024mert`).
+- **Musical onset detection, SSL representations, and beat tracking:** Classical spectral onset detection (`bello2005onset`), BLSTM (`eyben2010blstm`), CNN on multi-scale 80-band log-mel spectrograms (`schluter2014onset`, `hamel2012multiscale`), non-causal rhythm-game BPM estimation (`vandewetering2016bpm`), neural beat/downbeat tracking without DBN postprocessing (`foscarin2024beatthis`), and self-supervised music foundation models (`li2024mert`).
+- **Regularization and training signals:** SpecAugment (`park2019specaugment`) and R-Drop dropout consistency (`liang2021rdrop`).
 - **Set prediction and autoregressive timing (diagnostic contrast, `C3`):** Distinguish literature AR (**arrows given known times**) from continuous-time AR (`onset_ar`) and DETR-style K-query slots (`carion2020detr`). Brief note in Methods/Discussion on why beat-grid 48-slot placement outperforms K-query ceilings (~31% oracle) and avoids absolute-index pointer collapse (`EXP-20260804-05`).
 
 ---
@@ -50,28 +53,29 @@ All keys verified in [PAPER_LEDGER.md](PAPER_LEDGER.md) and [paper.bib](paper.bi
 
 - **`D-frax-orig` (Dataset A — Original Fraxtil, `donahue2017ddc`):** 90 songs / 450 standard charts across 3 packs (*Tsunamix III*, *Fraxtil's Arrow Arrangements*, *Fraxtil's Beast Beats*); song-grouped `stratified_song_v1` (seed 42) → **81 / 9** train/val songs (**405 / 45** charts, **17,523** val beats, **17,868** val GT steps).
 - **`D-frax-exp` (Dataset B — Expanded Fraxtil, `omalley2026itgpt`):** 222 exported songs / 722 standard charts (201/21 split; Vol. 4 unavailable) — reported separately, never mixed into Dataset A tables.
-- **`D-final` (StepCOVNet multi-pack corpus):** *ITL Online 2026*, *Mizuki's Simfiles*, and *Vocaloid Project Pad Pack 4th*. Frozen-val 3-point scaling ladder on the exact same **48 val charts** (**40** songs, **17,057** beats, **37,617** GT steps): `48t/48v` (`training_index_ladder_v1_50t_50v.json`), `197t/48v` (`200t_50v`, **187** train songs), and `294t/48v` (`300t_50v`, **277** train songs), excluding 6 negative-BPM Vocaloid charts (`hold_release_rakshasa_and_carcasses`, `pantomime`, `the_rampage_of_hatsune_miku`, `vrosteroid`, `news_39`, `viva_happy`).
+- **`D-final` (StepCOVNet multi-pack corpus):** *ITL Online 2026*, *Mizuki's Simfiles*, and *Vocaloid Project Pad Pack 4th*. Full valid corpus (`10` negative-BPM Vocaloid songs excluded): **1,109** songs, **1,713 / 176** train/val charts (**61,347** full-val beats, **134,327** full-val GT steps; `60.08 GB` float32 multi-layer MERT cache loaded via bounded LRU lazy caching). Frozen-val 4-point scaling ladder evaluated on the exact same **48 val charts** (**40** songs, **17,057** beats, **37,617** GT steps, `0` song overlap with all 4 train rungs): `48t`, `197t`, `294t`, and `1,713t`.
 
-### 3.2 Beat-aligned 48-slot placement and MERT frontends
+### 3.2 Beat-aligned 48-slot placement, MERT frontends, and champion training recipe
 
 - **Beat-grid formulation (`omalley2025ddcl`, `omalley2026itgpt`):** Each integer beat is quantized into 48 sub-beat slots (covering 16ths, 24ths/triplets, 32nds, and micro-divisions). Oracle decoding of ground-truth slot centers via `#OFFSET`/`#BPMS` achieves **0.999972** ±20 ms `timing_match` (`EXP-20261010-01`).
 - **Scratch log-mel baselines:**
   - *DDCL (`omalley2025ddcl`):* 32 frames/beat × 80-band 3-channel multi-scale log-mel (`schluter2014onset`, `hamel2012multiscale`), 16-beat causal/anti-causal `ConvLSTM2D` windows (`memlen=15`) fused with per-beat `[meter, bpm]`, dense `[512, 256]`, focal BCE.
   - *ITGPT (`omalley2026itgpt`):* Full-song beat tensor padded to multiples of 64; `ItgptBeatCNNEncoder` maps `(32, 80, 3) → (24, d_model)` into 5 hierarchical intra-chunk attention levels (`1/4/16/32/64` beats), gated frame/beat compression, 8-layer global Transformer (`d_model=256`, `n_heads=8`) conditioned on scalar `diff_tok` + `bpm_tok`, residual depthwise `ConvHead`, and grid-weighted BCE.
-- **Beat-aligned MERT frontends (`li2024mert`):** Precomputed 100 Hz hidden states from layer 6 of `m-a-p/MERT-v1-330M` (dim `1024`), resampled per beat and shared zero-copy across difficulties of the same song (`src/stepcovnet/ddcl/datasets.py`):
-  - *DDCL-MERT (`build_mert_placement_model`):* 16 sub-beat MERT frames/beat → shared 4D `LayerNorm → Dense(128, gelu) → Dropout → Conv2D(64, (1,3)) → AvgPool2D(1,2)` into the identical bidirectional `LSTM(200)` + `[meter, bpm]` + `[512, 256]` head.
-  - *ITGPT-MERT (`ItgptBeatMertEncoder`):* 24 sub-beat MERT frames/beat (exact 16th + triplet alignment matching `CNN_FRAMES_OUT = 24`) → `ItgptRmsNorm → Dense(256, gelu) → Dropout(0.1) → Conv1D(256, 3, same, gelu) → Dense(256)` plugged directly into ITGPT's unchanged hierarchical Transformer.
-  - *Checkpoint selection:* Periodic full-val `M-slot48` checkpointing (`eval_slot_f1_every=16`, saving `best_slot_f1.keras`) alongside `best.keras` (`val_loss`) and `last.keras`.
+- **Beat-aligned MERT frontends (`li2024mert`):** Precomputed 100 Hz float32 hidden states of `m-a-p/MERT-v1-330M` (dim `1024`), resampled per beat and shared zero-copy across difficulties of the same song:
+  - *Controlled 2×2 swap:* single layer-6 MERT (`DDCL-MERT` 16 frames/beat, `ITGPT-MERT` 24 frames/beat matching `CNN_FRAMES_OUT = 24`).
+  - *Multi-layer MERT `(2, 6, 10, 16)`:* per-layer normalized mean of layers `(2, 6, 10, 16)` (guided by SUPERB-style learnable layer weights in `EXP-20261125-07`), keeping identical `(T, 1024)` disk/RAM/parameter footprint while unlocking 5.5× higher triplet (`24th`) recall (`EXP-20261125-03/10`).
+- **Zero-extra-inference-parameter champion recipe (`C13`):**
+  1. *Optimization:* Warmup + Cosine LR decay + EMA (`0.995`) + per-block `torch.compile(dynamic=True)` in PyTorch (`bf16` on L4, 3.5× faster than Keras with full parity, `EXP-20261126-05/06`).
+  2. *Cross-pack density conditioning (`difficulty_source="density"`):* Replaces pack-specific integer `#METER` with chart average step density (`steps/beat`), lifting both in-domain F1 and cross-pack zero-shot transfer (`EXP-20261126-14/15`).
+  3. *Downbeat-preserving SpecAugment (`park2019specaugment`, `keep0`):* 4 MERT time/feature masks (`p=0.15`) that never mask beat frame `0` (preserving downbeat alignment; `EXP-20261126-15/16`).
+  4. *3-way loss + auxiliary synergy:* `ItgptBeatAuxHead` (per-beat activity + count auxiliary supervision, dropped at inference) + masked soft-Dice (`0.05`) + positive class weighting (`bce_pos_weight`: `1.25–1.35` from scratch, `1.00` during transfer fine-tuning for exact `τ=0.50` calibration) + optional bidirectional Bernoulli R-Drop (`liang2021rdrop`, `rdrop_kl_weight=2.0`; `EXP-20261127-01/02/05`).
+- **End-to-end raw-audio beat tracking (`foscarin2024beatthis`, `C16`):** Self-contained pure-PyTorch implementation of Beat This! (`stepcovnet.beat_this_model`, loading CPJKU `final0.ckpt` `strict=True`, plus 3-point parabolic sub-frame peak refinement and optional song-level transient phase snapping) feeding beat/downbeat grids directly into MERT beat alignment, ITGPT slot decoding, and downbeat-anchored `.sm` export (`#OFFSET`, `#BPMS`).
 
 ### 3.3 Evaluation and audio-grounding protocol (`M-slot48`, `M-event-20ms`, `M-grounding`)
 
 - **`M-slot48`:** Pooled micro F1 at τ=0.5 and threshold-swept `max-F1`, reported beside the beat-shuffled GT null floor (`M-null`: `0.3971` Dataset A; `0.6007` `D-final` ladder val).
-- **`M-event-20ms`:** Decode occupied slots (τ=0.5) to onset times in seconds and score bipartite Hungarian ±20 ms F1 and headroom-normalized skill `(F1 − F1_null) / (1 − F1_null)` over the strongest audio-blind null (`ioi_shuffle`, `regular_grid`, `uniform_duration`).
-- **`M-grounding` (`--diagnose_grounding`):** Score identical checkpoints under three `beat_audio` conditions while keeping metadata (`[meter, bpm]` or `diff_tok`/`bpm_tok`) and positional embeddings intact:
-  1. `none` (real audio),
-  2. `shuffle` (distribution-preserving random permutation of beats within each chart),
-  3. `zeros` (zeroed `beat_audio`).
-  Report `slot_f1_drop_shuffle`, `event_skill_drop_shuffle`, occupied Jaccard distance `1 − IoU`, and **train→val audio transfer** (`val_drop_shuffle / train_drop_shuffle`).
+- **`M-event-20ms`:** Decode occupied slots (τ=0.5) to onset times in seconds and score bipartite Hungarian ±20 ms (plus ±50 ms for raw-audio beat tracking) F1 and headroom-normalized skill `(F1 − F1_null) / (1 − F1_null)` over the strongest audio-blind null (`ioi_shuffle`, `regular_grid`, `uniform_duration`).
+- **`M-grounding` (`--diagnose_grounding`):** Score identical checkpoints under three `beat_audio` conditions while keeping metadata and positional embeddings intact: `none`, `shuffle` (beat permutation within each chart), and `zeros`. Report `slot_f1_drop_shuffle`, `event_skill_drop_shuffle`, `1 − IoU`, and train→val audio transfer (`val_drop_shuffle / train_drop_shuffle`).
 
 ---
 
@@ -90,32 +94,39 @@ All reimplementations scored on `D-frax-orig` (`81 / 9` songs, `45` val charts, 
 
 *(Dataset B `D-frax-exp` 201/21 ITGPT log-mel `last`: **0.735 / 0.740** max-F1 vs null `0.390`, `EXP-20260819-02` — reported as separate corpus.)*
 
-### 4.2 Dataset A 2×2 factorization: representation vs architecture (`T-frax-2x2`, `C10`)
+### 4.2 Dataset A 2×2 factorization & from-scratch recipe progression (`T-frax-2x2`, `C10`, `C13`)
 
-Strict single-knob frontend swap (`log-mel → MERT`) on the exact same `D-frax-orig` split (`45` val charts, `17,523` beats, `17,868` GT steps, `null F1 = 0.3971`).
+Controlled frontend swap (`log-mel → MERT`) and cumulative from-scratch recipe upgrades on `D-frax-orig` (`81/9` songs, `45` val charts, `17,523` beats, `17,868` GT steps, `null F1 = 0.3971`).
 
-| Architecture | Frontend | Ckpt | `M-slot48` F1@0.5 | `M-slot48` max-F1 | ±20 ms `micro_event_f1` / `skill_event_f1` | `shuffle` drop (F1 / event-skill) | `zeros` drop (F1 / `1 − IoU`) | Source |
-| ------------ | -------- | ---- | ----------------- | ----------------- | ------------------------------------------ | --------------------------------- | ----------------------------- | ------ |
-| DDCL (BiLSTM) | Scratch log-mel | `last` (ep 128) | `0.6804` | `0.6849` @ 0.45 | `0.7008` / `+0.5670` | `−0.0181` / `−0.0331` | `−0.0805` / `0.421` | `EXP-20260817-01`, `EXP-20261123-03` |
-| ITGPT (Transformer) | Scratch log-mel | `last` (ep 128) | `0.7104` | `0.7166` @ 0.35 | `0.7291` / `+0.6085` | `−0.1192` / `−0.1827` | `−0.0713` / `0.401` | `EXP-20260819-03`, `EXP-20261123-02` |
-| **DDCL (BiLSTM)** | **Beat-aligned MERT** | **`last` / `best_slot_f1` (ep 128)** | **`0.7511`** (+7.07 pp) | **`0.7554`** @ 0.45 | **`0.7689` / `+0.6623`** (+9.53 pp) | **`−0.1312` / `−0.2063`** (7.3×) | **`−0.7511` / `1.000`** (`0` steps) | `EXP-20261123-03` |
-| **ITGPT (Transformer)** | **Beat-aligned MERT** | **`best` (ep 38)** (`last` `0.7421`) | **`0.7519`** (+4.15 pp) | **`0.7633`** @ 0.35 | **`0.7679` / `+0.6638`** (+5.53 pp) | **`−0.1296` / `−0.1965`** | **`−0.2692` / `0.566`** | `EXP-20261123-02` |
+| Architecture | Frontend & Recipe | Ckpt | `M-slot48` F1@0.5 | `M-slot48` max-F1 | ±20 ms `evF1` | `shuffle` drop (F1) | Errors | Source |
+| ------------ | ----------------- | ---- | ----------------- | ----------------- | ------------- | ------------------- | ------ | ------ |
+| DDCL (BiLSTM) | Scratch log-mel | `last` (ep 128) | `0.6804` | `0.6849` @ 0.45 | `0.7008` | `−0.0181` | — | `EXP-20260817-01`, `EXP-20261123-03` |
+| ITGPT (Transformer) | Scratch log-mel | `last` (ep 128) | `0.7104` | `0.7166` @ 0.35 | `0.7291` | `−0.1192` | — | `EXP-20260819-03`, `EXP-20261123-02` |
+| DDCL (BiLSTM) | MERT L6 | `last` (ep 128) | `0.7511` (+7.07 pp) | `0.7554` @ 0.45 | `0.7689` | `−0.1312` (7.3×) | — | `EXP-20261123-03` |
+| ITGPT (Transformer) | MERT L6 (`const128`) | `best` (ep 38) | `0.7519` (+4.15 pp) | `0.7633` @ 0.35 | `0.7679` | `−0.1296` | — | `EXP-20261123-02` |
+| ITGPT (Transformer) | MERT `L2+6+10+16` + Cos64 + EMA | `best` (ep 41) | `0.7680` | `0.7698` @ 0.45 | `0.7848` | `−0.1396` | `8,182` | `EXP-20261125-10` |
+| ITGPT (Transformer) | + `density` + `ls=0.01` | `best_slot_f1` (ep 20) | `0.7729` | `0.7740` @ 0.45 | `0.7923` | `−0.1447` | `8,166` | `EXP-20261126-15` |
+| **ITGPT (Transformer)** | **+ `beat_aux=0.10` + `dice=0.05` + `pw=1.35`** | **peak (3-run mean)** | **`0.7797`** (`0.7759 ± 0.0034`) | **`0.7797`** @ 0.50 | **`0.8009`** (`0.7963 ± 0.0040`) | **`−0.1420`** | **`8,024`** | `EXP-20261127-01` |
 
-- **Takeaway:** On 81-song Fraxtil, representation (**+7.07 / +4.15 pp**) dominates architecture (**+0.08 pp** F1@0.5 / **+0.79 pp** max-F1 under MERT), and ITGPT-MERT on 81 songs (**0.7519 / 0.7633**) outperforms 201-song Dataset B log-mel ITGPT (**0.735 / 0.740**).
+*(Adding `rdrop=2.0` beat matched `EXP-20261127-01` on 2/2 seeds and pushed `last.pt` to `0.7659` / `0.7684` at `rdrop=4.0`, `EXP-20261127-02`.)*
 
-### 4.3 Multi-pack transfer and data scaling (`T-ladder-scale`, `C11`, `C12`)
+### 4.3 Multi-pack transfer and 4-point data scaling (`T-ladder-scale`, `C11`, `C12`)
 
-All runs evaluated on the **exact same frozen 48 val charts** of `D-final` (`17,057` beats, `37,617` GT steps, `null F1 = 0.6007`).
+All runs evaluated on the **exact same frozen 48 val charts** of `D-final` (`17,057` beats, `37,617` GT steps, `null F1 = 0.6007`, `0` song overlap with full `1,713t` train).
 
-| Model & Recipe | Train Charts | Ckpt | Val `M-slot48` F1@0.5 | Val max-F1 | Val ±20 ms `skill_event_f1` | Val `shuffle` drop (F1 / event-skill) | Train `shuffle` drop | Audio Transfer | Source |
-| -------------- | ------------ | ---- | --------------------- | ---------- | --------------------------- | ------------------------------------- | -------------------- | -------------- | ------ |
-| Log-mel DDCL (`best_val_loss`) | `48` | `best` | `0.7272` | `0.7272` | `+0.6155` | `−0.0048` / `−0.0067` | — | ~audio-blind | `EXP-20261119-01` |
-| Log-mel DDCL | `48` | `last` (ep 128) | `0.7307` | `0.7308` | `+0.6197` | `−0.0230` / `−0.0301` | `−0.1989` (`0.9392`) | **11.6%** | `EXP-20261119-02/03` |
-| MERT-LSTM (`Adam`, `drop=0.2`) | `48` | `last` (ep 128) | `0.7647` | `0.7712` @ 0.35 | `+0.6656` | `−0.0782` / `−0.1085` | `−0.2324` (`0.9622`) | **33.6%** | `EXP-20261119-04/05` |
-| MERT-LSTM + heavy reg (`wd=0.01`, `drop=0.4`, `noise=0.05`) | `48` | `best_slot_f1` (ep 96) | `0.7612` | `0.7612` | `+0.6611` | `−0.0533` / `−0.0766` | — | reg hurt grounding | `EXP-20261119-06` |
-| ITGPT-MERT (`48t/48v`) | `48` | `best_slot_f1` (ep 32) / `last` (ep 128) | `0.7719` / `0.7702` | `0.7728` / `0.7703` | `+0.6695` / `+0.6652` | `−0.0619` / `−0.0848` | `−0.2649` (`0.9928`) | **32.0%** | `EXP-20261123-01` |
-| ITGPT-MERT (`200t/50v`) | `197` (`187` songs) | `best_slot_f1` (ep 64) / `last` (ep 128) | `0.8181` / `0.8151` (+4.62 pp) | `0.8192` @ 0.55 | `+0.7330` (+6.35 pp) | `−0.1092` / `−0.1103` | `−0.2610` (`0.9875`) | **42.3%** (+10.3 pp) | `EXP-20261124-01` |
-| **ITGPT-MERT (`300t/50v`)** | **`294`** (`277` songs) | **`best` (ep 29)** / **`last` (ep 128)** | **`0.8276`** / **`0.8177`** (+5.57 pp vs 48t) | **`0.8324`** @ 0.35 (+5.96 pp) | **`+0.7462`** (+7.67 pp) | **`−0.1122` / `−0.1189`** (5.2× mel) | `−0.2656` (`0.9862`) | **44.7%** (3.9× mel) | `EXP-20261124-02` |
+| Model & Recipe | Train Charts | Ckpt | Val `M-slot48` F1@0.5 | Val max-F1 | Val ±20 ms `evF1` | Val `shuffle` drop | Errors | Source |
+| -------------- | ------------ | ---- | --------------------- | ---------- | ----------------- | ------------------ | ------ | ------ |
+| Log-mel DDCL (`best_val_loss`) | `48` | `best` | `0.7272` | `0.7272` | `0.7272` | `−0.0048` (~blind) | — | `EXP-20261119-01` |
+| Log-mel DDCL | `48` | `last` (ep 128) | `0.7307` | `0.7308` | `0.7308` | `−0.0230` (11.6% xfer) | — | `EXP-20261119-02/03` |
+| MERT-LSTM (`Adam`, `drop=0.2`) | `48` | `last` (ep 128) | `0.7647` | `0.7712` @ 0.35 | — | `−0.0782` (33.6% xfer) | — | `EXP-20261119-04/05` |
+| ITGPT-MERT L6 (`const128`) | `48` | `best_slot_f1` | `0.7719` | `0.7728` | — | `−0.0848` (32.0% xfer) | — | `EXP-20261123-01` |
+| ITGPT-MERT L6 (`const128`) | `197` | `best_slot_f1` | `0.8181` | `0.8192` | — | `−0.1103` (42.3% xfer) | — | `EXP-20261124-01` |
+| ITGPT-MERT L6 (`const128`) | `294` | `best` | `0.8276` | `0.8324` | — | `−0.1189` (44.7% xfer) | — | `EXP-20261124-02` |
+| ITGPT-MERT (`L2+6+10+16`, Cos64, `#METER`) | `294` | `best_slot_f1` | `0.8388` | `0.8388` @ 0.50 | — | `−0.1151` | `12,276` | `EXP-20261124-03` |
+| ITGPT-MERT + `density` + `keep0` + `beat_aux` + `dice` + `pw=1.25` | `294` | `best_slot_f1` | `0.8497` | `0.8500` @ 0.45 | `0.8499` | `−0.1226` | `11,593` | `EXP-20261127-01` |
+| **ITGPT-MERT full `final_data` (same recipe)** | **`1,713`** (`1,109` songs) | **`best_slot_f1` (ep 8)** | **`0.8649`** (+1.52 pp) | **`0.8649`** @ 0.50 | **`0.8650`** | **`−0.1371`** | **`10,507`** (−9.4%) | `EXP-20261127-04` |
+
+*(Full 176-chart val on `1,713t` (`61,347` beats, `134,327` GT steps): **`0.8422` F1@0.5 @ `0.50` exact**. Frozen `48v` subdivision jumps from `300t → 1,713t`: `8th 0.8869 → 0.8988`, `16th_off 0.7278 → 0.7635` (+3.57 pp), `24th 0.5358 → 0.5922` (+5.64 pp), `intro 0.8015 → 0.8327` (+3.12 pp).)*
 
 ### 4.4 Metric diagnostic: why rank-indexed `timing_match` breaks (`T-timing-diag`, `C8`)
 
@@ -130,21 +141,55 @@ Counterfactual masks on the `D-final` 48-val DDCL checkpoint (`EXP-20261118-01`;
 | `chart_top_k` (match chart count) | — | `0.0201` | — | Chart-level count match still drifts mid-song |
 | `beat_top_k` (match per-beat count) | — | **0.8338** | — | Zeroing per-beat `FP − FN` drift immediately recovers `timing_match` |
 
+### 4.5 Cross-corpus pretraining, fine-tuning, and ensembling on Dataset A (`T-transfer-scaling`, `C14`)
+
+All rows clearly labeled by training regime (never mixed with from-scratch Dataset A claims). Evaluated on `D-frax-orig` (`45` val charts, `17,868` GT steps).
+
+| Regime & Model | Dataset A Train Songs | `M-slot48` F1@0.5 | `M-slot48` max-F1 | ±20 ms `evF1` | Errors | `intro` F1 | Source |
+| -------------- | --------------------- | ----------------- | ----------------- | ------------- | ------ | ---------- | ------ |
+| From-scratch log-mel ITGPT | `81` | `0.7104` | `0.7166` | `0.7291` | — | — | `EXP-20260819-03` |
+| From-scratch ITGPT-MERT (3-run mean / peak) | `81` | `0.7759` / `0.7797` | `0.7797` @ 0.50 | `0.7963` / `0.8009` | `8,024` | `0.6700` | `EXP-20261127-01` |
+| **Zero-shot `1,713t` → Dataset A** | **`0`** | **`0.7787`** | **`0.7822`** @ 0.60 | **`0.8034`** | — | `0.6883` | `EXP-20261127-04` |
+| **Fine-tuned Arm C (`keep0`, `pw=1.00`, Cos16)** | **`81`** | **`0.7857`** (+7.53 pp) | **`0.7857`** @ 0.50 | **`0.8083`** | `7,946` | `0.735+` | `EXP-20261127-05` |
+| **Fine-tuned Arm D (`rdrop=2.0`, `pw=1.00`, Cos16)** | **`81`** | **`0.7853`** | **`0.7853`** @ 0.50 | **`0.8082`** | **`7,909`** | **`0.7539`** (+8.39 pp) | `EXP-20261127-05` |
+| **Diverse Logit Ensemble (`Arm C + D + ZS`)** | `81` + `0` | `0.7854` | **`0.7863`** @ 0.55 | **`0.8092`** | — | — | `EXP-20261127-06` |
+
+### 4.6 Per-song error audit on Dataset A (`T-error-audit`, `C15`)
+
+Auditing `Arm C` (`0.78574` overall, `7,946` errors across 9 val songs / 45 charts, `EXP-20261127-06`):
+
+| Subset | Songs / Charts | `M-slot48` F1@0.5 | ±20 ms `evF1` | Errors (% of total) | Root Cause |
+| ------ | -------------- | ----------------- | ------------- | ------------------- | ---------- |
+| Clean 8/9 val songs | `8 / 40` | **`0.8193`** (`0.764–0.868`) | **`0.8195`** | `6,245` (`78.6%`) | Standard constant/clean BPM grids |
+| Outlier: `tsunamix_iii/isis` | `1 / 5` | `0.3274` | **`0.6564`** (2.0×) | `1,701` (`21.4%`) | `31` fractional-beat BPM gimmicks → `61.4%` `micro/32nd` slots |
+
+### 4.7 End-to-end raw-audio beat tracking robustness (`T-raw-audio-beats`, `C16`)
+
+Evaluating `Arm C` on Dataset A val (`9` songs / `45` charts) with **zero `.sm` beat grid** — replacing oracle `.sm` beats with automatic beat trackers (`EXP-20261127-06`):
+
+| Beat Grid Source | Median Beat Error (ms) | ±20 ms `evF1` | ±50 ms `evF1` (% of oracle) | Notes |
+| ---------------- | ---------------------- | ------------- | --------------------------- | ----- |
+| Oracle `.sm` beat grid | `0.0` | `0.8083` | `0.8138` (`100.0%`) | Upper bound |
+| Oracle + `±20 ms` Gaussian jitter | `~13.5` | `0.5944` | — | Reference sensitivity floor |
+| Classical `librosa.beat.beat_track` | `47.3` | `0.0369` | — | Collapses on electronic/rhythm-game audio |
+| **Neural `BeatThis` (`foscarin2024beatthis`, `final0`)** | **`12.9`** | **`0.5804`** (`0.6155` octave-matched) | **`0.7747`** (**`95.2%`**) | Retains 95% of oracle placement quality from raw audio alone |
+
 ---
 
 ## 5. Discussion
 
-1. **Why log-mel ITGPT beat log-mel DDCL (`C10`):** Our 2×2 grounding matrix reveals that log-mel DDCL on Dataset A was largely a metadata/beat-grid model (`shuffle` drop `−0.0181`), whereas log-mel ITGPT grounded 6.6× more strongly in audio (`−0.1192`). Providing beat-aligned MERT repairs DDCL's audio pathway (`−0.1312`, 7.3×) and collapses the architecture gap on homogeneous Fraxtil, while full-song Transformer attention still provides an edge on higher-diversity multi-pack charts (`D-final` `48t/48v`) and higher max-F1 on Dataset A (`0.7633` vs `0.7554`).
-2. **Why `shuffle` is the architecture-agnostic grounding metric (`C9`):** Under `zeros`, MERT-LSTM/DDCL-MERT collapses completely (`0` steps on Dataset A, `0.1296` F1 on `D-final`) because zeroed inputs push its Conv/LSTM biases off-manifold, whereas ITGPT-MERT's RMSNorm + residuals + `diff_tok`/`bpm_tok`/`level6_pos` gracefully degrade to a prior template (`0.7290` on `D-final`, `0.4826` on Dataset A). Distribution-preserving `shuffle` keeps activations in-distribution and cleanly measures audio steering across architectures.
-3. **Regularization asymmetry (`C12`):** Heavy dropout + input noise on the 1024-dim MERT stream (`EXP-20261119-06`) selectively penalizes the audio branch relative to clean low-dimensional metadata (`[meter, bpm]`), simultaneously lowering val F1 and `shuffle` drop. Light `AdamW(wd=0.01)` + `dropout=0.1` with zero audio noise stabilizes ITGPT-MERT cleanly on both Dataset A and `200t/50v`.
-4. **Data scaling converts directly into audio transfer (`C11`):** Scaling `ITGPT-MERT` across `48 → 197 → 294` training charts leaves the `shuffle` prior floor flat (~`0.70–0.71`) while lifting val F1@0.5 monotonically (**0.7719 → 0.8181 → 0.8276**; max-F1 **0.8324**, ~+3.2 pp per doubling of training charts) and train→val audio transfer (**32.0% → 42.3% → 44.7%**). At `294` charts (matching Dataset A's `405`), `best.keras` (`val_loss` @ ep 29) realigns with peak val F1 and cuts false positives 33% (`8,749 → 5,863`). With train F1 still at `0.9862` (`55.3%` un-transferred audio lift), scaling to full `final_data` (~1,750 charts) retains clear runway.
-5. **Why dense/event/AR-on-times tracks were diagnostic rather than primary (`C3`):** K-query event prediction hit a ~31% oracle ceiling (`EXP-20260606-11`), dense TCNs plateaued at `+0.414` event skill (`EXP-20260824-01`), and AR-on-times `Dense(max_patches)` pointers passed single-song overfit while being 99.96% audio-blind (`EXP-20260804-05`), motivating the `M-grounding` protocol now used on beat-grid models.
+1. **Why log-mel ITGPT beat log-mel DDCL (`C10`):** Our 2×2 grounding matrix reveals that log-mel DDCL on Dataset A was largely a metadata/beat-grid model (`shuffle` drop `−0.0181`), whereas log-mel ITGPT grounded 6.6× more strongly in audio (`−0.1192`). Providing beat-aligned MERT repairs DDCL's audio pathway (`−0.1312`, 7.3×) and collapses the architecture gap on homogeneous Fraxtil, while full-song Transformer attention still provides an edge on higher-diversity multi-pack charts (`D-final`) and scales smoothly to `1,713` charts.
+2. **Why `shuffle` is the architecture-agnostic grounding metric (`C9`):** Under `zeros`, MERT-LSTM/DDCL-MERT collapses completely because zeroed inputs push Conv/LSTM biases off-manifold, whereas ITGPT-MERT's RMSNorm + residuals gracefully fall back to a prior template. Distribution-preserving `shuffle` keeps activations in-distribution and cleanly measures audio steering across architectures.
+3. **Training signals > extra architecture parameters (`C12`, `C13`):** Fourteen extra-parameter architectural probes (`EXP-20261127-03`: RoPE at level6, SwiGLU, sub-beat skip/refinement heads, multiscale conv heads, delta features) were cleanly falsified, whereas zero-inference-cost representation and training-signal upgrades (multi-layer MERT `(2,6,10,16)`, density conditioning, downbeat-preserving SpecAugment `keep0`, `beat_aux + dice + pw`, and R-Drop) delivered `+2.78 pp` on Dataset A and `+2.21 pp` on `300t/50v`.
+4. **Scale unlocks cross-corpus zero-shot and intro generalization (`C11`, `C14`):** Scaling `ITGPT-MERT` to `1,713` non-Fraxtil charts lifts frozen `48v` to **0.8649** (`16th_off +3.57 pp`, `24th +5.64 pp`), beats in-domain Fraxtil MERT mean **zero-shot** (`0.7787` / `0.8034` `evF1`), and after fine-tuning with `pw=1.00` boosts Fraxtil `intro` F1 by **+8.39 pp** (`0.670 → 0.754`).
+5. **Continuous-time `M-event-20ms` exposes fractional-BPM artifacts and raw-audio readiness (`C15`, `C16`):** Exact-slot `M-slot48` penalizes `tsunamix_iii/isis`'s 31 fractional-BPM gimmicks by `−33 pp` vs continuous-time ±20 ms `evF1` (`0.3274` vs `0.6564`). On raw audio without `.sm` beats, Beat This! (`foscarin2024beatthis`) bridges the deployment gap (`95.2%` oracle ±50 ms `evF1`), with remaining ±20 ms loss driven by a ~12.9 ms MIR-annotation vs rhythm-game transient phase offset rather than rhythmic failure.
+6. **Why dense/event/AR-on-times tracks were diagnostic rather than primary (`C3`):** K-query event prediction hit a ~31% oracle ceiling (`EXP-20260606-11`), dense TCNs plateaued at `+0.414` event skill (`EXP-20260824-01`), and AR-on-times `Dense(max_patches)` pointers passed single-song overfit while being 99.96% audio-blind (`EXP-20260804-05`), directly motivating `M-grounding`.
 
 ---
 
 ## 6. Conclusion and Future Work
 
-Beat-aligned pretrained music representations (`li2024mert`) paired with architecture-agnostic audio-grounding diagnostics (`M-grounding`) resolve two central bottlenecks in neural DDR/ITG step placement: they lift both DDCL (**+7.07 pp**) and ITGPT (**+4.15 pp**) on Original Fraxtil, prove representation drives larger gains than architecture alone at 81-song scale, and scale monotonically across `48 → 197 → 294` charts to **0.8276** `M-slot48` F1 (**0.8324** max-F1, **+0.7462** ±20 ms event skill, **44.7%** audio transfer) on multi-pack community charts. Future work: (1) pairing the **0.828** ITGPT-MERT placement head with Stage 2 four-panel step selection (arrows, jumps, holds) for end-to-end playable `.sm` generation, (2) scaling to full `final_data` (~1,750 charts) via a disk-backed MERT loader, and (3) multi-author evaluation on ITG (`D-itg`).
+Beat-aligned multi-layer pretrained music representations (`li2024mert`), zero-inference-cost training signals (`density`, `keep0` SpecAugment, `beat_aux + dice + pw`, R-Drop), and architecture-agnostic audio-grounding diagnostics (`M-grounding`) deliver decisive gains across both literature and community step-placement benchmarks: lifting DDCL (**+7.07 pp**) and ITGPT (**+6.93 pp** from scratch / **+7.53 pp** transferred to **0.7857** F1@0.5 / **0.8083** `evF1`) on Original Fraxtil, scaling monotonically to **0.8649** on `1,713`-chart multi-pack community data, and retaining **95.2%** of oracle ±50 ms event F1 end-to-end on raw audio via a built-in pure-PyTorch Beat This! tracker (`foscarin2024beatthis`). Future work: (1) upgrading Stage 2 four-panel step selection (foot alternation, crossovers, holds/rolls) conditioned on the beat/downbeat grid and MERT features, (2) generating full 5-difficulty `.sm` packs from a single raw-audio pass, and (3) multi-author evaluation on ITG (`D-itg`).
 
 ---
 
@@ -156,4 +201,4 @@ Beat-aligned pretrained music representations (`li2024mert`) paired with archite
 - Experiment log (authoritative): [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)
 - Design reasoning: [DISCUSSION_NOTES.md](DISCUSSION_NOTES.md)
 - Onset metrics: [ONSET_METRICS.md](ONSET_METRICS.md)
-- Config references (seed 42): `configs/ddc/ddcl_placement_fraxtil.json`, `configs/ddc/ddcl_mert_placement_fraxtil_128ep.json`, `configs/ddc/itgpt_placement_fraxtil_orig_128ep.json`, `configs/ddc/itgpt_mert_placement_fraxtil_orig_128ep.json`, `configs/ddc/ddcl_mert_placement_ladder_50t_50v.json`, `configs/ddc/itgpt_mert_placement_ladder_50t_50v.json`, `configs/ddc/itgpt_mert_placement_ladder_200t_50v.json`, `configs/ddc/itgpt_mert_placement_ladder_300t_50v.json`
+- Config references (seed 42): `configs/ddc/ddcl_placement_fraxtil.json`, `configs/ddc/ddcl_mert_placement_fraxtil_128ep.json`, `configs/ddc/itgpt_placement_fraxtil_orig_128ep.json`, `configs/ddc/itgpt_mert_placement_fraxtil_orig_128ep.json`, `configs/ddc/itgpt_mert_placement_ladder_{50t,200t,300t}_50v.json`, `configs/ddc/itgpt_mert_placement_final_data_full_keep0_aux_dice_pw125.json`

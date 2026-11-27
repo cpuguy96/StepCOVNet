@@ -63,10 +63,11 @@ allowing rhythm game enthusiasts to create charts for their favorite songs insta
 
 ### Generating Charts
 
-Generate a StepMania chart (`.txt` format) from an audio file using pre-trained models. If you do not have onset or arrow models yet, omit their paths and they will be downloaded automatically from Google Drive and cached locally.
+Generate a StepMania chart (`.sm` or `.txt` format) from an audio file using pre-trained models. If you do not have onset or arrow models yet, omit their paths and they will be downloaded automatically from Google Drive and cached locally.
 
-> **Note**: The output is currently a `.txt` file. Use [`SMDataTools`](https://github.com/jhaco/SMDataTools) to convert
-> it to a `.sm` file.
+- **Direct `.sm` export:** Pass an `--output_file` ending in `.sm` to write a playable StepMania simfile with downbeat-aligned `#OFFSET` and `#BPMS` directly (no external converter required); `.txt` output remains supported for [`SMDataTools`](https://github.com/jhaco/SMDataTools).
+- **Built-in neural beat tracking (`Beat This!`):** StepCOVNet includes a self-contained pure-PyTorch implementation of Beat This! (ISMIR 2024) with sub-frame parabolic peak refinement (`stepcovnet.beat_this_model`) and an automatic offline fallback to `librosa`. No extra packages are required; pretrained beat-tracker weights (`final0.ckpt`, 77 MB) download and cache automatically on first use.
+- **ITGPT-MERT checkpoints:** Passing an ITGPT-MERT `.pt` checkpoint to `--onset_model_path` automatically runs Beat This! + MERT + 48-slot ITGPT placement end-to-end on raw audio.
 
 ```bash
 python scripts/generate.py \
@@ -74,22 +75,28 @@ python scripts/generate.py \
   --song_title "My Song" \
   --onset_model_path "models/onset.pt" \
   --arrow_model_path "models/arrow.pt" \
-  --output_file "output/chart.txt"
+  --output_file "output/chart.sm"
 ```
 
-| Argument                | Description                                                                        |
-| :---------------------- | :--------------------------------------------------------------------------------- |
-| `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, etc.)                                |
-| `--song_title`          | Title of the song                                                                  |
-| `--bpm`                 | Beats per minute (optional; estimated from audio when omitted)                     |
-| `--onset_model_path`    | Path to the onset detection model (`.pt`); optional—omit to download and cache     |
-| `--arrow_model_path`    | Path to the arrow prediction model (`.pt`); optional—omit to download and cache    |
-| `--output_file`         | Path where the generated chart text file will be saved                             |
-| `--use_post_processing` | Refine onset timings with peak-picking (recommended for cleaner charts)            |
+| Argument                | Description                                                                                            |
+| :---------------------- | :----------------------------------------------------------------------------------------------------- |
+| `--audio_path`          | Path to the input audio file (`.mp3`, `.wav`, `.ogg`, `.flac`)                                         |
+| `--song_title`          | Title of the song                                                                                      |
+| `--bpm`                 | Beats per minute (optional; estimated from audio when omitted)                                         |
+| `--onset_model_path`    | Path to a dense onset or ITGPT-MERT model (`.pt`); optional—omit to download and cache                 |
+| `--arrow_model_path`    | Path to the arrow prediction model (`.pt`); optional—omit to download and cache                        |
+| `--output_file`         | Output path (`.sm` writes a downbeat-aligned StepMania simfile; `.txt` writes plain-text format)       |
+| `--beat_tracker`        | Beat tracker backend: `auto` (built-in `beat_this` with offline `librosa` fallback), `beat_this`, `librosa` |
+| `--snap_beats`          | Apply a song-level constant phase shift aligning tracked beats to audio onset-strength peaks           |
+| `--target_density`      | Target average steps/beat for density-conditioned ITGPT-MERT models (default `2.0`)                    |
+| `--meter`               | Difficulty meter for meter-conditioned ITGPT checkpoints / `.sm` header (default `10`)                 |
+| `--threshold`           | Onset probability threshold (default `0.5`)                                                            |
+| `--use_post_processing` | Refine legacy dense onset timings with peak-picking                                                    |
+| `--device`              | Compute device (`auto`, `cuda`, `mps`, `cpu`)                                                          |
 
 #### Generator UI
 
-A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset and arrow models (`.pt`)—or leave those fields blank to have default models downloaded from Google Drive and cached—enter the song title and optionally BPM (leave BPM blank to detect it from the audio), pick an output path, and run. Launch it with:
+A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset (dense or ITGPT-MERT `.pt`) and arrow models—or leave those fields blank to download default models—configure beat tracker (`auto` / `beat_this` / `librosa`), ITGPT target density, onset threshold, transient beat snapping, and save as `.sm` or `.txt`. Launch it with:
 
 ```bash
 python scripts/generate_ui.py
@@ -297,7 +304,8 @@ Optional: `pre-commit install --install-hooks --hook-type pre-commit` runs ruff 
 
 ## 🌟 Credits
 
-- **Inspiration**: [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf)
+- **Inspiration**: [Dance Dance Convolution](https://arxiv.org/pdf/1703.06891.pdf), [DDCL](https://arxiv.org/abs/2507.01644), and [ITGPT](https://arxiv.org/abs/2607.14148)
+- **Neural Beat Tracking**: Pure-PyTorch inference module adapted from [Beat This!](https://github.com/CPJKU/beat_this) (Foscarin, Schlüter, & Widmer, ISMIR 2024; MIT License)
 - **Base Code**: Derived from [musical-onset-efficient](https://github.com/ronggong/musical-onset-efficient)
 - **Collaboration**: Special thanks to [Jhaco](https://github.com/jhaco) for support and collaboration.
 
