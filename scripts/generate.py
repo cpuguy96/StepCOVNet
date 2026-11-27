@@ -72,8 +72,8 @@ PARSER.add_argument(
     choices=list(beat_tracking.VALID_TRACKERS),
     default=beat_tracking.TRACKER_AUTO,
     help=(
-        "Beat tracker backend for raw audio ('auto' prefers beat_this when "
-        "installed and falls back to librosa)."
+        "Beat tracker backend for raw audio ('auto' uses the built-in "
+        "beat_this model by default; 'librosa' forces librosa)."
     ),
 )
 PARSER.add_argument(

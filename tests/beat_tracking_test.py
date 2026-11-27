@@ -5,14 +5,19 @@ from __future__ import annotations
 import pathlib
 import sys
 import tempfile
-import types
 import unittest
 from unittest import mock
 
 import numpy as np
 import torch
 
-from stepcovnet import beat_tracking, constants, generator, models
+from stepcovnet import (
+    beat_this_model,
+    beat_tracking,
+    constants,
+    generator,
+    models,
+)
 from stepcovnet.pytorch.itgpt import models as itgpt_models
 from stepcovnet.pytorch.itgpt import trainers as itgpt_trainers
 
@@ -21,6 +26,132 @@ if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
 import generate as generate_script  # noqa: E402
+
+
+class BeatThisModelUnitTest(unittest.TestCase):
+    def test_tiny_beat_this_forward_and_state_dict_roundtrip(self) -> None:
+        for sum_head in (True, False):
+            with self.subTest(sum_head=sum_head):
+                model = beat_this_model.BeatThis(
+                    spect_dim=32,
+                    transformer_dim=32,
+                    ff_mult=2,
+                    n_layers=1,
+                    head_dim=16,
+                    stem_dim=16,
+                    sum_head=sum_head,
+                    partial_transformers=True,
+                ).eval()
+                x = torch.randn(2, 24, 32)
+                with torch.inference_mode():
+                    out = model(x)
+                self.assertEqual(tuple(out["beat"].shape), (2, 24))
+                self.assertEqual(tuple(out["downbeat"].shape), (2, 24))
+                self.assertTrue(torch.isfinite(out["beat"]).all())
+                self.assertTrue(torch.isfinite(out["downbeat"]).all())
+
+        # Verify Lightning + torch.compile prefix cleaning matches strict=True load.
+        model = beat_this_model.BeatThis(
+            spect_dim=32,
+            transformer_dim=32,
+            ff_mult=2,
+            n_layers=1,
+            head_dim=16,
+            stem_dim=16,
+        )
+        prefixed = {
+            f"model._orig_mod.{k}": v.clone() for k, v in model.state_dict().items()
+        }
+        cleaned = beat_this_model._clean_state_dict(prefixed)
+        model.load_state_dict(cleaned, strict=True)
+
+    def test_log_mel_spectrogram_and_chunked_inference(self) -> None:
+        spect_fn = beat_this_model.LogMelSpectrogram()
+        wav = torch.randn(beat_this_model.BEAT_THIS_SR * 2, dtype=torch.float32) * 0.1
+        spect = spect_fn(wav)
+        self.assertEqual(spect.ndim, 2)
+        self.assertEqual(spect.shape[1], 128)
+        self.assertGreater(spect.shape[0], 90)
+        self.assertTrue(torch.isfinite(spect).all())
+        self.assertGreaterEqual(float(spect.min()), 0.0)
+
+        # Multi-chunk split_predict_aggregate on a tiny model
+        tiny_model = beat_this_model.BeatThis(
+            spect_dim=32,
+            transformer_dim=32,
+            ff_mult=2,
+            n_layers=1,
+            head_dim=16,
+            stem_dim=16,
+        ).eval()
+        fake_spect = torch.randn(100, 32)
+        with torch.inference_mode():
+            beat_logits, db_logits = beat_this_model.split_predict_aggregate(
+                fake_spect,
+                tiny_model,
+                chunk_size=40,
+                border_size=4,
+                overlap_mode="keep_first",
+            )
+        self.assertEqual(tuple(beat_logits.shape), (100,))
+        self.assertEqual(tuple(db_logits.shape), (100,))
+        self.assertTrue(torch.isfinite(beat_logits).all())
+        self.assertTrue(torch.isfinite(db_logits).all())
+
+    def test_postprocess_minimal_peak_picking_and_downbeat_snapping(self) -> None:
+        beat_logits = torch.full((200,), -5.0)
+        db_logits = torch.full((200,), -5.0)
+        # Beats at frames 25, 50, 75, 100 (0.5, 1.0, 1.5, 2.0 s at 50 FPS)
+        # Include an adjacent tied peak at 50 & 51 to exercise deduplication.
+        for f in (25, 50, 51, 75, 100):
+            beat_logits[f] = 4.0
+        # Downbeats slightly offset by 1 frame (should snap to nearest beat)
+        db_logits[26] = 3.0
+        db_logits[101] = 3.0
+
+        beats, downbeats = beat_this_model.postprocess_minimal(
+            beat_logits, db_logits, fps=50
+        )
+        np.testing.assert_allclose(beats, [0.5, 1.01, 1.5, 2.0], atol=1e-6)
+        np.testing.assert_allclose(downbeats, [0.5, 2.0], atol=1e-6)
+
+    def test_local_checkpoint_loading_and_waveform_prediction_offline(self) -> None:
+        tiny_hparams = {
+            "spect_dim": 128,
+            "transformer_dim": 32,
+            "ff_mult": 2,
+            "n_layers": 1,
+            "head_dim": 16,
+            "stem_dim": 16,
+            "dropout": {"frontend": 0.0, "transformer": 0.0},
+            "sum_head": True,
+            "partial_transformers": True,
+        }
+        tiny = beat_this_model.BeatThis(**tiny_hparams).eval()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt_path = pathlib.Path(tmpdir) / "tiny_beat_this.ckpt"
+            torch.save(
+                {
+                    "hyper_parameters": tiny_hparams,
+                    "state_dict": {
+                        f"model.{k}": v for k, v in tiny.state_dict().items()
+                    },
+                },
+                ckpt_path,
+            )
+            beat_this_model._load_cached_bundle.cache_clear()
+            loaded = beat_this_model.load_beat_this_model(str(ckpt_path), device="cpu")
+            self.assertIsInstance(loaded, beat_this_model.BeatThis)
+            stereo_wav = np.zeros((22050, 2), dtype=np.float32)
+            beats, downbeats = beat_this_model.predict_beats_from_waveform(
+                stereo_wav,
+                sr=22050,
+                checkpoint_path=str(ckpt_path),
+                device="cpu",
+            )
+            self.assertEqual(beats.ndim, 1)
+            self.assertEqual(downbeats.ndim, 1)
+            beat_this_model._load_cached_bundle.cache_clear()
 
 
 class BeatGridTest(unittest.TestCase):
@@ -62,43 +193,35 @@ class BeatGridTest(unittest.TestCase):
 
 
 class BeatTrackerBackendsTest(unittest.TestCase):
+    def test_beat_this_is_built_in(self) -> None:
+        self.assertTrue(beat_tracking.beat_this_available())
+
     def test_estimate_beats_beat_this_mocked(self) -> None:
-        fake_mod = types.ModuleType("beat_this.inference")
-
-        class _FakeFile2Beats:
-            def __init__(self, *, checkpoint_path: str, device: str, dbn: bool) -> None:
-                self.checkpoint_path = checkpoint_path
-                self.device = device
-                self.dbn = dbn
-
-            def __call__(self, audio_path: str):
-                self.last_audio = audio_path
-                return (
-                    np.array([0.5, 1.0, 1.5, 2.0], dtype=np.float64),
-                    np.array([0.5, 2.5], dtype=np.float64),
-                )
-
-        fake_mod.File2Beats = _FakeFile2Beats  # type: ignore[attr-defined]
         with mock.patch.object(
-            beat_tracking.importlib, "import_module", return_value=fake_mod
-        ):
+            beat_tracking.beat_this_model,
+            "predict_beats_from_audio",
+            return_value=(
+                np.array([0.5, 1.0, 1.5, 2.0], dtype=np.float64),
+                np.array([0.5, 2.5], dtype=np.float64),
+            ),
+        ) as mock_pred:
             grid = beat_tracking.estimate_beats_beat_this("song.ogg", device="cpu")
+        mock_pred.assert_called_once()
         self.assertEqual(grid.tracker, beat_tracking.TRACKER_BEAT_THIS)
         self.assertAlmostEqual(grid.bpm, 120.0, places=4)
         self.assertEqual(grid.n_beats, 4)
         self.assertEqual(grid.downbeat_times.size, 2)
 
-    def test_estimate_beats_beat_this_missing_dependency(self) -> None:
+    def test_estimate_beats_beat_this_too_few_beats_raises(self) -> None:
         with (
             mock.patch.object(
-                beat_tracking.importlib,
-                "import_module",
-                side_effect=ImportError("No module named 'beat_this'"),
+                beat_tracking.beat_this_model,
+                "predict_beats_from_audio",
+                return_value=(np.array([0.5]), np.zeros(0)),
             ),
-            self.assertRaises(ImportError) as ctx,
+            self.assertRaises(ValueError),
         ):
             beat_tracking.estimate_beats_beat_this("song.ogg", device="cpu")
-        self.assertIn("beat_this", str(ctx.exception))
 
     def test_estimate_beats_librosa_and_auto_fallback(self) -> None:
         fake_beats = np.array([0.4, 0.8, 1.2, 1.6], dtype=np.float64)

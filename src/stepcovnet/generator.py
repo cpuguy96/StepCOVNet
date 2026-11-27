@@ -225,9 +225,9 @@ def generate_output_data(
     """Generate step chart data for an audio file using PyTorch models.
 
     Supports both legacy frame-level dense onset models and beat-slot
-    ITGPT-MERT placement models (automatically using ``beat_this`` when
-    installed, with a ``librosa`` fallback, to extract the beat grid from
-    raw audio).
+    ITGPT-MERT placement models (using the built-in pure-PyTorch ``beat_this``
+    tracker by default, with a ``librosa`` fallback, to extract the beat grid
+    from raw audio).
 
     Args:
         audio_path: Path to the input audio file.

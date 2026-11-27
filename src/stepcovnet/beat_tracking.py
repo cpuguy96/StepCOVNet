@@ -1,7 +1,8 @@
 """Beat tracking and ITGPT-MERT onset inference on raw audio files.
 
-Integrates the neural beat/downbeat tracker ``beat_this`` (Foscarin et al.,
-ISMIR 2024) as an optional dependency with a ``librosa`` fallback, plus
+Integrates a self-contained pure-PyTorch implementation of the neural
+beat/downbeat tracker ``beat_this`` (Foscarin et al., ISMIR 2024;
+:mod:`stepcovnet.beat_this_model`) alongside a ``librosa`` fallback, plus
 beat-grid MERT alignment and 48-slot timestamp decoding for end-to-end chart
 generation without a pre-existing ``.sm`` beat grid.
 """
@@ -9,8 +10,6 @@ generation without a pre-existing ``.sm`` beat grid.
 from __future__ import annotations
 
 import dataclasses
-import importlib
-import importlib.util
 import pathlib
 from typing import Any
 
@@ -18,7 +17,7 @@ import librosa
 import numpy as np
 import torch
 
-from stepcovnet import constants, ssl_features
+from stepcovnet import beat_this_model, constants, ssl_features
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import features as ddcl_features
 from stepcovnet.itgpt import constants as itgpt_constants
@@ -32,10 +31,6 @@ VALID_TRACKERS = (TRACKER_AUTO, TRACKER_BEAT_THIS, TRACKER_LIBROSA)
 
 DEFAULT_MERT_LAYERS: tuple[int, ...] = (2, 6, 10, 16)
 DEFAULT_MERT_CACHE_SUFFIX = ".mert_l2_6_10_16.npy"
-_BEAT_THIS_INSTALL_HINT = (
-    "pip install soxr rotary-embedding-torch "
-    "https://github.com/CPJKU/beat_this/archive/main.zip"
-)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,7 +40,7 @@ class BeatGrid:
     Attributes:
         beat_times: Strictly increasing 1D float64 beat timestamps in seconds.
         downbeat_times: 1D float64 downbeat timestamps in seconds (may be empty).
-        bpm: Median tempo in beats per minute derived from ``beat_times``.
+        bpm: Tempo in beats per minute derived from ``beat_times``.
         tracker: Backend name that produced this grid (``beat_this`` or ``librosa``).
     """
 
@@ -122,62 +117,71 @@ def _clean_beat_times(
     return bt[keep]
 
 
+def _robust_bpm_from_beats(beats: np.ndarray) -> float:
+    """Compute robust tempo in BPM from beat timestamps.
+
+    Averages inter-beat intervals within 15% of the median IBI to eliminate
+    20 ms frame-quantization bias (at 50 FPS) while remaining immune to breaks,
+    silences, or double-time outliers.
+
+    Args:
+        beats: Strictly increasing 1D beat timestamps in seconds.
+
+    Returns:
+        Estimated tempo in beats per minute.
+    """
+    ibis = np.diff(beats)
+    median_ibi = float(np.median(ibis))
+    inliers = ibis[np.abs(ibis - median_ibi) <= 0.15 * max(median_ibi, 1e-6)]
+    effective_ibi = float(np.mean(inliers)) if inliers.size > 0 else median_ibi
+    return 60.0 / max(effective_ibi, 1e-6)
+
+
 def beat_this_available() -> bool:
-    """Return True if the optional ``beat_this`` package can be imported."""
-    return importlib.util.find_spec("beat_this") is not None
+    """Return True — Beat This! is built into StepCOVNet with no extra packages."""
+    return True
 
 
 def estimate_beats_beat_this(
     audio_path: str,
     *,
     device: str | torch.device = "auto",
-    checkpoint_path: str = "final0",
-    dbn: bool = False,
+    checkpoint_path: str = beat_this_model.DEFAULT_CHECKPOINT,
+    float16: bool = False,
 ) -> BeatGrid:
-    """Estimate beats and downbeats from raw audio using ``beat_this`` (ISMIR 2024).
+    """Estimate beats and downbeats using the built-in Beat This! model.
 
     Args:
         audio_path: Path to the input audio file.
         device: Target compute device (``"auto"``, ``"cuda"``, ``"mps"``, ``"cpu"``).
-        checkpoint_path: Pretrained ``beat_this`` checkpoint identifier.
-        dbn: Whether to enable optional DBN post-processing.
+        checkpoint_path: Pretrained Beat This! checkpoint identifier, URL, or
+            local file path (default ``"final0"``).
+        float16: Enable fp16 autocast during transformer inference.
 
     Returns:
         :class:`BeatGrid` populated with neural beat and downbeat timestamps.
 
     Raises:
-        ImportError: If ``beat_this`` is not installed.
-        ValueError: If fewer than two beats are detected.
+        ValueError: If fewer than two beats are detected or the checkpoint
+            cannot be loaded.
     """
-    try:
-        bt_mod = importlib.import_module("beat_this.inference")
-    except ImportError as exc:
-        raise ImportError(
-            "Optional dependency 'beat_this' is not installed. Install it with: "
-            f"{_BEAT_THIS_INSTALL_HINT}"
-        ) from exc
-
     resolved = runtime.resolve_device(None if device == "auto" else device)
-    # beat_this expects a torch device string like "cuda" or "cpu".
-    bt_device = "cuda" if resolved.type == "cuda" else "cpu"
-    tracker = bt_mod.File2Beats(
+    raw_beats, raw_downbeats = beat_this_model.predict_beats_from_audio(
+        str(audio_path),
         checkpoint_path=checkpoint_path,
-        device=bt_device,
-        dbn=dbn,
+        device=resolved,
+        float16=float16,
     )
-    raw_beats, raw_downbeats = tracker(str(audio_path))
     beats = _clean_beat_times(np.asarray(raw_beats, dtype=np.float64))
     downbeats = _clean_beat_times(np.asarray(raw_downbeats, dtype=np.float64))
     if beats.size < 2:
         raise ValueError(
             f"beat_this detected fewer than 2 beats for {audio_path!r} (got {beats.size})."
         )
-    median_ibi = float(np.median(np.diff(beats)))
-    bpm = 60.0 / max(median_ibi, 1e-6)
     return BeatGrid(
         beat_times=beats,
         downbeat_times=downbeats,
-        bpm=bpm,
+        bpm=_robust_bpm_from_beats(beats),
         tracker=TRACKER_BEAT_THIS,
     )
 
@@ -289,9 +293,8 @@ def estimate_beats(
 
     Args:
         audio_path: Path to the input audio file.
-        tracker: Backend selector: ``"auto"`` (prefers ``beat_this`` when
-            installed, else falls back to ``librosa``), ``"beat_this"``, or
-            ``"librosa"``.
+        tracker: Backend selector: ``"auto"`` (uses the built-in ``beat_this``
+            tracker by default), ``"beat_this"``, or ``"librosa"``.
         device: Compute device forwarded to ``beat_this``.
         snap_to_onsets: If True, apply :func:`snap_beats_to_onsets` to correct
             constant beat-annotation phase bias.
