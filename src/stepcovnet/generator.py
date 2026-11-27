@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 from typing import Any
 
 import librosa
@@ -11,6 +12,61 @@ import scipy.signal
 import torch
 
 from stepcovnet import beat_tracking, constants, datasets
+
+_SM_TICKS_PER_MEASURE = 192
+_SM_MEASURE_DIVISORS = (4, 8, 12, 16, 24, 32, 48, 64, 192)
+
+
+def _format_sm_measures(
+    note_rows: list[tuple[str, str]],
+    *,
+    bpm: float,
+    anchor_time_sec: float,
+    beat_grid: beat_tracking.BeatGrid | None,
+) -> tuple[str, float]:
+    """Quantize chart notes into StepMania measure blocks and return ``(notes_body, sm_offset)``."""
+    if not note_rows:
+        return "0000\n0000\n0000\n0000", -anchor_time_sec
+
+    times = np.asarray([float(t) for t, _ in note_rows], dtype=np.float64)
+    arrows = [str(a).zfill(4)[:4] for _, a in note_rows]
+    bpm_f = max(float(bpm), 1.0)
+    measure_sec = 4.0 * 60.0 / bpm_f
+
+    raw_beats = (
+        beat_grid.times_to_beats(times, anchor_time_sec=anchor_time_sec)
+        if beat_grid is not None
+        else (times - anchor_time_sec) * (bpm_f / 60.0)
+    )
+    min_beat = float(np.min(raw_beats))
+    shift_measures = int(math.ceil(-min_beat / 4.0)) if min_beat < -1e-6 else 0
+    beats = raw_beats + 4.0 * float(shift_measures)
+    effective_anchor = anchor_time_sec - float(shift_measures) * measure_sec
+    sm_offset = -effective_anchor
+
+    ticks = np.maximum(0, np.rint(beats * (_SM_TICKS_PER_MEASURE / 4.0)).astype(int))
+    max_measure = int(np.max(ticks)) // _SM_TICKS_PER_MEASURE
+
+    by_measure: dict[int, dict[int, str]] = {}
+    for tick, arrow in zip(ticks, arrows, strict=True):
+        m_idx = int(tick) // _SM_TICKS_PER_MEASURE
+        pos = int(tick) % _SM_TICKS_PER_MEASURE
+        by_measure.setdefault(m_idx, {})[pos] = arrow
+
+    measure_blocks: list[str] = []
+    for m_idx in range(max_measure + 1):
+        events = by_measure.get(m_idx, {})
+        chosen_div = _SM_TICKS_PER_MEASURE
+        for div in _SM_MEASURE_DIVISORS:
+            step = _SM_TICKS_PER_MEASURE // div
+            if all(pos % step == 0 for pos in events):
+                chosen_div = div
+                break
+        step = _SM_TICKS_PER_MEASURE // chosen_div
+        rows = [events.get(r * step, "0000") for r in range(chosen_div)]
+        measure_blocks.append("\n".join(rows))
+
+    return "\n,\n".join(measure_blocks), sm_offset
 
 
 @dataclasses.dataclass(frozen=True)
@@ -21,11 +77,17 @@ class OutputData:
         title: Song title.
         bpm: Beats per minute of the song.
         notes: Mapping from difficulty name to a list of ``(timestamp_str, arrow_str)`` tuples.
+        offset: StepMania ``#OFFSET`` in seconds (``-anchor_time_sec`` where
+            Measure 1 Beat 0 starts at ``anchor_time_sec``).
+        beat_grid: Optional :class:`stepcovnet.beat_tracking.BeatGrid` carrying
+            tracked beats and downbeats from raw audio.
     """
 
     title: str
     bpm: int
     notes: dict[str, list[tuple[str, str]]]
+    offset: float = 0.0
+    beat_grid: beat_tracking.BeatGrid | None = None
 
     def generate_txt_output(self) -> str:
         """Generate a formatted string representation of the step chart.
@@ -41,6 +103,78 @@ class OutputData:
             for timing, arrow in self.notes[difficulty]:
                 notes += f"{arrow} {timing}\n"
         return "".join((title, bpm, notes))
+
+    def generate_sm_output(
+        self,
+        *,
+        music_filename: str = "",
+        meter: int = 10,
+    ) -> str:
+        """Generate a StepMania ``.sm`` simfile aligned to tracked downbeats.
+
+        Uses :attr:`beat_grid` (when available) to anchor Measure 1 Beat 0 on
+        the detected downbeat via ``#OFFSET`` and quantizes notes cleanly onto
+        the StepMania 192-tick measure grid.
+
+        Args:
+            music_filename: Audio filename written to ``#MUSIC``.
+            meter: Difficulty meter written to each ``#NOTES`` block.
+
+        Returns:
+            Formatted StepMania ``.sm`` file content.
+        """
+        bpm_val = (
+            float(self.beat_grid.bpm) if self.beat_grid is not None else float(self.bpm)
+        )
+        anchor_time = (
+            self.beat_grid.anchor_time_sec
+            if self.beat_grid is not None
+            else -float(self.offset)
+        )
+
+        # Compute a shared #OFFSET across all difficulty charts so every chart
+        # aligns to the same Measure 1 Beat 0.
+        all_rows = [row for rows in self.notes.values() for row in rows]
+        _, shared_offset = _format_sm_measures(
+            all_rows,
+            bpm=bpm_val,
+            anchor_time_sec=anchor_time,
+            beat_grid=self.beat_grid,
+        )
+        shared_anchor = -shared_offset
+
+        header = (
+            f"#TITLE:{self.title};\n"
+            f"#SUBTITLE:;\n"
+            f"#ARTIST:;\n"
+            f"#CREDIT:StepCOVNet;\n"
+            f"#MUSIC:{music_filename};\n"
+            f"#OFFSET:{shared_offset:.6f};\n"
+            f"#SAMPLESTART:0.000;\n"
+            f"#SAMPLELENGTH:15.000;\n"
+            f"#SELECTABLE:YES;\n"
+            f"#BPMS:0.000={bpm_val:.3f};\n"
+            f"#STOPS:;\n"
+        )
+        note_blocks: list[str] = []
+        for difficulty, rows in self.notes.items():
+            body, _ = _format_sm_measures(
+                rows,
+                bpm=bpm_val,
+                anchor_time_sec=shared_anchor,
+                beat_grid=self.beat_grid,
+            )
+            note_blocks.append(
+                "\n#NOTES:\n"
+                "     dance-single:\n"
+                "     :\n"
+                f"     {difficulty}:\n"
+                f"     {int(meter)}:\n"
+                "     0.000,0.000,0.000,0.000,0.000:\n"
+                f"{body}\n"
+                ";\n"
+            )
+        return header + "".join(note_blocks)
 
 
 def _int_to_base4_string(n: int, min_digits: int = 1) -> str:
@@ -251,6 +385,7 @@ def generate_output_data(
     """
     required_arrow = _required_arrow_inputs(arrow_model)
     normalized_spec: np.ndarray | None = None
+    beat_grid: beat_tracking.BeatGrid | None = None
 
     if _is_itgpt_placement_model(onset_model):
         onsets, beat_grid = beat_tracking.predict_itgpt_onsets_from_audio(
@@ -270,7 +405,15 @@ def generate_output_data(
             normalized_spec = datasets.normalize_onset_spectrogram(spec)
     else:
         if bpm is None:
-            bpm = _estimate_bpm_from_audio(audio_path, beat_tracker=beat_tracker)
+            if beat_tracker != beat_tracking.TRACKER_LIBROSA:
+                beat_grid = beat_tracking.estimate_beats(
+                    audio_path,
+                    tracker=beat_tracker,
+                    snap_to_onsets=snap_beats,
+                )
+                bpm = max(1, min(9999, int(round(beat_grid.bpm))))
+            else:
+                bpm = _estimate_bpm_from_audio(audio_path, beat_tracker=beat_tracker)
         spec = datasets.audio_to_spectrogram(audio_path).T
         normalized_spec = datasets.normalize_onset_spectrogram(spec)
         onset_pred = _run_onset_inference(onset_model, normalized_spec)
@@ -307,7 +450,11 @@ def generate_output_data(
             step_idx = datasets.step_index_normalized(len(onsets))
             arrow_feed[base] = np.expand_dims(step_idx, axis=(0, -1))
         elif base == "beat_phase_input":
-            beat_ph = datasets.beat_phase_from_times_bpm(onsets, float(bpm))
+            beat_ph = (
+                beat_grid.beat_phase_for_times(onsets)
+                if beat_grid is not None
+                else datasets.beat_phase_from_times_bpm(onsets, float(bpm))
+            )
             arrow_feed[base] = np.expand_dims(beat_ph, axis=(0, -1))
         elif base == "snippet_input":
             assert normalized_spec is not None
@@ -327,6 +474,8 @@ def generate_output_data(
         notes={
             "Challenge": _create_txt_mapping(onsets=list(onsets), arrows=list(arrows)),
         },
+        offset=beat_grid.sm_offset_sec if beat_grid is not None else 0.0,
+        beat_grid=beat_grid,
     )
 
 

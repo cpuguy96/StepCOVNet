@@ -20,6 +20,7 @@ import typing
 from tkinter import filedialog, messagebox
 
 from stepcovnet import (
+    beat_tracking,
     generator,
     pretrained,
     trainers,
@@ -35,6 +36,7 @@ MODEL_TYPES = [
 ]
 TXT_TYPES = [
     ("Text files", "*.txt"),
+    ("StepMania simfiles", "*.sm"),
     ("All files", "*.*"),
 ]
 
@@ -83,6 +85,53 @@ def _validate_inputs(
     )
 
 
+def _validate_advanced_options(
+    beat_tracker: str,
+    target_density_str: str,
+    threshold_str: str,
+) -> tuple[bool, str | tuple[str, float, float]]:
+    """Validate beat tracker, ITGPT target density, and onset threshold inputs.
+
+    Args:
+        beat_tracker: Beat tracker backend name.
+        target_density_str: Target average steps per beat string (blank -> 2.0).
+        threshold_str: Onset probability threshold string (blank -> 0.5).
+
+    Returns:
+        ``(False, error_message)`` or ``(True, (beat_tracker, target_density, threshold))``.
+    """
+    tracker = beat_tracker.strip() or beat_tracking.TRACKER_AUTO
+    if tracker not in beat_tracking.VALID_TRACKERS:
+        return (
+            False,
+            f"Beat tracker must be one of {', '.join(beat_tracking.VALID_TRACKERS)}.",
+        )
+
+    density_s = target_density_str.strip()
+    if not density_s:
+        target_density = 2.0
+    else:
+        try:
+            target_density = float(density_s)
+        except ValueError:
+            return (False, "Target density must be a positive number.")
+        if not (target_density > 0.0 and target_density <= 32.0):
+            return (False, "Target density must be greater than 0 and at most 32.")
+
+    thr_s = threshold_str.strip()
+    if not thr_s:
+        threshold = 0.5
+    else:
+        try:
+            threshold = float(thr_s)
+        except ValueError:
+            return (False, "Onset threshold must be a number between 0 and 1.")
+        if not (0.0 < threshold < 1.0):
+            return (False, "Onset threshold must be strictly between 0 and 1.")
+
+    return (True, (tracker, target_density, threshold))
+
+
 def _run_generation(
     audio_path: str,
     song_title: str,
@@ -92,12 +141,20 @@ def _run_generation(
     output_path: str,
     use_post_processing: bool,
     result_queue: queue.Queue,
+    *,
+    beat_tracker: str = beat_tracking.TRACKER_AUTO,
+    snap_beats: bool = False,
+    target_density: float = 2.0,
+    threshold: float = 0.5,
 ) -> None:
     """Load models, run generator, write output. Puts (True, output_path) or (False, error_msg) into result_queue."""
     try:
         onset_path = pretrained.resolve_onset_model_path(onset_model_path)
         arrow_path = pretrained.resolve_arrow_model_path(arrow_model_path)
-        onset_model = trainers.load_onset_model(onset_path)
+        if beat_tracking.is_itgpt_checkpoint(onset_path):
+            onset_model = beat_tracking.load_onset_model_auto(onset_path)
+        else:
+            onset_model = trainers.load_onset_model(onset_path)
         arrow_model = trainers.load_arrow_model(arrow_path)
         output_data = generator.generate_output_data(
             audio_path=audio_path,
@@ -106,9 +163,20 @@ def _run_generation(
             onset_model=onset_model,
             arrow_model=arrow_model,
             use_post_processing=use_post_processing,
+            beat_tracker=beat_tracker,
+            snap_beats=snap_beats,
+            target_density=target_density,
+            threshold=threshold,
         )
-        with pathlib.Path(output_path).open("w") as f:
-            f.write(output_data.generate_txt_output())
+        out_path = pathlib.Path(output_path)
+        if out_path.suffix.lower() == ".sm":
+            content = output_data.generate_sm_output(
+                music_filename=pathlib.Path(audio_path).name
+            )
+        else:
+            content = output_data.generate_txt_output()
+        with out_path.open("w") as f:
+            f.write(content)
         result_queue.put(("generation", True, output_path))
     except Exception as e:  # noqa: BLE001
         result_queue.put(("generation", False, str(e)))
@@ -125,8 +193,12 @@ class _GeneratorApp:
         bpm_var: StringVar for BPM (optional).
         onset_model_var: StringVar for onset model path.
         arrow_model_var: StringVar for arrow model path.
-        output_path_var: StringVar for output .txt path.
+        output_path_var: StringVar for output .txt or .sm path.
         use_post_processing_var: BooleanVar for post-processing toggle.
+        beat_tracker_var: StringVar for beat tracker backend (auto/beat_this/librosa).
+        snap_beats_var: BooleanVar for onset-transient beat snapping toggle.
+        target_density_var: StringVar for ITGPT target density (steps/beat).
+        threshold_var: StringVar for onset probability threshold.
         status_var: StringVar for status text.
         canvas: Canvas used for the scrollable form area.
         run_btn: Generate chart button.
@@ -137,7 +209,7 @@ class _GeneratorApp:
         self.root = root
         root.title("StepCOVNet Generator")
         root.minsize(400, 320)
-        root.geometry("480x540")
+        root.geometry("480x640")
         root.resizable(True, True)
         root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -152,6 +224,10 @@ class _GeneratorApp:
         self.arrow_model_var = tk.StringVar()
         self.output_path_var = tk.StringVar()
         self.use_post_processing_var = tk.BooleanVar(value=False)
+        self.beat_tracker_var = tk.StringVar(value=beat_tracking.TRACKER_AUTO)
+        self.snap_beats_var = tk.BooleanVar(value=False)
+        self.target_density_var = tk.StringVar(value="2.0")
+        self.threshold_var = tk.StringVar(value="0.5")
         self.status_var = tk.StringVar(value="")
 
         outer = tk.Frame(root, padx=12, pady=12)
@@ -228,15 +304,43 @@ class _GeneratorApp:
         )
         self.clear_cache_btn.pack(side=tk.LEFT)
         self._row += 1
-        self._add_row("Output file (.txt):", self.output_path_var, self.browse_output)
+        self._add_row(
+            "Output file (.txt or .sm):", self.output_path_var, self.browse_output
+        )
+
+        tracker_row = tk.Frame(main_frame)
+        tracker_row.grid(row=self._row, column=0, sticky=tk.W, pady=(4, 6))
+        self._row += 1
+        tk.Label(tracker_row, text="Beat tracker:", anchor=tk.W).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        tk.OptionMenu(
+            tracker_row,
+            self.beat_tracker_var,
+            *beat_tracking.VALID_TRACKERS,
+        ).pack(side=tk.LEFT)
+
+        self._add_row(
+            "Target density (steps/beat, ITGPT models; default 2.0):",
+            self.target_density_var,
+        )
+        self._add_row(
+            "Onset threshold (0–1; default 0.5):",
+            self.threshold_var,
+        )
 
         cb_frame = tk.Frame(main_frame)
         cb_frame.grid(row=self._row, column=0, sticky=tk.W, pady=(4, 12))
         self._row += 1
         tk.Checkbutton(
             cb_frame,
-            text="Use post-processing (peak-picking for onset timings)",
+            text="Use post-processing (peak-picking for legacy onset timings)",
             variable=self.use_post_processing_var,
+        ).pack(anchor=tk.W)
+        tk.Checkbutton(
+            cb_frame,
+            text="Snap beats to audio transients (constant phase alignment)",
+            variable=self.snap_beats_var,
         ).pack(anchor=tk.W)
 
         self.run_btn.pack(side=tk.LEFT)
@@ -326,6 +430,19 @@ class _GeneratorApp:
         assert isinstance(result, tuple)
         audio_path, song_title, bpm_val, onset_path, arrow_path, output_path = result
 
+        adv_ok, adv_result = _validate_advanced_options(
+            self.beat_tracker_var.get(),
+            self.target_density_var.get(),
+            self.threshold_var.get(),
+        )
+        if not adv_ok:
+            assert isinstance(adv_result, str)
+            messagebox.showerror("Validation", adv_result)
+            return
+        assert isinstance(adv_result, tuple)
+        beat_tracker, target_density, threshold = adv_result
+        snap_beats = bool(self.snap_beats_var.get())
+
         self.run_btn.config(state=tk.DISABLED)
         self.set_status("Processing…")
 
@@ -339,6 +456,10 @@ class _GeneratorApp:
                 output_path=output_path,
                 use_post_processing=self.use_post_processing_var.get(),
                 result_queue=self.result_queue,
+                beat_tracker=beat_tracker,
+                snap_beats=snap_beats,
+                target_density=target_density,
+                threshold=threshold,
             )
 
         thread = threading.Thread(target=worker, daemon=True)

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import pathlib
+import queue
 import sys
 import tempfile
 import unittest
+import warnings
 from unittest import mock
 
 import numpy as np
@@ -18,6 +20,7 @@ from stepcovnet import (
     generator,
     models,
 )
+from stepcovnet.dataset_prep import simfile_parser
 from stepcovnet.pytorch.itgpt import models as itgpt_models
 from stepcovnet.pytorch.itgpt import trainers as itgpt_trainers
 
@@ -26,6 +29,7 @@ if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
 import generate as generate_script  # noqa: E402
+import generate_ui as generate_ui_script  # noqa: E402
 
 
 class BeatThisModelUnitTest(unittest.TestCase):
@@ -398,6 +402,188 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
                 str(ckpt_path), device=torch.device("cpu")
             )
             self.assertTrue(generator._is_itgpt_placement_model(loaded))
+
+    def test_parabolic_sub_frame_peak_refinement(self) -> None:
+        # True quadratic peak at frame 50.25 (1.005 s at 50 FPS):
+        # y(k) = 5 - 4 * (k - 50.25)^2
+        idx = np.arange(120, dtype=np.float64)
+        beat_logits = torch.tensor(5.0 - 4.0 * (idx - 50.25) ** 2, dtype=torch.float32)
+        db_logits = torch.full((120,), -5.0, dtype=torch.float32)
+
+        raw_beats, _ = beat_this_model.postprocess_minimal(
+            beat_logits, db_logits, fps=50, sub_frame=False
+        )
+        refined_beats, _ = beat_this_model.postprocess_minimal(
+            beat_logits, db_logits, fps=50, sub_frame=True
+        )
+        self.assertAlmostEqual(float(raw_beats[0]), 1.000, places=5)
+        self.assertAlmostEqual(float(refined_beats[0]), 1.005, places=5)
+
+    def test_offline_auto_fallback_to_librosa_on_checkpoint_error(self) -> None:
+        fake_beats = np.array([0.5, 1.0, 1.5, 2.0], dtype=np.float64)
+        with (
+            mock.patch.object(
+                beat_tracking.beat_this_model,
+                "predict_beats_from_audio",
+                side_effect=beat_this_model.BeatThisCheckpointError("offline"),
+            ),
+            mock.patch.object(
+                beat_tracking.librosa,
+                "load",
+                return_value=(np.zeros(44100, dtype=np.float32), constants.TARGET_SR),
+            ),
+            mock.patch.object(
+                beat_tracking.librosa.beat,
+                "beat_track",
+                return_value=(np.array([120.0]), fake_beats),
+            ),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter("always")
+            grid = beat_tracking.estimate_beats(
+                "song.ogg", tracker=beat_tracking.TRACKER_AUTO
+            )
+            self.assertEqual(grid.tracker, beat_tracking.TRACKER_LIBROSA)
+            self.assertTrue(any(w.category is RuntimeWarning for w in caught))
+
+            # Explicit tracker='beat_this' must still raise BeatThisCheckpointError.
+            with self.assertRaises(beat_this_model.BeatThisCheckpointError):
+                beat_tracking.estimate_beats(
+                    "song.ogg", tracker=beat_tracking.TRACKER_BEAT_THIS
+                )
+
+    def test_beat_grid_phase_and_sm_export_roundtrip(self) -> None:
+        # 120 BPM (0.5 s/beat), first beat at 0.25 s, first downbeat at 1.25 s
+        # (includes a pickup beat before the first downbeat).
+        beats = 0.25 + np.arange(16, dtype=np.float64) * 0.5
+        downbeats = np.array([1.25, 3.25, 5.25, 7.25], dtype=np.float64)
+        grid = beat_tracking.BeatGrid(
+            beat_times=beats,
+            downbeat_times=downbeats,
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        self.assertAlmostEqual(grid.anchor_time_sec, 1.25, places=6)
+        self.assertAlmostEqual(grid.sm_offset_sec, -1.25, places=6)
+
+        # Beat phases for quarter + eighth notes on the grid
+        test_times = np.array([0.75, 1.25, 1.50, 1.75], dtype=np.float64)
+        phases = grid.beat_phase_for_times(test_times)
+        np.testing.assert_allclose(phases, [0.0, 0.0, 0.5, 0.0], atol=1e-5)
+
+        out = generator.OutputData(
+            title="Aligned Song",
+            bpm=120,
+            notes={
+                "Challenge": [
+                    ("0.75", "1000"),  # pickup beat before first downbeat
+                    ("1.25", "0100"),  # downbeat
+                    ("1.5", "0010"),  # 8th note
+                    ("1.875", "0001"),  # 16th note
+                ]
+            },
+            offset=grid.sm_offset_sec,
+            beat_grid=grid,
+        )
+        sm_text = out.generate_sm_output(music_filename="song.ogg", meter=9)
+        self.assertIn("#TITLE:Aligned Song;", sm_text)
+        self.assertIn("#MUSIC:song.ogg;", sm_text)
+        self.assertIn("#BPMS:0.000=120.000;", sm_text)
+
+        # Round-trip through StepCOVNet's own StepMania simfile parser + TimingEngine
+        parsed = simfile_parser.parse_simfile_text(sm_text)
+        self.assertEqual(len(parsed.charts), 1)
+        timing = simfile_parser.TimingEngine(
+            simfile_parser.TimingData.from_simfile(parsed, parsed.charts[0])
+        )
+        notes = list(simfile_parser.iter_chart_notes(parsed.charts[0]))
+        recovered_times = np.asarray(
+            [timing.time_at(n.beat) for n in notes], dtype=np.float64
+        )
+        expected_times = np.asarray([0.75, 1.25, 1.5, 1.875], dtype=np.float64)
+        np.testing.assert_allclose(recovered_times, expected_times, atol=0.005)
+
+    def test_generate_ui_advanced_options_and_sm_output(self) -> None:
+        ok, vals = generate_ui_script._validate_advanced_options(
+            "beat_this", "2.5", "0.55"
+        )
+        self.assertTrue(ok)
+        self.assertEqual(vals, ("beat_this", 2.5, 0.55))
+
+        ok_bad_tracker, _ = generate_ui_script._validate_advanced_options(
+            "invalid", "2.0", "0.5"
+        )
+        self.assertFalse(ok_bad_tracker)
+        ok_bad_density, _ = generate_ui_script._validate_advanced_options(
+            "auto", "0", "0.5"
+        )
+        self.assertFalse(ok_bad_density)
+        ok_bad_thr, _ = generate_ui_script._validate_advanced_options(
+            "auto", "2.0", "1.5"
+        )
+        self.assertFalse(ok_bad_thr)
+
+        # _run_generation writes .sm when output_path ends with .sm and forwards args.
+        fake_out = generator.OutputData(
+            title="UI SM Test",
+            bpm=120,
+            notes={"Challenge": [("0.5", "1000"), ("1.0", "0001")]},
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_sm = pathlib.Path(tmpdir) / "chart.sm"
+            q: queue.Queue = queue.Queue()
+            with (
+                mock.patch.object(
+                    generate_ui_script.pretrained,
+                    "resolve_onset_model_path",
+                    return_value="/fake/onset.pt",
+                ),
+                mock.patch.object(
+                    generate_ui_script.pretrained,
+                    "resolve_arrow_model_path",
+                    return_value="/fake/arrow.pt",
+                ),
+                mock.patch.object(
+                    generate_ui_script.trainers,
+                    "load_onset_model",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_ui_script.trainers,
+                    "load_arrow_model",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_ui_script.generator,
+                    "generate_output_data",
+                    return_value=fake_out,
+                ) as mock_gen,
+            ):
+                generate_ui_script._run_generation(
+                    audio_path="/songs/demo.ogg",
+                    song_title="UI SM Test",
+                    bpm=None,
+                    onset_model_path=None,
+                    arrow_model_path=None,
+                    output_path=str(out_sm),
+                    use_post_processing=False,
+                    result_queue=q,
+                    beat_tracker="beat_this",
+                    snap_beats=True,
+                    target_density=2.5,
+                    threshold=0.55,
+                )
+            src, success, val = q.get_nowait()
+            self.assertEqual(src, "generation")
+            self.assertTrue(success, msg=str(val))
+            kw = mock_gen.call_args.kwargs
+            self.assertEqual(kw["beat_tracker"], "beat_this")
+            self.assertTrue(kw["snap_beats"])
+            self.assertAlmostEqual(kw["target_density"], 2.5)
+            self.assertAlmostEqual(kw["threshold"], 0.55)
+            sm_written = out_sm.read_text()
+            self.assertIn("#TITLE:UI SM Test;", sm_written)
+            self.assertIn("#MUSIC:demo.ogg;", sm_written)
 
 
 if __name__ == "__main__":

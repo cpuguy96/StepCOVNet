@@ -9,14 +9,11 @@ Usage:
 import argparse
 import pathlib
 
-import torch
-
 from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/generate.py")
 
 from stepcovnet import beat_tracking, generator, pretrained, trainers
-from stepcovnet.itgpt import trainers as itgpt_trainers
 from stepcovnet.pytorch import runtime
 
 PARSER = argparse.ArgumentParser(description="Generate step chart from audio.")
@@ -115,18 +112,12 @@ PARSER.add_argument(
 
 def _is_itgpt_checkpoint(path: str) -> bool:
     """Return True if ``path`` holds a saved PyTorch ITGPT placement checkpoint."""
-    payload = torch.load(pathlib.Path(path), map_location="cpu", weights_only=False)
-    if not isinstance(payload, dict):
-        return False
-    model_cfg = payload.get("model_config")
-    return isinstance(model_cfg, dict) and "n_enc_layers" in model_cfg
+    return beat_tracking.is_itgpt_checkpoint(path)
 
 
 def _load_onset_model_auto(onset_path: str, *, device: object) -> object:
     """Load either an ITGPT-MERT placement model or a legacy dense onset model."""
-    if _is_itgpt_checkpoint(onset_path):
-        return itgpt_trainers.load_placement_model(onset_path, device=device)  # type: ignore[arg-type]
-    return trainers.load_onset_model(onset_path, device=device)  # type: ignore[arg-type]
+    return beat_tracking.load_onset_model_auto(onset_path, device=device)  # type: ignore[arg-type]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -152,8 +143,16 @@ def main(argv: list[str] | None = None) -> None:
         threshold=args.threshold,
     )
 
-    with pathlib.Path(args.output_file).open("w") as f:
-        f.write(output_data.generate_txt_output())
+    out_path = pathlib.Path(args.output_file)
+    if out_path.suffix.lower() == ".sm":
+        content = output_data.generate_sm_output(
+            music_filename=pathlib.Path(args.audio_path).name,
+            meter=args.meter,
+        )
+    else:
+        content = output_data.generate_txt_output()
+    with out_path.open("w") as f:
+        f.write(content)
     print(f"Successfully generated step chart at {args.output_file}")
 
 

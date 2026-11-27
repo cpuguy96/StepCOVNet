@@ -11,18 +11,20 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+import warnings
 from typing import Any
 
 import librosa
 import numpy as np
 import torch
 
-from stepcovnet import beat_this_model, constants, ssl_features
+from stepcovnet import beat_this_model, constants, ssl_features, trainers
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import features as ddcl_features
 from stepcovnet.itgpt import constants as itgpt_constants
 from stepcovnet.pytorch import runtime
 from stepcovnet.pytorch.itgpt import evaluation as itgpt_eval
+from stepcovnet.pytorch.itgpt import trainers as itgpt_trainers
 
 TRACKER_AUTO = "auto"
 TRACKER_BEAT_THIS = "beat_this"
@@ -95,6 +97,73 @@ class BeatGrid:
         ibis = np.diff(self.beat_times_with_end)
         bpms = 60.0 / np.maximum(ibis, 1e-3)
         return np.clip(bpms, min_bpm, max_bpm).astype(np.float32)
+
+    @property
+    def anchor_time_sec(self) -> float:
+        """Measure-1 beat-0 timestamp in seconds (first downbeat if available)."""
+        if self.downbeat_times.size > 0:
+            return float(self.downbeat_times[0])
+        return float(self.beat_times[0])
+
+    @property
+    def sm_offset_sec(self) -> float:
+        """StepMania ``#OFFSET`` in seconds (``-anchor_time_sec``)."""
+        return -self.anchor_time_sec
+
+    def times_to_beats(
+        self,
+        times: np.ndarray,
+        *,
+        anchor_time_sec: float | None = None,
+    ) -> np.ndarray:
+        """Map onset timestamps in seconds to continuous beat indices.
+
+        Uses piecewise-linear interpolation across ``self.beat_times`` and
+        extrapolates linearly beyond the first/last beat using the boundary
+        inter-beat interval. Beat ``0.0`` corresponds to ``anchor_time_sec``
+        (defaulting to :attr:`anchor_time_sec`, i.e., the first downbeat).
+
+        Args:
+            times: 1D array of timestamps in seconds.
+            anchor_time_sec: Optional override for the beat-0 timestamp.
+
+        Returns:
+            Float64 array of continuous beat indices with the same shape as
+            ``times``.
+        """
+        t_arr = np.asarray(times, dtype=np.float64)
+        bt = np.asarray(self.beat_times, dtype=np.float64).reshape(-1)
+        idx_grid = np.arange(bt.size, dtype=np.float64)
+
+        def _interp(vals: np.ndarray) -> np.ndarray:
+            out = np.interp(vals, bt, idx_grid)
+            first_ibi = max(float(bt[1] - bt[0]), 1e-6)
+            last_ibi = max(float(bt[-1] - bt[-2]), 1e-6)
+            before = vals < bt[0]
+            if np.any(before):
+                out = np.where(before, (vals - bt[0]) / first_ibi, out)
+            after = vals > bt[-1]
+            if np.any(after):
+                out = np.where(after, idx_grid[-1] + (vals - bt[-1]) / last_ibi, out)
+            return out
+
+        anchor = (
+            self.anchor_time_sec if anchor_time_sec is None else float(anchor_time_sec)
+        )
+        anchor_beat = float(_interp(np.asarray([anchor], dtype=np.float64))[0])
+        return _interp(t_arr) - anchor_beat
+
+    def beat_phase_for_times(self, times: np.ndarray) -> np.ndarray:
+        """Compute fractional beat phase in ``[0, 1)`` for each timestamp.
+
+        Args:
+            times: 1D array of onset timestamps in seconds.
+
+        Returns:
+            Float32 array of beat phases in ``[0, 1)``.
+        """
+        beats = self.times_to_beats(times)
+        return np.mod(beats, 1.0).astype(np.float32)
 
 
 def _clean_beat_times(
@@ -291,10 +360,16 @@ def estimate_beats(
 ) -> BeatGrid:
     """Estimate a :class:`BeatGrid` from raw audio using the selected backend.
 
+    In ``"auto"`` mode, uses the built-in ``beat_this`` model and falls back
+    gracefully to ``librosa`` with a warning if the Beat This! checkpoint
+    cannot be loaded (for example, in an offline environment without cached
+    weights).
+
     Args:
         audio_path: Path to the input audio file.
         tracker: Backend selector: ``"auto"`` (uses the built-in ``beat_this``
-            tracker by default), ``"beat_this"``, or ``"librosa"``.
+            tracker with offline ``librosa`` fallback), ``"beat_this"``, or
+            ``"librosa"``.
         device: Compute device forwarded to ``beat_this``.
         snap_to_onsets: If True, apply :func:`snap_beats_to_onsets` to correct
             constant beat-annotation phase bias.
@@ -314,13 +389,64 @@ def estimate_beats(
     elif tracker == TRACKER_LIBROSA:
         grid = estimate_beats_librosa(audio_path)
     elif beat_this_available():
-        grid = estimate_beats_beat_this(audio_path, device=device)
+        try:
+            grid = estimate_beats_beat_this(audio_path, device=device)
+        except beat_this_model.BeatThisCheckpointError as exc:
+            warnings.warn(
+                f"Falling back to librosa beat tracker because Beat This! "
+                f"checkpoint could not be loaded: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            grid = estimate_beats_librosa(audio_path)
     else:
         grid = estimate_beats_librosa(audio_path)
 
     if snap_to_onsets:
         grid = snap_beats_to_onsets(grid, audio_path)
     return grid
+
+
+def is_itgpt_checkpoint(checkpoint_path: str | pathlib.Path) -> bool:
+    """Return True if ``checkpoint_path`` is a saved PyTorch ITGPT checkpoint.
+
+    Args:
+        checkpoint_path: Path to a ``.pt`` checkpoint file.
+
+    Returns:
+        True if the file exists and holds a serialized ITGPT placement config.
+    """
+    path = pathlib.Path(checkpoint_path)
+    if not path.is_file():
+        return False
+    try:
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+    except Exception:  # noqa: BLE001
+        return False
+    if not isinstance(payload, dict):
+        return False
+    model_cfg = payload.get("model_config")
+    return isinstance(model_cfg, dict) and "n_enc_layers" in model_cfg
+
+
+def load_onset_model_auto(
+    checkpoint_path: str | pathlib.Path,
+    *,
+    device: str | torch.device | None = None,
+) -> Any:
+    """Load either an ITGPT placement checkpoint or a legacy dense onset model.
+
+    Args:
+        checkpoint_path: Path to a ``.pt`` onset model checkpoint.
+        device: Optional target device.
+
+    Returns:
+        Loaded PyTorch onset model ready for inference.
+    """
+    target = runtime.resolve_device(device)
+    if is_itgpt_checkpoint(checkpoint_path):
+        return itgpt_trainers.load_placement_model(str(checkpoint_path), device=target)
+    return trainers.load_onset_model(str(checkpoint_path), device=target)
 
 
 def decode_itgpt_slots_to_times(

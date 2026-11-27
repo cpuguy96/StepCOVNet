@@ -915,22 +915,69 @@ def deduplicate_peaks(peaks: np.ndarray, width: int = 1) -> np.ndarray:
     return np.asarray(result, dtype=np.float64)
 
 
+class BeatThisCheckpointError(RuntimeError, ValueError):
+    """Raised when a Beat This! checkpoint cannot be loaded or downloaded."""
+
+
+def _refine_peak_frames_parabolic(
+    frames: np.ndarray,
+    logits: np.ndarray,
+) -> np.ndarray:
+    """Refine integer peak frame indices via 3-point quadratic interpolation.
+
+    Eliminates 50 FPS (20 ms) frame-quantization jitter on isolated logit peaks
+    by fitting a parabola to ``(logits[k-1], logits[k], logits[k+1])``. Peaks
+    that were already averaged across tied adjacent frames (non-integer frame
+    indices) or lie on the sequence boundary are left unchanged.
+
+    Args:
+        frames: 1D float64 array of deduplicated peak frame indices.
+        logits: 1D float array of framewise logits.
+
+    Returns:
+        1D float64 array of sub-frame-refined peak positions.
+    """
+    n_frames = int(logits.shape[0])
+    if frames.size == 0 or n_frames < 3:
+        return frames
+    refined = frames.astype(np.float64, copy=True)
+    for idx, pos in enumerate(refined):
+        nearest = round(float(pos))
+        if abs(float(pos) - float(nearest)) > 1e-6:
+            continue
+        if nearest <= 0 or nearest >= n_frames - 1:
+            continue
+        y_m1 = float(logits[nearest - 1])
+        y_0 = float(logits[nearest])
+        y_p1 = float(logits[nearest + 1])
+        denom = y_m1 - 2.0 * y_0 + y_p1
+        if denom < -1e-6:
+            delta = 0.5 * (y_m1 - y_p1) / denom
+            refined[idx] = float(nearest) + float(np.clip(delta, -0.5, 0.5))
+    return refined
+
+
 def postprocess_minimal(
     beat_logits: torch.Tensor,
     downbeat_logits: torch.Tensor,
     *,
     fps: int = BEAT_THIS_FPS,
+    sub_frame: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Beat This! minimal peak-picking postprocessor (no DBN required).
 
     Applies 7-frame (±70 ms at 50 FPS) local-maximum picking, retains peaks
     with ``logit > 0`` (probability ``> 0.5``), deduplicates adjacent peaks,
-    converts frames to seconds, and snaps each downbeat to its nearest beat.
+    optionally refines integer peaks via 3-point parabolic interpolation to
+    eliminate 20 ms frame-quantization jitter, converts frames to seconds, and
+    snaps each downbeat to its nearest beat.
 
     Args:
         beat_logits: 1D framewise beat logit tensor of shape ``(time,)``.
         downbeat_logits: 1D framewise downbeat logit tensor of shape ``(time,)``.
         fps: Frame rate in frames per second (default ``50``).
+        sub_frame: If True (default), apply 3-point parabolic sub-frame peak
+            refinement on ``beat_logits`` and ``downbeat_logits``.
 
     Returns:
         Tuple ``(beat_times_sec, downbeat_times_sec)`` as 1D float64 NumPy
@@ -940,11 +987,25 @@ def postprocess_minimal(
     pooled = nn_func.max_pool1d(packed, kernel_size=7, stride=1, padding=3)
     peaks = (packed == pooled) & (packed > 0.0)
 
-    beat_frames = torch.nonzero(peaks[0], as_tuple=False).cpu().numpy().reshape(-1)
-    downbeat_frames = torch.nonzero(peaks[1], as_tuple=False).cpu().numpy().reshape(-1)
+    beat_frames = deduplicate_peaks(
+        torch.nonzero(peaks[0], as_tuple=False).cpu().numpy().reshape(-1),
+        width=1,
+    )
+    downbeat_frames = deduplicate_peaks(
+        torch.nonzero(peaks[1], as_tuple=False).cpu().numpy().reshape(-1),
+        width=1,
+    )
 
-    beat_times = deduplicate_peaks(beat_frames, width=1) / float(fps)
-    downbeat_times = deduplicate_peaks(downbeat_frames, width=1) / float(fps)
+    if sub_frame:
+        beat_frames = _refine_peak_frames_parabolic(
+            beat_frames, packed[0].detach().cpu().numpy()
+        )
+        downbeat_frames = _refine_peak_frames_parabolic(
+            downbeat_frames, packed[1].detach().cpu().numpy()
+        )
+
+    beat_times = np.maximum(0.0, beat_frames / float(fps))
+    downbeat_times = np.maximum(0.0, downbeat_frames / float(fps))
 
     if beat_times.size > 0 and downbeat_times.size > 0:
         snapped = np.empty_like(downbeat_times)
@@ -982,11 +1043,17 @@ def load_checkpoint(
         ``"hyper_parameters"``.
 
     Raises:
-        ValueError: If the checkpoint cannot be loaded from disk or downloaded.
+        BeatThisCheckpointError: If the checkpoint cannot be loaded from disk
+            or downloaded.
     """
     local_path = pathlib.Path(checkpoint_path)
     if local_path.is_file():
-        return torch.load(local_path, map_location=device, weights_only=True)
+        try:
+            return torch.load(local_path, map_location=device, weights_only=True)
+        except Exception as exc:
+            raise BeatThisCheckpointError(
+                f"Could not load local Beat This! checkpoint {checkpoint_path!r}"
+            ) from exc
 
     if checkpoint_path.startswith(("https://", "http://")):
         url = checkpoint_path
@@ -1003,7 +1070,7 @@ def load_checkpoint(
             weights_only=True,
         )
     except Exception as exc:
-        raise ValueError(
+        raise BeatThisCheckpointError(
             f"Could not load Beat This! checkpoint {checkpoint_path!r} from {url}"
         ) from exc
 
@@ -1052,6 +1119,7 @@ def predict_beats_from_waveform(
     checkpoint_path: str = DEFAULT_CHECKPOINT,
     device: str | torch.device = "cpu",
     float16: bool = False,
+    sub_frame: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Predict beat and downbeat timestamps from an in-memory audio waveform.
 
@@ -1061,6 +1129,7 @@ def predict_beats_from_waveform(
         checkpoint_path: Beat This! checkpoint name, URL, or local file path.
         device: Target compute device (``"cpu"``, ``"cuda"``, etc.).
         float16: Enable fp16 autocast during transformer inference.
+        sub_frame: Enable 3-point parabolic sub-frame peak refinement.
 
     Returns:
         Tuple ``(beat_times_sec, downbeat_times_sec)`` as 1D float64 arrays.
@@ -1101,7 +1170,9 @@ def predict_beats_from_waveform(
                 border_size=DEFAULT_BORDER_SIZE,
                 overlap_mode="keep_first",
             )
-    return postprocess_minimal(beat_logits, downbeat_logits, fps=BEAT_THIS_FPS)
+    return postprocess_minimal(
+        beat_logits, downbeat_logits, fps=BEAT_THIS_FPS, sub_frame=sub_frame
+    )
 
 
 def predict_beats_from_audio(
@@ -1110,6 +1181,7 @@ def predict_beats_from_audio(
     checkpoint_path: str = DEFAULT_CHECKPOINT,
     device: str | torch.device = "cpu",
     float16: bool = False,
+    sub_frame: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load an audio file and predict beat and downbeat timestamps in seconds.
 
@@ -1118,6 +1190,7 @@ def predict_beats_from_audio(
         checkpoint_path: Beat This! checkpoint name, URL, or local file path.
         device: Target compute device (``"cpu"``, ``"cuda"``, etc.).
         float16: Enable fp16 autocast during transformer inference.
+        sub_frame: Enable 3-point parabolic sub-frame peak refinement.
 
     Returns:
         Tuple ``(beat_times_sec, downbeat_times_sec)`` as 1D float64 arrays.
@@ -1129,4 +1202,5 @@ def predict_beats_from_audio(
         checkpoint_path=checkpoint_path,
         device=device,
         float16=float16,
+        sub_frame=sub_frame,
     )
