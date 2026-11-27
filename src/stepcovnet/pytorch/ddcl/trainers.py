@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import pathlib
@@ -189,19 +190,30 @@ def train_placement(
     model = model.to(target_device)
 
     criterion = models.BinaryFocalWithLogitsLoss().to(target_device)
+    initial_lr = (
+        float(experiment.run.min_learning_rate)
+        if experiment.run.lr_schedule == constants.LR_SCHEDULE_COSINE
+        and experiment.run.warmup_epochs > 0
+        else float(experiment.run.learning_rate)
+    )
     optimizer: torch.optim.Optimizer = (
         torch.optim.AdamW(
             model.parameters(),
-            lr=float(experiment.run.learning_rate),
+            lr=initial_lr,
             weight_decay=float(experiment.run.weight_decay),
             eps=1e-7,
         )
         if experiment.run.weight_decay > 0.0
         else torch.optim.Adam(
             model.parameters(),
-            lr=float(experiment.run.learning_rate),
+            lr=initial_lr,
             eps=1e-7,
         )
+    )
+    ema: runtime.ModelEMA | None = (
+        runtime.ModelEMA(model, momentum=float(experiment.run.ema_momentum))
+        if experiment.run.use_ema
+        else None
     )
 
     output_dir = pathlib.Path(experiment.run.model_output_dir)
@@ -222,6 +234,8 @@ def train_placement(
         state = torch.load(backup_path, map_location="cpu", weights_only=False)
         model.load_state_dict(state["state_dict"])
         optimizer.load_state_dict(state["optimizer_state_dict"])
+        if ema is not None and state.get("ema_state_dict") is not None:
+            ema.load_state_dict(state["ema_state_dict"])
         start_epoch = int(state.get("completed_epoch", 0))
         best_val_loss = state.get("best_val_loss")
         best_slot_f1 = state.get("best_slot_f1")
@@ -238,6 +252,9 @@ def train_placement(
     steps_per_epoch = max(1, int(experiment.run.steps_per_epoch))
     val_steps = max(1, int(experiment.run.validation_steps))
     total_epochs = int(experiment.run.epoch)
+    total_steps = total_epochs * steps_per_epoch
+    warmup_steps = int(experiment.run.warmup_epochs) * steps_per_epoch
+    global_step = start_epoch * steps_per_epoch
     clipnorm = float(experiment.run.clipnorm)
 
     try:
@@ -247,6 +264,16 @@ def train_placement(
             model.train()
             train_loss_sum = 0.0
             for _ in range(steps_per_epoch):
+                if experiment.run.lr_schedule == constants.LR_SCHEDULE_COSINE:
+                    step_lr = runtime.compute_warmup_cosine_lr(
+                        global_step,
+                        peak_lr=float(experiment.run.learning_rate),
+                        min_lr=float(experiment.run.min_learning_rate),
+                        warmup_steps=warmup_steps,
+                        total_steps=total_steps,
+                    )
+                    for group in optimizer.param_groups:
+                        group["lr"] = step_lr
                 inputs_np, target_np = datasets.sample_train_batch(
                     train_charts,
                     batch_size=experiment.dataset.batch_size,
@@ -269,72 +296,125 @@ def train_placement(
                     nn.utils.clip_grad_norm_(model.parameters(), clipnorm)
                 scaler.step(optimizer)
                 scaler.update()
+                if ema is not None:
+                    ema.update(model)
+                global_step += 1
                 train_loss_sum += float(loss.detach().item())
 
-            model.eval()
-            val_loss_sum = 0.0
-            val_rng = np.random.default_rng(experiment.run.seed + 1)
-            with torch.no_grad():
-                for _ in range(val_steps):
-                    v_inputs_np, v_target_np = datasets.sample_train_batch(
-                        val_charts,
-                        batch_size=experiment.dataset.batch_size,
-                        rng=val_rng,
-                    )
-                    v_inputs = {
-                        k: torch.as_tensor(v, dtype=torch.float32, device=target_device)
-                        for k, v in v_inputs_np.items()
-                    }
-                    v_targets = torch.as_tensor(
-                        v_target_np, dtype=torch.float32, device=target_device
-                    )
-                    with runtime.autocast_context(target_device, amp_dtype):
-                        v_logits = model.forward_logits(v_inputs)
-                        v_loss = criterion(v_logits, v_targets)
-                    val_loss_sum += float(v_loss.detach().item())
-
             mean_train = train_loss_sum / float(steps_per_epoch)
-            mean_val = val_loss_sum / float(val_steps)
-            elapsed = time.perf_counter() - t0
-            print(
-                f"Epoch {epoch_num}/{total_epochs} - {elapsed:.1f}s "
-                f"- loss: {mean_train:.5f} - val_loss: {mean_val:.5f}",
-                flush=True,
+            eval_ctx = (
+                ema.average_parameters(model)
+                if ema is not None
+                else contextlib.nullcontext()
             )
+            with eval_ctx:
+                model.eval()
+                val_loss_sum = 0.0
+                val_rng = np.random.default_rng(experiment.run.seed + 1)
+                with torch.no_grad():
+                    for _ in range(val_steps):
+                        v_inputs_np, v_target_np = datasets.sample_train_batch(
+                            val_charts,
+                            batch_size=experiment.dataset.batch_size,
+                            rng=val_rng,
+                        )
+                        v_inputs = {
+                            k: torch.as_tensor(
+                                v, dtype=torch.float32, device=target_device
+                            )
+                            for k, v in v_inputs_np.items()
+                        }
+                        v_targets = torch.as_tensor(
+                            v_target_np, dtype=torch.float32, device=target_device
+                        )
+                        with runtime.autocast_context(target_device, amp_dtype):
+                            v_logits = model.forward_logits(v_inputs)
+                            v_loss = criterion(v_logits, v_targets)
+                        val_loss_sum += float(v_loss.detach().item())
 
-            save_checkpoint(model, last_path, extra={"epoch": epoch_num})
-            if best_val_loss is None or mean_val < best_val_loss:
-                best_val_loss = mean_val
-                save_checkpoint(
-                    model,
-                    best_path,
-                    extra={"epoch": epoch_num, "val_loss": mean_val},
+                mean_val = val_loss_sum / float(val_steps)
+                elapsed = time.perf_counter() - t0
+                current_lr = float(optimizer.param_groups[0]["lr"])
+                print(
+                    f"Epoch {epoch_num}/{total_epochs} - {elapsed:.1f}s "
+                    f"- loss: {mean_train:.5f} - val_loss: {mean_val:.5f} "
+                    f"- lr: {current_lr:.2e}",
+                    flush=True,
                 )
-            if writer is not None:
-                writer.add_scalar("loss/train", mean_train, epoch_num)
-                writer.add_scalar("loss/val", mean_val, epoch_num)
 
-            eval_every = int(experiment.run.eval_slot_f1_every)
-            if eval_every > 0 and (
-                epoch_num % eval_every == 0 or epoch_num == total_epochs
-            ):
-                slot_report = evaluation.evaluate_slot48(
-                    model, val_charts, seed=experiment.run.seed, device=target_device
-                )
-                if writer is not None:
-                    writer.add_scalar(
-                        "val_slot_f1_at_05", float(slot_report.f1_at_05), epoch_num
+                save_checkpoint(model, last_path, extra={"epoch": epoch_num})
+                if best_val_loss is None or mean_val < best_val_loss:
+                    prev_str = (
+                        "inf" if best_val_loss is None else f"{best_val_loss:.5f}"
                     )
-                    writer.add_scalar(
-                        "val_slot_f1_max", float(slot_report.f1_max), epoch_num
-                    )
-                if best_slot_f1 is None or slot_report.f1_at_05 > best_slot_f1:
-                    best_slot_f1 = float(slot_report.f1_at_05)
+                    best_val_loss = mean_val
                     save_checkpoint(
                         model,
-                        best_slot_f1_path,
-                        extra={"epoch": epoch_num, "val_slot_f1_at_05": best_slot_f1},
+                        best_path,
+                        extra={"epoch": epoch_num, "val_loss": mean_val},
                     )
+                    print(
+                        f"Epoch {epoch_num}: val_loss improved from {prev_str} "
+                        f"to {mean_val:.5f}, saving model to {best_path}",
+                        flush=True,
+                    )
+                if writer is not None:
+                    writer.add_scalar("loss/train", mean_train, epoch_num)
+                    writer.add_scalar("loss/val", mean_val, epoch_num)
+                    writer.add_scalar("lr", current_lr, epoch_num)
+                    writer.flush()
+
+                eval_every = int(experiment.run.eval_slot_f1_every)
+                if eval_every > 0 and (
+                    epoch_num % eval_every == 0 or epoch_num == total_epochs
+                ):
+                    slot_report = evaluation.evaluate_slot48(
+                        model,
+                        val_charts,
+                        seed=experiment.run.seed,
+                        device=target_device,
+                    )
+                    if writer is not None:
+                        writer.add_scalar(
+                            "val_slot_f1_at_05",
+                            float(slot_report.f1_at_05),
+                            epoch_num,
+                        )
+                        writer.add_scalar(
+                            "val_slot_f1_max",
+                            float(slot_report.f1_max),
+                            epoch_num,
+                        )
+                        writer.flush()
+                    if best_slot_f1 is None or slot_report.f1_at_05 > best_slot_f1:
+                        prev_f1 = (
+                            "None" if best_slot_f1 is None else f"{best_slot_f1:.5f}"
+                        )
+                        best_slot_f1 = float(slot_report.f1_at_05)
+                        save_checkpoint(
+                            model,
+                            best_slot_f1_path,
+                            extra={
+                                "epoch": epoch_num,
+                                "val_slot_f1_at_05": best_slot_f1,
+                            },
+                        )
+                        print(
+                            f"Epoch {epoch_num}: val_slot_f1_at_05 improved from "
+                            f"{prev_f1} to {best_slot_f1:.5f} "
+                            f"(f1_max={slot_report.f1_max:.5f} @ "
+                            f"{slot_report.best_threshold:.2f}), "
+                            f"saving model to {best_slot_f1_path}",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"Epoch {epoch_num}: val_slot_f1_at_05="
+                            f"{slot_report.f1_at_05:.5f} "
+                            f"(f1_max={slot_report.f1_max:.5f}; "
+                            f"best={best_slot_f1:.5f})",
+                            flush=True,
+                        )
 
             save_checkpoint(
                 model,
@@ -342,6 +422,7 @@ def train_placement(
                 extra={
                     "completed_epoch": epoch_num,
                     "optimizer_state_dict": optimizer.state_dict(),
+                    "ema_state_dict": ema.state_dict() if ema is not None else None,
                     "best_val_loss": best_val_loss,
                     "best_slot_f1": best_slot_f1,
                 },
@@ -354,14 +435,18 @@ def train_placement(
     if backup_dir.exists():
         shutil.rmtree(backup_dir)
 
-    save_path = output_dir / f"{experiment.run.model_name}.pt"
-    save_checkpoint(model, save_path, extra={"epoch": total_epochs})
-    print(f"saved {save_path}")
-
-    last_report = evaluation.evaluate_slot48(
-        model, val_charts, seed=experiment.run.seed, device=target_device
+    final_ctx = (
+        ema.average_parameters(model) if ema is not None else contextlib.nullcontext()
     )
-    _write_eval_report(last_report, output_dir / LAST_EVAL_FILENAME, weights="last")
+    with final_ctx:
+        save_path = output_dir / f"{experiment.run.model_name}.pt"
+        save_checkpoint(model, save_path, extra={"epoch": total_epochs})
+        print(f"saved {save_path}")
+
+        last_report = evaluation.evaluate_slot48(
+            model, val_charts, seed=experiment.run.seed, device=target_device
+        )
+        _write_eval_report(last_report, output_dir / LAST_EVAL_FILENAME, weights="last")
 
     if best_path.is_file():
         best_model = load_placement_model(best_path, device=target_device)

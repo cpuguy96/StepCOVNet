@@ -144,6 +144,10 @@ class ItgptModelConfig(_DictSerializableMixin):
             continuous ``(batch, beats * n_frames_per_beat, feature_dim)``
             stream so its ``Conv1D`` spans beat boundaries rather than
             zero-padding each beat independently.
+        mert_time_mask_max_frames: SpecAugment maximum contiguous MERT frames
+            zeroed per beat during training (``0`` disables time masking).
+        mert_channel_dropout: Channel-wise dropout probability across the MERT
+            feature axis per beat during training (``0.0`` disables).
     """
 
     d_model: int = constants.D_MODEL
@@ -154,12 +158,14 @@ class ItgptModelConfig(_DictSerializableMixin):
     early_film: bool = False
     cyclic_measure_pos: bool = False
     continuous_beat_conv: bool = False
+    mert_time_mask_max_frames: int = 0
+    mert_channel_dropout: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.
 
         Raises:
-            ValueError: If widths are invalid.
+            ValueError: If widths or MERT SpecAugment rates are invalid.
         """
         if self.d_model < 1:
             raise ValueError(f"d_model must be at least 1, got {self.d_model}")
@@ -175,6 +181,16 @@ class ItgptModelConfig(_DictSerializableMixin):
             raise ValueError(f"cnn_hidden must be at least 1, got {self.cnn_hidden}")
         if not 0.0 <= self.dropout_rate < 1.0:
             raise ValueError(f"dropout_rate must be in [0, 1), got {self.dropout_rate}")
+        if self.mert_time_mask_max_frames < 0:
+            raise ValueError(
+                "mert_time_mask_max_frames must be >= 0, "
+                f"got {self.mert_time_mask_max_frames}"
+            )
+        if not 0.0 <= self.mert_channel_dropout < 1.0:
+            raise ValueError(
+                "mert_channel_dropout must be in [0, 1), "
+                f"got {self.mert_channel_dropout}"
+            )
 
 
 @dataclasses.dataclass

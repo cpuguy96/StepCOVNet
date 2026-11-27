@@ -1,0 +1,39 @@
+{
+  "dataset": {
+    "training_index_path": "data/literature_fraxtil_orig/training_index_standard.json",
+    "batch_size": 8,
+    "memlen": 15,
+    "max_train_songs": -1,
+    "max_val_songs": -1,
+    "cache_features": true,
+    "audio_feature_type": "mert",
+    "n_frames_per_beat": 16,
+    "mert_cache_suffix": ".mert_l2_6_10_16.npy"
+  },
+  "model": {
+    "lstm_units": 200,
+    "dropout_rate": 0.2,
+    "dense_sizes": [512, 256],
+    "mert_proj_dim": 128,
+    "mert_conv_filters": 64
+  },
+  "run": {
+    "epoch": 64,
+    "steps_per_epoch": 200,
+    "validation_steps": 20,
+    "learning_rate": 0.0001,
+    "min_learning_rate": 1e-06,
+    "lr_schedule": "cosine",
+    "warmup_epochs": 4,
+    "weight_decay": 0.01,
+    "clipnorm": 1.0,
+    "use_ema": true,
+    "ema_momentum": 0.995,
+    "seed": 42,
+    "eval_slot_f1_every": 8,
+    "model_output_dir": "models_wsl/ddc/ddcl_mert_placement_fraxtil_cosine64_l2_6_10_16_ema",
+    "callback_root_dir": "callbacks/ddc/ddcl_placement",
+    "model_name": "ddcl_mert_placement_fraxtil_cosine64_l2_6_10_16_ema",
+    "resume": false
+  }
+}

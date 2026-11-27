@@ -180,6 +180,12 @@ class DdclRunConfig(_DictSerializableMixin):
         callback_root_dir: TensorBoard / checkpoint root.
         model_name: Artifact name suffix.
         resume: If True, resume from saved backup checkpoints in ``model_output_dir``.
+        lr_schedule: Optimizer schedule (``constant`` or ``cosine``).
+        warmup_epochs: Linear warmup epochs before cosine decay (0 disables).
+        min_learning_rate: Floor LR at warmup start and cosine end.
+        use_ema: If True, enable EMA weight tracking and evaluate/checkpoint
+            with EMA weights.
+        ema_momentum: EMA decay factor in ``(0, 1)`` when ``use_ema`` is True.
     """
 
     epoch: int = 8
@@ -194,13 +200,18 @@ class DdclRunConfig(_DictSerializableMixin):
     callback_root_dir: str = "callbacks/ddc/ddcl_placement"
     model_name: str = "ddcl_placement_fraxtil"
     resume: bool = True
+    lr_schedule: str = constants.LR_SCHEDULE_CONSTANT
+    warmup_epochs: int = 0
+    min_learning_rate: float = 0.0
+    use_ema: bool = False
+    ema_momentum: float = 0.99
 
     def __post_init__(self) -> None:
         """Validate run hyperparameters.
 
         Raises:
-            ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``, or
-                ``eval_slot_f1_every`` is invalid.
+            ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
+                ``eval_slot_f1_every``, LR schedule, or EMA fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -214,6 +225,27 @@ class DdclRunConfig(_DictSerializableMixin):
             raise ValueError(
                 f"eval_slot_f1_every must be >= 0, got {self.eval_slot_f1_every}"
             )
+        if self.lr_schedule not in constants.LR_SCHEDULES:
+            raise ValueError(
+                f"lr_schedule must be one of {constants.LR_SCHEDULES}, "
+                f"got {self.lr_schedule!r}"
+            )
+        if self.warmup_epochs < 0:
+            raise ValueError(f"warmup_epochs must be >= 0, got {self.warmup_epochs}")
+        if (
+            self.lr_schedule == constants.LR_SCHEDULE_COSINE
+            and self.warmup_epochs >= self.epoch
+        ):
+            raise ValueError(
+                f"warmup_epochs ({self.warmup_epochs}) must be < epoch ({self.epoch})"
+            )
+        if not 0.0 <= self.min_learning_rate <= self.learning_rate:
+            raise ValueError(
+                "min_learning_rate must be in [0, learning_rate], "
+                f"got {self.min_learning_rate} vs {self.learning_rate}"
+            )
+        if not 0.0 < self.ema_momentum < 1.0:
+            raise ValueError(f"ema_momentum must be in (0, 1), got {self.ema_momentum}")
 
 
 @dataclasses.dataclass

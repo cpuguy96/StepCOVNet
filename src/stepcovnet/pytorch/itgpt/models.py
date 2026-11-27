@@ -421,6 +421,10 @@ class ItgptBeatMertEncoder(nn.Module):
         d_model: Projected width.
         dropout_rate: Dropout after the first linear projection.
         n_mert_layers: Stacked MERT layer count (``1`` disables layer mixing).
+        mert_time_mask_max_frames: SpecAugment maximum contiguous MERT frames
+            zeroed per beat during training (``0`` disables time masking).
+        mert_channel_dropout: Channel-wise dropout probability across the MERT
+            feature axis per beat during training (``0.0`` disables).
     """
 
     def __init__(
@@ -429,12 +433,16 @@ class ItgptBeatMertEncoder(nn.Module):
         d_model: int,
         dropout_rate: float = constants.DROPOUT_RATE,
         n_mert_layers: int = 1,
+        mert_time_mask_max_frames: int = 0,
+        mert_channel_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.feature_dim = int(feature_dim)
         self.d_model = int(d_model)
         self.dropout_rate = float(dropout_rate)
         self.n_mert_layers = int(n_mert_layers)
+        self.mert_time_mask_max_frames = int(mert_time_mask_max_frames)
+        self.mert_channel_dropout = float(mert_channel_dropout)
         if self.n_mert_layers > 1:
             self.layer_logits: nn.Parameter | None = nn.Parameter(
                 torch.zeros(self.n_mert_layers, dtype=torch.float32)
@@ -466,7 +474,29 @@ class ItgptBeatMertEncoder(nn.Module):
                 hidden * weights.view(1, 1, self.n_mert_layers, 1),
                 dim=-2,
             )
-        hidden = self.drop(nn_func.gelu(self.proj0(self.norm(hidden))))
+        hidden = self.norm(hidden)
+        if self.training:
+            if self.mert_time_mask_max_frames > 0:
+                n_items = hidden.shape[0]
+                n_frames = hidden.shape[1]
+                max_w = min(self.mert_time_mask_max_frames, n_frames)
+                widths = torch.randint(0, max_w + 1, (n_items, 1), device=hidden.device)
+                starts = torch.randint(0, n_frames, (n_items, 1), device=hidden.device)
+                pos = torch.arange(n_frames, device=hidden.device).unsqueeze(0)
+                time_keep = (pos < starts) | (pos >= (starts + widths))
+                hidden = hidden * time_keep.unsqueeze(-1).to(hidden.dtype)
+            if self.mert_channel_dropout > 0.0:
+                keep_prob = 1.0 - self.mert_channel_dropout
+                chan_mask = (
+                    torch.rand(
+                        (hidden.shape[0], 1, hidden.shape[2]),
+                        device=hidden.device,
+                        dtype=torch.float32,
+                    )
+                    < keep_prob
+                ).to(hidden.dtype) / keep_prob
+                hidden = hidden * chan_mask
+        hidden = self.drop(nn_func.gelu(self.proj0(hidden)))
         hidden = nn_func.gelu(self.conv(hidden.transpose(1, 2))).transpose(1, 2)
         return self.proj1(hidden)
 
@@ -614,6 +644,10 @@ class ItgptPlacementModel(nn.Module):
             and ``beat % 16`` positional embeddings before ``level6``.
         continuous_beat_conv: If True, run ``beat_mert`` over the continuous
             ``(batch, beats * n_frames_per_beat, feature_dim)`` stream.
+        mert_time_mask_max_frames: SpecAugment maximum contiguous MERT frames
+            zeroed per beat during training (``0`` disables).
+        mert_channel_dropout: Channel-wise dropout probability across the MERT
+            feature axis per beat during training (``0.0`` disables).
 
     Raises:
         ValueError: If frontend or width arguments are invalid.
@@ -635,6 +669,8 @@ class ItgptPlacementModel(nn.Module):
         early_film: bool = False,
         cyclic_measure_pos: bool = False,
         continuous_beat_conv: bool = False,
+        mert_time_mask_max_frames: int = 0,
+        mert_channel_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         if d_model < 1 or n_heads < 1 or d_model % n_heads != 0:
@@ -658,6 +694,15 @@ class ItgptPlacementModel(nn.Module):
             raise ValueError(f"feature_dim must be positive, got {feature_dim}")
         if n_mert_layers < 1:
             raise ValueError(f"n_mert_layers must be positive, got {n_mert_layers}")
+        if mert_time_mask_max_frames < 0:
+            raise ValueError(
+                "mert_time_mask_max_frames must be >= 0, "
+                f"got {mert_time_mask_max_frames}"
+            )
+        if not 0.0 <= mert_channel_dropout < 1.0:
+            raise ValueError(
+                f"mert_channel_dropout must be in [0, 1), got {mert_channel_dropout}"
+            )
 
         self.d_model = int(d_model)
         self.n_heads = int(n_heads)
@@ -672,6 +717,8 @@ class ItgptPlacementModel(nn.Module):
         self.early_film = bool(early_film)
         self.cyclic_measure_pos = bool(cyclic_measure_pos)
         self.continuous_beat_conv = bool(continuous_beat_conv)
+        self.mert_time_mask_max_frames = int(mert_time_mask_max_frames)
+        self.mert_channel_dropout = float(mert_channel_dropout)
 
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
         self.beat_mert: ItgptBeatMertEncoder | None = None
@@ -681,6 +728,8 @@ class ItgptPlacementModel(nn.Module):
                 self.d_model,
                 dropout_rate=self.dropout_rate,
                 n_mert_layers=self.n_mert_layers,
+                mert_time_mask_max_frames=self.mert_time_mask_max_frames,
+                mert_channel_dropout=self.mert_channel_dropout,
             )
         else:
             self.beat_cnn = ItgptBeatCNNEncoder(self.d_model, self.cnn_hidden)
@@ -895,6 +944,8 @@ class ItgptPlacementModel(nn.Module):
             "early_film": self.early_film,
             "cyclic_measure_pos": self.cyclic_measure_pos,
             "continuous_beat_conv": self.continuous_beat_conv,
+            "mert_time_mask_max_frames": self.mert_time_mask_max_frames,
+            "mert_channel_dropout": self.mert_channel_dropout,
         }
 
 
@@ -913,6 +964,8 @@ def build_itgpt_placement_model(
     early_film: bool = False,
     cyclic_measure_pos: bool = False,
     continuous_beat_conv: bool = False,
+    mert_time_mask_max_frames: int = 0,
+    mert_channel_dropout: float = 0.0,
 ) -> ItgptPlacementModel:
     """Build the PyTorch ITGPT placement network.
 
@@ -931,6 +984,10 @@ def build_itgpt_placement_model(
         cyclic_measure_pos: If True, add cyclic ``beat % 4`` and ``beat % 16``
             positional embeddings.
         continuous_beat_conv: If True, run ``beat_mert`` across beat boundaries.
+        mert_time_mask_max_frames: SpecAugment maximum contiguous MERT frames
+            zeroed per beat during training (``0`` disables).
+        mert_channel_dropout: Channel-wise dropout probability across the MERT
+            feature axis per beat during training (``0.0`` disables).
 
     Returns:
         Instantiated :class:`ItgptPlacementModel`.
@@ -949,6 +1006,8 @@ def build_itgpt_placement_model(
         early_film=early_film,
         cyclic_measure_pos=cyclic_measure_pos,
         continuous_beat_conv=continuous_beat_conv,
+        mert_time_mask_max_frames=mert_time_mask_max_frames,
+        mert_channel_dropout=mert_channel_dropout,
     )
 
 

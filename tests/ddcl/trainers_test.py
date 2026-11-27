@@ -6,7 +6,7 @@ import pathlib
 
 import torch
 
-from stepcovnet.ddcl import constants, models, trainers
+from stepcovnet.ddcl import config, constants, models, trainers
 
 
 def test_canonical_ddcl_save_and_load_pt_checkpoint(tmp_path: pathlib.Path) -> None:
@@ -36,3 +36,14 @@ def test_canonical_ddcl_save_and_load_pt_checkpoint(tmp_path: pathlib.Path) -> N
         a = model(inputs)
         b = reloaded(inputs)
     assert torch.allclose(a, b, atol=1e-6)
+
+
+def test_ddcl_cosine_ema_config_loads() -> None:
+    cfg = config.DdclExperimentConfig.from_json(
+        "configs/ddc/ddcl_mert_placement_fraxtil_cosine64_l2_6_10_16_ema.json"
+    )
+    assert cfg.dataset.mert_cache_suffix == ".mert_l2_6_10_16.npy"
+    assert cfg.run.lr_schedule == constants.LR_SCHEDULE_COSINE
+    assert cfg.run.warmup_epochs == 4
+    assert cfg.run.use_ema is True
+    assert cfg.run.ema_momentum == 0.995

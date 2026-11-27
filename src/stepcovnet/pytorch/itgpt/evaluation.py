@@ -674,3 +674,190 @@ def evaluate_audio_grounding(
         event_f1_drop_zeros=none_cond.micro_event_f1
         - conditions["zeros"].micro_event_f1,
     )
+
+
+def _slice_metrics_dict(counts: Slot48Counts) -> dict[str, object]:
+    """Convert pooled counts into a compact slice metrics dictionary.
+
+    Args:
+        counts: Pooled :class:`Slot48Counts` for one slice.
+
+    Returns:
+        JSON-serializable metrics with precision, recall, F1, and counts.
+    """
+    n_pred = counts.true_positives + counts.false_positives
+    n_ref = counts.true_positives + counts.false_negatives
+    precision = float(counts.true_positives) / float(n_pred) if n_pred > 0 else 0.0
+    recall = float(counts.true_positives) / float(n_ref) if n_ref > 0 else 0.0
+    return {
+        "f1": counts.f_score,
+        "precision": precision,
+        "recall": recall,
+        "tp": counts.true_positives,
+        "fp": counts.false_positives,
+        "fn": counts.false_negatives,
+        "errors": counts.false_positives + counts.false_negatives,
+        "n_pred": n_pred,
+        "n_ref": n_ref,
+    }
+
+
+def _meter_bucket(meter: int) -> str:
+    """Map an integer chart meter into the canonical reporting bucket.
+
+    Args:
+        meter: Chart ``#METER`` integer.
+
+    Returns:
+        Bucket label (``<=8``, ``9-10``, ``11-12``, or ``13+``).
+    """
+    if meter <= 8:
+        return "<=8"
+    if meter <= 10:
+        return "9-10"
+    if meter <= 12:
+        return "11-12"
+    return "13+"
+
+
+def _add_counts(
+    bucket: dict[str, list[int]],
+    key: str,
+    counts: Slot48Counts,
+) -> None:
+    """Accumulate TP/FP/FN totals into a named slice bucket.
+
+    Args:
+        bucket: Mutable mapping of slice key to ``[tp, fp, fn]``.
+        key: Slice label.
+        counts: Counts to add.
+    """
+    acc = bucket.setdefault(key, [0, 0, 0])
+    acc[0] += counts.true_positives
+    acc[1] += counts.false_positives
+    acc[2] += counts.false_negatives
+
+
+def evaluate_slot48_slices(
+    model: nn.Module | SlotPredictor,
+    charts: list[ddcl_datasets.DdclChart],
+    *,
+    threshold: float = constants.THRESHOLD_05,
+    max_beats: int = constants.MAX_BEATS,
+    device: torch.device | None = None,
+    amp_dtype: torch.dtype | None = None,
+) -> dict[str, object]:
+    """Compute pooled ``M-slot48`` breakdowns by subdivision, pack, meter, and position.
+
+    Args:
+        model: PyTorch ITGPT placement model or :class:`SlotPredictor`.
+        charts: Loaded beat-grid charts.
+        threshold: Binary decision cutoff (default ``0.5``).
+        max_beats: Pad cap used at train time.
+        device: Optional inference device.
+        amp_dtype: Optional autocast dtype (default fp32).
+
+    Returns:
+        JSON-serializable dictionary with ``overall``, ``by_subdivision``,
+        ``by_position``, ``by_meter``, and ``by_pack`` metrics.
+
+    Raises:
+        ValueError: If ``charts`` is empty or any chart exceeds ``max_beats``.
+    """
+    if not charts:
+        raise ValueError("charts must be non-empty")
+    for chart in charts:
+        if chart.n_beats > max_beats:
+            raise ValueError(
+                f"chart {chart.song_key} has {chart.n_beats} beats > "
+                f"max_beats={max_beats}"
+            )
+    predictor = _as_predictor(model, device=device, amp_dtype=amp_dtype)
+
+    subdiv_slots: dict[str, list[int]] = {
+        "quarter": [0],
+        "8th": [24],
+        "16th_off": [12, 36],
+        "24th": [8, 16, 32, 40],
+    }
+    covered = {idx for cols in subdiv_slots.values() for idx in cols}
+    subdiv_slots["other"] = [idx for idx in range(48) if idx not in covered]
+
+    overall = [0, 0, 0]
+    by_subdiv: dict[str, list[int]] = {}
+    by_pos: dict[str, list[int]] = {}
+    by_meter: dict[str, list[int]] = {}
+    by_pack: dict[str, list[int]] = {}
+
+    for chart in charts:
+        pred = predict_chart_slots(predictor, chart, max_beats=max_beats)
+        tgt = chart.slots
+        c_all = counts_at_threshold(pred, tgt, threshold)
+        overall[0] += c_all.true_positives
+        overall[1] += c_all.false_positives
+        overall[2] += c_all.false_negatives
+
+        for name, cols in subdiv_slots.items():
+            _add_counts(
+                by_subdiv,
+                name,
+                counts_at_threshold(pred[:, cols], tgt[:, cols], threshold),
+            )
+
+        n_beats = int(tgt.shape[0])
+        intro_end = max(1, int(0.10 * n_beats))
+        outro_start = max(intro_end, int(0.90 * n_beats))
+        _add_counts(
+            by_pos,
+            "intro_0_10",
+            counts_at_threshold(pred[:intro_end], tgt[:intro_end], threshold),
+        )
+        if outro_start > intro_end:
+            _add_counts(
+                by_pos,
+                "body_10_90",
+                counts_at_threshold(
+                    pred[intro_end:outro_start],
+                    tgt[intro_end:outro_start],
+                    threshold,
+                ),
+            )
+        if outro_start < n_beats:
+            _add_counts(
+                by_pos,
+                "outro_90_100",
+                counts_at_threshold(pred[outro_start:], tgt[outro_start:], threshold),
+            )
+
+        _add_counts(by_meter, _meter_bucket(int(chart.meter)), c_all)
+        pack = (
+            chart.song_key.split("/", 1)[0] if "/" in chart.song_key else chart.song_key
+        )
+        _add_counts(by_pack, pack, c_all)
+
+    def _finalize(
+        raw: dict[str, list[int]], order: tuple[str, ...] | None = None
+    ) -> dict[str, dict[str, object]]:
+        keys = (
+            [k for k in order if k in raw] if order is not None else sorted(raw.keys())
+        )
+        return {
+            k: _slice_metrics_dict(Slot48Counts(raw[k][0], raw[k][1], raw[k][2]))
+            for k in keys
+        }
+
+    return {
+        "metric": "M-slot48_slices",
+        "threshold": float(threshold),
+        "n_charts": len(charts),
+        "n_beats": sum(int(c.n_beats) for c in charts),
+        "overall": _slice_metrics_dict(
+            Slot48Counts(overall[0], overall[1], overall[2])
+        ),
+        "by_subdivision": _finalize(
+            by_subdiv, ("quarter", "8th", "16th_off", "24th", "other")
+        ),
+        "by_position": _finalize(by_pos, ("intro_0_10", "body_10_90", "outro_90_100")),
+        "by_meter": _finalize(by_meter, ("<=8", "9-10", "11-12", "13+")),
+        "by_pack": _finalize(by_pack),
+    }

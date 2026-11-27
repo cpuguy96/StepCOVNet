@@ -186,6 +186,38 @@ class ItgptEvaluationTest(unittest.TestCase):
                 max_beats=constants.CHUNK_ALIGN,
             )
 
+    def test_evaluate_slot48_slices_partitions_overall_counts(self):
+        chart = _mert_grounding_chart()
+        slices = evaluation.evaluate_slot48_slices(
+            _AudioSensitivePredictor(),
+            [chart],
+            max_beats=constants.CHUNK_ALIGN,
+        )
+        overall = slices["overall"]
+        assert isinstance(overall, dict)
+        self.assertAlmostEqual(float(overall["f1"]), 1.0)
+        by_sub = slices["by_subdivision"]
+        assert isinstance(by_sub, dict)
+        self.assertEqual(
+            sum(int(v["tp"]) for v in by_sub.values()),
+            int(overall["tp"]),
+        )
+        by_pos = slices["by_position"]
+        assert isinstance(by_pos, dict)
+        self.assertEqual(
+            sum(int(v["tp"]) for v in by_pos.values()),
+            int(overall["tp"]),
+        )
+        by_meter = slices["by_meter"]
+        assert isinstance(by_meter, dict)
+        self.assertIn("<=8", by_meter)
+        by_pack = slices["by_pack"]
+        assert isinstance(by_pack, dict)
+        self.assertEqual(
+            sum(int(v["tp"]) for v in by_pack.values()),
+            int(overall["tp"]),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

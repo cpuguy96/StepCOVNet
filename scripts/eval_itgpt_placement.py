@@ -36,6 +36,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--slice_breakdown",
+        action="store_true",
+        help=(
+            "Compute M-slot48 F1/P/R breakdowns by subdivision, song position, "
+            "meter bucket, and pack."
+        ),
+    )
+    parser.add_argument(
         "--threshold",
         type=float,
         default=0.5,
@@ -108,6 +116,16 @@ def main(argv: list[str] | None = None) -> int:
         payload["model_path"] = model_path
         payload["config_path"] = args.config
         default_filename = "eval_val_grounding.json"
+    elif args.slice_breakdown:
+        payload = evaluation.evaluate_slot48_slices(
+            model,
+            charts,
+            threshold=args.threshold,
+            max_beats=experiment.dataset.max_beats,
+        )
+        payload["model_path"] = model_path
+        payload["config_path"] = args.config
+        default_filename = "eval_val_slices.json"
     else:
         report = evaluation.evaluate_slot48(
             model,

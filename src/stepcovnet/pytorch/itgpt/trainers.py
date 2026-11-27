@@ -269,6 +269,8 @@ def build_model(
         early_film=experiment.model.early_film,
         cyclic_measure_pos=experiment.model.cyclic_measure_pos,
         continuous_beat_conv=experiment.model.continuous_beat_conv,
+        mert_time_mask_max_frames=experiment.model.mert_time_mask_max_frames,
+        mert_channel_dropout=experiment.model.mert_channel_dropout,
     )
 
 

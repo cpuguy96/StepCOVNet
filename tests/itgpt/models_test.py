@@ -335,6 +335,53 @@ class ItgptModelsTest(unittest.TestCase):
                 pred_reloaded = reloaded(inputs).numpy()
         np.testing.assert_allclose(pred_trained, pred_reloaded, atol=1e-5)
 
+    def test_mert_specaug_train_only_and_checkpoint_roundtrip(self):
+        n_beats = constants.CHUNK_ALIGN
+        feature_dim = 16
+        model = models.build_itgpt_placement_model(
+            d_model=32,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=n_beats,
+            audio_feature_type="mert",
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=feature_dim,
+            mert_time_mask_max_frames=4,
+            mert_channel_dropout=0.25,
+        )
+        rng = np.random.default_rng(7)
+        inputs = {
+            "audio": torch.as_tensor(
+                rng.standard_normal(
+                    (1, n_beats, constants.CNN_FRAMES_OUT, feature_dim)
+                ).astype(np.float32)
+            ),
+            "bpm": torch.tensor([[130.0]], dtype=torch.float32),
+            "difficulty": torch.tensor([[9.0]], dtype=torch.float32),
+        }
+        model.eval()
+        with torch.no_grad():
+            eval_a = model(inputs).numpy()
+            eval_b = model(inputs).numpy()
+        np.testing.assert_array_equal(eval_a, eval_b)
+
+        model.train()
+        torch.manual_seed(1)
+        train_a = model(inputs).detach().numpy()
+        torch.manual_seed(2)
+        train_b = model(inputs).detach().numpy()
+        self.assertGreater(float(np.max(np.abs(train_a - train_b))), 0.0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = trainers.save_checkpoint(model, pathlib.Path(tmpdir) / "specaug.pt")
+            reloaded = trainers.load_placement_model(ckpt, device="cpu")
+            self.assertEqual(reloaded.mert_time_mask_max_frames, 4)
+            self.assertAlmostEqual(reloaded.mert_channel_dropout, 0.25)
+            with torch.no_grad():
+                eval_reloaded = reloaded(inputs).numpy()
+        np.testing.assert_allclose(eval_a, eval_reloaded, atol=1e-6)
+
 
 if __name__ == "__main__":
     unittest.main()
