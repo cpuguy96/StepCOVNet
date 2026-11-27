@@ -33,7 +33,8 @@
     "dropout_rate": 0.1,
     "mert_time_mask_max_frames": 4,
     "mert_channel_dropout": 0.15,
-    "mert_time_mask_preserve_downbeat": true
+    "mert_time_mask_preserve_downbeat": true,
+    "beat_aux_head": true
   },
   "run": {
     "epoch": 32,
@@ -51,9 +52,12 @@
     "mixed_precision": true,
     "jit_compile": true,
     "eval_slot_f1_every": 4,
-    "model_output_dir": "models_wsl/ddc/itgpt_mert_placement_final_full_cosine32_l2_6_10_16_ema_density_specaug_keep0",
+    "beat_aux_loss_weight": 0.15,
+    "dice_loss_weight": 0.05,
+    "bce_pos_weight": 1.25,
+    "model_output_dir": "models_wsl/ddc/itgpt_mert_placement_final_full_cosine32_l2_6_10_16_ema_density_specaug_keep0_beataux015_dice005_pw125",
     "callback_root_dir": "callbacks/ddc/itgpt_placement",
-    "model_name": "itgpt_mert_placement_final_full_cosine32_l2_6_10_16_ema_density_specaug_keep0",
+    "model_name": "itgpt_mert_placement_final_full_cosine32_l2_6_10_16_ema_density_specaug_keep0_beataux015_dice005_pw125",
     "resume": false
   }
 }
