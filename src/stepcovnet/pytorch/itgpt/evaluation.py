@@ -365,6 +365,22 @@ def _as_predictor(
     return model
 
 
+def _difficulty_source(model: nn.Module | SlotPredictor) -> str:
+    """Resolve ``difficulty_source`` from a model or predictor wrapper.
+
+    Args:
+        model: PyTorch model or :class:`SlotPredictor`.
+
+    Returns:
+        Configured ``difficulty_source`` (defaults to ``"meter"``).
+    """
+    unwrapped = getattr(model, "model", model)
+    unwrapped = getattr(unwrapped, "_orig_mod", unwrapped)
+    return str(
+        getattr(unwrapped, "difficulty_source", constants.DIFFICULTY_SOURCE_METER)
+    )
+
+
 def predict_chart_slots(
     model: nn.Module | SlotPredictor,
     chart: ddcl_datasets.DdclChart,
@@ -387,12 +403,15 @@ def predict_chart_slots(
         Probabilities ``(n_beats, 48)``.
     """
     predictor = _as_predictor(model, device=device, amp_dtype=amp_dtype)
+    diff_source = _difficulty_source(predictor)
     cap = (
         max(datasets.pad_length(chart.n_beats, chart.n_beats), constants.CHUNK_ALIGN)
         if max_beats is None
         else max(int(max_beats), constants.CHUNK_ALIGN)
     )
-    inputs, _, mask = datasets.pack_chart(chart, max_beats=cap)
+    inputs, _, mask = datasets.pack_chart(
+        chart, max_beats=cap, difficulty_source=diff_source
+    )
     pred = np.asarray(predictor.predict(inputs, verbose=0), dtype=np.float32)
     if pred.ndim == 2:
         pred = pred[None, ...]
@@ -428,11 +447,14 @@ def evaluate_slot48(
     if not charts:
         raise ValueError("charts must be non-empty")
     predictor = _as_predictor(model, device=device, amp_dtype=amp_dtype)
+    diff_source = _difficulty_source(predictor)
     rng = np.random.default_rng(seed)
     pred_parts: list[np.ndarray] = []
     tgt_parts: list[np.ndarray] = []
     for chart in charts:
-        inputs, _, mask = datasets.pack_chart(chart, max_beats=max_beats)
+        inputs, _, mask = datasets.pack_chart(
+            chart, max_beats=max_beats, difficulty_source=diff_source
+        )
         pred = np.asarray(predictor.predict(inputs, verbose=0), dtype=np.float32)
         if pred.ndim == 2:
             pred = pred[None, ...]

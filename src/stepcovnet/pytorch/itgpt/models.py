@@ -648,6 +648,9 @@ class ItgptPlacementModel(nn.Module):
             zeroed per beat during training (``0`` disables).
         mert_channel_dropout: Channel-wise dropout probability across the MERT
             feature axis per beat during training (``0.0`` disables).
+        difficulty_source: Scalar conditioning signal passed as ``difficulty``
+            (``"meter"`` uses ``[1, 50]`` bounds; ``"density"`` uses ``[0, 6]``
+            mean steps per beat bounds).
 
     Raises:
         ValueError: If frontend or width arguments are invalid.
@@ -671,6 +674,7 @@ class ItgptPlacementModel(nn.Module):
         continuous_beat_conv: bool = False,
         mert_time_mask_max_frames: int = 0,
         mert_channel_dropout: float = 0.0,
+        difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
     ) -> None:
         super().__init__()
         if d_model < 1 or n_heads < 1 or d_model % n_heads != 0:
@@ -703,6 +707,11 @@ class ItgptPlacementModel(nn.Module):
             raise ValueError(
                 f"mert_channel_dropout must be in [0, 1), got {mert_channel_dropout}"
             )
+        if difficulty_source not in constants.DIFFICULTY_SOURCES:
+            raise ValueError(
+                "difficulty_source must be one of "
+                f"{constants.DIFFICULTY_SOURCES}, got {difficulty_source!r}"
+            )
 
         self.d_model = int(d_model)
         self.n_heads = int(n_heads)
@@ -719,6 +728,7 @@ class ItgptPlacementModel(nn.Module):
         self.continuous_beat_conv = bool(continuous_beat_conv)
         self.mert_time_mask_max_frames = int(mert_time_mask_max_frames)
         self.mert_channel_dropout = float(mert_channel_dropout)
+        self.difficulty_source = str(difficulty_source)
 
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
         self.beat_mert: ItgptBeatMertEncoder | None = None
@@ -734,10 +744,15 @@ class ItgptPlacementModel(nn.Module):
         else:
             self.beat_cnn = ItgptBeatCNNEncoder(self.d_model, self.cnn_hidden)
 
+        diff_min, diff_max = (
+            (constants.MIN_DENSITY, constants.MAX_DENSITY)
+            if self.difficulty_source == constants.DIFFICULTY_SOURCE_DENSITY
+            else (constants.MIN_DIFFICULTY, constants.MAX_DIFFICULTY)
+        )
         self.diff_proj = ItgptConditionProj(
             self.d_model,
-            constants.MIN_DIFFICULTY,
-            constants.MAX_DIFFICULTY,
+            diff_min,
+            diff_max,
         )
         self.bpm_proj = ItgptConditionProj(
             self.d_model,
@@ -946,6 +961,7 @@ class ItgptPlacementModel(nn.Module):
             "continuous_beat_conv": self.continuous_beat_conv,
             "mert_time_mask_max_frames": self.mert_time_mask_max_frames,
             "mert_channel_dropout": self.mert_channel_dropout,
+            "difficulty_source": self.difficulty_source,
         }
 
 
@@ -966,6 +982,7 @@ def build_itgpt_placement_model(
     continuous_beat_conv: bool = False,
     mert_time_mask_max_frames: int = 0,
     mert_channel_dropout: float = 0.0,
+    difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> ItgptPlacementModel:
     """Build the PyTorch ITGPT placement network.
 
@@ -988,6 +1005,8 @@ def build_itgpt_placement_model(
             zeroed per beat during training (``0`` disables).
         mert_channel_dropout: Channel-wise dropout probability across the MERT
             feature axis per beat during training (``0.0`` disables).
+        difficulty_source: Scalar conditioning signal (``"meter"`` or
+            ``"density"``).
 
     Returns:
         Instantiated :class:`ItgptPlacementModel`.
@@ -1008,6 +1027,7 @@ def build_itgpt_placement_model(
         continuous_beat_conv=continuous_beat_conv,
         mert_time_mask_max_frames=mert_time_mask_max_frames,
         mert_channel_dropout=mert_channel_dropout,
+        difficulty_source=difficulty_source,
     )
 
 

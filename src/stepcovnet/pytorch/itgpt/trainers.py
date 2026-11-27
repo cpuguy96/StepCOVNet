@@ -271,6 +271,7 @@ def build_model(
         continuous_beat_conv=experiment.model.continuous_beat_conv,
         mert_time_mask_max_frames=experiment.model.mert_time_mask_max_frames,
         mert_channel_dropout=experiment.model.mert_channel_dropout,
+        difficulty_source=experiment.dataset.difficulty_source,
     )
 
 
@@ -441,6 +442,7 @@ def train_placement(
             seed=experiment.run.seed + start_epoch,
             max_bar_shift=experiment.run.max_bar_shift,
             pin_memory=pin_memory,
+            difficulty_source=experiment.dataset.difficulty_source,
         )
     )
     val_loader = datasets.build_dataloader(
@@ -448,6 +450,7 @@ def train_placement(
         max_beats=experiment.dataset.max_beats,
         seed=experiment.run.seed + 1,
         pin_memory=pin_memory,
+        difficulty_source=experiment.dataset.difficulty_source,
     )
 
     try:

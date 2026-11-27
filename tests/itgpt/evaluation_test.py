@@ -9,7 +9,7 @@ import numpy as np
 from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
-from stepcovnet.itgpt import constants, evaluation
+from stepcovnet.itgpt import constants, datasets, evaluation
 
 
 class _ConstPredictor:
@@ -217,6 +217,52 @@ class ItgptEvaluationTest(unittest.TestCase):
             sum(int(v["tp"]) for v in by_pack.values()),
             int(overall["tp"]),
         )
+
+    def test_density_difficulty_source_packed_and_evaluated(self):
+        chart = _mert_grounding_chart(n_beats=16)
+        expected_density = float(chart.slots.sum()) / float(chart.n_beats)
+        inputs_meter, _, _ = datasets.pack_chart(
+            chart,
+            max_beats=constants.CHUNK_ALIGN,
+            difficulty_source=constants.DIFFICULTY_SOURCE_METER,
+        )
+        inputs_density, _, _ = datasets.pack_chart(
+            chart,
+            max_beats=constants.CHUNK_ALIGN,
+            difficulty_source=constants.DIFFICULTY_SOURCE_DENSITY,
+        )
+        self.assertAlmostEqual(
+            float(inputs_meter["difficulty"][0, 0]), float(chart.meter)
+        )
+        self.assertAlmostEqual(
+            float(inputs_density["difficulty"][0, 0]), expected_density
+        )
+
+        captured: list[float] = []
+
+        class _DensityCapturePredictor:
+            difficulty_source = constants.DIFFICULTY_SOURCE_DENSITY
+
+            def predict(self, inputs: object, verbose: int = 0) -> np.ndarray:
+                del verbose
+                assert isinstance(inputs, dict)
+                captured.append(float(inputs["difficulty"][0, 0]))
+                n_beats = int(inputs["audio"].shape[1])
+                return np.zeros((1, n_beats, constants.N_SLOTS), dtype=np.float32)
+
+        evaluation.evaluate_slot48(
+            _DensityCapturePredictor(),
+            [chart],
+            max_beats=constants.CHUNK_ALIGN,
+        )
+        evaluation.predict_chart_slots(
+            _DensityCapturePredictor(),
+            chart,
+            max_beats=constants.CHUNK_ALIGN,
+        )
+        self.assertEqual(len(captured), 2)
+        for val in captured:
+            self.assertAlmostEqual(val, expected_density)
 
 
 if __name__ == "__main__":

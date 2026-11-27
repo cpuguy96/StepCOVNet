@@ -37,6 +37,7 @@ def pack_chart(
     *,
     max_beats: int,
     lead_pad_beats: int = 0,
+    difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
     """Pad one chart to a 64-beat multiple, with optional masked leading shift.
 
@@ -44,10 +45,20 @@ def pack_chart(
         chart: Loaded DDCL beat-grid chart.
         max_beats: Length cap.
         lead_pad_beats: Masked zero-padded beats prepended before beat 0.
+        difficulty_source: Scalar conditioning signal (``"meter"`` or
+            ``"density"`` for mean steps per beat).
 
     Returns:
         ``(inputs, slots, beat_mask)`` with a leading batch axis of 1.
+
+    Raises:
+        ValueError: If ``difficulty_source`` is unsupported.
     """
+    if difficulty_source not in constants.DIFFICULTY_SOURCES:
+        raise ValueError(
+            "difficulty_source must be one of "
+            f"{constants.DIFFICULTY_SOURCES}, got {difficulty_source!r}"
+        )
     n_beats = chart.n_beats
     lead = max(0, int(lead_pad_beats))
     if lead > 0:
@@ -65,7 +76,10 @@ def pack_chart(
     slots[0, lead : lead + usable] = chart.slots[:usable]
     mask[0, lead : lead + usable] = 1.0
     bpm = float(np.mean(chart.stream[:usable, 1]))
-    difficulty = float(chart.meter)
+    if difficulty_source == constants.DIFFICULTY_SOURCE_DENSITY:
+        difficulty = float(np.sum(chart.slots[:usable])) / float(max(1, usable))
+    else:
+        difficulty = float(chart.meter)
     inputs = {
         "audio": audio,
         "bpm": np.array([[bpm]], dtype=np.float32),
@@ -128,6 +142,7 @@ def pack_chart_tensors(
     *,
     max_beats: int,
     lead_pad_beats: int = 0,
+    difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
     """Pack one chart into float32 PyTorch tensors with leading batch axis 1.
 
@@ -135,12 +150,17 @@ def pack_chart_tensors(
         chart: Loaded DDCL beat-grid chart.
         max_beats: Length cap.
         lead_pad_beats: Optional masked leading shift in beats.
+        difficulty_source: Scalar conditioning signal (``"meter"`` or
+            ``"density"``).
 
     Returns:
         ``(inputs, slots, beat_mask)`` as float32 :class:`torch.Tensor` objects.
     """
     inputs_np, slots_np, mask_np = pack_chart(
-        chart, max_beats=max_beats, lead_pad_beats=lead_pad_beats
+        chart,
+        max_beats=max_beats,
+        lead_pad_beats=lead_pad_beats,
+        difficulty_source=difficulty_source,
     )
     inputs_t = {key: torch.from_numpy(val) for key, val in inputs_np.items()}
     return inputs_t, torch.from_numpy(slots_np), torch.from_numpy(mask_np)
@@ -160,9 +180,11 @@ class ItgptRandomChartDataset(
         seed: Base NumPy RNG seed.
         max_bar_shift: Max 4-beat bars of masked leading padding prepended
             randomly per step (``0`` disables).
+        difficulty_source: Scalar conditioning signal (``"meter"`` or
+            ``"density"``).
 
     Raises:
-        ValueError: If ``charts`` is empty.
+        ValueError: If ``charts`` is empty or ``difficulty_source`` is invalid.
     """
 
     def __init__(
@@ -172,14 +194,21 @@ class ItgptRandomChartDataset(
         max_beats: int,
         seed: int,
         max_bar_shift: int = 0,
+        difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
     ) -> None:
         super().__init__()
         if not charts:
             raise ValueError("charts must be non-empty")
+        if difficulty_source not in constants.DIFFICULTY_SOURCES:
+            raise ValueError(
+                "difficulty_source must be one of "
+                f"{constants.DIFFICULTY_SOURCES}, got {difficulty_source!r}"
+            )
         self.charts = charts
         self.max_beats = int(max_beats)
         self.seed = int(seed)
         self.max_bar_shift = max(0, int(max_bar_shift))
+        self.difficulty_source = str(difficulty_source)
 
     def __iter__(
         self,
@@ -202,7 +231,10 @@ class ItgptRandomChartDataset(
                 else 0
             )
             yield pack_chart_tensors(
-                chart, max_beats=self.max_beats, lead_pad_beats=lead_pad
+                chart,
+                max_beats=self.max_beats,
+                lead_pad_beats=lead_pad,
+                difficulty_source=self.difficulty_source,
             )
 
 
@@ -213,6 +245,7 @@ def build_dataloader(
     seed: int,
     max_bar_shift: int = 0,
     pin_memory: bool = False,
+    difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> DataLoader:
     """Build a PyTorch :class:`DataLoader` yielding pre-batched chart tuples.
 
@@ -222,13 +255,19 @@ def build_dataloader(
         seed: Base RNG seed.
         max_bar_shift: Max 4-beat bars of masked leading shift augmentation.
         pin_memory: Whether to pin CPU host memory for faster CUDA transfers.
+        difficulty_source: Scalar conditioning signal (``"meter"`` or
+            ``"density"``).
 
     Returns:
         Configured :class:`DataLoader` (``batch_size=None`` because charts are
         already packed with leading batch axis 1 and have dynamic beat lengths).
     """
     dataset = ItgptRandomChartDataset(
-        charts, max_beats=max_beats, seed=seed, max_bar_shift=max_bar_shift
+        charts,
+        max_beats=max_beats,
+        seed=seed,
+        max_bar_shift=max_bar_shift,
+        difficulty_source=difficulty_source,
     )
     return DataLoader(
         dataset,

@@ -70,6 +70,9 @@ class ItgptDatasetConfig(_DictSerializableMixin):
         mert_spectral_flux: If True when ``audio_feature_type == "mert"``,
             append 6 z-scored 100 Hz 3-band spectral-flux/energy channels
             derived from ``*.ddc_mel.npy`` onto each MERT frame.
+        difficulty_source: Scalar conditioning signal passed as ``difficulty``
+            (``"meter"`` uses chart ``#METER``; ``"density"`` uses scale-invariant
+            chart mean steps per beat in ``[0, 6]``).
     """
 
     training_index_path: str
@@ -84,13 +87,14 @@ class ItgptDatasetConfig(_DictSerializableMixin):
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
     mert_cache_suffix: str = ddcl_constants.MERT_CACHE_SUFFIX
     mert_spectral_flux: bool = False
+    difficulty_source: str = constants.DIFFICULTY_SOURCE_METER
 
     def __post_init__(self) -> None:
         """Validate dataset hyperparameters.
 
         Raises:
-            ValueError: If sizes, ``audio_feature_type``, or
-                ``mert_cache_suffix`` are invalid.
+            ValueError: If sizes, ``audio_feature_type``, ``mert_cache_suffix``,
+                or ``difficulty_source`` are invalid.
         """
         if self.batch_size < 1:
             raise ValueError(f"batch_size must be at least 1, got {self.batch_size}")
@@ -121,6 +125,11 @@ class ItgptDatasetConfig(_DictSerializableMixin):
             raise ValueError(
                 "mert_cache_suffix must start with '.' and end with '.npy', "
                 f"got {self.mert_cache_suffix!r}"
+            )
+        if self.difficulty_source not in constants.DIFFICULTY_SOURCES:
+            raise ValueError(
+                "difficulty_source must be one of "
+                f"{constants.DIFFICULTY_SOURCES}, got {self.difficulty_source!r}"
             )
 
 

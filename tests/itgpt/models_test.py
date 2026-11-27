@@ -9,6 +9,7 @@ import unittest
 import numpy as np
 import torch
 
+from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.itgpt import config, constants, models, trainers
 from stepcovnet.pytorch import runtime
 
@@ -381,6 +382,37 @@ class ItgptModelsTest(unittest.TestCase):
             with torch.no_grad():
                 eval_reloaded = reloaded(inputs).numpy()
         np.testing.assert_allclose(eval_a, eval_reloaded, atol=1e-6)
+
+    def test_density_difficulty_source_bounds_and_checkpoint_roundtrip(self):
+        model = models.build_itgpt_placement_model(
+            d_model=16,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=constants.CHUNK_ALIGN,
+            audio_feature_type=ddcl_constants.AUDIO_FEATURE_MERT,
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=8,
+            difficulty_source=constants.DIFFICULTY_SOURCE_DENSITY,
+        )
+        self.assertEqual(model.difficulty_source, constants.DIFFICULTY_SOURCE_DENSITY)
+        self.assertAlmostEqual(model.diff_proj.min_val, constants.MIN_DENSITY)
+        self.assertAlmostEqual(model.diff_proj.max_val, constants.MAX_DENSITY)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = trainers.save_checkpoint(model, pathlib.Path(tmpdir) / "density.pt")
+            reloaded = trainers.load_placement_model(ckpt, device="cpu")
+            self.assertEqual(
+                reloaded.difficulty_source, constants.DIFFICULTY_SOURCE_DENSITY
+            )
+            self.assertAlmostEqual(reloaded.diff_proj.min_val, constants.MIN_DENSITY)
+            self.assertAlmostEqual(reloaded.diff_proj.max_val, constants.MAX_DENSITY)
+        with self.assertRaises(ValueError):
+            models.build_itgpt_placement_model(
+                d_model=16,
+                n_heads=4,
+                n_enc_layers=1,
+                difficulty_source="invalid",
+            )
 
 
 if __name__ == "__main__":
