@@ -4,6 +4,7 @@ A **profile** binds the generic [autoresearch loop](../SKILL.md) to concrete pat
 
 | Profile | File |
 | ------- | ---- |
+| PyTorch ITGPT-MERT onset hill-climbing | [itgpt-onset.md](itgpt-onset.md) |
 | AR tide 634/634 scratch overfit | [ar-tide-overfit.md](ar-tide-overfit.md) |
 | General EXPERIMENT_LOG research | [experiment-log.md](experiment-log.md) |
 

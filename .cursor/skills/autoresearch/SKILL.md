@@ -70,11 +70,12 @@ Go.
 
 ## Choose a profile
 
-| Profile             | Use when                                                                   | Detail                                                                     |
-| ------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| **ar-tide-overfit** | AR tide single-chart 634/634 gate, `ar_tide_iter`, overnight tide prompt   | [profiles/ar-tide-overfit.md](profiles/ar-tide-overfit.md)                 |
-| **experiment-log**  | General research; log `EXP-…` in EXPERIMENT_LOG; no `ar_tide_iter` harness | [profiles/experiment-log.md](profiles/experiment-log.md)                   |
-| **custom**          | User defines metric + run command in the goal                              | You define orient/run/log for that session; still follow tiers + anti-spam |
+| Profile             | Use when                                                                                 | Detail                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **itgpt-onset**     | PyTorch ITGPT-MERT onset placement hill-climbing (multi-GPU Colab + WSL, diagnostics)    | [profiles/itgpt-onset.md](profiles/itgpt-onset.md)                         |
+| **ar-tide-overfit** | AR tide single-chart 634/634 gate, `ar_tide_iter`, overnight tide prompt                 | [profiles/ar-tide-overfit.md](profiles/ar-tide-overfit.md)                 |
+| **experiment-log**  | General research; log `EXP-…` in EXPERIMENT_LOG; no `ar_tide_iter` harness               | [profiles/experiment-log.md](profiles/experiment-log.md)                   |
+| **custom**          | User defines metric + run command in the goal                                            | You define orient/run/log for that session; still follow tiers + anti-spam |
 
 If the user names a playbook skill (e.g. tide-ablations), treat it as **custom** or follow that skill **inside** one autoresearch iteration, then return to the judge step.
 
@@ -95,7 +96,7 @@ Tier A must include **reasoning**: what failed, what you expect, what changed vs
 1. **Plateau:** Primary metric unchanged for **≥5 runs** (profile defines tolerance) → **forbid** single-parameter tweakers; **upgrade tier** or switch hypothesis **class**.
 2. **No repeats:** Do not rerun the same recipe/config fingerprint unless infra retry.
 3. **Pinned policy:** Do not change eval gates / success metrics mid-session unless the profile allows it.
-4. **One job:** No duplicate training drivers (profile preflight).
+4. **One job per GPU target:** No duplicate training drivers on the same GPU (profile preflight). Parallel chains across distinct GPUs (e.g. Colab `L4` + `T4` + local WSL) and parallel Tier-C coding are allowed when the profile isolates git worktrees (see [profiles/itgpt-onset.md](profiles/itgpt-onset.md)).
 5. **No planner handoff:** Do not use unattended `--hours` / lattice planners while this skill is active — they replace agent reasoning.
 
 ## Budget discipline
@@ -154,7 +155,7 @@ Do **not** stop because a pre-seeded experiment list finished while `now < deadl
 | Gotcha                                  | What goes wrong                                                                             | What to do                                                                                             |
 | --------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | **Planner instead of agent**            | `run_overnight --hours` / lattice scripts tweak JSON knobs without reasoning; plateaus fast | Use `--autoresearch --once` or `--autoresearch --hours N`; never bare `--hours`       |
-| **Duplicate drivers**                   | Two `run_overnight` / `run_exp` shells → overlapping GPU jobs, corrupt lock state           | Preflight every session; one training job; see profile preflight                                       |
+| **Duplicate drivers**                   | Two drivers on the same GPU → overlapping GPU jobs, OOM, corrupt lock state                 | Preflight every session; max one job per GPU target; isolate parallel lanes in worktrees               |
 | **Tier C without tests**                | 200-epoch GPU run on broken decode/metrics path                                             | `pytest` + `pre_submit.py --fast` **before** WSL train                                                 |
 | **Single-knob spam after plateau**      | Primary metric flat for many runs; agent keeps nudging one λ or lr                          | Enforce [anti-spam](#anti-spam); upgrade tier or switch hypothesis class                               |
 | **Changing success metric mid-session** | Incomparable runs (e.g. swap checkpoint metric or eval gate)                                | Keep profile pinned eval policy; change only with user approval                                        |
@@ -163,7 +164,7 @@ Do **not** stop because a pre-seeded experiment list finished while `now < deadl
 | **Uncommitted harness vs disk**         | `experiments.json` / logs ahead of git; brief may still work off `results.jsonl`            | Do not assume registry is committed; read `logs/` + brief                                              |
 | **Background train**                    | No epoch lines in chat; looks idle while GPU is busy                                        | Profile watch command or `show_status`; foreground `--once` when possible                              |
 | **Committing `logs/`**                  | Huge artifacts, machine paths in PR                                                         | Never commit `logs/`; research logs in `docs/research/` only                                           |
-| **Bare `python`**                       | Wrong env on Windows/WSL                                                                    | `venv\Scripts\python.exe` from repo root; WSL per [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md) |
+| **Bare `python`**                       | Wrong env on Windows/WSL                                                                    | Project venv `python` from repo root; WSL per [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md)     |
 
 Profile-specific gotchas: see each file under [profiles/](profiles/).
 

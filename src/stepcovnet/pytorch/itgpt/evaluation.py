@@ -553,6 +553,7 @@ def evaluate_audio_grounding(
     seed: int = DEFAULT_GROUNDING_SEED,
     device: torch.device | None = None,
     amp_dtype: torch.dtype | None = None,
+    none_predictions: typing.Sequence[np.ndarray] | None = None,
 ) -> AudioGroundingReport:
     """Run ``none``, ``shuffle``, and ``zeros`` beat-audio grounding checks.
 
@@ -566,15 +567,23 @@ def evaluate_audio_grounding(
         seed: Base RNG seed for shuffling and null baselines.
         device: Optional inference device.
         amp_dtype: Optional autocast dtype (default fp32).
+        none_predictions: Optional precomputed uncorrupted predictions aligned
+            with ``charts`` to avoid a redundant forward pass.
 
     Returns:
         :class:`AudioGroundingReport` across all corruption modes.
 
     Raises:
-        ValueError: If ``charts`` is empty or any chart exceeds ``max_beats``.
+        ValueError: If ``charts`` is empty, any chart exceeds ``max_beats``, or
+            ``none_predictions`` length does not match ``charts``.
     """
     if not charts:
         raise ValueError("charts must be non-empty")
+    if none_predictions is not None and len(none_predictions) != len(charts):
+        raise ValueError(
+            f"none_predictions length ({len(none_predictions)}) != "
+            f"charts length ({len(charts)})"
+        )
     for chart in charts:
         if chart.n_beats > max_beats:
             raise ValueError(
@@ -584,14 +593,19 @@ def evaluate_audio_grounding(
     predictor = _as_predictor(model, device=device, amp_dtype=amp_dtype)
     preds_by_kind: dict[str, list[np.ndarray]] = {}
     for kind in CORRUPTION_KINDS:
-        preds_by_kind[kind] = [
-            predict_chart_slots(
-                predictor,
-                corrupt_chart_audio(chart, kind, seed=seed + idx),
-                max_beats=max_beats,
-            )
-            for idx, chart in enumerate(charts)
-        ]
+        if kind == "none" and none_predictions is not None:
+            preds_by_kind[kind] = [
+                np.asarray(arr, dtype=np.float32) for arr in none_predictions
+            ]
+        else:
+            preds_by_kind[kind] = [
+                predict_chart_slots(
+                    predictor,
+                    corrupt_chart_audio(chart, kind, seed=seed + idx),
+                    max_beats=max_beats,
+                )
+                for idx, chart in enumerate(charts)
+            ]
 
     tgt_all = np.concatenate([chart.slots for chart in charts], axis=0)
     rng_null = np.random.default_rng(seed)

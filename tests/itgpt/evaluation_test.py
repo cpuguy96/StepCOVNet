@@ -177,6 +177,31 @@ class ItgptEvaluationTest(unittest.TestCase):
         self.assertGreater(report.slot_f1_drop_shuffle, 0.0)
         self.assertAlmostEqual(report.conditions["zeros"].slot_f1_at_05, 0.0)
         self.assertAlmostEqual(report.slot_f1_drop_zeros, 1.0)
+        precomputed = [
+            evaluation.predict_chart_slots(
+                _AudioSensitivePredictor(),
+                chart,
+                max_beats=constants.CHUNK_ALIGN,
+            )
+        ]
+        reused = evaluation.evaluate_audio_grounding(
+            _AudioSensitivePredictor(),
+            [chart],
+            max_beats=constants.CHUNK_ALIGN,
+            seed=42,
+            none_predictions=precomputed,
+        )
+        self.assertAlmostEqual(
+            reused.conditions["none"].slot_f1_at_05,
+            report.conditions["none"].slot_f1_at_05,
+        )
+        with self.assertRaises(ValueError):
+            evaluation.evaluate_audio_grounding(
+                _AudioSensitivePredictor(),
+                [chart],
+                max_beats=constants.CHUNK_ALIGN,
+                none_predictions=[],
+            )
         with self.assertRaises(ValueError):
             evaluation.evaluate_audio_grounding(_AudioSensitivePredictor(), [])
         with self.assertRaises(ValueError):
