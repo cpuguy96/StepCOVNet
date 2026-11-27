@@ -351,12 +351,107 @@ def snap_beats_to_onsets(
     )
 
 
+def regularize_beat_grid(
+    beat_grid: BeatGrid,
+    *,
+    audio_duration_sec: float | None = None,
+    inlier_tol_sec: float = 0.035,
+    min_inlier_fraction: float = 0.85,
+) -> BeatGrid:
+    """Fit a drift-free constant-BPM integer beat lattice when the track is steady.
+
+    Neural beat trackers occasionally drop a beat during silent breakdowns or
+    emit spurious extra beats during fills. For steady-tempo songs (electronic,
+    pop, and most rhythm-game tracks), fitting an integer-indexed lattice
+    ``t(k) = t0 + k * ibi`` recovers tempo to ~0.01 BPM, bridges dropped beats,
+    removes spurious beats, and aligns downbeats onto exact 4-beat bar lines.
+    Songs with genuine tempo changes (fewer than ``min_inlier_fraction`` of
+    beats within ``inlier_tol_sec``) are returned unchanged.
+
+    Args:
+        beat_grid: Input :class:`BeatGrid`.
+        audio_duration_sec: Optional full audio duration to extend the lattice
+            through quiet intros/outros.
+        inlier_tol_sec: Maximum residual (seconds) for a beat to count as an
+            inlier on the constant-BPM lattice.
+        min_inlier_fraction: Minimum fraction of beats that must be inliers to
+            replace the raw grid with the regularized constant-BPM lattice.
+
+    Returns:
+        Regularized :class:`BeatGrid` if the song fits a constant tempo, else
+        the original ``beat_grid`` unchanged.
+    """
+    bt = np.asarray(beat_grid.beat_times, dtype=np.float64).reshape(-1)
+    if bt.size < 8:
+        return beat_grid
+
+    ibis = np.diff(bt)
+    med_ibi = float(np.median(ibis))
+    if med_ibi <= 1e-4:
+        return beat_grid
+    inlier_ibis = ibis[np.abs(ibis - med_ibi) <= 0.15 * med_ibi]
+    ibi = float(np.mean(inlier_ibis)) if inlier_ibis.size > 0 else med_ibi
+    anchor_t = float(bt[bt.size // 2])
+
+    for _ in range(3):
+        k = np.rint((bt - anchor_t) / ibi)
+        resid = bt - (anchor_t + k * ibi)
+        mask = np.abs(resid) <= max(inlier_tol_sec, 0.12 * ibi)
+        if int(np.sum(mask)) < 4 or np.unique(k[mask]).size < 2:
+            return beat_grid
+        slope, intercept = np.polyfit(k[mask], bt[mask], 1)
+        if not (slope > 1e-4 and np.isfinite(slope) and np.isfinite(intercept)):
+            return beat_grid
+        ibi = float(slope)
+        anchor_t = float(intercept)
+
+    resid_all = np.abs(bt - (anchor_t + np.rint((bt - anchor_t) / ibi) * ibi))
+    inlier_fraction = float(np.mean(resid_all <= float(inlier_tol_sec)))
+    if inlier_fraction < float(min_inlier_fraction):
+        return beat_grid
+
+    end_time = (
+        max(float(bt[-1]), float(audio_duration_sec) - 0.5 * ibi)
+        if audio_duration_sec is not None and audio_duration_sec > 0.0
+        else float(bt[-1])
+    )
+    k_start = int(np.ceil(-anchor_t / ibi))
+    k_end = int(np.floor((end_time - anchor_t) / ibi))
+    if k_end - k_start < 1:
+        return beat_grid
+    ks = np.arange(k_start, k_end + 1, dtype=np.int64)
+    reg_beats = anchor_t + ks.astype(np.float64) * ibi
+
+    # Align downbeats to the dominant 4-beat bar phase modulo 4.
+    db = np.asarray(beat_grid.downbeat_times, dtype=np.float64).reshape(-1)
+    if db.size > 0:
+        db_k = np.rint((db - anchor_t) / ibi).astype(np.int64)
+        db_resid = np.abs(db - (anchor_t + db_k * ibi))
+        valid_db_k = db_k[db_resid <= float(inlier_tol_sec)]
+        if valid_db_k.size > 0:
+            counts = np.bincount(np.mod(valid_db_k, 4), minlength=4)
+            bar_phase = int(np.argmax(counts))
+            reg_downbeats = reg_beats[np.mod(ks, 4) == bar_phase]
+        else:
+            reg_downbeats = reg_beats[::4]
+    else:
+        reg_downbeats = np.zeros(0, dtype=np.float64)
+
+    return BeatGrid(
+        beat_times=reg_beats,
+        downbeat_times=reg_downbeats,
+        bpm=60.0 / max(ibi, 1e-6),
+        tracker=beat_grid.tracker,
+    )
+
+
 def estimate_beats(
     audio_path: str,
     *,
     tracker: str = TRACKER_AUTO,
     device: str | torch.device = "auto",
     snap_to_onsets: bool = False,
+    regularize_tempo: bool = True,
 ) -> BeatGrid:
     """Estimate a :class:`BeatGrid` from raw audio using the selected backend.
 
@@ -373,6 +468,9 @@ def estimate_beats(
         device: Compute device forwarded to ``beat_this``.
         snap_to_onsets: If True, apply :func:`snap_beats_to_onsets` to correct
             constant beat-annotation phase bias.
+        regularize_tempo: If True (default), apply :func:`regularize_beat_grid`
+            to recover exact constant BPM and bridge dropped beats on steady
+            songs while leaving variable-tempo songs untouched.
 
     Returns:
         Estimated :class:`BeatGrid`.
@@ -401,6 +499,15 @@ def estimate_beats(
             grid = estimate_beats_librosa(audio_path)
     else:
         grid = estimate_beats_librosa(audio_path)
+
+    if regularize_tempo:
+        duration_sec: float | None = None
+        if pathlib.Path(audio_path).is_file():
+            try:
+                duration_sec = float(librosa.get_duration(path=audio_path))
+            except Exception:  # noqa: BLE001
+                duration_sec = None
+        grid = regularize_beat_grid(grid, audio_duration_sec=duration_sec)
 
     if snap_to_onsets:
         grid = snap_beats_to_onsets(grid, audio_path)
@@ -454,17 +561,20 @@ def decode_itgpt_slots_to_times(
     beat_grid: BeatGrid,
     *,
     threshold: float = 0.5,
+    use_slot_centers: bool = True,
 ) -> np.ndarray:
     """Decode ``(n_beats, n_slots)`` ITGPT probabilities to sorted onset times.
-
-    Matches :func:`stepcovnet.ddcl.slots.occupied_center_times` by placing each
-    occupied slot at its cell center ``(slot + 0.5) / n_slots`` linearly
-    interpolated between consecutive beats of ``beat_grid``.
 
     Args:
         probs: Slot occupancy probabilities of shape ``(n_beats, n_slots)``.
         beat_grid: :class:`BeatGrid` corresponding to ``probs``.
         threshold: Probability cutoff for occupied slots.
+        use_slot_centers: If True (default), place each occupied slot at its
+            cell center ``(slot + 0.5) / n_slots`` (matching
+            :func:`stepcovnet.ddcl.slots.occupied_center_times`). If False,
+            place notes at exact StepMania grid edges ``slot / n_slots`` so
+            quarter/8th/16th/24th notes quantize cleanly without half-slot
+            rounding jitter.
 
     Returns:
         Sorted 1D float64 array of onset timestamps in seconds.
@@ -481,11 +591,12 @@ def decode_itgpt_slots_to_times(
             f"probs has {grid.shape[0]} beats but beat_grid only has {bt_full.size - 1}"
         )
     n_slots = int(grid.shape[1])
+    slot_offset = 0.5 if use_slot_centers else 0.0
     times: list[float] = []
     for beat_idx, slot_idx in np.argwhere(grid >= float(threshold)):
         t0 = float(bt_full[int(beat_idx)])
         t1 = float(bt_full[int(beat_idx) + 1])
-        frac = (float(slot_idx) + 0.5) / float(n_slots)
+        frac = (float(slot_idx) + slot_offset) / float(n_slots)
         times.append(t0 + frac * (t1 - t0))
     if not times:
         return np.zeros(0, dtype=np.float64)
@@ -609,5 +720,7 @@ def predict_itgpt_onsets_from_audio(
         max_beats=effective_max_beats,
         device=target_device,
     )
-    onset_times = decode_itgpt_slots_to_times(probs, grid, threshold=threshold)
+    onset_times = decode_itgpt_slots_to_times(
+        probs, grid, threshold=threshold, use_slot_centers=False
+    )
     return onset_times, grid

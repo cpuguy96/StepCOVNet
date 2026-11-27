@@ -585,6 +585,61 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             self.assertIn("#TITLE:UI SM Test;", sm_written)
             self.assertIn("#MUSIC:demo.ogg;", sm_written)
 
+    def test_regularize_beat_grid_steady_and_variable_tempo(self) -> None:
+        # 128 BPM steady song with 2 dropped beats (breakdown) and 1 spurious extra beat.
+        true_ibi = 60.0 / 128.0
+        true_beats = 0.5 + np.arange(32, dtype=np.float64) * true_ibi
+        rng = np.random.default_rng(7)
+        noisy = true_beats + rng.normal(0.0, 0.004, size=true_beats.size)
+        # Drop beats 10 & 11 and inject one spurious off-beat at beat 20.5
+        keep_mask = np.ones(noisy.size, dtype=bool)
+        keep_mask[[10, 11]] = False
+        gapped = np.sort(
+            np.concatenate([noisy[keep_mask], [true_beats[20] + 0.5 * true_ibi]])
+        )
+        downbeats = noisy[::4]
+
+        raw_grid = beat_tracking.BeatGrid(
+            beat_times=gapped,
+            downbeat_times=downbeats,
+            bpm=128.4,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        reg = beat_tracking.regularize_beat_grid(raw_grid)
+        self.assertAlmostEqual(reg.bpm, 128.0, places=1)
+        # Exact constant spacing with zero dropped-beat drift
+        self.assertLess(float(np.std(np.diff(reg.beat_times))), 1e-9)
+        self.assertGreater(reg.downbeat_times.size, 0)
+        # Verify exact-grid slot decoding puts quarter notes right on beat edges
+        probs = np.zeros((2, 48), dtype=np.float32)
+        probs[0, 0] = 0.9
+        probs[0, 24] = 0.9
+        exact_times = beat_tracking.decode_itgpt_slots_to_times(
+            probs, reg, threshold=0.5, use_slot_centers=False
+        )
+        self.assertAlmostEqual(
+            float(exact_times[0]), float(reg.beat_times[0]), places=6
+        )
+        self.assertAlmostEqual(
+            float(exact_times[1]),
+            float(0.5 * (reg.beat_times[0] + reg.beat_times[1])),
+            places=6,
+        )
+
+        # Variable-tempo song (100 BPM -> 140 BPM halfway through) must stay untouched.
+        first_half = 0.5 + np.arange(16, dtype=np.float64) * 0.6
+        second_half = first_half[-1] + np.arange(1, 17, dtype=np.float64) * (
+            60.0 / 140.0
+        )
+        var_grid = beat_tracking.BeatGrid(
+            beat_times=np.concatenate([first_half, second_half]),
+            downbeat_times=np.zeros(0),
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        unchanged = beat_tracking.regularize_beat_grid(var_grid)
+        np.testing.assert_allclose(unchanged.beat_times, var_grid.beat_times, atol=1e-9)
+
 
 if __name__ == "__main__":
     unittest.main()
