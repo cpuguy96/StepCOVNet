@@ -5,6 +5,7 @@ A **profile** binds the generic [autoresearch loop](../SKILL.md) to concrete pat
 | Profile | File |
 | ------- | ---- |
 | PyTorch ITGPT-MERT onset hill-climbing | [itgpt-onset.md](itgpt-onset.md) |
+| End-to-end raw-audio Beat This! & onset decoding | [raw-audio-onset.md](raw-audio-onset.md) |
 | General EXPERIMENT_LOG research | [experiment-log.md](experiment-log.md) |
 
 ## Add a profile

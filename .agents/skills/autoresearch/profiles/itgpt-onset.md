@@ -18,16 +18,17 @@ Use when optimizing onset detection via config tweaks (Tier A), architecture/dat
 
 Do **not** change evaluation splits, thresholds, or grounding criteria mid-session.
 
-## Two-stage promotion funnel (Screen → Transfer)
+## Two-stage promotion funnel (Screen → 2-Seed / Soup → Transfer)
 
-Never crown a new champion solely from Dataset A's 9 validation songs.
+Never crown a new champion solely from a single Dataset A seed: Dataset A (`81/9`) has `~±0.34 pp` seed variance, so a `+0.20 pp` single-run delta is within noise.
 
-1. **Stage 1 — Fast Screen (Dataset A, `81/9`, `literature_fraxtil_orig`):**
-   - Full 64-epoch run on Colab `L4` (`~13.5 s/ep`, ~16 min) or `T4` (`~17.3 s/ep`, ~20 min).
-   - For high-risk Tier-C architecture changes, an optional **32-epoch early screen** (`--epochs 32`, ~8 min on `L4`) is allowed because `best.pt` typically peaks around epochs 17–26; if clearly behind champion by `> 1.5 pp`, discard immediately, otherwise run full 64 epochs.
-   - Promotion threshold from Stage 1: **`f1_at_05 > champion + 0.0020`** (`+0.20 pp`), OR a targeted error-slice win with non-negative overall `f1_at_05` and clean guardrails.
+1. **Stage 1 — Fast Screen & Fine-Tuning (`literature_fraxtil_orig`, `81/9`):**
+   - **From-scratch mode:** 64-epoch run on Colab `L4` (`~13.5 s/ep`, ~16 min) or `T4` (~20 min); optional **32-epoch early screen** (`~8 min` on `L4`) discarding runs clearly behind by `> 1.5 pp`.
+   - **Fine-tuning mode (`--init_weights`, `Cosine-16`):** ~4 min/run on `L4` from a converged `1,713t` checkpoint (`EXP-20261127-05`); evaluate calibration (`pw=1.0` vs `1.25`) without forgetting.
+   - **Single-seed screen bar:** `f1_at_05 > champion + 0.0020` (`+0.20 pp`) OR a targeted error-slice win with lower total errors and clean guardrails (`Δshuf >= 0.08`, `Δzero >= 0.10`, no slice collapse).
+   - **Multi-seed & Zero-Cost Model Soup gate:** Before spending Stage-2 compute (or crowning a Dataset A champion), require **2-seed confirmation** (e.g. `seed=42` + `seed=123`) OR paired per-song wins on **≥6/9 songs** with lower total errors, AND test zero-cost uniform weight averaging (**Model Soup**, e.g. `Soup_F_H_I`) plus an end-to-end **raw-audio cross-check** (`scripts/eval_raw_audio_onset.py`) alongside [onset-evaluation](../../onset-evaluation/SKILL.md).
 2. **Stage 2 — Transfer Promotion Gate (`final_data` `300t/50v`):**
-   - Run the Stage-1 winner against the `300t/50v` champion using `final_data__meta,final_data_300t_50v__mert_l2_6_10_16` (~20–25 min on Colab `L4`).
+   - Run the confirmed Stage-1 winner against the `300t/50v` champion using `final_data__meta,final_data_300t_50v__mert_l2_6_10_16` (~20–25 min on Colab `L4`).
    - Only after Stage 2 beats (or matches with clear diagnostic improvement) the `300t/50v` champion does the recipe/code replace the champion on `master`.
 
 ## Preflight
@@ -41,11 +42,16 @@ Never crown a new champion solely from Dataset A's 9 validation songs.
 3. Open the current champion's `eval_val_breakdown.json` (if missing, generate it once with `--diagnose_grounding --error_breakdown`) to identify the #1 error bucket (`16th_off`, `24th`, near-miss timing offsets, `intro`, calibration, worst charts).
 4. Check active GPUs (`colab --auth=oauth2 sessions` and local `nvidia-smi`). Never run two training jobs on the same GPU.
 
-## Multi-GPU parallel lanes & parallel coding
+## Multi-GPU portfolio lanes & parallel coding
 
 GPU priority: **`L4 → T4 → local (RTX 2080) → A100`**.
 
-You may run up to **3 orthogonal hypothesis chains in parallel** (1 per GPU target: Colab `L4`, Colab `T4`, local WSL `RTX 2080`), AND **code hypothesis N+1 in parallel while GPUs train** — zero idle GPU time.
+Assign concurrent compute as an **Explore / Exploit / CPU portfolio** so GPUs never run redundant tweaks or sit idle:
+
+- **`L4` (Exploit / Verify):** highest-EV refinement on champion, 2nd-seed confirmation, or Stage-2 `300t/50v` transfer gate.
+- **`T4` (Orthogonal Explore):** distinct Tier-B/C hypothesis class attacking the #1 remaining error slice (`16th_off`, `24th`, `intro`, worst songs).
+- **`CPU` / Zero-GPU (continuous while GPUs train):** run `scripts/eval_raw_audio_onset.py`, `--diagnose_decoding`, model soups, worst-song audits, pre-GPU headroom/mechanism checks, and Wave N+1 Tier-C coding/tests (`local RTX 2080` as optional 3rd GPU lane).
+- **Fail-fast mid-run abort:** check early val epochs (Ep 8–10 for `Cosine-16` fine-tuning, Ep 16–24 for 64-ep scratch); abort clearly dominated runs instead of waiting to epoch 64.
 
 ### Isolation rules (mandatory for parallel lanes & parallel coding)
 
@@ -147,12 +153,11 @@ Keep `master` permanently clean — **never accumulate dead feature flags in `sr
 
 Follow [research-session-workflow](../../research-session-workflow/SKILL.md): prepend `EXP-…` to [EXPERIMENT_LOG.md](../../../../docs/research/EXPERIMENT_LOG.md) with `F1@0.5`, `F1_max`, `±20 ms micro_event_f1`, `Δshuf`, `Δzero`, key breakdown slices (`16th_off`, `24th`, `intro`, `errors`), and **promoted / rejected** verdict.
 
-## Anti-spam & Do Not Repeat
+## Anti-spam & Live Rejection Ledger
 
-- **Plateau rule:** `scripts/itgpt_scoreboard.py` raises a plateau warning after **5 consecutive timestamped runs** without `> +0.20 pp` `f1_at_05`. When plateaued, **forbid** single-knob hyperparameter nudges; upgrade to Tier B/C targeting the largest error bucket in `eval_val_breakdown.json`.
-- **Already rejected (do NOT retry unchanged — see `EXPERIMENT_LOG.md`):**
-  - `EXP-20261124..26`: `focal_gamma=1.0`, `early_film`, `grid_weight_24th=2.0`, `cyclic_measure_pos`, `continuous_beat_conv`, `gradient_accumulation_steps=4`, `mert_spectral_flux`, `max_bar_shift=15`.
-  - `EXP-20261127-03`: `use_rope_level6`, `subbeat_skip_head`, `slot_refine_head`, `level6_drop_path=0.15`, `multiscale_conv_head`, `tversky_alpha=0.6`, `mert_temporal_delta`, `mert_delta_gate`, `chart_density_loss`, `mask_padded_beats`, `use_swiglu`, `mert_noise_std=0.08`, `decoupled_weight_decay=0.03 + lr=1.5e-4`, `Cosine-32`, and `subdiv_aux_head` on `300t/50v` or stacked with R-Drop.
+- **Plateau rule:** `scripts/itgpt_scoreboard.py` raises a plateau warning after **5 consecutive timestamped runs** without `> +0.20 pp` `f1_at_05`. When plateaued, **forbid** single-knob hyperparameter nudges; upgrade to Tier B/C with a pre-GPU Headroom & Mechanism Proof targeting the largest error bucket in `eval_val_breakdown.json`.
+- **Live rejection ledger (no hardcoded stale list):** Always orient from [EXPERIMENT_LOG.md](../../../../docs/research/EXPERIMENT_LOG.md) § Current phase, recent `EXP-…` entries, and `scripts/itgpt_scoreboard.py` before proposing an iteration so you never repeat a previously falsified knob or architecture without a new mechanism.
+- **Outer meta-loop:** Every 3–5 runs, update causal beliefs in `DISCUSSION_NOTES.md`/`EXPERIMENT_LOG.md`, check if diagnostic tooling needs an upgrade, and promote repeated process lessons via [agent-maintenance](../../agent-maintenance/SKILL.md).
 
 ## Gotchas
 

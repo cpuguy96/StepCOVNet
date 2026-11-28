@@ -12,8 +12,7 @@ description: >-
 **You** run the research loop in this agent session. Harness scripts train, eval, and record numbers; **you** choose hypotheses from evidence rather than handing reasoning to unattended knob mutators.
 
 North star: [PIPELINE_ARCHITECTURE.md](../../../docs/research/PIPELINE_ARCHITECTURE.md).  
-Logging: [research-session-workflow](../research-session-workflow/SKILL.md).  
-GPU: [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md).
+Logging: [research-session-workflow](../research-session-workflow/SKILL.md) · Eval: [onset-evaluation](../onset-evaluation/SKILL.md) · Colab: [colab-gpu-stepcovnet](../colab-gpu-stepcovnet/SKILL.md) · WSL GPU: [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md).
 
 ## One-prompt invocation
 
@@ -54,13 +53,14 @@ Go.
 2. **Preflight** — profile-specific cleanup (stray jobs, locks, env); one concurrent heavy job unless profile says otherwise.
 3. **Record deadline** — `deadline = now + budget` at session start; treat the budget as a **wall-clock obligation**, not a suggestion.
 4. **Loop until** goal met **or** `now >= deadline` (see [Budget discipline](#budget-discipline)):
-   - **Orient** — profile brief / logs / last metrics
-   - **Diagnose** — one sentence; cite numbers
-   - **Hypothesize** — tier A/B/C; what confirms/refutes
+   - **Orient** — live scoreboard / breakdown JSON / `EXPERIMENT_LOG.md`
+   - **Diagnose** — one sentence; cite measured numbers
+   - **Hypothesize & prove headroom** — tier A/B/C; quantified bucket ceiling + falsifiable prediction
    - **Plan** — profile experiment artifact (JSON, config path, or code edit plan)
-   - **Verify** — tier C: tests + `pre_submit.py --fast` before expensive run
-   - **Run** — profile run command; wait for completion
-   - **Log** — profile research log
+   - **Pre-GPU verify** — Tier B/C: 30s CPU mechanism check (when feasible) + `pytest` + `pre_submit.py --fast`
+   - **Run** — portfolio lane command; abort early if clearly dominated mid-run
+   - **Log** — prepend `EXP-…` same turn
+   - **Outer meta-loop (every 3–5 runs)** — wave causal-belief synthesis, diagnostic tooling check, and process promotion via [agent-maintenance](../agent-maintenance/SKILL.md)
    - **Judge** — if goal not met and time remains → **immediately** plan the next iteration; do not end the session
 5. **Do not ask** the user mid-loop except: hard block, cheat/policy violation, tests red, unrecoverable GPU.
 ## Choose a profile
@@ -68,6 +68,7 @@ Go.
 | Profile            | Use when                                                                                 | Detail                                                    |
 | ------------------ | ---------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | **itgpt-onset**    | PyTorch ITGPT-MERT onset placement hill-climbing (multi-GPU Colab + WSL, diagnostics)    | [profiles/itgpt-onset.md](profiles/itgpt-onset.md)        |
+| **raw-audio-onset** | Fast CPU/local-GPU end-to-end raw-audio beat tracking & onset decoding (`eval_raw_audio_onset.py`) | [profiles/raw-audio-onset.md](profiles/raw-audio-onset.md) |
 | **experiment-log** | General research; log `EXP-…` in EXPERIMENT_LOG                                          | [profiles/experiment-log.md](profiles/experiment-log.md)  |
 | **custom**         | User defines metric + run command in the goal                                            | You define orient/run/log for that session; still follow tiers + anti-spam |
 
@@ -85,13 +86,40 @@ Pick the **lowest tier that tests the hypothesis**.
 
 Tier A must include **reasoning**: what failed, what you expect, what changed vs parent/baseline.
 
+### Pre-GPU Headroom & Mechanism Proof (Tier B/C gate)
+
+Before spending GPU minutes on a Tier-B or Tier-C change, state and verify two gates:
+
+1. **Measured headroom:** Quantify how many errors the target bucket actually holds from `eval_val_breakdown.json` or per-song outputs (e.g., *"this slice causes X of 7,708 errors, max possible ceiling +Y pp"*).
+2. **Cheap CPU falsification check (30 s, when feasible):** Test the hypothesis on saved logits, `eval_val_breakdown.json`, or the worst-3 songs on CPU *before* launching GPU training — if the premise fails offline, drop it without burning GPU compute.
+
+## Portfolio scheduling & fail-fast screening
+
+When running multiple lanes concurrently, assign explicit **portfolio roles** instead of correlated tweaks:
+
+| Lane | Portfolio role | What belongs here |
+| ---- | -------------- | ----------------- |
+| **`L4` (Colab primary)** | **Exploit / Verify** | Highest-EV champion refinement, 2nd-seed confirmation, Stage-2 transfer gate |
+| **`T4` (Colab secondary)** | **Orthogonal Explore** | Distinct Tier-B/C hypothesis class targeting the #1 remaining error slice |
+| **CPU / Zero-GPU (concurrent)** | **Diagnostics & Prep** | `eval_raw_audio_onset.py`, `--diagnose_decoding`, model soups, worst-song error audits, Wave N+1 Tier-C coding/tests |
+
+- **Fail-fast early abort:** Inspect mid-run validation checkpoints; abort clearly dominated runs early instead of burning remaining epochs.
+
+## Outer meta-loop (Wave reflection every 3–5 runs)
+
+True RSI improves both the model *and* the search process. At the end of every 3–5 run wave (before launching Wave N+1):
+
+1. **Causal belief synthesis:** Record *why* an entire hypothesis class succeeded or failed (mechanism-level insight in `DISCUSSION_NOTES.md` / `EXPERIMENT_LOG.md`), not just flat flag lists.
+2. **Diagnostic tooling check:** If you could not see *why* a slice or song degraded (blind diagnosis), spend ~5 minutes adding/extending a reusable diagnostic (`--error_breakdown`, `eval_raw_audio_onset.py`, slice dump) before launching more GPU runs.
+3. **Process & skill self-improvement:** Promote repeated workflow friction or search-strategy lessons into the active profile or skill via [agent-maintenance](../agent-maintenance/SKILL.md) (backed by local evals).
+
 ## Anti-spam (all profiles)
 
 1. **Plateau:** Primary metric unchanged for **≥5 runs** (profile defines tolerance) → **forbid** single-parameter tweakers; **upgrade tier** or switch hypothesis **class**.
 2. **No repeats:** Do not rerun the same recipe/config fingerprint unless infra retry.
 3. **Pinned policy:** Do not change eval gates / success metrics mid-session unless the profile allows it.
 4. **One job per GPU target:** No duplicate training drivers on the same GPU (profile preflight). Parallel chains across distinct GPUs (e.g. Colab `L4` + `T4` + local WSL) and parallel Tier-C coding are allowed when the profile isolates git worktrees (see [profiles/itgpt-onset.md](profiles/itgpt-onset.md)).
-| **No planner handoff:** Do not delegate reasoning to unattended lattice/sweep planners while this skill is active.
+5. **No planner handoff:** Do not delegate reasoning to unattended lattice/sweep planners while this skill is active.
 
 ## Budget discipline
 
@@ -139,6 +167,11 @@ Stop **only** when one of these is true:
 - **Blocked:** document in profile log + `NOTE-…` if appropriate; tell user what is needed
 
 Do **not** stop because a pre-seeded experiment list finished while `now < deadline`.
+
+### Live-truth resume & Handoff Packet
+
+- **No separate session state file:** On compaction or resume (*continue autoresearch*), orient directly from live disk truth (`docs/research/EXPERIMENT_LOG.md`, `scripts/itgpt_scoreboard.py`, `bash scripts/colab_worktree.sh list`, `colab sessions`).
+- **Termination Handoff Packet:** At stop, report: (1) current champion commit/config + metrics, (2) top-3 causal findings from this session, (3) remaining open hypotheses ranked by measured headroom, and (4) confirmed `0` active Colab VMs (or active local jobs).
 
 ## Gotchas (all profiles)
 

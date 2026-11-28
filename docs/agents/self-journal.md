@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-07: Upgrade autoresearch skill and profiles for RSI loop (validated via skill-local TDD eval)
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 07:08:00 |
+| **Category** | skill-gap |
+| **Summary** | Audited `autoresearch` for RSI quality: added 6 structural upgrades while skipping mutable `state.json` in favor of live disk truth (`EXPERIMENT_LOG.md`, `itgpt_scoreboard.py`, `colab_worktree.sh`). Validated via local TDD hill-climb (`beh-autoresearch-seed-variance-soup`, `beh-autoresearch-headroom-meta`, `trig-autoresearch-raw-audio`): Behavior jumped `33.3% -> 100.0%` (`+66.67 pp`), Triggers `100.0%` (`0` regressions). |
+| **Artifact** | skills: `.agents/skills/autoresearch/SKILL.md`, `.agents/skills/autoresearch/profiles/itgpt-onset.md`, `.agents/skills/autoresearch/profiles/raw-audio-onset.md`, `.agents/skills/autoresearch/profiles/README.md` |
+| **Action taken** | Added pre-GPU Headroom & Mechanism Proof, L4 Exploit / T4 Explore / CPU portfolio scheduling + fail-fast aborts, 3-5 run outer meta-loop wave reflection, multi-seed + Model Soup + raw-audio promotion gates (with `--init_weights` fine-tuning mode), live rejection ledger instead of hardcoded stale lists, `raw-audio-onset` CPU/WSL profile, and exit Handoff Packet |
+| **Related** | `autoresearch`, `agent-maintenance`, `JRN-20261128-06` |
+
 ### JRN-20261128-06: Keep local skill and rule eval prompts untracked and gitignored
 
 | Field | Value |
