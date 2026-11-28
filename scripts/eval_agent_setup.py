@@ -236,7 +236,7 @@ def validate_local_suites(
     rules_dir: pathlib.Path | None = None,
     skills_dir: pathlib.Path | None = None,
     rule_evals_dir: pathlib.Path | None = None,
-    check_all_coverage: bool = True,
+    check_all_coverage: bool = False,
 ) -> list[str]:
     """Validate skill-local and rule-local eval suites against disk definitions.
 
@@ -266,10 +266,10 @@ def validate_local_suites(
     )
     all_targets = known_skills | all_rule_files
 
-    errors: list[str] = []
-    if not paths:
-        return ["No local eval suite files found"]
+    if not paths and not check_all_coverage:
+        return []
 
+    errors: list[str] = []
     seen_ids: set[str] = set()
 
     if check_all_coverage:
@@ -284,6 +284,8 @@ def validate_local_suites(
                 errors.append(
                     f"Missing local model_decision rule eval suite: {expected_path}"
                 )
+        if not paths and not errors:
+            return ["No local eval suite files found"]
 
     for path in paths:
         if not path.is_file():
@@ -843,13 +845,18 @@ def _cmd_list_suites(args: argparse.Namespace) -> int:
 
 def _cmd_validate(args: argparse.Namespace) -> int:
     paths = discover_suites(skill=args.skill, rule=args.rule, suite_path=args.suite)
-    check_all = not (args.skill or args.rule or args.suite)
+    check_all = bool(getattr(args, "require_coverage", False)) and not (
+        args.skill or args.rule or args.suite
+    )
     errors = validate_local_suites(paths, check_all_coverage=check_all)
     if errors:
         print(f"INVALID local eval suites ({len(errors)} errors):")
         for err in errors:
             print(f"  - {err}")
         return 1
+    if not paths:
+        print("OK - no local eval suites found (local-only, gitignored).")
+        return 0
     merged = load_merged_suite(paths)
     n_trig = len(merged["trigger_cases"])
     n_beh = len(merged["behavior_cases"])
@@ -862,8 +869,10 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 def _cmd_score(args: argparse.Namespace) -> int:
     paths = discover_suites(skill=args.skill, rule=args.rule, suite_path=args.suite)
-    check_all = not (args.skill or args.rule or args.suite)
-    errors = validate_local_suites(paths, check_all_coverage=check_all)
+    if not paths:
+        print("No local eval suite files found to score against.")
+        return 1
+    errors = validate_local_suites(paths, check_all_coverage=False)
     if errors:
         print("Suite validation errors:")
         for err in errors:
@@ -932,6 +941,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_val.add_argument("--skill", default="", help="Validate only one skill suite.")
     p_val.add_argument("--rule", default="", help="Validate only one rule suite.")
     p_val.add_argument("--suite", default="", help="Validate an explicit suite path.")
+    p_val.add_argument(
+        "--require-coverage",
+        action="store_true",
+        help="Require every live skill and model_decision rule to have a local suite.",
+    )
 
     p_score = sub.add_parser("score", help="Score predictions and optional diff.")
     p_score.add_argument("--skill", default="", help="Score only one skill suite.")

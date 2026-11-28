@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-06: Keep local skill and rule eval prompts untracked and gitignored
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 06:22:55 |
+| **Category** | convention |
+| **Summary** | User steered not to check eval prompts into GitHub. |
+| **Artifact** | `.gitignore`; skill: `.agents/skills/agent-maintenance/SKILL.md`; layout: `docs/agents/project-layout.md`; validator/tests: `scripts/eval_agent_setup.py`, `tests/eval_agent_setup_test.py` |
+| **Action taken** | Untracked and gitignored `.agents/skills/*/evals/**` and `.agents/rules/evals/**` while keeping local files intact, updated `eval_agent_setup.py validate` and unit tests to pass cleanly on clean clones without tracked prompt suites, and documented in `agent-maintenance` never to commit prompt suites |
+| **Related** | `agent-maintenance`, `JRN-20261128-05` |
+
 ### JRN-20261128-05: Add skill-local and rule-local TDD evals and hill-climbing runner
 
 | Field | Value |

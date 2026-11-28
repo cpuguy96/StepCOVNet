@@ -20,20 +20,92 @@ import eval_agent_setup as eval_mod  # noqa: E402
 
 
 class LiveSuiteAndCatalogTest(unittest.TestCase):
-    def test_live_local_suites_validate_cleanly(self) -> None:
-        paths = eval_mod.discover_suites()
-        self.assertGreaterEqual(len(paths), 9)
-        errors = eval_mod.validate_local_suites(paths, check_all_coverage=True)
-        self.assertEqual(errors, [])
+    def test_empty_local_suites_pass_validate_unless_coverage_required(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            rules_dir = root / ".agents" / "rules"
+            rule_evals = rules_dir / "evals"
+            skills_dir = root / ".agents" / "skills"
+            (skills_dir / "demo").mkdir(parents=True)
+            rules_dir.mkdir(parents=True)
+            (skills_dir / "demo" / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Demo skill\n---\n",
+                encoding="utf-8",
+            )
+            paths = eval_mod.discover_suites(
+                skills_dir=skills_dir, rule_evals_dir=rule_evals
+            )
+            self.assertEqual(paths, [])
+            self.assertEqual(
+                eval_mod.validate_local_suites(
+                    paths,
+                    rules_dir=rules_dir,
+                    skills_dir=skills_dir,
+                    rule_evals_dir=rule_evals,
+                    check_all_coverage=False,
+                ),
+                [],
+            )
+            cov_errors = eval_mod.validate_local_suites(
+                paths,
+                rules_dir=rules_dir,
+                skills_dir=skills_dir,
+                rule_evals_dir=rule_evals,
+                check_all_coverage=True,
+            )
+            self.assertTrue(
+                any("Missing local skill eval suite" in err for err in cov_errors)
+            )
 
-    def test_single_skill_discovery_points_inside_skill_dir(self) -> None:
-        paths = eval_mod.discover_suites(skill="onset-evaluation")
-        self.assertEqual(
-            paths,
-            [eval_mod.SKILLS_DIR / "onset-evaluation" / "evals" / "suite.json"],
-        )
-        errors = eval_mod.validate_local_suites(paths, check_all_coverage=False)
-        self.assertEqual(errors, [])
+    def test_single_skill_discovery_and_validation_inside_skill_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            rules_dir = root / ".agents" / "rules"
+            rule_evals = rules_dir / "evals"
+            skills_dir = root / ".agents" / "skills"
+            (skills_dir / "demo" / "evals").mkdir(parents=True)
+            rules_dir.mkdir(parents=True)
+            (skills_dir / "demo" / "SKILL.md").write_text(
+                "---\nname: demo\ndescription: Demo skill\n---\n",
+                encoding="utf-8",
+            )
+            suite_file = skills_dir / "demo" / "evals" / "suite.json"
+            suite_file.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "owner": "demo",
+                        "owner_type": "skill",
+                        "trigger_cases": [
+                            {
+                                "id": "t1",
+                                "prompt": "run demo",
+                                "expected_skills": ["demo"],
+                            },
+                            {
+                                "id": "t2",
+                                "prompt": "unrelated",
+                                "expected_skills": [],
+                                "forbidden_skills": ["demo"],
+                            },
+                        ],
+                        "behavior_cases": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            paths = eval_mod.discover_suites(
+                skill="demo", skills_dir=skills_dir, rule_evals_dir=rule_evals
+            )
+            self.assertEqual(paths, [suite_file])
+            errors = eval_mod.validate_local_suites(
+                paths,
+                rules_dir=rules_dir,
+                skills_dir=skills_dir,
+                rule_evals_dir=rule_evals,
+                check_all_coverage=False,
+            )
+            self.assertEqual(errors, [])
 
     def test_load_live_catalog_finds_model_decision_rules_and_skills(self) -> None:
         cat = eval_mod.load_live_catalog()
