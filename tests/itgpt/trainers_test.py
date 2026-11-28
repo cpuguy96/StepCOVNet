@@ -933,6 +933,59 @@ class ItgptTrainersTest(unittest.TestCase):
             self.assertEqual(mock_loader.call_count, 2)
             self.assertEqual(mock_loader.call_args_list[0].kwargs["num_workers"], 0)
 
+    def test_train_placement_with_song_progress_saves_flag(self) -> None:
+        chart = _synthetic_chart()
+        report = _mock_report(0.5, 0.55)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                    use_song_progress=True,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="song_prog_smoke",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
+            ):
+                trained = trainers.train_placement(experiment, device="cpu")
+            self.assertTrue(trained.use_song_progress)
+            payload = torch.load(
+                pathlib.Path(tmpdir) / "models" / "song_prog_smoke.pt",
+                map_location="cpu",
+                weights_only=False,
+            )
+            self.assertTrue(payload["model_config"]["use_song_progress"])
+
 
 if __name__ == "__main__":
     unittest.main()

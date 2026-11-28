@@ -158,6 +158,9 @@ class ItgptModelConfig(_DictSerializableMixin):
         beat_aux_head: If True, add an auxiliary per-beat head on post-
             ``conv_head`` features predicting beat activity and log-count plus
             a zero-initialized residual slot modulation.
+        use_song_progress: If True, add a zero-initialized projection of
+            normalized per-beat song progress ``[t/(T-1), 1-t/(T-1)]``
+            (zeroed on padded beats) into ``level6``.
     """
 
     d_model: int = constants.D_MODEL
@@ -169,6 +172,7 @@ class ItgptModelConfig(_DictSerializableMixin):
     mert_channel_dropout: float = 0.0
     mert_time_mask_preserve_downbeat: bool = False
     beat_aux_head: bool = False
+    use_song_progress: bool = False
 
     def __post_init__(self) -> None:
         """Validate model hyperparameters.
@@ -248,16 +252,16 @@ class ItgptRunConfig(_DictSerializableMixin):
         rdrop_kl_weight: Non-negative weight on the bidirectional Bernoulli
             R-Drop KL consistency loss between two stochastic forward passes
             during training (``0.0`` disables).
-        init_weights_path: Optional path to a saved ``.pt`` checkpoint used to
-            initialize model weights before fine-tuning (optimizer, schedule,
-            and EMA start fresh from the loaded weights; ignored when resuming
-            from an existing backup checkpoint).
         silence_negative_prob: Probability in ``[0, 1)`` of applying
             silence-negative augmentation on a training step — zeroing audio
             features and slot targets either across the full chart or a
             contiguous 4–32 beat span while preserving ``difficulty`` and
             ``bpm`` conditioning so silence implies zero steps (``0.0``
             disables).
+        init_weights_path: Optional path to a saved ``.pt`` checkpoint used to
+            initialize model weights before fine-tuning (optimizer, schedule,
+            and EMA start fresh from the loaded weights; ignored when resuming
+            from an existing backup checkpoint).
     """
 
     epoch: int = 8

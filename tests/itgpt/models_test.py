@@ -659,6 +659,86 @@ class ItgptModelsTest(unittest.TestCase):
         self.assertTrue(torch.isfinite(ext1.grad).all())
         self.assertTrue(torch.isfinite(ext2.grad).all())
 
+    def test_song_progress_conditioning_zero_init_behavior_and_reload(self) -> None:
+        n_beats = constants.CHUNK_ALIGN
+        feature_dim = 12
+        runtime.set_seed(0)
+        base_model = models.build_itgpt_placement_model(
+            d_model=32,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=n_beats,
+            audio_feature_type=ddcl_constants.AUDIO_FEATURE_MERT,
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=feature_dim,
+        )
+        runtime.set_seed(0)
+        prog_model = models.build_itgpt_placement_model(
+            d_model=32,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=n_beats,
+            audio_feature_type=ddcl_constants.AUDIO_FEATURE_MERT,
+            n_frames_per_beat=constants.CNN_FRAMES_OUT,
+            feature_dim=feature_dim,
+            use_song_progress=True,
+        )
+        self.assertFalse(base_model.use_song_progress)
+        self.assertIsNone(base_model.song_progress_proj)
+        self.assertTrue(prog_model.use_song_progress)
+        self.assertIsNotNone(prog_model.song_progress_proj)
+
+        prog_state = prog_model.state_dict()
+        for key, value in base_model.state_dict().items():
+            prog_state[key] = value.clone()
+        prog_model.load_state_dict(prog_state)
+
+        frac = torch.arange(n_beats, dtype=torch.float32) / float(n_beats - 1)
+        progress = torch.stack([frac, 1.0 - frac], dim=-1).unsqueeze(0)
+        rng = np.random.default_rng(91)
+        inputs = {
+            "audio": torch.as_tensor(
+                rng.standard_normal(
+                    (1, n_beats, constants.CNN_FRAMES_OUT, feature_dim)
+                ).astype(np.float32)
+            ),
+            "bpm": torch.tensor([[140.0]], dtype=torch.float32),
+            "difficulty": torch.tensor([[2.0]], dtype=torch.float32),
+            "song_progress": progress,
+        }
+        base_model.eval()
+        prog_model.eval()
+        with torch.no_grad():
+            base_logits = base_model.forward_logits(inputs).numpy()
+            prog_init_logits = prog_model.forward_logits(inputs).numpy()
+        np.testing.assert_allclose(prog_init_logits, base_logits, atol=1e-6)
+
+        assert prog_model.song_progress_proj is not None
+        with torch.no_grad():
+            prog_model.song_progress_proj.weight[:, 0].fill_(0.5)
+            prog_model.song_progress_proj.weight[:, 1].fill_(-0.5)
+            flipped_inputs = {**inputs, "song_progress": progress.flip(dims=[2])}
+            logits_fwd = prog_model.forward_logits(inputs).numpy()
+            logits_flip = prog_model.forward_logits(flipped_inputs).numpy()
+            fallback_logits = prog_model.forward_logits(
+                {k: v for k, v in inputs.items() if k != "song_progress"}
+            ).numpy()
+        self.assertGreater(float(np.max(np.abs(logits_fwd - logits_flip))), 1e-4)
+        np.testing.assert_allclose(logits_fwd, fallback_logits, atol=1e-6)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ckpt = trainers.save_checkpoint(
+                prog_model, pathlib.Path(tmpdir) / "song_prog.pt"
+            )
+            reloaded = trainers.load_placement_model(ckpt, device="cpu")
+            self.assertTrue(reloaded.use_song_progress)
+            self.assertEqual(reloaded.model_config()["use_song_progress"], True)
+            with torch.no_grad():
+                reloaded_logits = reloaded.forward_logits(inputs).numpy()
+        np.testing.assert_allclose(logits_fwd, reloaded_logits, atol=1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()

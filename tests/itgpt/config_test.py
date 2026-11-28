@@ -27,6 +27,7 @@ class ItgptConfigTest(unittest.TestCase):
                 n_heads=4,
                 n_enc_layers=1,
                 beat_aux_head=True,
+                use_song_progress=True,
             ),
             run=config.ItgptRunConfig(
                 epoch=10,
@@ -67,6 +68,8 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.model.n_heads, 4)
         self.assertTrue(loaded.model.beat_aux_head)
         self.assertFalse(config.ItgptModelConfig().beat_aux_head)
+        self.assertTrue(loaded.model.use_song_progress)
+        self.assertFalse(config.ItgptModelConfig().use_song_progress)
         self.assertEqual(loaded.run.weight_decay, 0.0)
         self.assertEqual(loaded.run.eval_slot_f1_every, 16)
         self.assertEqual(loaded.run.lr_schedule, "cosine")

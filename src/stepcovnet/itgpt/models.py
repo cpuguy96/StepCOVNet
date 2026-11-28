@@ -87,6 +87,9 @@ class ItgptPlacementModel(nn.Module):
         difficulty_source: Scalar conditioning signal passed as ``difficulty``
             (``"meter"`` uses ``[1, 50]`` bounds; ``"density"`` uses ``[0, 6]``
             mean steps per beat bounds).
+        use_song_progress: If True, add a zero-initialized projection of
+            normalized per-beat song progress ``[t/(T-1), 1-t/(T-1)]`` into
+            ``level6``.
 
     Raises:
         ValueError: If frontend or width arguments are invalid.
@@ -110,6 +113,7 @@ class ItgptPlacementModel(nn.Module):
         mert_time_mask_preserve_downbeat: bool = False,
         beat_aux_head: bool = False,
         difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
+        use_song_progress: bool = False,
     ) -> None:
         super().__init__()
         if d_model < 1 or n_heads < 1 or d_model % n_heads != 0:
@@ -163,6 +167,7 @@ class ItgptPlacementModel(nn.Module):
         self.mert_time_mask_preserve_downbeat = bool(mert_time_mask_preserve_downbeat)
         self.beat_aux_head = bool(beat_aux_head)
         self.difficulty_source = str(difficulty_source)
+        self.use_song_progress = bool(use_song_progress)
 
         self.beat_cnn: ItgptBeatCNNEncoder | None = None
         self.beat_mert: ItgptBeatMertEncoder | None = None
@@ -234,6 +239,11 @@ class ItgptPlacementModel(nn.Module):
         self.beat_compress = ItgptGatedCompression(6 * self.d_model, self.d_model)
         self.level6_pos = nn.Embedding(self.max_beats + 200, self.d_model)
         nn.init.normal_(self.level6_pos.weight, mean=0.0, std=0.02)
+        self.song_progress_proj: nn.Linear | None = None
+        if self.use_song_progress:
+            self.song_progress_proj = nn.Linear(2, self.d_model)
+            nn.init.zeros_(self.song_progress_proj.weight)
+            nn.init.zeros_(self.song_progress_proj.bias)
 
         self.level6 = nn.ModuleList(
             [
@@ -306,6 +316,20 @@ class ItgptPlacementModel(nn.Module):
         beat_idx = torch.arange(n_beats, dtype=torch.long, device=global_h.device)
         pos = self.level6_pos(beat_idx)
         global_h = global_h + pos.to(global_h.dtype).unsqueeze(0)
+        if self.song_progress_proj is not None:
+            song_progress = inputs.get("song_progress")
+            if song_progress is None:
+                frac = torch.arange(
+                    n_beats, dtype=torch.float32, device=global_h.device
+                ) / float(max(n_beats - 1, 1))
+                song_progress = (
+                    torch.stack([frac, 1.0 - frac], dim=-1)
+                    .unsqueeze(0)
+                    .expand(batch_size, -1, -1)
+                )
+            global_h = global_h + self.song_progress_proj(
+                song_progress[:, :n_beats].to(global_h.dtype)
+            )
         diff_tok = self.diff_proj(inputs["difficulty"]).to(global_h.dtype)
         bpm_tok = self.bpm_proj(inputs["bpm"]).to(global_h.dtype)
         global_h = torch.cat([diff_tok, bpm_tok, global_h], dim=1)
@@ -374,6 +398,7 @@ class ItgptPlacementModel(nn.Module):
             "mert_time_mask_preserve_downbeat": self.mert_time_mask_preserve_downbeat,
             "beat_aux_head": self.beat_aux_head,
             "difficulty_source": self.difficulty_source,
+            "use_song_progress": self.use_song_progress,
         }
 
 
@@ -394,6 +419,7 @@ def build_itgpt_placement_model(
     mert_time_mask_preserve_downbeat: bool = False,
     beat_aux_head: bool = False,
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
+    use_song_progress: bool = False,
 ) -> ItgptPlacementModel:
     """Build the PyTorch ITGPT placement network.
 
@@ -419,6 +445,9 @@ def build_itgpt_placement_model(
             modulation.
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"``).
+        use_song_progress: If True, add a zero-initialized projection of
+            normalized per-beat song progress ``[t/(T-1), 1-t/(T-1)]`` into
+            ``level6``.
 
     Returns:
         Instantiated :class:`ItgptPlacementModel`.
@@ -439,4 +468,5 @@ def build_itgpt_placement_model(
         mert_time_mask_preserve_downbeat=mert_time_mask_preserve_downbeat,
         beat_aux_head=beat_aux_head,
         difficulty_source=difficulty_source,
+        use_song_progress=use_song_progress,
     )

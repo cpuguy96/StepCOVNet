@@ -74,10 +74,16 @@ def pack_chart(
         difficulty = float(np.sum(chart.slots[:usable])) / float(max(1, usable))
     else:
         difficulty = float(chart.meter)
+    song_progress = np.zeros((1, padded, 2), dtype=np.float32)
+    if usable > 0:
+        frac = np.arange(usable, dtype=np.float32) / float(max(usable - 1, 1))
+        song_progress[0, :usable, 0] = frac
+        song_progress[0, :usable, 1] = 1.0 - frac
     inputs = {
         "audio": audio,
         "bpm": np.array([[bpm]], dtype=np.float32),
         "difficulty": np.array([[difficulty]], dtype=np.float32),
+        "song_progress": song_progress,
     }
     return inputs, slots, mask
 

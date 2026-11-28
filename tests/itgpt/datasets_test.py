@@ -140,6 +140,11 @@ class ItgptDatasetsTest(unittest.TestCase):
         self.assertEqual(int(mask.sum()), 6)
         np.testing.assert_array_equal(mask[0, :6], 1.0)
         np.testing.assert_array_equal(mask[0, 6:], 0.0)
+        progress = inputs["song_progress"]
+        self.assertEqual(progress.shape, (1, 64, 2))
+        np.testing.assert_allclose(progress[0, 0], [0.0, 1.0], atol=1e-6)
+        np.testing.assert_allclose(progress[0, 5], [1.0, 0.0], atol=1e-6)
+        np.testing.assert_array_equal(progress[0, 6:], 0.0)
         self.assertGreater(float(inputs["audio"][0, 0].sum()), 0.0)
         self.assertEqual(float(slots[0, 0, 0]), 1.0)
 

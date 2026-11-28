@@ -339,6 +339,7 @@ def build_model(
         mert_time_mask_preserve_downbeat=experiment.model.mert_time_mask_preserve_downbeat,
         beat_aux_head=experiment.model.beat_aux_head,
         difficulty_source=experiment.dataset.difficulty_source,
+        use_song_progress=experiment.model.use_song_progress,
     )
 
 
