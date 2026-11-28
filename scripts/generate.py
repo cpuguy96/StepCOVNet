@@ -26,8 +26,11 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--song_title",
     type=str,
-    help="Title of the song.",
-    required=True,
+    default="",
+    help=(
+        "Title of the song. Optional; if omitted, uses the embedded audio "
+        "title tag or filename."
+    ),
 )
 PARSER.add_argument(
     "--bpm",

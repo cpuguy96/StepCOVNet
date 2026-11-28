@@ -20,6 +20,7 @@ import typing
 from tkinter import filedialog, messagebox
 
 from stepcovnet import (
+    audio_metadata,
     beat_tracking,
     generator,
     pretrained,
@@ -410,6 +411,10 @@ class _GeneratorApp:
         )
         if path:
             self.audio_path_var.set(path)
+            if not self.song_title_var.get().strip():
+                meta = audio_metadata.read_audio_metadata(path)
+                if meta.title:
+                    self.song_title_var.set(meta.title)
             if not self.output_path_var.get().strip():
                 self.output_path_var.set(self._default_output_path_for_audio(path))
 

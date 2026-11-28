@@ -15,7 +15,7 @@ import numpy as np
 import scipy.signal
 import torch
 
-from stepcovnet import beat_tracking, constants, datasets
+from stepcovnet import audio_metadata, beat_tracking, constants, datasets
 
 _SM_TICKS_PER_MEASURE = 192
 _SM_MEASURE_DIVISORS = (4, 8, 12, 16, 24, 32, 48, 64, 192)
@@ -79,6 +79,11 @@ def _format_sm_measures(
     return "\n,\n".join(measure_blocks), sm_offset
 
 
+def _sanitize_sm_tag(value: str) -> str:
+    """Clean a metadata string so it cannot break StepMania ``#TAG:VALUE;`` syntax."""
+    return value.replace("\r", " ").replace("\n", " ").replace(";", ",").strip()
+
+
 @dataclasses.dataclass(frozen=True)
 class OutputData:
     """Generated step chart metadata and note list for a song.
@@ -94,6 +99,12 @@ class OutputData:
         meters: Optional mapping from difficulty name to numeric StepMania meter.
         sample_start: StepMania ``#SAMPLESTART`` preview offset in seconds.
         sample_length: StepMania ``#SAMPLELENGTH`` preview duration in seconds.
+        subtitle: Optional StepMania ``#SUBTITLE`` tag.
+        artist: Optional StepMania ``#ARTIST`` tag.
+        genre: Optional StepMania ``#GENRE`` tag.
+        jacket_filename: Optional StepMania ``#JACKET`` image filename.
+        cover_art_bytes: Optional raw image bytes extracted from audio tags.
+        cover_art_ext: File extension (e.g. ``".jpg"``) for ``cover_art_bytes``.
     """
 
     title: str
@@ -104,6 +115,12 @@ class OutputData:
     meters: dict[str, int] | None = None
     sample_start: float = 0.0
     sample_length: float = 15.0
+    subtitle: str = ""
+    artist: str = ""
+    genre: str = ""
+    jacket_filename: str = ""
+    cover_art_bytes: bytes | None = None
+    cover_art_ext: str = ""
 
     def generate_txt_output(self) -> str:
         """Generate a formatted string representation of the step chart.
@@ -125,6 +142,7 @@ class OutputData:
         *,
         music_filename: str = "",
         meter: int = 10,
+        jacket_filename: str | None = None,
     ) -> str:
         """Generate a StepMania ``.sm`` simfile aligned to tracked downbeats.
 
@@ -138,6 +156,8 @@ class OutputData:
             music_filename: Audio filename written to ``#MUSIC``.
             meter: Default difficulty meter written to ``#NOTES`` blocks when
                 :attr:`meters` does not provide a per-difficulty meter.
+            jacket_filename: Optional ``#JACKET`` image filename override
+                (defaults to :attr:`jacket_filename`).
 
         Returns:
             Formatted StepMania ``.sm`` file content.
@@ -182,22 +202,50 @@ class OutputData:
         bpms_str = ",".join(
             f"{beat:.3f}={seg_bpm:.3f}" for beat, seg_bpm in bpm_segments
         )
+        seg_bpms = [seg_bpm for _, seg_bpm in bpm_segments]
+        min_seg_bpm = min(seg_bpms)
+        max_seg_bpm = max(seg_bpms)
+        display_bpm = (
+            f"{min_seg_bpm:.3f}:{max_seg_bpm:.3f}"
+            if (max_seg_bpm - min_seg_bpm) >= 0.5
+            else f"{min_seg_bpm:.3f}"
+        )
+
         sample_start = max(0.0, float(self.sample_start))
         sample_length = max(1.0, float(self.sample_length))
 
-        header = (
-            f"#TITLE:{self.title};\n"
-            f"#SUBTITLE:;\n"
-            f"#ARTIST:;\n"
-            f"#CREDIT:StepCOVNet;\n"
-            f"#MUSIC:{music_filename};\n"
-            f"#OFFSET:{shared_offset:.6f};\n"
-            f"#SAMPLESTART:{sample_start:.3f};\n"
-            f"#SAMPLELENGTH:{sample_length:.3f};\n"
-            f"#SELECTABLE:YES;\n"
-            f"#BPMS:{bpms_str};\n"
-            f"#STOPS:;\n"
+        title_tag = _sanitize_sm_tag(self.title)
+        subtitle_tag = _sanitize_sm_tag(self.subtitle)
+        artist_tag = _sanitize_sm_tag(self.artist)
+        genre_tag = _sanitize_sm_tag(self.genre)
+        jacket_tag = _sanitize_sm_tag(
+            jacket_filename if jacket_filename is not None else self.jacket_filename
         )
+        music_tag = _sanitize_sm_tag(music_filename)
+
+        header_lines = [
+            f"#TITLE:{title_tag};",
+            f"#SUBTITLE:{subtitle_tag};",
+            f"#ARTIST:{artist_tag};",
+        ]
+        if genre_tag:
+            header_lines.append(f"#GENRE:{genre_tag};")
+        header_lines.append("#CREDIT:StepCOVNet;")
+        if jacket_tag:
+            header_lines.append(f"#JACKET:{jacket_tag};")
+        header_lines.extend(
+            [
+                f"#MUSIC:{music_tag};",
+                f"#OFFSET:{shared_offset:.6f};",
+                f"#SAMPLESTART:{sample_start:.3f};",
+                f"#SAMPLELENGTH:{sample_length:.3f};",
+                f"#DISPLAYBPM:{display_bpm};",
+                "#SELECTABLE:YES;",
+                f"#BPMS:{bpms_str};",
+                "#STOPS:;",
+            ]
+        )
+        header = "\n".join(header_lines) + "\n"
         note_blocks: list[str] = []
         for difficulty, rows in self.notes.items():
             chart_meter = (
@@ -251,11 +299,13 @@ class StepManiaFolderExport:
         song_dir: Directory ready to drop into ``StepMania/Songs/<Pack>/``.
         sm_path: Path to the generated ``.sm`` simfile inside ``song_dir``.
         audio_path: Path to the audio file referenced by ``#MUSIC`` inside ``song_dir``.
+        jacket_path: Optional path to extracted album art referenced by ``#JACKET``.
     """
 
     song_dir: pathlib.Path
     sm_path: pathlib.Path
     audio_path: pathlib.Path
+    jacket_path: pathlib.Path | None = None
 
 
 def export_stepmania_song_folder(
@@ -271,8 +321,9 @@ def export_stepmania_song_folder(
 
     Creates ``<output_dir>/<safe_song_name>/``, copies the source audio file
     into it (unless ``copy_audio=False`` or source and destination already point
-    to the same file), and writes ``<safe_song_name>.sm`` with ``#MUSIC`` set
-    to the exact copied audio filename.
+    to the same file), extracts embedded album art into ``jacket<ext>`` when
+    present, and writes ``<safe_song_name>.sm`` with ``#MUSIC`` (and ``#JACKET``)
+    set to the exact filenames inside the folder.
 
     Args:
         output_data: Generated :class:`OutputData` chart(s).
@@ -285,7 +336,7 @@ def export_stepmania_song_folder(
 
     Returns:
         :class:`StepManiaFolderExport` with paths to the created folder, ``.sm``,
-        and audio file.
+        audio file, and optional extracted cover art.
 
     Raises:
         FileNotFoundError: If ``copy_audio`` is True and ``audio_path`` does not exist.
@@ -309,16 +360,25 @@ def export_stepmania_song_folder(
     if copy_audio and src_audio.resolve() != dest_audio.resolve():
         shutil.copy2(src_audio, dest_audio)
 
+    jacket_path: pathlib.Path | None = None
+    jacket_name = output_data.jacket_filename
+    if output_data.cover_art_bytes and output_data.cover_art_ext:
+        jacket_path = song_dir / f"jacket{output_data.cover_art_ext}"
+        jacket_path.write_bytes(output_data.cover_art_bytes)
+        jacket_name = jacket_path.name
+
     sm_path = song_dir / f"{safe_name}.sm"
     sm_content = output_data.generate_sm_output(
         music_filename=dest_audio.name,
         meter=meter,
+        jacket_filename=jacket_name,
     )
     sm_path.write_text(sm_content, encoding="utf-8")
     return StepManiaFolderExport(
         song_dir=song_dir,
         sm_path=sm_path,
         audio_path=dest_audio,
+        jacket_path=jacket_path,
     )
 
 
@@ -601,7 +661,7 @@ def _safe_estimate_sample_preview(
 def generate_output_data(
     *,
     audio_path: str,
-    song_title: str,
+    song_title: str = "",
     bpm: int | None = None,
     onset_model: Any,
     arrow_model: Any,
@@ -625,7 +685,8 @@ def generate_output_data(
 
     Args:
         audio_path: Path to the input audio file.
-        song_title: Song title written into the output header.
+        song_title: Song title written into the output header. Optional; when
+            empty, uses the embedded audio title tag or audio filename stem.
         bpm: Optional song BPM; estimated from audio when omitted.
         onset_model: Trained PyTorch dense onset or ITGPT placement model.
         arrow_model: Trained PyTorch arrow sequence model.
@@ -656,6 +717,10 @@ def generate_output_data(
     normalized_spec: np.ndarray | None = None
     beat_grid: beat_tracking.BeatGrid | None = None
     pack_mode = bool(all_difficulties or difficulties is not None)
+    meta = audio_metadata.read_audio_metadata(audio_path)
+    resolved_title = (
+        song_title.strip() or meta.title or pathlib.Path(audio_path).stem or "Untitled"
+    )
 
     if pack_mode:
         presets = (
@@ -728,7 +793,7 @@ def generate_output_data(
             audio_path, beat_grid
         )
         return OutputData(
-            title=song_title,
+            title=resolved_title,
             bpm=int(bpm),
             notes=notes_by_diff,
             offset=beat_grid.sm_offset_sec if beat_grid is not None else 0.0,
@@ -736,6 +801,11 @@ def generate_output_data(
             meters={preset.name: int(preset.meter) for preset in presets},
             sample_start=sample_start,
             sample_length=sample_length,
+            subtitle=meta.subtitle,
+            artist=meta.artist,
+            genre=meta.genre,
+            cover_art_bytes=meta.cover_art_bytes,
+            cover_art_ext=meta.cover_art_ext,
         )
 
     if _is_itgpt_placement_model(onset_model):
@@ -781,7 +851,7 @@ def generate_output_data(
 
     sample_start, sample_length = _safe_estimate_sample_preview(audio_path, beat_grid)
     return OutputData(
-        title=song_title,
+        title=resolved_title,
         bpm=int(bpm),
         notes={
             "Challenge": _predict_arrows_for_onsets(
@@ -797,6 +867,11 @@ def generate_output_data(
         beat_grid=beat_grid,
         sample_start=sample_start,
         sample_length=sample_length,
+        subtitle=meta.subtitle,
+        artist=meta.artist,
+        genre=meta.genre,
+        cover_art_bytes=meta.cover_art_bytes,
+        cover_art_ext=meta.cover_art_ext,
     )
 
 
