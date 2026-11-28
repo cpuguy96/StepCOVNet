@@ -25,8 +25,7 @@ MODE = str(args.get("mode") or "all").lower()
 MODEL = str(args.get("model") or "flash")
 BASELINE = str(args.get("baseline") or "")
 TAG = str(
-    args.get("tag")
-    or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    args.get("tag") or datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
 )
 FILTER_IDS = set(args.get("case_ids") or [])
 
@@ -119,9 +118,7 @@ behavior_predictions = {}
 
 if MODE in ("all", "triggers"):
     phase("Triggers (Layer 2)")
-    trig_cases = [
-        c for c in MERGED_TRIGGERS if not FILTER_IDS or c["id"] in FILTER_IDS
-    ]
+    trig_cases = [c for c in MERGED_TRIGGERS if not FILTER_IDS or c["id"] in FILTER_IDS]
     log(
         f"Running {len(trig_cases)} trigger cases across {len(SUITE_PATHS)} suite(s) on model={MODEL}"
     )
@@ -162,9 +159,7 @@ if MODE in ("all", "triggers"):
 
 if MODE in ("all", "behavior"):
     phase("Behavior (Layer 3)")
-    beh_cases = [
-        c for c in MERGED_BEHAVIORS if not FILTER_IDS or c["id"] in FILTER_IDS
-    ]
+    beh_cases = [c for c in MERGED_BEHAVIORS if not FILTER_IDS or c["id"] in FILTER_IDS]
     log(
         f"Running {len(beh_cases)} behavior cases across {len(SUITE_PATHS)} suite(s) on model={MODEL}"
     )
