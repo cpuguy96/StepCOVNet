@@ -421,7 +421,7 @@ try:
         with (run_dir / "eval.log").open("w", encoding="utf-8") as ef:
             ef.write("[remote] Running eval: " + expanded + "\\n")
             ef.flush()
-            ep = subprocess.Popen(shlex.split(expanded), stdout=ef, stderr=subprocess.STDOUT, env=env)
+            ep = subprocess.Popen(["bash", "-lc", expanded], stdout=ef, stderr=subprocess.STDOUT, env=env)
             erc = ep.wait()
             ef.write(f"\\n[remote] Eval exit code: {{erc}}\\n")
 finally:

@@ -6,6 +6,7 @@ import contextlib
 import datetime
 import json
 import pathlib
+import random
 import shutil
 import sys
 import time
@@ -244,6 +245,36 @@ def _move_batch(
         slots.to(device, non_blocking=non_blocking),
         mask.to(device, non_blocking=non_blocking),
     )
+
+
+def _apply_silence_negative_aug(
+    inputs: dict[str, torch.Tensor],
+    slots: torch.Tensor,
+    mask: torch.Tensor,
+    rng: random.Random,
+    prob: float,
+) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+    """Randomly zero audio and slot targets on a full chart or contiguous beat span.
+
+    Preserves ``difficulty`` and ``bpm`` conditioning so the model learns that
+    silent audio yields zero steps regardless of target density, without mutating
+    cached input tensors in place.
+    """
+    if prob <= 0.0 or rng.random() >= prob:
+        return inputs, slots
+    audio = inputs["audio"].clone()
+    new_slots = slots.clone()
+    n_real = int(mask[0].sum().item())
+    if n_real < 4 or rng.random() < 0.5:
+        audio.zero_()
+        new_slots.zero_()
+    else:
+        max_span = min(32, max(4, n_real // 3))
+        span_len = rng.randint(4, max_span)
+        start = 0 if rng.random() < 0.5 else rng.randint(0, n_real - span_len)
+        audio[:, start : start + span_len].zero_()
+        new_slots[:, start : start + span_len].zero_()
+    return {**inputs, "audio": audio}, new_slots
 
 
 def _write_eval_report(
@@ -519,6 +550,8 @@ def train_placement(
     beat_aux_weight = float(experiment.run.beat_aux_loss_weight)
     use_beat_aux = bool(experiment.model.beat_aux_head and beat_aux_weight > 0.0)
     rdrop_kl_weight = float(experiment.run.rdrop_kl_weight)
+    silence_neg_prob = float(experiment.run.silence_negative_prob)
+    silence_rng = random.Random(experiment.run.seed + 7919)
 
     def _loss_from_outputs(
         logits_x: torch.Tensor,
@@ -552,6 +585,10 @@ def train_placement(
                 current_lr = learning_rate_for_step(experiment.run, global_step)
                 _set_optimizer_lr(optimizer, current_lr)
                 inputs, slots, mask = _move_batch(next(train_iter), target_device)
+                if silence_neg_prob > 0.0:
+                    inputs, slots = _apply_silence_negative_aug(
+                        inputs, slots, mask, silence_rng, silence_neg_prob
+                    )
 
                 with runtime.autocast_context(target_device, amp_dtype):
                     if rdrop_kl_weight > 0.0:

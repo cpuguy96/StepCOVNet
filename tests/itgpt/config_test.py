@@ -44,6 +44,7 @@ class ItgptConfigTest(unittest.TestCase):
                 ema_momentum=0.995,
                 beat_aux_loss_weight=0.15,
                 rdrop_kl_weight=2.0,
+                silence_negative_prob=0.05,
             ),
         )
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -88,6 +89,8 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertAlmostEqual(config.ItgptRunConfig().beat_aux_loss_weight, 0.0)
         self.assertAlmostEqual(loaded.run.rdrop_kl_weight, 2.0)
         self.assertAlmostEqual(config.ItgptRunConfig().rdrop_kl_weight, 0.0)
+        self.assertAlmostEqual(loaded.run.silence_negative_prob, 0.05)
+        self.assertAlmostEqual(config.ItgptRunConfig().silence_negative_prob, 0.0)
         self.assertFalse(loaded.run.mixed_precision)
         self.assertFalse(loaded.run.jit_compile)
 
@@ -158,6 +161,10 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(beat_aux_loss_weight=-0.1)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(rdrop_kl_weight=-0.1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(silence_negative_prob=-0.01)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(silence_negative_prob=1.0)
         with self.assertRaises(ValueError):
             config.ItgptDatasetConfig(
                 training_index_path="x.json", mert_cache_suffix="bad_suffix"

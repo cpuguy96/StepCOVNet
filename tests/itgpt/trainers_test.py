@@ -774,6 +774,73 @@ class ItgptTrainersTest(unittest.TestCase):
                 for param in trained.parameters():
                     self.assertTrue(torch.isfinite(param).all())
 
+    def test_apply_silence_negative_aug_whole_and_span(self) -> None:
+        n_beats = 24
+        orig_audio = torch.ones((1, n_beats, 24, 16), dtype=torch.float32)
+        orig_slots = torch.ones((1, n_beats, constants.N_SLOTS), dtype=torch.float32)
+        mask = torch.ones((1, n_beats), dtype=torch.float32)
+        orig_inputs = {
+            "audio": orig_audio,
+            "bpm": torch.tensor([[150.0]], dtype=torch.float32),
+            "difficulty": torch.tensor([[2.5]], dtype=torch.float32),
+        }
+
+        same_in, same_slots = trainers._apply_silence_negative_aug(
+            orig_inputs,
+            orig_slots,
+            mask,
+            trainers.random.Random(42),
+            0.0,
+        )
+        self.assertIs(same_in["audio"], orig_audio)
+        self.assertIs(same_slots, orig_slots)
+
+        saw_whole = False
+        saw_span = False
+        for seed in range(20):
+            aug_in, aug_slots = trainers._apply_silence_negative_aug(
+                orig_inputs,
+                orig_slots,
+                mask,
+                trainers.random.Random(seed),
+                1.0,
+            )
+            self.assertIs(aug_in["bpm"], orig_inputs["bpm"])
+            self.assertIs(aug_in["difficulty"], orig_inputs["difficulty"])
+            self.assertEqual(float(orig_audio.sum().item()), float(orig_audio.numel()))
+            self.assertEqual(float(orig_slots.sum().item()), float(orig_slots.numel()))
+            zero_beats = (aug_in["audio"][0].abs().sum(dim=(1, 2)) == 0.0).tolist()
+            zero_slot_beats = (aug_slots[0].abs().sum(dim=1) == 0.0).tolist()
+            self.assertEqual(zero_beats, zero_slot_beats)
+            n_zero = sum(zero_beats)
+            if n_zero == n_beats:
+                saw_whole = True
+            elif 4 <= n_zero <= 32:
+                saw_span = True
+        self.assertTrue(saw_whole)
+        self.assertTrue(saw_span)
+
+    def test_d_model_384_forward_smoke(self) -> None:
+        model = models.build_itgpt_placement_model(
+            d_model=384,
+            n_heads=8,
+            n_enc_layers=2,
+            max_beats=64,
+            audio_feature_type="mert",
+            n_frames_per_beat=24,
+            feature_dim=1024,
+            beat_aux_head=True,
+            difficulty_source="density",
+        )
+        inputs = {
+            "audio": torch.randn((1, 64, 24, 1024), dtype=torch.float32),
+            "bpm": torch.tensor([[140.0]], dtype=torch.float32),
+            "difficulty": torch.tensor([[2.0]], dtype=torch.float32),
+        }
+        logits = model.forward_logits(inputs)
+        self.assertEqual(tuple(logits.shape), (1, 64, constants.N_SLOTS))
+        self.assertTrue(torch.isfinite(logits).all())
+
 
 if __name__ == "__main__":
     unittest.main()

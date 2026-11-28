@@ -252,6 +252,12 @@ class ItgptRunConfig(_DictSerializableMixin):
             initialize model weights before fine-tuning (optimizer, schedule,
             and EMA start fresh from the loaded weights; ignored when resuming
             from an existing backup checkpoint).
+        silence_negative_prob: Probability in ``[0, 1)`` of applying
+            silence-negative augmentation on a training step — zeroing audio
+            features and slot targets either across the full chart or a
+            contiguous 4–32 beat span while preserving ``difficulty`` and
+            ``bpm`` conditioning so silence implies zero steps (``0.0``
+            disables).
     """
 
     epoch: int = 8
@@ -280,6 +286,7 @@ class ItgptRunConfig(_DictSerializableMixin):
     ema_momentum: float = 0.99
     beat_aux_loss_weight: float = 0.0
     rdrop_kl_weight: float = 0.0
+    silence_negative_prob: float = 0.0
     init_weights_path: str = ""
 
     def __post_init__(self) -> None:
@@ -290,8 +297,8 @@ class ItgptRunConfig(_DictSerializableMixin):
                 ``eval_slot_f1_every``, LR schedule, ``label_smoothing``,
                 ``dice_loss_weight``, ``dice_slot_scope``, ``bce_pos_weight``,
                 ``gradient_accumulation_steps``, ``ema_momentum``,
-                ``beat_aux_loss_weight``, or ``rdrop_kl_weight`` fields are
-                invalid.
+                ``beat_aux_loss_weight``, ``rdrop_kl_weight``, or
+                ``silence_negative_prob`` fields are invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -355,6 +362,11 @@ class ItgptRunConfig(_DictSerializableMixin):
         if self.rdrop_kl_weight < 0.0:
             raise ValueError(
                 f"rdrop_kl_weight must be >= 0, got {self.rdrop_kl_weight}"
+            )
+        if not 0.0 <= self.silence_negative_prob < 1.0:
+            raise ValueError(
+                "silence_negative_prob must be in [0, 1), "
+                f"got {self.silence_negative_prob}"
             )
 
 
