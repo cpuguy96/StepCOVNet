@@ -12,7 +12,7 @@
 #     [--extra-args "--epochs=2 --steps_per_epoch=10"] \
 #     [--eval-cmd "python scripts/eval_itgpt_placement.py --config={CONFIG} --model_dir={RUN_DIR}"] \
 #     [--archive-models best|all|none] \
-#     [--reuse-session] [--keep] [--download-all]
+#     [--provision-timeout SEC] [--reuse-session] [--keep] [--download-all]
 #
 # Notes:
 #   - Code (~1 MB) is uploaded directly from the local working tree via `colab upload` (zero GitHub).
@@ -70,6 +70,8 @@ COLAB_STATE_CONFIG=""
 POLL_INTERVAL="20"
 ATTACH_ONLY="0"
 MAX_POLL_SECONDS="0"
+PROVISION_TIMEOUT="${COLAB_PROVISION_TIMEOUT:-240}"
+COLAB_LOG_FILE="${COLAB_LOG_FILE:-$HOME/.config/colab-cli/colab.log}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -83,6 +85,7 @@ while [[ $# -gt 0 ]]; do
     --extra-args) EXTRA_ARGS="$2"; shift 2 ;;
     --eval-cmd) EVAL_CMD="$2"; shift 2 ;;
     --archive-models) ARCHIVE_MODELS="$2"; shift 2 ;;
+    --provision-timeout) PROVISION_TIMEOUT="$2"; shift 2 ;;
     --reuse-session) REUSE_SESSION="1"; shift ;;
     --keep) KEEP_SESSION="1"; shift ;;
     --download-all) DOWNLOAD_ALL="1"; shift ;;
@@ -237,7 +240,31 @@ else
       NEW_ARGS+=(--high-mem)
     fi
     echo "[colab-remote] Provisioning session '$SESSION' (GPU=$GPU)..."
-    timeout 120 "$COLAB" "${COLAB_GLOBAL[@]}" "${NEW_ARGS[@]}"
+    local log_start_line=0
+    if [[ -f "$COLAB_LOG_FILE" ]]; then
+      log_start_line="$(wc -l < "$COLAB_LOG_FILE" 2>/dev/null || echo 0)"
+    fi
+    local prov_rc=0
+    timeout "$PROVISION_TIMEOUT" "$COLAB" "${COLAB_GLOBAL[@]}" "${NEW_ARGS[@]}" || prov_rc=$?
+    if [[ "$prov_rc" -ne 0 ]]; then
+      if [[ "$prov_rc" -eq 124 ]]; then
+        echo "[colab-remote] ERROR: Provisioning session '$SESSION' (GPU=$GPU) timed out after ${PROVISION_TIMEOUT}s." >&2
+      else
+        echo "[colab-remote] ERROR: Provisioning session '$SESSION' (GPU=$GPU) failed (exit ${prov_rc})." >&2
+      fi
+      if [[ -f "$COLAB_LOG_FILE" ]]; then
+        local diag
+        diag="$(tail -n +"$((log_start_line + 1))" "$COLAB_LOG_FILE" \
+          | grep -E "WARNING|ERROR|Response: [45][0-9][0-9]|503 Service Unavailable|Assignment request failed|timed out|Exception" \
+          | sed -E 's/token=[^&" ]+/token=REDACTED/g; s/Bearer [^" ]+/Bearer REDACTED/g' \
+          | tail -n 10 || true)"
+        if [[ -n "$diag" ]]; then
+          echo "[colab-remote] Recent colab-cli log diagnostics ($COLAB_LOG_FILE):" >&2
+          printf '%s\n' "$diag" >&2
+        fi
+      fi
+      exit "$prov_rc"
+    fi
   fi
 fi
 
