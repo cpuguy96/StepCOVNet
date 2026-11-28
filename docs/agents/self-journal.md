@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-04: Add dedicated onset-evaluation skill and router entry
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 01:18:22 |
+| **Category** | skill-gap |
+| **Summary** | User noticed evaluation lacked a dedicated playbook while six active eval/scoreboard scripts (`eval_itgpt_placement.py`, `eval_raw_audio_onset.py`, `eval_ddcl_placement.py`, `eval_ddc_placement.py`, `eval_dense_onset.py`, `itgpt_scoreboard.py`) had guidance scattered across skills and docs. |
+| **Artifact** | skill: `.agents/skills/onset-evaluation/SKILL.md`; router: `AGENTS.md` |
+| **Action taken** | Added auto-discoverable `onset-evaluation` skill mapping every track to its script/metrics, single-pass `--diagnose_grounding --error_breakdown` and `eval_raw_audio_onset.py` invocations, scoreboard checks, and eval hygiene rules, and linked it from `AGENTS.md` |
+| **Related** | `onset-evaluation`, `whats-next`, `research-session-workflow` |
+
 ### JRN-20261128-03: Replace always_on caps and scripts-execution rule with model_decision rules and skill runbooks
 
 | Field | Value |
