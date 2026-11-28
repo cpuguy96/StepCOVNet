@@ -27,7 +27,7 @@ Pre-push CI mirror: `python pre_submit.py` (from repository root).
 | ---- | -------- |
 | `src/stepcovnet/ddc/` | DDC C-LSTM placement (`donahue2017ddc`, `M-ddc-20ms`) |
 | `src/stepcovnet/ddcl/` | DDCL ConvLSTM placement (`omalley2025ddcl`, `M-slot48`) |
-| `src/stepcovnet/itgpt/` | ITGPT hierarchical transformer placement (`omalley2026itgpt`, `M-slot48`) |
+| `src/stepcovnet/itgpt/` | ITGPT hierarchical transformer placement (`transformer.py`, `encoders.py`, `losses.py`, `models.py`, `evaluation.py`, `trainers.py`) |
 | `src/stepcovnet/core/` | PyTorch core dense onset, arrow sequence, generator, losses, ONNX export |
 | `src/stepcovnet/runtime.py` | Shared PyTorch device, seeding, AMP/TF32, EMA, LR, and lazy SummaryWriter helpers |
 | `src/stepcovnet/slot48_eval.py` | Shared ``M-slot48`` scoring, threshold sweep, null baseline, and audio-corruption helpers |

@@ -78,6 +78,16 @@ def save_checkpoint(
     return target
 
 
+_RETIRED_MODEL_CONFIG_KEYS = frozenset(
+    {
+        "early_film",
+        "cyclic_measure_pos",
+        "continuous_beat_conv",
+        "use_nps_condition",
+    }
+)
+
+
 def load_placement_model(
     path: str | pathlib.Path,
     *,
@@ -91,6 +101,9 @@ def load_placement_model(
 
     Returns:
         Loaded :class:`ItgptPlacementModel` in eval mode.
+
+    Raises:
+        ValueError: If the checkpoint requires a retired ablation flag.
     """
     target_device = runtime.resolve_device(device)
     checkpoint = torch.load(
@@ -99,6 +112,12 @@ def load_placement_model(
         weights_only=False,
     )
     model_cfg = dict(checkpoint["model_config"])
+    for retired_key in _RETIRED_MODEL_CONFIG_KEYS:
+        if bool(model_cfg.pop(retired_key, False)):
+            raise ValueError(
+                f"Checkpoint uses retired ablation flag {retired_key}=True "
+                "which is no longer supported"
+            )
     model = models.build_itgpt_placement_model(**model_cfg)
     model.load_state_dict(checkpoint["state_dict"])
     model.to(target_device)
@@ -269,13 +288,9 @@ def build_model(
         n_frames_per_beat=experiment.dataset.n_frames_per_beat,
         feature_dim=feature_dim,
         n_mert_layers=n_mert_layers,
-        early_film=experiment.model.early_film,
-        cyclic_measure_pos=experiment.model.cyclic_measure_pos,
-        continuous_beat_conv=experiment.model.continuous_beat_conv,
         mert_time_mask_max_frames=experiment.model.mert_time_mask_max_frames,
         mert_channel_dropout=experiment.model.mert_channel_dropout,
         mert_time_mask_preserve_downbeat=experiment.model.mert_time_mask_preserve_downbeat,
-        use_nps_condition=experiment.model.use_nps_condition,
         beat_aux_head=experiment.model.beat_aux_head,
         difficulty_source=experiment.dataset.difficulty_source,
     )
@@ -416,8 +431,6 @@ def train_placement(
     forward_logits_fn: Any = raw_model.forward_logits
 
     criterion = models.ItgptPlacementLoss(
-        focal_gamma=experiment.run.focal_gamma,
-        grid_weight_24th=experiment.run.grid_weight_24th,
         label_smoothing=experiment.run.label_smoothing,
         dice_loss_weight=experiment.run.dice_loss_weight,
         bce_pos_weight=experiment.run.bce_pos_weight,
@@ -476,7 +489,6 @@ def train_placement(
             train_charts,
             max_beats=experiment.dataset.max_beats,
             seed=experiment.run.seed + start_epoch,
-            max_bar_shift=experiment.run.max_bar_shift,
             pin_memory=pin_memory,
             difficulty_source=experiment.dataset.difficulty_source,
         )

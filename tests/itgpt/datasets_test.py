@@ -133,31 +133,21 @@ class ItgptDatasetsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             datasets.build_dataloader([], max_beats=128, seed=0)
 
-    def test_pack_chart_and_generator_bar_shift_augmentation(self):
+    def test_pack_chart_and_generator_defaults(self):
         chart = _chart(n_beats=6)
-        inputs, slots, mask = datasets.pack_chart(
-            chart, max_beats=128, lead_pad_beats=8
-        )
+        inputs, slots, mask = datasets.pack_chart(chart, max_beats=128)
         self.assertEqual(inputs["audio"].shape[1], 64)
         self.assertEqual(int(mask.sum()), 6)
-        np.testing.assert_array_equal(mask[0, :8], 0.0)
-        np.testing.assert_array_equal(mask[0, 8:14], 1.0)
-        np.testing.assert_array_equal(mask[0, 14:], 0.0)
-        self.assertEqual(float(inputs["audio"][0, 7].sum()), 0.0)
-        self.assertGreater(float(inputs["audio"][0, 8].sum()), 0.0)
-        self.assertEqual(float(slots[0, 8, 0]), 1.0)
-        self.assertEqual(float(slots[0, 0, 0]), 0.0)
+        np.testing.assert_array_equal(mask[0, :6], 1.0)
+        np.testing.assert_array_equal(mask[0, 6:], 0.0)
+        self.assertGreater(float(inputs["audio"][0, 0].sum()), 0.0)
+        self.assertEqual(float(slots[0, 0, 0]), 1.0)
 
-        gen = datasets.batch_generator([chart], max_beats=128, seed=42, max_bar_shift=4)
-        leads = set()
-        for _ in range(32):
-            _, _, step_mask = next(gen)
+        gen = datasets.batch_generator([chart], max_beats=128, seed=42)
+        for _ in range(4):
+            step_inputs, _, step_mask = next(gen)
+            self.assertEqual(step_inputs["audio"].shape[1], 64)
             self.assertEqual(int(step_mask.sum()), 6)
-            first_active = int(np.argmax(step_mask[0] > 0.5))
-            self.assertEqual(first_active % 4, 0)
-            self.assertLessEqual(first_active, 16)
-            leads.add(first_active)
-        self.assertGreater(len(leads), 1)
 
 
 if __name__ == "__main__":

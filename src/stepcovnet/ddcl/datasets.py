@@ -232,20 +232,27 @@ def _make_lazy_song_loader(
     beat_times: np.ndarray,
     n_frames: int,
     mert_cache_suffix: str,
-    mert_spectral_flux: bool,
-    cache_features: bool,
 ) -> Callable[[int], np.ndarray]:
-    """Build a per-song lazy MERT loader backed by ``cache``."""
+    """Build a per-song lazy MERT loader backed by ``cache``.
+
+    Args:
+        cache: Bounded per-split LRU MERT beat cache.
+        song_key: Unique song key within the manifest.
+        audio_key: Absolute path to the song audio file.
+        beat_times: Beat boundary times in seconds.
+        n_frames: Sub-beat frames resampled per beat.
+        mert_cache_suffix: Sibling filename suffix for cached MERT arrays.
+
+    Returns:
+        Callable mapping ``n_beats`` to a sliced beat-aligned MERT tensor.
+    """
 
     def _load_full_song() -> np.ndarray:
         spec = features.load_mert_features(
             audio_key,
             cache_suffix=mert_cache_suffix,
-            mmap=not mert_spectral_flux,
+            mmap=True,
         )
-        if mert_spectral_flux:
-            logmel = features.load_or_compute_logmel(audio_key, cache=cache_features)
-            spec = features.append_spectral_flux(spec, logmel)
         return features.beats_to_mert_tensor(
             spec,
             beat_times,
@@ -271,7 +278,6 @@ def load_ddcl_chart(
     audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL,
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT,
     mert_cache_suffix: str = constants.MERT_CACHE_SUFFIX,
-    mert_spectral_flux: bool = False,
 ) -> DdclChart:
     """Load beat-grid features and ``M-slot48`` targets for one chart.
 
@@ -289,9 +295,6 @@ def load_ddcl_chart(
         audio_feature_type: Beat audio frontend (``logmel`` or ``mert``).
         n_frames_per_beat: Sub-beat frames resampled per beat.
         mert_cache_suffix: Sibling filename suffix for cached MERT arrays.
-        mert_spectral_flux: If True when ``audio_feature_type == "mert"``,
-            append 6 z-scored 100 Hz spectral-flux/energy channels from
-            ``*.ddc_mel.npy``.
 
     Returns:
         In-memory chart example (or lazy MERT chart when
@@ -344,11 +347,6 @@ def load_ddcl_chart(
                 spec = features.load_mert_features(
                     audio_path, cache_suffix=mert_cache_suffix
                 )
-                if mert_spectral_flux:
-                    logmel = features.load_or_compute_logmel(
-                        audio_path, cache=cache_features
-                    )
-                    spec = features.append_spectral_flux(spec, logmel)
             beat_audio = features.beats_to_mert_tensor(
                 spec,
                 beat_times,
@@ -471,19 +469,11 @@ def load_split_charts(
                         beat_times=song_beat_times,
                         n_frames=dataset_config.n_frames_per_beat,
                         mert_cache_suffix=dataset_config.mert_cache_suffix,
-                        mert_spectral_flux=dataset_config.mert_spectral_flux,
-                        cache_features=dataset_config.cache_features,
                     )
             else:
                 spec = features.load_mert_features(
                     audio_key, cache_suffix=dataset_config.mert_cache_suffix
                 )
-                if dataset_config.mert_spectral_flux:
-                    logmel = features.load_or_compute_logmel(
-                        audio_key, cache=dataset_config.cache_features
-                    )
-                    spec = features.append_spectral_flux(spec, logmel)
-                    del logmel
                 if max_n_beats > 0:
                     shared_beat_audio = features.beats_to_mert_tensor(
                         spec,
@@ -514,7 +504,6 @@ def load_split_charts(
                     audio_feature_type=dataset_config.audio_feature_type,
                     n_frames_per_beat=dataset_config.n_frames_per_beat,
                     mert_cache_suffix=dataset_config.mert_cache_suffix,
-                    mert_spectral_flux=dataset_config.mert_spectral_flux,
                 )
             )
         del spec

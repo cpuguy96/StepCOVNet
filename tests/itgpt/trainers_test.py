@@ -275,12 +275,9 @@ class ItgptTrainersTest(unittest.TestCase):
         logits = torch.logit(probs)
         mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]], dtype=torch.float32)
 
-        plain_loss = trainers.ItgptPlacementLoss(focal_gamma=0.0, label_smoothing=0.0)
-        focal_loss = trainers.ItgptPlacementLoss(focal_gamma=1.0, label_smoothing=0.0)
+        plain_loss = trainers.ItgptPlacementLoss(label_smoothing=0.0)
         plain_val = float(plain_loss(logits, y_true, mask).item())
-        focal_val = float(focal_loss(logits, y_true, mask).item())
         self.assertGreater(plain_val, 0.0)
-        self.assertLess(focal_val, plain_val)
 
         # Under label_smoothing=0.02, calibrated 0.99/0.01 incurs lower loss
         # than over-confident 0.9999/1e-4.
@@ -322,8 +319,6 @@ class ItgptTrainersTest(unittest.TestCase):
                     min_learning_rate=1e-6,
                     lr_schedule="cosine",
                     warmup_epochs=1,
-                    focal_gamma=1.0,
-                    grid_weight_24th=2.0,
                     label_smoothing=0.02,
                     dice_loss_weight=0.25,
                     gradient_accumulation_steps=2,
@@ -689,6 +684,37 @@ class ItgptTrainersTest(unittest.TestCase):
                 self.assertRaises(FileNotFoundError),
             ):
                 trainers.train_placement(base_cfg, device="cpu")
+
+    def test_load_placement_model_retired_ablation_keys_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model = models.build_itgpt_placement_model(
+                d_model=16,
+                n_heads=4,
+                n_enc_layers=1,
+                cnn_hidden=4,
+                dropout_rate=0.0,
+                max_beats=constants.CHUNK_ALIGN,
+            )
+            ckpt_false = pathlib.Path(tmpdir) / "legacy_false.pt"
+            trainers.save_checkpoint(model, ckpt_false)
+            payload = torch.load(ckpt_false, map_location="cpu", weights_only=False)
+            payload["model_config"].update(
+                {
+                    "early_film": False,
+                    "cyclic_measure_pos": False,
+                    "continuous_beat_conv": False,
+                    "use_nps_condition": False,
+                }
+            )
+            torch.save(payload, ckpt_false)
+            loaded = trainers.load_placement_model(ckpt_false, device="cpu")
+            self.assertEqual(loaded.d_model, 16)
+
+            ckpt_true = pathlib.Path(tmpdir) / "legacy_true.pt"
+            payload["model_config"]["early_film"] = True
+            torch.save(payload, ckpt_true)
+            with self.assertRaises(ValueError):
+                trainers.load_placement_model(ckpt_true, device="cpu")
 
 
 if __name__ == "__main__":

@@ -20,16 +20,12 @@ class ItgptConfigTest(unittest.TestCase):
                 audio_feature_type="mert",
                 n_frames_per_beat=24,
                 mert_cache_suffix=".mert_l2_6_10.npy",
-                mert_spectral_flux=True,
                 lazy_mert_cache_size=128,
             ),
             model=config.ItgptModelConfig(
                 d_model=32,
                 n_heads=4,
                 n_enc_layers=1,
-                early_film=True,
-                cyclic_measure_pos=True,
-                continuous_beat_conv=True,
                 beat_aux_head=True,
             ),
             run=config.ItgptRunConfig(
@@ -39,15 +35,12 @@ class ItgptConfigTest(unittest.TestCase):
                 lr_schedule="cosine",
                 warmup_epochs=2,
                 min_learning_rate=1e-6,
-                focal_gamma=1.0,
-                grid_weight_24th=2.0,
                 label_smoothing=0.02,
                 dice_loss_weight=0.25,
                 bce_pos_weight=1.35,
                 gradient_accumulation_steps=4,
                 use_ema=True,
                 ema_momentum=0.995,
-                max_bar_shift=15,
                 beat_aux_loss_weight=0.15,
                 rdrop_kl_weight=2.0,
             ),
@@ -61,7 +54,6 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertEqual(loaded.dataset.audio_feature_type, "mert")
         self.assertEqual(loaded.dataset.n_frames_per_beat, 24)
         self.assertEqual(loaded.dataset.mert_cache_suffix, ".mert_l2_6_10.npy")
-        self.assertTrue(loaded.dataset.mert_spectral_flux)
         self.assertEqual(loaded.dataset.lazy_mert_cache_size, 128)
         self.assertEqual(
             config.ItgptDatasetConfig(
@@ -69,26 +61,15 @@ class ItgptConfigTest(unittest.TestCase):
             ).lazy_mert_cache_size,
             0,
         )
-        self.assertFalse(
-            config.ItgptDatasetConfig(training_index_path="x.json").mert_spectral_flux
-        )
         self.assertEqual(loaded.model.d_model, 32)
         self.assertEqual(loaded.model.n_heads, 4)
-        self.assertTrue(loaded.model.early_film)
-        self.assertTrue(loaded.model.cyclic_measure_pos)
-        self.assertTrue(loaded.model.continuous_beat_conv)
         self.assertTrue(loaded.model.beat_aux_head)
-        self.assertFalse(config.ItgptModelConfig().early_film)
-        self.assertFalse(config.ItgptModelConfig().cyclic_measure_pos)
-        self.assertFalse(config.ItgptModelConfig().continuous_beat_conv)
         self.assertFalse(config.ItgptModelConfig().beat_aux_head)
         self.assertEqual(loaded.run.weight_decay, 0.0)
         self.assertEqual(loaded.run.eval_slot_f1_every, 16)
         self.assertEqual(loaded.run.lr_schedule, "cosine")
         self.assertEqual(loaded.run.warmup_epochs, 2)
         self.assertAlmostEqual(loaded.run.min_learning_rate, 1e-6)
-        self.assertAlmostEqual(loaded.run.focal_gamma, 1.0)
-        self.assertAlmostEqual(loaded.run.grid_weight_24th, 2.0)
         self.assertAlmostEqual(loaded.run.label_smoothing, 0.02)
         self.assertAlmostEqual(config.ItgptRunConfig().label_smoothing, 0.0)
         self.assertAlmostEqual(loaded.run.dice_loss_weight, 0.25)
@@ -100,8 +81,6 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertTrue(loaded.run.use_ema)
         self.assertAlmostEqual(loaded.run.ema_momentum, 0.995)
         self.assertFalse(config.ItgptRunConfig().use_ema)
-        self.assertEqual(loaded.run.max_bar_shift, 15)
-        self.assertEqual(config.ItgptRunConfig().max_bar_shift, 0)
         self.assertAlmostEqual(loaded.run.beat_aux_loss_weight, 0.15)
         self.assertAlmostEqual(config.ItgptRunConfig().beat_aux_loss_weight, 0.0)
         self.assertAlmostEqual(loaded.run.rdrop_kl_weight, 2.0)
@@ -155,10 +134,6 @@ class ItgptConfigTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(learning_rate=1e-4, min_learning_rate=2e-4)
         with self.assertRaises(ValueError):
-            config.ItgptRunConfig(focal_gamma=-0.5)
-        with self.assertRaises(ValueError):
-            config.ItgptRunConfig(grid_weight_24th=0.0)
-        with self.assertRaises(ValueError):
             config.ItgptRunConfig(label_smoothing=-0.01)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(label_smoothing=1.0)
@@ -174,8 +149,6 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(ema_momentum=1.0)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(ema_momentum=0.0)
-        with self.assertRaises(ValueError):
-            config.ItgptRunConfig(max_bar_shift=-1)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(beat_aux_loss_weight=-0.1)
         with self.assertRaises(ValueError):

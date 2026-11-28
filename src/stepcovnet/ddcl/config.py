@@ -68,9 +68,6 @@ class DdclDatasetConfig(_DictSerializableMixin):
             16 recommended for MERT).
         mert_cache_suffix: Sibling filename suffix for cached MERT arrays
             (default ``.mert.npy``).
-        mert_spectral_flux: If True when ``audio_feature_type == "mert"``,
-            concatenate 6 z-scored 100 Hz 3-band spectral-flux/energy channels
-            derived from ``*.ddc_mel.npy`` onto each MERT frame.
         lazy_mert_cache_size: Optional bounded per-split LRU song cache size for
             on-demand MERT loading (0 = eager preload in RAM; >0 loads per-song
             MERT tensors lazily from disk on first access).
@@ -87,7 +84,6 @@ class DdclDatasetConfig(_DictSerializableMixin):
     audio_feature_type: str = constants.AUDIO_FEATURE_LOGMEL
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
     mert_cache_suffix: str = constants.MERT_CACHE_SUFFIX
-    mert_spectral_flux: bool = False
     lazy_mert_cache_size: int = 0
 
     def __post_init__(self) -> None:

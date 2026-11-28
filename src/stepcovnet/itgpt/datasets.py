@@ -36,15 +36,13 @@ def pack_chart(
     chart: ddcl_datasets.DdclChart,
     *,
     max_beats: int,
-    lead_pad_beats: int = 0,
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
-    """Pad one chart to a 64-beat multiple, with optional masked leading shift.
+    """Pad one chart to a 64-beat multiple.
 
     Args:
         chart: Loaded DDCL beat-grid chart.
         max_beats: Length cap.
-        lead_pad_beats: Masked zero-padded beats prepended before beat 0.
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"`` for mean steps per beat).
 
@@ -60,21 +58,17 @@ def pack_chart(
             f"{constants.DIFFICULTY_SOURCES}, got {difficulty_source!r}"
         )
     n_beats = chart.n_beats
-    lead = max(0, int(lead_pad_beats))
-    if lead > 0:
-        max_lead = max(0, int(max_beats) - n_beats)
-        lead = min(lead, (max_lead // 4) * 4)
-    padded = pad_length(lead + n_beats, max_beats)
-    usable = min(n_beats, max(0, padded - lead))
+    padded = pad_length(n_beats, max_beats)
+    usable = min(n_beats, padded)
     audio = np.zeros(
         (1, padded) + chart.beat_audio.shape[1:],
         dtype=np.float32,
     )
     slots = np.zeros((1, padded, constants.N_SLOTS), dtype=np.float32)
     mask = np.zeros((1, padded), dtype=np.float32)
-    audio[0, lead : lead + usable] = chart.beat_audio[:usable]
-    slots[0, lead : lead + usable] = chart.slots[:usable]
-    mask[0, lead : lead + usable] = 1.0
+    audio[0, :usable] = chart.beat_audio[:usable]
+    slots[0, :usable] = chart.slots[:usable]
+    mask[0, :usable] = 1.0
     bpm = float(np.mean(chart.stream[:usable, 1]))
     if difficulty_source == constants.DIFFICULTY_SOURCE_DENSITY:
         difficulty = float(np.sum(chart.slots[:usable])) / float(max(1, usable))
@@ -113,7 +107,6 @@ def load_split_charts(
         audio_feature_type=dataset_config.audio_feature_type,
         n_frames_per_beat=dataset_config.n_frames_per_beat,
         mert_cache_suffix=dataset_config.mert_cache_suffix,
-        mert_spectral_flux=dataset_config.mert_spectral_flux,
         lazy_mert_cache_size=dataset_config.lazy_mert_cache_size,
     )
     return ddcl_datasets.load_split_charts(ddcl_dataset, split)
@@ -142,7 +135,6 @@ def pack_chart_tensors(
     chart: ddcl_datasets.DdclChart,
     *,
     max_beats: int,
-    lead_pad_beats: int = 0,
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
     """Pack one chart into float32 PyTorch tensors with leading batch axis 1.
@@ -150,7 +142,6 @@ def pack_chart_tensors(
     Args:
         chart: Loaded DDCL beat-grid chart.
         max_beats: Length cap.
-        lead_pad_beats: Optional masked leading shift in beats.
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"``).
 
@@ -160,7 +151,6 @@ def pack_chart_tensors(
     inputs_np, slots_np, mask_np = pack_chart(
         chart,
         max_beats=max_beats,
-        lead_pad_beats=lead_pad_beats,
         difficulty_source=difficulty_source,
     )
     inputs_t = {key: torch.from_numpy(val) for key, val in inputs_np.items()}
@@ -179,8 +169,6 @@ class ItgptRandomChartDataset(
         charts: Non-empty list of loaded charts.
         max_beats: Padded beat length cap.
         seed: Base NumPy RNG seed.
-        max_bar_shift: Max 4-beat bars of masked leading padding prepended
-            randomly per step (``0`` disables).
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"``).
 
@@ -194,7 +182,6 @@ class ItgptRandomChartDataset(
         *,
         max_beats: int,
         seed: int,
-        max_bar_shift: int = 0,
         difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
     ) -> None:
         super().__init__()
@@ -208,7 +195,6 @@ class ItgptRandomChartDataset(
         self.charts = charts
         self.max_beats = int(max_beats)
         self.seed = int(seed)
-        self.max_bar_shift = max(0, int(max_bar_shift))
         self.difficulty_source = str(difficulty_source)
 
     def __iter__(
@@ -226,15 +212,9 @@ class ItgptRandomChartDataset(
         n_charts = len(self.charts)
         while True:
             chart = self.charts[int(rng.integers(0, n_charts))]
-            lead_pad = (
-                int(rng.integers(0, self.max_bar_shift + 1)) * 4
-                if self.max_bar_shift > 0
-                else 0
-            )
             yield pack_chart_tensors(
                 chart,
                 max_beats=self.max_beats,
-                lead_pad_beats=lead_pad,
                 difficulty_source=self.difficulty_source,
             )
 
@@ -244,7 +224,6 @@ def build_dataloader(
     *,
     max_beats: int,
     seed: int,
-    max_bar_shift: int = 0,
     pin_memory: bool = False,
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> DataLoader:
@@ -254,7 +233,6 @@ def build_dataloader(
         charts: Loaded split (non-empty).
         max_beats: Padded beat length cap.
         seed: Base RNG seed.
-        max_bar_shift: Max 4-beat bars of masked leading shift augmentation.
         pin_memory: Whether to pin CPU host memory for faster CUDA transfers.
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"``).
@@ -267,7 +245,6 @@ def build_dataloader(
         charts,
         max_beats=max_beats,
         seed=seed,
-        max_bar_shift=max_bar_shift,
         difficulty_source=difficulty_source,
     )
     return DataLoader(
@@ -283,7 +260,6 @@ def batch_generator(
     *,
     max_beats: int,
     seed: int,
-    max_bar_shift: int = 0,
 ) -> Iterator[tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]]:
     """Infinite NumPy generator of one padded chart per step.
 
@@ -291,17 +267,12 @@ def batch_generator(
         charts: Loaded split.
         max_beats: Pad cap.
         seed: RNG seed.
-        max_bar_shift: Max 4-beat bars of masked leading shift augmentation.
 
     Yields:
         tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
             Packed ``(inputs, slots, beat_mask)`` arrays.
     """
     rng = np.random.default_rng(seed)
-    bar_shift_cap = max(0, int(max_bar_shift))
     while True:
         chart = charts[int(rng.integers(0, len(charts)))]
-        lead_pad = (
-            int(rng.integers(0, bar_shift_cap + 1)) * 4 if bar_shift_cap > 0 else 0
-        )
-        yield pack_chart(chart, max_beats=max_beats, lead_pad_beats=lead_pad)
+        yield pack_chart(chart, max_beats=max_beats)

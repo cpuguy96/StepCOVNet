@@ -55,8 +55,7 @@ class PyTorchItgptModelsTest(unittest.TestCase):
         loss.backward()
         self.assertIsNotNone(model.onset_head.weight.grad)
 
-    def test_mert_2d_and_multilayer_mixer_and_knobs(self):
-        # 2D pre-averaged MERT + early_film + cyclic_measure_pos + continuous_beat_conv
+    def test_mert_2d_and_multilayer_mixer(self):
         model = models.build_itgpt_placement_model(
             d_model=32,
             n_heads=4,
@@ -67,9 +66,6 @@ class PyTorchItgptModelsTest(unittest.TestCase):
             n_frames_per_beat=24,
             feature_dim=16,
             n_mert_layers=1,
-            early_film=True,
-            cyclic_measure_pos=True,
-            continuous_beat_conv=True,
         )
         model.eval()
         inputs = {
@@ -79,16 +75,6 @@ class PyTorchItgptModelsTest(unittest.TestCase):
         }
         out = model(inputs)
         self.assertEqual(tuple(out.shape), (1, 64, constants.N_SLOTS))
-
-        # Verify early_film & cyclic_measure_pos start as exact zero/identity.
-        assert model.early_film_subbeat is not None
-        assert model.early_film_beat is not None
-        assert model.bar_pos_emb is not None
-        assert model.phrase_pos_emb is not None
-        self.assertTrue(torch.all(model.early_film_subbeat.gamma_beta.weight == 0))
-        self.assertTrue(torch.all(model.early_film_beat.gamma_beta.weight == 0))
-        self.assertTrue(torch.all(model.bar_pos_emb.weight == 0))
-        self.assertTrue(torch.all(model.phrase_pos_emb.weight == 0))
 
         # Stacked multi-layer MERT (SUPERB softmax mixer)
         multi = models.build_itgpt_placement_model(
@@ -126,9 +112,8 @@ class PyTorchItgptModelsTest(unittest.TestCase):
                 audio_feature_type="mert", n_frames_per_beat=32
             )
 
-    def test_placement_loss_masking_focal_and_grid_weights(self):
+    def test_placement_loss_masking_and_label_smoothing(self):
         loss_fn = models.ItgptPlacementLoss()
-        focal_fn = models.ItgptPlacementLoss(focal_gamma=1.0, grid_weight_24th=2.0)
         norm_fn = models.ItgptPlacementLoss(normalize_by_valid_beats=True)
 
         logits = torch.zeros(1, 8, constants.N_SLOTS)
@@ -146,15 +131,6 @@ class PyTorchItgptModelsTest(unittest.TestCase):
         # Normalized-by-valid-beats should equal 4x mean-over-all-8 beats.
         l_norm = norm_fn(logits, targets, mask)
         self.assertAlmostEqual(float(l_norm), float(l1) * 4.0, places=6)
-
-        # Focal loss is strictly smaller than plain BCE when p_t = 0.5 and same weights.
-        focal_plain_w = models.ItgptPlacementLoss(focal_gamma=1.0)
-        self.assertAlmostEqual(
-            float(focal_plain_w(logits, targets, mask)),
-            float(l1) * 0.5,
-            places=5,
-        )
-        self.assertGreater(float(focal_fn(logits, targets, mask)), 0.0)
 
         # Label smoothing shifts confident predictions' loss upward and matches explicit targets.
         confident_logits = torch.full((1, 8, constants.N_SLOTS), -6.0)

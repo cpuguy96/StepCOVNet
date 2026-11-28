@@ -67,9 +67,6 @@ class ItgptDatasetConfig(_DictSerializableMixin):
         n_frames_per_beat: Sub-beat frames per beat (32 for logmel, 24 for MERT).
         mert_cache_suffix: Sibling filename suffix for cached MERT arrays
             (default ``.mert.npy``).
-        mert_spectral_flux: If True when ``audio_feature_type == "mert"``,
-            append 6 z-scored 100 Hz 3-band spectral-flux/energy channels
-            derived from ``*.ddc_mel.npy`` onto each MERT frame.
         difficulty_source: Scalar conditioning signal passed as ``difficulty``
             (``"meter"`` uses chart ``#METER``; ``"density"`` uses scale-invariant
             chart mean steps per beat in ``[0, 6]``).
@@ -89,7 +86,6 @@ class ItgptDatasetConfig(_DictSerializableMixin):
     audio_feature_type: str = ddcl_constants.AUDIO_FEATURE_LOGMEL
     n_frames_per_beat: int = constants.N_FRAMES_PER_BEAT
     mert_cache_suffix: str = ddcl_constants.MERT_CACHE_SUFFIX
-    mert_spectral_flux: bool = False
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER
     lazy_mert_cache_size: int = 0
 
@@ -151,16 +147,6 @@ class ItgptModelConfig(_DictSerializableMixin):
         n_enc_layers: Global encoder blocks (paper default CLI: 4; config: 8).
         cnn_hidden: Beat CNN base channels (paper: 32).
         dropout_rate: Attention / FFN dropout (paper: 0.1).
-        early_film: If True, apply zero-initialized FiLM conditioning from
-            ``[difficulty, bpm]`` before the hierarchical sub-beat blocks and
-            before the global encoder.
-        cyclic_measure_pos: If True, add zero-initialized cyclic ``beat % 4``
-            (bar) and ``beat % 16`` (4-bar phrase) positional embeddings in
-            ``level6``.
-        continuous_beat_conv: If True, run ``ItgptBeatMertEncoder`` across the
-            continuous ``(batch, beats * n_frames_per_beat, feature_dim)``
-            stream so its ``Conv1D`` spans beat boundaries rather than
-            zero-padding each beat independently.
         mert_time_mask_max_frames: SpecAugment maximum contiguous MERT frames
             zeroed per beat during training (``0`` disables time masking).
         mert_channel_dropout: Channel-wise dropout probability across the MERT
@@ -169,10 +155,6 @@ class ItgptModelConfig(_DictSerializableMixin):
             unmasked when sampling MERT SpecAugment time masks (sampling starts
             in ``[1, n_frames)`` so quarter-note downbeat transients remain
             intact).
-        use_nps_condition: If True (requires ``difficulty_source == "density"``),
-            prepend a 3rd scalar condition token for notes per second
-            (``steps_per_beat * bpm / 60`` scaled on ``[0, 20]``) before
-            ``level6``.
         beat_aux_head: If True, add an auxiliary per-beat head on post-
             ``conv_head`` features predicting beat activity and log-count plus
             a zero-initialized residual slot modulation.
@@ -183,13 +165,9 @@ class ItgptModelConfig(_DictSerializableMixin):
     n_enc_layers: int = constants.N_ENC_LAYERS
     cnn_hidden: int = constants.CNN_HIDDEN
     dropout_rate: float = constants.DROPOUT_RATE
-    early_film: bool = False
-    cyclic_measure_pos: bool = False
-    continuous_beat_conv: bool = False
     mert_time_mask_max_frames: int = 0
     mert_channel_dropout: float = 0.0
     mert_time_mask_preserve_downbeat: bool = False
-    use_nps_condition: bool = False
     beat_aux_head: bool = False
 
     def __post_init__(self) -> None:
@@ -247,10 +225,6 @@ class ItgptRunConfig(_DictSerializableMixin):
         lr_schedule: Optimizer schedule (``constant`` or ``cosine``).
         warmup_epochs: Linear warmup epochs before cosine decay (0 disables warmup).
         min_learning_rate: Floor LR at warmup start and cosine end.
-        focal_gamma: Focal modulating exponent ``(1 - p_t)^gamma`` applied to
-            grid-weighted slot BCE (``0.0`` keeps plain weighted BCE).
-        grid_weight_24th: Slot loss weight for 24th/triplet grid indices
-            ``(8, 16, 32, 40)`` (default ``1.0``).
         label_smoothing: Binary label smoothing factor in ``[0, 1)`` mapping
             targets ``y -> y * (1 - eps) + 0.5 * eps`` (``0.0`` disables).
         dice_loss_weight: Non-negative weight for an additive masked soft-Dice
@@ -264,10 +238,6 @@ class ItgptRunConfig(_DictSerializableMixin):
             weight tracking and evaluate/checkpoint with EMA weights.
         ema_momentum: EMA decay factor in ``(0, 1)`` when ``use_ema`` is True
             (default ``0.99``).
-        max_bar_shift: Maximum number of 4-beat bars of masked leading padding
-            randomly prepended to each training chart (``0`` disables shift
-            augmentation; e.g. ``15`` shifts by ``0..60`` beats across a
-            64-beat ``level5`` chunk).
         beat_aux_loss_weight: Weight on the masked per-beat activity BCE +
             log-count SmoothL1 auxiliary loss when ``model.beat_aux_head`` is
             True (``0.0`` disables).
@@ -297,15 +267,12 @@ class ItgptRunConfig(_DictSerializableMixin):
     lr_schedule: str = constants.LR_SCHEDULE_CONSTANT
     warmup_epochs: int = 0
     min_learning_rate: float = 0.0
-    focal_gamma: float = 0.0
-    grid_weight_24th: float = constants.GRID_WEIGHT_24TH
     label_smoothing: float = 0.0
     dice_loss_weight: float = 0.0
     bce_pos_weight: float = 1.0
     gradient_accumulation_steps: int = 1
     use_ema: bool = False
     ema_momentum: float = 0.99
-    max_bar_shift: int = 0
     beat_aux_loss_weight: float = 0.0
     rdrop_kl_weight: float = 0.0
     init_weights_path: str = ""
@@ -315,12 +282,11 @@ class ItgptRunConfig(_DictSerializableMixin):
 
         Raises:
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
-                ``eval_slot_f1_every``, LR schedule, ``focal_gamma``,
-                ``grid_weight_24th``, ``label_smoothing``,
+                ``eval_slot_f1_every``, LR schedule, ``label_smoothing``,
                 ``dice_loss_weight``, ``bce_pos_weight``,
                 ``gradient_accumulation_steps``, ``ema_momentum``,
-                ``max_bar_shift``, ``beat_aux_loss_weight``, or
-                ``rdrop_kl_weight`` fields are invalid.
+                ``beat_aux_loss_weight``, or ``rdrop_kl_weight`` fields are
+                invalid.
         """
         if self.epoch < 1:
             raise ValueError(f"epoch must be at least 1, got {self.epoch}")
@@ -353,12 +319,6 @@ class ItgptRunConfig(_DictSerializableMixin):
                 "min_learning_rate must be in [0, learning_rate], "
                 f"got {self.min_learning_rate} vs {self.learning_rate}"
             )
-        if self.focal_gamma < 0.0:
-            raise ValueError(f"focal_gamma must be >= 0, got {self.focal_gamma}")
-        if self.grid_weight_24th <= 0.0:
-            raise ValueError(
-                f"grid_weight_24th must be positive, got {self.grid_weight_24th}"
-            )
         if not 0.0 <= self.label_smoothing < 1.0:
             raise ValueError(
                 f"label_smoothing must be in [0, 1), got {self.label_smoothing}"
@@ -378,8 +338,6 @@ class ItgptRunConfig(_DictSerializableMixin):
             )
         if not 0.0 < self.ema_momentum < 1.0:
             raise ValueError(f"ema_momentum must be in (0, 1), got {self.ema_momentum}")
-        if self.max_bar_shift < 0:
-            raise ValueError(f"max_bar_shift must be >= 0, got {self.max_bar_shift}")
         if self.beat_aux_loss_weight < 0.0:
             raise ValueError(
                 f"beat_aux_loss_weight must be >= 0, got {self.beat_aux_loss_weight}"
