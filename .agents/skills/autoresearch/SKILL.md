@@ -136,10 +136,6 @@ assert stop_reason in (success, budget_exhausted, blocked)
 summarize session
 ```
 
-## Optional: cursor-autoresearch MCP
-
-For Tier C with git keep/revert discipline, see [cursor-autoresearch](https://github.com/ergenekonyigit/cursor-autoresearch). Not required; this skill works with profile harnesses alone.
-
 ## Stop conditions
 
 Stop **only** when one of these is true:
