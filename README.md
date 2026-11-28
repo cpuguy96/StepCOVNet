@@ -65,17 +65,16 @@ allowing rhythm game enthusiasts to create charts for their favorite songs insta
 
 Generate a StepMania chart (`.sm` or `.txt` format) from an audio file using pre-trained models. If you do not have onset or arrow models yet, omit their paths and they will be downloaded automatically from Google Drive and cached locally.
 
-- **Direct `.sm` export:** Pass an `--output_file` ending in `.sm` to write a playable StepMania simfile with downbeat-aligned `#OFFSET` and `#BPMS` (single constant BPM for steady tracks, piecewise-constant plateaus for variable-tempo tracks) directly—no external converter required; `.txt` output remains supported for [`SMDataTools`](https://github.com/jhaco/SMDataTools).
+- **Direct `.sm` & playable song-folder export:** Pass an `--output_file` ending in `.sm` to write a playable StepMania simfile with downbeat-aligned `#OFFSET`, `#BPMS` (single constant BPM for steady tracks, piecewise-constant plateaus for variable-tempo tracks), and automatic chorus `#SAMPLESTART` preview directly—or pass `--output_dir` to create a ready-to-play `<output_dir>/<song_title>/` folder containing both `<song_title>.sm` and a copy of the audio file (drop straight into `StepMania/Songs/<Pack>/`). `.txt` output remains supported for [`SMDataTools`](https://github.com/jhaco/SMDataTools).
 - **Built-in neural beat tracking (`Beat This!`):** StepCOVNet includes a self-contained pure-PyTorch implementation of Beat This! (ISMIR 2024) with sub-frame parabolic peak refinement (`stepcovnet.beat_this_model`) and an automatic offline fallback to `librosa`. No extra packages are required; pretrained beat-tracker weights (`final0.ckpt`, 77 MB) download and cache automatically on first use.
-- **ITGPT-MERT checkpoints:** Passing an ITGPT-MERT `.pt` checkpoint to `--onset_model_path` automatically runs Beat This! + MERT + 48-slot ITGPT placement end-to-end on raw audio.
+- **ITGPT-MERT checkpoints + automatic MERT cache:** Passing an ITGPT-MERT `.pt` checkpoint to `--onset_model_path` automatically runs Beat This! + MERT + 48-slot ITGPT placement end-to-end on raw audio, caching extracted `float32` MERT features by audio SHA-256 hash so regenerating with different difficulty/threshold settings skips MERT extraction.
 
 ```bash
 python scripts/generate.py \
   --audio_path "path/to/song.mp3" \
   --song_title "My Song" \
-  --onset_model_path "models/onset.pt" \
-  --arrow_model_path "models/arrow.pt" \
-  --output_file "output/chart.sm"
+  --all_difficulties \
+  --output_dir "output/StepMania_Songs"
 ```
 
 | Argument                | Description                                                                                            |
@@ -86,8 +85,10 @@ python scripts/generate.py \
 | `--onset_model_path`    | Path to a dense onset or ITGPT-MERT model (`.pt`); optional—omit to download and cache                 |
 | `--arrow_model_path`    | Path to the arrow prediction model (`.pt`); optional—omit to download and cache                        |
 | `--output_file`         | Output path (`.sm` writes a downbeat-aligned StepMania simfile; `.txt` writes plain-text format)       |
+| `--output_dir`          | Export a playable StepMania song folder (`<output_dir>/<song_title>/` with `.sm` + copied audio)       |
 | `--beat_tracker`        | Beat tracker backend: `auto` (built-in `beat_this` with offline `librosa` fallback), `beat_this`, `librosa` |
 | `--snap_beats`          | Align tracked beats to audio attack transients via a constant song-level shift (default ON; `--no-snap_beats` to disable) |
+| `--mert_cache`          | Cache extracted MERT features by audio SHA-256 hash for fast re-runs (default ON; `--no-mert_cache` to disable) |
 | `--target_density`      | Target average steps/beat for density-conditioned ITGPT-MERT models (default `2.0`)                    |
 | `--meter`               | Difficulty meter for meter-conditioned ITGPT checkpoints / `.sm` header (default `10`)                 |
 | `--threshold`           | Onset probability threshold (default `0.5`)                                                            |
@@ -97,7 +98,7 @@ python scripts/generate.py \
 
 #### Generator UI
 
-A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset (dense or ITGPT-MERT `.pt`) and arrow models—or leave those fields blank to download default models—configure beat tracker (`auto` / `beat_this` / `librosa`), ITGPT target density, onset threshold, transient beat snapping, full 5-difficulty pack generation (`Beginner`–`Challenge`), and save as `.sm` or `.txt`. Launch it with:
+A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset (dense or ITGPT-MERT `.pt`) and arrow models—or leave those fields blank to download default models—configure beat tracker (`auto` / `beat_this` / `librosa`), ITGPT target density, onset threshold, transient beat snapping, full 5-difficulty pack generation (`Beginner`–`Challenge`), playable StepMania song-folder export (copies audio + `.sm`), and save as `.sm` or `.txt`. Launch it with:
 
 ```bash
 python scripts/generate_ui.py

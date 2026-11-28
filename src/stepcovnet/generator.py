@@ -5,6 +5,9 @@ from __future__ import annotations
 import collections.abc
 import dataclasses
 import math
+import pathlib
+import re
+import shutil
 from typing import Any
 
 import librosa
@@ -89,6 +92,8 @@ class OutputData:
         beat_grid: Optional :class:`stepcovnet.beat_tracking.BeatGrid` carrying
             tracked beats and downbeats from raw audio.
         meters: Optional mapping from difficulty name to numeric StepMania meter.
+        sample_start: StepMania ``#SAMPLESTART`` preview offset in seconds.
+        sample_length: StepMania ``#SAMPLELENGTH`` preview duration in seconds.
     """
 
     title: str
@@ -97,6 +102,8 @@ class OutputData:
     offset: float = 0.0
     beat_grid: beat_tracking.BeatGrid | None = None
     meters: dict[str, int] | None = None
+    sample_start: float = 0.0
+    sample_length: float = 15.0
 
     def generate_txt_output(self) -> str:
         """Generate a formatted string representation of the step chart.
@@ -175,6 +182,8 @@ class OutputData:
         bpms_str = ",".join(
             f"{beat:.3f}={seg_bpm:.3f}" for beat, seg_bpm in bpm_segments
         )
+        sample_start = max(0.0, float(self.sample_start))
+        sample_length = max(1.0, float(self.sample_length))
 
         header = (
             f"#TITLE:{self.title};\n"
@@ -183,8 +192,8 @@ class OutputData:
             f"#CREDIT:StepCOVNet;\n"
             f"#MUSIC:{music_filename};\n"
             f"#OFFSET:{shared_offset:.6f};\n"
-            f"#SAMPLESTART:0.000;\n"
-            f"#SAMPLELENGTH:15.000;\n"
+            f"#SAMPLESTART:{sample_start:.3f};\n"
+            f"#SAMPLELENGTH:{sample_length:.3f};\n"
             f"#SELECTABLE:YES;\n"
             f"#BPMS:{bpms_str};\n"
             f"#STOPS:;\n"
@@ -214,6 +223,103 @@ class OutputData:
                 ";\n"
             )
         return header + "".join(note_blocks)
+
+
+_UNSAFE_PATH_CHARS_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
+
+
+def sanitize_song_folder_name(title: str, *, fallback: str = "stepcovnet_song") -> str:
+    """Sanitize a song title into a cross-platform safe folder/file stem.
+
+    Args:
+        title: Desired song title or folder name.
+        fallback: Fallback name used when ``title`` yields an empty string.
+
+    Returns:
+        Filesystem-safe name stripped of trailing dots and whitespace.
+    """
+    cleaned = _UNSAFE_PATH_CHARS_RE.sub("_", (title or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned if cleaned else fallback
+
+
+@dataclasses.dataclass(frozen=True)
+class StepManiaFolderExport:
+    """Paths written when exporting a playable StepMania song folder.
+
+    Attributes:
+        song_dir: Directory ready to drop into ``StepMania/Songs/<Pack>/``.
+        sm_path: Path to the generated ``.sm`` simfile inside ``song_dir``.
+        audio_path: Path to the audio file referenced by ``#MUSIC`` inside ``song_dir``.
+    """
+
+    song_dir: pathlib.Path
+    sm_path: pathlib.Path
+    audio_path: pathlib.Path
+
+
+def export_stepmania_song_folder(
+    output_data: OutputData,
+    *,
+    audio_path: str | pathlib.Path,
+    output_dir: str | pathlib.Path,
+    song_folder_name: str | None = None,
+    meter: int = 10,
+    copy_audio: bool = True,
+) -> StepManiaFolderExport:
+    """Export a ready-to-play StepMania song folder containing ``.sm`` + audio.
+
+    Creates ``<output_dir>/<safe_song_name>/``, copies the source audio file
+    into it (unless ``copy_audio=False`` or source and destination already point
+    to the same file), and writes ``<safe_song_name>.sm`` with ``#MUSIC`` set
+    to the exact copied audio filename.
+
+    Args:
+        output_data: Generated :class:`OutputData` chart(s).
+        audio_path: Path to the source audio file.
+        output_dir: Parent pack/export directory in which the song folder is created.
+        song_folder_name: Optional override for the folder and ``.sm`` stem
+            (defaults to sanitized :attr:`OutputData.title` or audio stem).
+        meter: Fallback StepMania meter when :attr:`OutputData.meters` is unset.
+        copy_audio: When True (default), copy ``audio_path`` into the song folder.
+
+    Returns:
+        :class:`StepManiaFolderExport` with paths to the created folder, ``.sm``,
+        and audio file.
+
+    Raises:
+        FileNotFoundError: If ``copy_audio`` is True and ``audio_path`` does not exist.
+    """
+    src_audio = pathlib.Path(audio_path)
+    if copy_audio and not src_audio.is_file():
+        raise FileNotFoundError(f"Source audio file not found: {src_audio}")
+
+    raw_name = (
+        song_folder_name
+        if song_folder_name is not None and song_folder_name.strip()
+        else (output_data.title or src_audio.stem)
+    )
+    safe_name = sanitize_song_folder_name(
+        raw_name, fallback=sanitize_song_folder_name(src_audio.stem)
+    )
+    song_dir = pathlib.Path(output_dir) / safe_name
+    song_dir.mkdir(parents=True, exist_ok=True)
+
+    dest_audio = song_dir / src_audio.name
+    if copy_audio and src_audio.resolve() != dest_audio.resolve():
+        shutil.copy2(src_audio, dest_audio)
+
+    sm_path = song_dir / f"{safe_name}.sm"
+    sm_content = output_data.generate_sm_output(
+        music_filename=dest_audio.name,
+        meter=meter,
+    )
+    sm_path.write_text(sm_content, encoding="utf-8")
+    return StepManiaFolderExport(
+        song_dir=song_dir,
+        sm_path=sm_path,
+        audio_path=dest_audio,
+    )
 
 
 def _int_to_base4_string(n: int, min_digits: int = 1) -> str:
@@ -479,6 +585,19 @@ def _decode_dense_onsets_for_preset(
     return onsets
 
 
+def _safe_estimate_sample_preview(
+    audio_path: str,
+    beat_grid: beat_tracking.BeatGrid | None,
+) -> tuple[float, float]:
+    """Compute ``(sample_start, sample_length)`` when ``audio_path`` exists on disk."""
+    if not audio_path or not pathlib.Path(audio_path).is_file():
+        return 0.0, 15.0
+    try:
+        return beat_tracking.estimate_sample_preview(audio_path, beat_grid=beat_grid)
+    except Exception:  # noqa: BLE001
+        return 0.0, 15.0
+
+
 def generate_output_data(
     *,
     audio_path: str,
@@ -495,6 +614,7 @@ def generate_output_data(
     all_difficulties: bool = False,
     difficulties: collections.abc.Sequence[beat_tracking.DifficultyPreset]
     | None = None,
+    use_mert_cache: bool = True,
 ) -> OutputData:
     """Generate step chart data for an audio file using PyTorch models.
 
@@ -522,6 +642,8 @@ def generate_output_data(
         difficulties: Optional custom sequence of
             :class:`stepcovnet.beat_tracking.DifficultyPreset` overrides (implies
             multi-difficulty pack generation).
+        use_mert_cache: Cache extracted MERT audio features by audio SHA-256 hash
+            so subsequent runs on the same song skip MERT inference.
 
     Returns:
         Populated :class:`OutputData`.
@@ -552,6 +674,7 @@ def generate_output_data(
                 beat_tracker=beat_tracker,
                 snap_beats=snap_beats,
                 threshold=threshold,
+                use_mert_cache=use_mert_cache,
                 device=_model_device(onset_model),
             )
             if bpm is None:
@@ -601,6 +724,9 @@ def generate_output_data(
                 normalized_spec=normalized_spec,
             )
 
+        sample_start, sample_length = _safe_estimate_sample_preview(
+            audio_path, beat_grid
+        )
         return OutputData(
             title=song_title,
             bpm=int(bpm),
@@ -608,6 +734,8 @@ def generate_output_data(
             offset=beat_grid.sm_offset_sec if beat_grid is not None else 0.0,
             beat_grid=beat_grid,
             meters={preset.name: int(preset.meter) for preset in presets},
+            sample_start=sample_start,
+            sample_length=sample_length,
         )
 
     if _is_itgpt_placement_model(onset_model):
@@ -619,6 +747,7 @@ def generate_output_data(
             target_density=target_density,
             meter=meter,
             threshold=threshold,
+            use_mert_cache=use_mert_cache,
             device=_model_device(onset_model),
         )
         if bpm is None:
@@ -650,6 +779,7 @@ def generate_output_data(
     if not onsets.shape[0]:
         raise ValueError("Failed to predict any onsets for the audio file.")
 
+    sample_start, sample_length = _safe_estimate_sample_preview(audio_path, beat_grid)
     return OutputData(
         title=song_title,
         bpm=int(bpm),
@@ -665,14 +795,19 @@ def generate_output_data(
         },
         offset=beat_grid.sm_offset_sec if beat_grid is not None else 0.0,
         beat_grid=beat_grid,
+        sample_start=sample_start,
+        sample_length=sample_length,
     )
 
 
 __all__ = [
     "OutputData",
+    "StepManiaFolderExport",
     "_create_txt_mapping",
     "_estimate_bpm_from_audio",
     "_int_to_base4_string",
     "_post_process_predictions",
+    "export_stepmania_song_folder",
     "generate_output_data",
+    "sanitize_song_folder_name",
 ]

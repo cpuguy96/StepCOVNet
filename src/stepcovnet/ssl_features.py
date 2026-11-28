@@ -6,6 +6,8 @@ loading/resampling aligned to the onset model frame grid (HOP_COEFF).
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import os
 import pathlib
 import typing
@@ -523,3 +525,171 @@ def extract_and_save_mert_features(
         allow_3d=stack_layers,
         save_fp16=save_fp16,
     )
+
+
+def audio_file_sha256(audio_path: str | pathlib.Path) -> str:
+    """Compute a streaming SHA-256 hex digest of an audio file's raw bytes.
+
+    Args:
+        audio_path: Path to an existing audio file.
+
+    Returns:
+        Lowercase 64-character SHA-256 hexadecimal digest.
+    """
+    hasher = hashlib.sha256()
+    with pathlib.Path(audio_path).open("rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def mert_hash_cache_path(
+    audio_path: str | pathlib.Path,
+    *,
+    cache_dir: str | pathlib.Path,
+    model_name: str = DEFAULT_MERT_MODEL,
+    layer: int = DEFAULT_MERT_LAYER,
+    layers: tuple[int, ...] | None = None,
+    stack_layers: bool = False,
+) -> pathlib.Path:
+    """Resolve the deterministic audio-hash cache path for extracted MERT features.
+
+    Keyed by the audio file's SHA-256 digest and the MERT extraction signature
+    (model ID, selected layers, and stacking mode) so re-runs on the same audio
+    skip MERT inference without colliding across audio edits or model configs.
+
+    Args:
+        audio_path: Path to the source audio file.
+        cache_dir: Directory where cached ``.mert.npy`` files are stored.
+        model_name: Hugging Face MERT model id.
+        layer: Single hidden-state layer used when ``layers`` is None.
+        layers: Optional tuple of hidden-state layer indices.
+        stack_layers: Whether layers are kept stacked rather than averaged.
+
+    Returns:
+        Path to the cache file under ``cache_dir``.
+    """
+    audio_hash = audio_file_sha256(audio_path)
+    selected = layers if layers is not None else (int(layer),)
+    cfg_payload = f"{model_name}|layers={','.join(str(int(i)) for i in selected)}|stack={int(bool(stack_layers))}"
+    cfg_hash = hashlib.sha256(cfg_payload.encode("utf-8")).hexdigest()
+    return (
+        pathlib.Path(cache_dir) / f"{audio_hash[:16]}_{cfg_hash[:12]}{MERT_FILE_SUFFIX}"
+    )
+
+
+def save_mert_features_atomic(
+    features: np.ndarray,
+    output_path: str | pathlib.Path,
+    *,
+    allow_3d: bool = False,
+) -> pathlib.Path:
+    """Atomically write ``float32`` MERT features to disk via temp file + rename.
+
+    Always stores ``float32`` (never ``float16``) to preserve numerical fidelity
+    across onset inference runs and prevent partial writes on interruption.
+
+    Args:
+        features: 2D ``(time, dim)`` or 3D ``(time, layers, dim)`` feature array.
+        output_path: Destination ``.npy`` path.
+        allow_3d: If True, permit 3D stacked multi-layer arrays.
+
+    Returns:
+        Path written.
+
+    Raises:
+        ValueError: If ``features`` has an unsupported rank.
+    """
+    valid_dims = (2, 3) if allow_3d else (2,)
+    if features.ndim not in valid_dims:
+        expected = "2D or 3D" if allow_3d else "2D (time, dim)"
+        raise ValueError(f"features must be {expected}; got shape {features.shape!r}")
+    out_path = pathlib.Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.parent / f".{out_path.name}.{os.getpid()}.tmp"
+    arr = np.asarray(features, dtype=np.float32)
+    try:
+        with tmp_path.open("wb") as f:
+            np.save(f, arr)
+        tmp_path.replace(out_path)
+    finally:
+        if tmp_path.exists():
+            with contextlib.suppress(OSError):
+                tmp_path.unlink()
+    return out_path
+
+
+def load_or_extract_mert_features_cached(
+    audio_path: str,
+    *,
+    cache_dir: str | pathlib.Path | None = None,
+    model_name: str = DEFAULT_MERT_MODEL,
+    layer: int = DEFAULT_MERT_LAYER,
+    layers: tuple[int, ...] | None = None,
+    stack_layers: bool = False,
+    device: str = "cpu",
+    chunk_seconds: float = MERT_CHUNK_SECONDS,
+    model: object = None,
+    processor: object = None,
+) -> np.ndarray:
+    """Load MERT features from an audio-hash cache, or extract and cache them.
+
+    Args:
+        audio_path: Path to an audio file readable by librosa.
+        cache_dir: Directory for audio-hash-keyed ``.mert.npy`` files. When
+            ``None``, caching is bypassed and features are extracted directly.
+        model_name: Hugging Face MERT model id.
+        layer: Hidden-state layer index when ``layers`` is None.
+        layers: Optional tuple of layer indices to normalize and combine/stack.
+        stack_layers: If True, keep the layer axis ``(time, n_layers, dim)``.
+        device: Torch device for inference.
+        chunk_seconds: Maximum chunk length in seconds for long files.
+        model: Optional pre-loaded MERT model.
+        processor: Optional matching feature extractor.
+
+    Returns:
+        Float32 feature array on the HOP_COEFF grid.
+    """
+    cache_path: pathlib.Path | None = None
+    expected_ndim = 3 if stack_layers else 2
+    if cache_dir is not None and pathlib.Path(audio_path).is_file():
+        with contextlib.suppress(OSError):
+            cache_path = mert_hash_cache_path(
+                audio_path,
+                cache_dir=cache_dir,
+                model_name=model_name,
+                layer=layer,
+                layers=layers,
+                stack_layers=stack_layers,
+            )
+            if cache_path.is_file():
+                try:
+                    cached = np.load(cache_path)
+                    if (
+                        isinstance(cached, np.ndarray)
+                        and cached.ndim == expected_ndim
+                        and cached.size > 0
+                        and bool(np.all(np.isfinite(cached)))
+                    ):
+                        return cached.astype(np.float32, copy=False)
+                except (OSError, ValueError):
+                    pass
+
+    features = extract_mert_features_from_audio(
+        audio_path,
+        model_name=model_name,
+        layer=layer,
+        layers=layers,
+        stack_layers=stack_layers,
+        device=device,
+        chunk_seconds=chunk_seconds,
+        model=model,
+        processor=processor,
+    )
+    if cache_path is not None:
+        with contextlib.suppress(OSError):
+            save_mert_features_atomic(features, cache_path, allow_3d=stack_layers)
+    return features

@@ -1137,6 +1137,267 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             report["modes"]["beat_this_full"]["ev_f1_20ms"], 1.0, places=4
         )
 
+    def test_estimate_sample_preview_finds_chorus_and_snaps_to_downbeat(self) -> None:
+        sr = constants.TARGET_SR
+        duration = 60.0
+        n_samples = int(duration * sr)
+        t = np.arange(n_samples, dtype=np.float32) / float(sr)
+        # Quiet intro/outro with a loud percussive chorus from 22.0s to 40.0s.
+        y = 0.02 * np.sin(2.0 * np.pi * 220.0 * t).astype(np.float32)
+        chorus_mask = (t >= 22.0) & (t <= 40.0)
+        # Rhythmic bursts every 0.5s (120 BPM) inside the chorus.
+        pulse = 0.5 + 0.5 * np.maximum(0.0, np.sin(2.0 * np.pi * 2.0 * t))
+        y[chorus_mask] = (
+            0.8 * pulse[chorus_mask] * np.sin(2.0 * np.pi * 440.0 * t[chorus_mask])
+        ).astype(np.float32)
+
+        beats = np.arange(0.0, 60.0, 0.5, dtype=np.float64)
+        downbeats = beats[::4]  # 0.0, 2.0, 4.0, ..., 22.0, 24.0, ...
+        grid = beat_tracking.BeatGrid(
+            beat_times=beats,
+            downbeat_times=downbeats,
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+
+        with mock.patch.object(
+            beat_tracking.librosa,
+            "load",
+            return_value=(y, sr),
+            autospec=True,
+        ):
+            start_sec, length_sec = beat_tracking.estimate_sample_preview(
+                "synthetic.ogg", beat_grid=grid, sample_length_sec=15.0
+            )
+
+        self.assertEqual(length_sec, 15.0)
+        self.assertGreaterEqual(start_sec, 20.0)
+        self.assertLessEqual(start_sec, 26.0)
+        # Snapped cleanly onto an exact 2.0-second downbeat.
+        self.assertAlmostEqual(start_sec % 2.0, 0.0, places=3)
+
+        # Short clip (< 15s) starts at 0.0 and clamps sample length to duration.
+        short_y = y[: int(8.0 * sr)]
+        with mock.patch.object(
+            beat_tracking.librosa,
+            "load",
+            return_value=(short_y, sr),
+            autospec=True,
+        ):
+            short_start, short_len = beat_tracking.estimate_sample_preview(
+                "short.ogg", sample_length_sec=15.0
+            )
+        self.assertEqual(short_start, 0.0)
+        self.assertAlmostEqual(short_len, 8.0, places=2)
+
+    def test_export_stepmania_song_folder_and_sanitize(self) -> None:
+        self.assertEqual(
+            generator.sanitize_song_folder_name('My: Song/Title*?"<>|... '),
+            "My_ Song_Title_",
+        )
+        self.assertEqual(
+            generator.sanitize_song_folder_name("   ...  ", fallback="fallback_name"),
+            "fallback_name",
+        )
+
+        beats = np.arange(0.5, 16.5, 0.5, dtype=np.float64)
+        grid = beat_tracking.BeatGrid(
+            beat_times=beats,
+            downbeat_times=beats[::4],
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        out = generator.OutputData(
+            title="Test: Song!",
+            bpm=120,
+            notes={
+                "Easy": [("0.5", "1000"), ("1.5", "0001")],
+                "Challenge": [("0.5", "1000"), ("1.0", "0100"), ("1.5", "0001")],
+            },
+            offset=grid.sm_offset_sec,
+            beat_grid=grid,
+            meters={"Easy": 4, "Challenge": 11},
+            sample_start=24.0,
+            sample_length=15.0,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = pathlib.Path(tmpdir)
+            src_audio = tmp / "track.ogg"
+            src_audio.write_bytes(b"fake-ogg-payload")
+            pack_dir = tmp / "Songs" / "StepCOVNet"
+
+            exported = generator.export_stepmania_song_folder(
+                out,
+                audio_path=src_audio,
+                output_dir=pack_dir,
+            )
+
+            self.assertEqual(exported.song_dir, pack_dir / "Test_ Song!")
+            self.assertTrue(exported.sm_path.is_file())
+            self.assertTrue(exported.audio_path.is_file())
+            self.assertEqual(exported.audio_path.read_bytes(), b"fake-ogg-payload")
+
+            sm_text = exported.sm_path.read_text(encoding="utf-8")
+            self.assertIn("#MUSIC:track.ogg;", sm_text)
+            self.assertIn("#SAMPLESTART:24.000;", sm_text)
+            self.assertIn("#SAMPLELENGTH:15.000;", sm_text)
+
+            parsed = simfile_parser.parse_simfile_text(sm_text)
+            self.assertEqual(len(parsed.charts), 2)
+            self.assertEqual(
+                [c.difficulty for c in parsed.charts], ["Easy", "Challenge"]
+            )
+
+            # Re-exporting when source audio already lives inside song_dir works cleanly.
+            exported_same = generator.export_stepmania_song_folder(
+                out,
+                audio_path=exported.audio_path,
+                output_dir=pack_dir,
+            )
+            self.assertEqual(exported_same.audio_path, exported.audio_path)
+
+    def test_cli_output_dir_mert_cache_and_ui_song_folder_export(self) -> None:
+        # CLI defaults mert_cache=True and allows --no-mert_cache + --output_dir alone.
+        args_default = generate_script.PARSER.parse_args(
+            [
+                "--audio_path",
+                "song.ogg",
+                "--song_title",
+                "My Song",
+                "--output_dir",
+                "out_pack",
+            ]
+        )
+        self.assertTrue(args_default.mert_cache)
+        self.assertIsNone(args_default.output_file)
+        self.assertEqual(args_default.output_dir, "out_pack")
+
+        args_nocache = generate_script.PARSER.parse_args(
+            [
+                "--audio_path",
+                "song.ogg",
+                "--song_title",
+                "My Song",
+                "--output_dir",
+                "out_pack",
+                "--no-mert_cache",
+            ]
+        )
+        self.assertFalse(args_nocache.mert_cache)
+
+        dummy_out = generator.OutputData(
+            title="CLI Song",
+            bpm=120,
+            notes={"Challenge": [("0.5", "1000"), ("1.0", "0001")]},
+            sample_start=12.0,
+            sample_length=15.0,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = pathlib.Path(tmpdir)
+            audio = tmp / "song.ogg"
+            audio.write_bytes(b"audio-bytes")
+            pack_dir = tmp / "pack"
+
+            # CLI --output_dir exports playable folder and forwards use_mert_cache.
+            with (
+                mock.patch.object(generate_script.wsl_gpu, "guard_pytorch_gpu_job"),
+                mock.patch.object(
+                    generate_script.pretrained,
+                    "resolve_onset_model_path",
+                    return_value=str(tmp / "onset.pt"),
+                ),
+                mock.patch.object(
+                    generate_script.pretrained,
+                    "resolve_arrow_model_path",
+                    return_value=str(tmp / "arrow.pt"),
+                ),
+                mock.patch.object(
+                    generate_script,
+                    "_load_onset_model_auto",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_script.trainers,
+                    "load_arrow_model",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_script.generator,
+                    "generate_output_data",
+                    return_value=dummy_out,
+                ) as mock_gen,
+            ):
+                generate_script.main(
+                    [
+                        "--audio_path",
+                        str(audio),
+                        "--song_title",
+                        "CLI Song",
+                        "--output_dir",
+                        str(pack_dir),
+                        "--no-mert_cache",
+                    ]
+                )
+            self.assertFalse(mock_gen.call_args.kwargs["use_mert_cache"])
+            self.assertTrue((pack_dir / "CLI Song" / "CLI Song.sm").is_file())
+            self.assertTrue((pack_dir / "CLI Song" / "song.ogg").is_file())
+
+            # GUI _run_generation with export_song_folder=True creates playable folder.
+            ui_pack = tmp / "ui_pack"
+            ui_pack.mkdir()
+            result_q: queue.Queue = queue.Queue()
+            with (
+                mock.patch.object(
+                    generate_ui_script.pretrained,
+                    "resolve_onset_model_path",
+                    return_value=str(tmp / "onset.pt"),
+                ),
+                mock.patch.object(
+                    generate_ui_script.pretrained,
+                    "resolve_arrow_model_path",
+                    return_value=str(tmp / "arrow.pt"),
+                ),
+                mock.patch.object(
+                    generate_ui_script.beat_tracking,
+                    "is_itgpt_checkpoint",
+                    return_value=True,
+                ),
+                mock.patch.object(
+                    generate_ui_script.beat_tracking,
+                    "load_onset_model_auto",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_ui_script.trainers,
+                    "load_arrow_model",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_ui_script.generator,
+                    "generate_output_data",
+                    return_value=dummy_out,
+                ),
+            ):
+                generate_ui_script._run_generation(
+                    audio_path=str(audio),
+                    song_title="CLI Song",
+                    bpm=None,
+                    onset_model_path=None,
+                    arrow_model_path=None,
+                    output_path=str(ui_pack / "ignored_name.sm"),
+                    use_post_processing=False,
+                    result_queue=result_q,
+                    all_difficulties=True,
+                    export_song_folder=True,
+                )
+            src, ok, val = result_q.get_nowait()
+            self.assertEqual((src, ok), ("generation", True))
+            self.assertEqual(pathlib.Path(val), ui_pack / "CLI Song")
+            self.assertTrue((ui_pack / "CLI Song" / "CLI Song.sm").is_file())
+            self.assertTrue((ui_pack / "CLI Song" / "song.ogg").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

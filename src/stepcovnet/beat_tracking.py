@@ -19,7 +19,7 @@ import librosa
 import numpy as np
 import torch
 
-from stepcovnet import beat_this_model, constants, ssl_features, trainers
+from stepcovnet import beat_this_model, constants, pretrained, ssl_features, trainers
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import features as ddcl_features
 from stepcovnet.itgpt import constants as itgpt_constants
@@ -838,18 +838,132 @@ def _load_or_extract_mert_for_audio(
     mert_layers: tuple[int, ...] = DEFAULT_MERT_LAYERS,
     mert_cache_suffix: str = DEFAULT_MERT_CACHE_SUFFIX,
     device: str = "cpu",
+    use_mert_cache: bool = True,
+    mert_cache_dir: str | pathlib.Path | None = None,
 ) -> np.ndarray:
-    """Load sibling cached MERT features if present, else extract on the fly."""
+    """Load sibling or audio-hash cached MERT features if present, else extract."""
     sibling = pathlib.Path(audio_path).with_suffix(mert_cache_suffix)
     if sibling.is_file():
         return ddcl_features.load_mert_features(
             audio_path, cache_suffix=mert_cache_suffix
         )
-    return ssl_features.extract_mert_features_from_audio(
+    cache_dir: str | pathlib.Path | None = None
+    if use_mert_cache:
+        cache_dir = (
+            mert_cache_dir
+            if mert_cache_dir is not None
+            else pretrained.get_default_mert_cache_dir()
+        )
+    return ssl_features.load_or_extract_mert_features_cached(
         audio_path,
+        cache_dir=cache_dir,
         layers=mert_layers,
         device=device,
     )
+
+
+def estimate_sample_preview(
+    audio_path: str,
+    *,
+    beat_grid: BeatGrid | None = None,
+    sample_length_sec: float = 15.0,
+) -> tuple[float, float]:
+    """Estimate an energetic chorus-like preview window for StepMania ``#SAMPLESTART``.
+
+    Scores sliding ``sample_length_sec`` windows using a blend of RMS loudness
+    and onset strength, gently favoring the first major chorus zone (22%–55% of
+    the track) when multiple choruses have similar energy, and snaps the start
+    time to the nearest downbeat (or beat) when ``beat_grid`` is provided.
+
+    Args:
+        audio_path: Path to the source audio file.
+        beat_grid: Optional :class:`BeatGrid` for downbeat snapping.
+        sample_length_sec: Desired preview duration in seconds (default ``15.0``).
+
+    Returns:
+        Tuple ``(sample_start_sec, sample_length_sec)`` rounded to milliseconds.
+    """
+    req_len = max(1.0, float(sample_length_sec))
+    y, sr = librosa.load(audio_path, sr=constants.TARGET_SR, mono=True)
+    sr_f = float(sr)
+    duration = float(y.size) / sr_f if sr_f > 0.0 else 0.0
+    if y.size == 0 or duration <= 0.0:
+        return 0.0, round(req_len, 3)
+
+    eff_len = min(req_len, duration)
+    if duration <= eff_len + 1.0:
+        return 0.0, round(max(1.0, eff_len), 3)
+
+    hop_length = 512
+    rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop_length)[0].astype(
+        np.float64
+    )
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length).astype(
+        np.float64
+    )
+    n_frames = min(rms.size, onset_env.size)
+    if n_frames < 4:
+        return 0.0, round(max(1.0, eff_len), 3)
+
+    rms = rms[:n_frames]
+    onset_env = onset_env[:n_frames]
+    rms_z = (rms - float(np.mean(rms))) / max(float(np.std(rms)), 1e-8)
+    onset_z = (onset_env - float(np.mean(onset_env))) / max(
+        float(np.std(onset_env)), 1e-8
+    )
+    energy = 0.7 * rms_z + 0.3 * onset_z
+
+    frame_sec = float(hop_length) / sr_f
+    win_frames = max(1, min(n_frames, int(round(eff_len / frame_sec))))
+    cumsum = np.concatenate(([0.0], np.cumsum(energy)))
+    n_starts = n_frames - win_frames + 1
+    if n_starts <= 1:
+        return 0.0, round(max(1.0, eff_len), 3)
+
+    win_means = (cumsum[win_frames:] - cumsum[:-win_frames]) / float(win_frames)
+    start_times = np.arange(n_starts, dtype=np.float64) * frame_sec
+
+    # Skip intro and final fadeout on full-length tracks so previews jump right
+    # into the main section.
+    if duration >= eff_len + 10.0:
+        min_start = 0.15 * duration
+        max_start = max(min_start, duration - eff_len - 0.05 * duration)
+    else:
+        min_start = 0.0
+        max_start = max(0.0, duration - eff_len)
+
+    valid_mask = (start_times >= min_start) & (start_times <= max_start + 1e-6)
+    if not bool(np.any(valid_mask)):
+        valid_mask = np.ones(n_starts, dtype=bool)
+
+    # Mild bonus for the first major chorus zone (22%–55%) to break ties cleanly
+    # against repeated outro choruses without overriding a louder late drop.
+    chorus_bonus = np.where(
+        (start_times >= 0.22 * duration) & (start_times <= 0.55 * duration),
+        0.10,
+        0.0,
+    )
+    scores = np.where(valid_mask, win_means + chorus_bonus, -np.inf)
+    best_start = float(start_times[int(np.argmax(scores))])
+
+    if beat_grid is not None:
+        anchors = (
+            beat_grid.downbeat_times
+            if beat_grid.downbeat_times.size > 0
+            else beat_grid.beat_times
+        )
+        if anchors.size > 0:
+            feasible = anchors[
+                (anchors >= 0.0) & (anchors <= max(0.0, duration - eff_len + 0.5))
+            ]
+            if feasible.size > 0:
+                nearest_idx = int(np.argmin(np.abs(feasible - best_start)))
+                nearest_t = float(feasible[nearest_idx])
+                if abs(nearest_t - best_start) <= 4.0:
+                    best_start = nearest_t
+
+    best_start = float(np.clip(best_start, 0.0, max(0.0, duration - 1.0)))
+    return round(best_start, 3), round(max(1.0, eff_len), 3)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1068,6 +1182,7 @@ def predict_itgpt_onsets_from_audio(
     max_beats: int | None = None,
     mert_layers: tuple[int, ...] = DEFAULT_MERT_LAYERS,
     mert_cache_suffix: str = DEFAULT_MERT_CACHE_SUFFIX,
+    use_mert_cache: bool = True,
     device: str | torch.device | None = None,
     allowed_slots: collections.abc.Collection[int] | None = SLOTS_16TH_24TH,
 ) -> tuple[np.ndarray, BeatGrid]:
@@ -1087,6 +1202,7 @@ def predict_itgpt_onsets_from_audio(
         max_beats: Maximum beat chunk length (defaults to model's ``max_beats``).
         mert_layers: MERT hidden layers to average when extracting on the fly.
         mert_cache_suffix: Sibling MERT cache suffix checked before extraction.
+        use_mert_cache: Cache extracted MERT features by audio SHA-256 hash.
         device: Optional compute device override.
         allowed_slots: Optional valid 48-slot beat subdivisions (defaults to
             :data:`SLOTS_16TH_24TH` to avoid stray 192-row StepMania measures).
@@ -1116,6 +1232,7 @@ def predict_itgpt_onsets_from_audio(
         mert_layers=mert_layers,
         mert_cache_suffix=mert_cache_suffix,
         device="cuda" if target_device.type == "cuda" else "cpu",
+        use_mert_cache=use_mert_cache,
     )
     n_frames = int(getattr(itgpt_model, "n_frames_per_beat", 24))
     beat_mert = ddcl_features.beats_to_mert_tensor(
@@ -1150,6 +1267,7 @@ def predict_itgpt_pack_from_audio(
     max_beats: int | None = None,
     mert_layers: tuple[int, ...] = DEFAULT_MERT_LAYERS,
     mert_cache_suffix: str = DEFAULT_MERT_CACHE_SUFFIX,
+    use_mert_cache: bool = True,
     device: str | torch.device | None = None,
 ) -> tuple[dict[str, np.ndarray], BeatGrid]:
     """Run Beat This! and MERT once and decode onsets for a full difficulty pack.
@@ -1166,6 +1284,7 @@ def predict_itgpt_pack_from_audio(
         max_beats: Maximum beat chunk length (defaults to model's ``max_beats``).
         mert_layers: MERT hidden layers to average when extracting on the fly.
         mert_cache_suffix: Sibling MERT cache suffix checked before extraction.
+        use_mert_cache: Cache extracted MERT features by audio SHA-256 hash.
         device: Optional compute device override.
 
     Returns:
@@ -1194,6 +1313,7 @@ def predict_itgpt_pack_from_audio(
         mert_layers=mert_layers,
         mert_cache_suffix=mert_cache_suffix,
         device="cuda" if target_device.type == "cuda" else "cpu",
+        use_mert_cache=use_mert_cache,
     )
     n_frames = int(getattr(itgpt_model, "n_frames_per_beat", 24))
     beat_mert = ddcl_features.beats_to_mert_tensor(

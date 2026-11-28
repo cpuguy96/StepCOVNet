@@ -147,6 +147,7 @@ def _run_generation(
     target_density: float = 2.0,
     threshold: float = 0.5,
     all_difficulties: bool = False,
+    export_song_folder: bool = False,
 ) -> None:
     """Load models, run generator, write output. Puts (True, output_path) or (False, error_msg) into result_queue."""
     try:
@@ -171,15 +172,24 @@ def _run_generation(
             all_difficulties=all_difficulties,
         )
         out_path = pathlib.Path(output_path)
-        if out_path.suffix.lower() == ".sm":
-            content = output_data.generate_sm_output(
-                music_filename=pathlib.Path(audio_path).name
+        if export_song_folder:
+            base_dir = out_path.parent if out_path.suffix else out_path
+            exported = generator.export_stepmania_song_folder(
+                output_data,
+                audio_path=audio_path,
+                output_dir=base_dir,
             )
+            result_queue.put(("generation", True, str(exported.song_dir)))
         else:
-            content = output_data.generate_txt_output()
-        with out_path.open("w") as f:
-            f.write(content)
-        result_queue.put(("generation", True, output_path))
+            if out_path.suffix.lower() == ".sm":
+                content = output_data.generate_sm_output(
+                    music_filename=pathlib.Path(audio_path).name
+                )
+            else:
+                content = output_data.generate_txt_output()
+            with out_path.open("w", encoding="utf-8") as f:
+                f.write(content)
+            result_queue.put(("generation", True, output_path))
     except Exception as e:  # noqa: BLE001
         result_queue.put(("generation", False, str(e)))
 
@@ -200,6 +210,7 @@ class _GeneratorApp:
         beat_tracker_var: StringVar for beat tracker backend (auto/beat_this/librosa).
         snap_beats_var: BooleanVar for onset-transient beat snapping toggle.
         all_difficulties_var: BooleanVar for generating a 5-difficulty pack.
+        export_song_folder_var: BooleanVar for exporting a playable StepMania song folder.
         target_density_var: StringVar for ITGPT target density (steps/beat).
         threshold_var: StringVar for onset probability threshold.
         status_var: StringVar for status text.
@@ -212,7 +223,7 @@ class _GeneratorApp:
         self.root = root
         root.title("StepCOVNet Generator")
         root.minsize(400, 320)
-        root.geometry("480x660")
+        root.geometry("480x690")
         root.resizable(True, True)
         root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -230,6 +241,7 @@ class _GeneratorApp:
         self.beat_tracker_var = tk.StringVar(value=beat_tracking.TRACKER_AUTO)
         self.snap_beats_var = tk.BooleanVar(value=True)
         self.all_difficulties_var = tk.BooleanVar(value=False)
+        self.export_song_folder_var = tk.BooleanVar(value=False)
         self.target_density_var = tk.StringVar(value="2.0")
         self.threshold_var = tk.StringVar(value="0.5")
         self.status_var = tk.StringVar(value="")
@@ -343,6 +355,11 @@ class _GeneratorApp:
         ).pack(anchor=tk.W)
         tk.Checkbutton(
             cb_frame,
+            text="Export playable StepMania song folder (copies audio + .sm)",
+            variable=self.export_song_folder_var,
+        ).pack(anchor=tk.W)
+        tk.Checkbutton(
+            cb_frame,
             text="Use post-processing (peak-picking for legacy onset timings)",
             variable=self.use_post_processing_var,
         ).pack(anchor=tk.W)
@@ -452,6 +469,7 @@ class _GeneratorApp:
         beat_tracker, target_density, threshold = adv_result
         snap_beats = bool(self.snap_beats_var.get())
         all_difficulties = bool(self.all_difficulties_var.get())
+        export_song_folder = bool(self.export_song_folder_var.get())
         use_post_processing = bool(self.use_post_processing_var.get())
 
         self.run_btn.config(state=tk.DISABLED)
@@ -472,6 +490,7 @@ class _GeneratorApp:
                 target_density=target_density,
                 threshold=threshold,
                 all_difficulties=all_difficulties,
+                export_song_folder=export_song_folder,
             )
 
         thread = threading.Thread(target=worker, daemon=True)

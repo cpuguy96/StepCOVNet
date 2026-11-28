@@ -389,3 +389,86 @@ class CombineMertLayersTest(unittest.TestCase):
             loaded = np.load(out)
             self.assertEqual(loaded.shape, (5, 2, 4))
             self.assertEqual(loaded.dtype, np.float16)
+
+
+class MertHashCacheTest(unittest.TestCase):
+    def test_hash_cache_hits_on_repeat_and_invalidates_on_audio_or_layer_change(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = pathlib.Path(tmpdir)
+            audio = tmp / "song.ogg"
+            audio.write_bytes(b"audio-bytes-v1")
+            cache_dir = tmp / "mert_cache"
+
+            expected = np.arange(24, dtype=np.float32).reshape(6, 4)
+            with mock.patch.object(
+                ssl_features,
+                "extract_mert_features_from_audio",
+                return_value=expected,
+            ) as mock_extract:
+                first = ssl_features.load_or_extract_mert_features_cached(
+                    str(audio),
+                    cache_dir=cache_dir,
+                    layers=(2, 6, 10, 16),
+                )
+                second = ssl_features.load_or_extract_mert_features_cached(
+                    str(audio),
+                    cache_dir=cache_dir,
+                    layers=(2, 6, 10, 16),
+                )
+                self.assertEqual(mock_extract.call_count, 1)
+                np.testing.assert_allclose(first, expected)
+                np.testing.assert_allclose(second, expected)
+
+                # Cache file must be stored as float32 (never float16).
+                cache_path = ssl_features.mert_hash_cache_path(
+                    audio, cache_dir=cache_dir, layers=(2, 6, 10, 16)
+                )
+                self.assertTrue(cache_path.is_file())
+                self.assertEqual(np.load(cache_path).dtype, np.float32)
+
+                # Different layers miss cache and trigger fresh extraction.
+                ssl_features.load_or_extract_mert_features_cached(
+                    str(audio),
+                    cache_dir=cache_dir,
+                    layers=(6,),
+                )
+                self.assertEqual(mock_extract.call_count, 2)
+
+                # Modified audio bytes miss cache even at the same path.
+                audio.write_bytes(b"audio-bytes-v2-edited")
+                ssl_features.load_or_extract_mert_features_cached(
+                    str(audio),
+                    cache_dir=cache_dir,
+                    layers=(2, 6, 10, 16),
+                )
+                self.assertEqual(mock_extract.call_count, 3)
+
+                # Corrupt cache file falls back cleanly and rewrites valid float32.
+                v2_cache = ssl_features.mert_hash_cache_path(
+                    audio, cache_dir=cache_dir, layers=(2, 6, 10, 16)
+                )
+                v2_cache.write_bytes(b"not-a-valid-npy")
+                recovered = ssl_features.load_or_extract_mert_features_cached(
+                    str(audio),
+                    cache_dir=cache_dir,
+                    layers=(2, 6, 10, 16),
+                )
+                self.assertEqual(mock_extract.call_count, 4)
+                np.testing.assert_allclose(recovered, expected)
+                self.assertEqual(np.load(v2_cache).dtype, np.float32)
+
+    def test_pretrained_mert_cache_dir_env_override_and_clear(self):
+        from stepcovnet import pretrained  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.dict(os.environ, {"STEPCOVNET_MERT_CACHE_DIR": "off"}):
+                self.assertIsNone(pretrained.get_default_mert_cache_dir())
+
+            with mock.patch.dict(os.environ, {"STEPCOVNET_MERT_CACHE_DIR": tmpdir}):
+                resolved = pretrained.get_default_mert_cache_dir()
+                self.assertEqual(resolved, pathlib.Path(tmpdir))
+                cached_file = pathlib.Path(tmpdir) / "abc_def.mert.npy"
+                np.save(cached_file, np.zeros((4, 2), dtype=np.float32))
+                removed = pretrained.clear_mert_cache()
+                self.assertEqual(removed, 1)
+                self.assertFalse(cached_file.exists())

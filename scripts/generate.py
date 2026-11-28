@@ -53,8 +53,20 @@ PARSER.add_argument(
 PARSER.add_argument(
     "--output_file",
     type=str,
-    help="Path where the generated chart will be saved.",
-    required=True,
+    default=None,
+    help=(
+        "Path where a single generated chart (.sm or .txt) will be saved. "
+        "Required unless --output_dir is provided."
+    ),
+)
+PARSER.add_argument(
+    "--output_dir",
+    type=str,
+    default=None,
+    help=(
+        "Export a playable StepMania song folder (<output_dir>/<song_title>/) "
+        "containing <song_title>.sm and a copy of the audio file."
+    ),
 )
 PARSER.add_argument(
     "--use_post_processing",
@@ -81,6 +93,16 @@ PARSER.add_argument(
         "Apply a song-level constant phase shift aligning estimated beats "
         "to audio attack transients (enabled by default; pass --no-snap_beats "
         "to disable)."
+    ),
+)
+PARSER.add_argument(
+    "--mert_cache",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help=(
+        "Cache extracted MERT audio features by audio SHA-256 hash so "
+        "re-generating on the same audio skips MERT inference (enabled by "
+        "default; pass --no-mert_cache to disable)."
     ),
 )
 PARSER.add_argument(
@@ -132,6 +154,9 @@ def _load_onset_model_auto(onset_path: str, *, device: object) -> object:
 
 def main(argv: list[str] | None = None) -> None:
     args = PARSER.parse_args(argv)
+    if not args.output_file and not args.output_dir:
+        PARSER.error("Provide --output_file and/or --output_dir.")
+
     wsl_gpu.guard_pytorch_gpu_job(__file__)
     device = runtime.resolve_device(args.device)
     onset_path = pretrained.resolve_onset_model_path(args.onset_model_path)
@@ -152,19 +177,33 @@ def main(argv: list[str] | None = None) -> None:
         meter=args.meter,
         threshold=args.threshold,
         all_difficulties=args.all_difficulties,
+        use_mert_cache=args.mert_cache,
     )
 
-    out_path = pathlib.Path(args.output_file)
-    if out_path.suffix.lower() == ".sm":
-        content = output_data.generate_sm_output(
-            music_filename=pathlib.Path(args.audio_path).name,
+    if args.output_file:
+        out_path = pathlib.Path(args.output_file)
+        if out_path.suffix.lower() == ".sm":
+            content = output_data.generate_sm_output(
+                music_filename=pathlib.Path(args.audio_path).name,
+                meter=args.meter,
+            )
+        else:
+            content = output_data.generate_txt_output()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"Successfully generated step chart at {args.output_file}")
+
+    if args.output_dir:
+        exported = generator.export_stepmania_song_folder(
+            output_data,
+            audio_path=args.audio_path,
+            output_dir=args.output_dir,
             meter=args.meter,
         )
-    else:
-        content = output_data.generate_txt_output()
-    with out_path.open("w") as f:
-        f.write(content)
-    print(f"Successfully generated step chart at {args.output_file}")
+        print(
+            f"Successfully exported playable StepMania song folder at {exported.song_dir}"
+        )
 
 
 if __name__ == "__main__":

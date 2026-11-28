@@ -38,20 +38,48 @@ def _extract_drive_file_id(url_or_id: str) -> str:
     return url_or_id
 
 
+def get_default_cache_dir() -> pathlib.Path:
+    """Return the root StepCOVNet user cache directory.
+
+    Returns:
+        Path to ``%LOCALAPPDATA%/stepcovnet`` on Windows or ``~/.stepcovnet``
+        on POSIX systems.
+    """
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA")
+        if not base:
+            base = str(pathlib.Path.home())
+        return pathlib.Path(base) / "stepcovnet"
+    return pathlib.Path.home() / ".stepcovnet"
+
+
 def get_default_models_dir() -> pathlib.Path:
     """Return the directory where downloaded models are cached. Creates it when writing.
 
     Returns:
         Path to the cache directory for downloaded models.
     """
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA")
-        if not base:
-            base = str(pathlib.Path.home())
-        root = pathlib.Path(base) / "stepcovnet"
-    else:
-        root = pathlib.Path.home() / ".stepcovnet"
-    return root / "models"
+    return get_default_cache_dir() / "models"
+
+
+def get_default_mert_cache_dir() -> pathlib.Path | None:
+    """Return the directory for audio-hash-keyed MERT feature caches.
+
+    Honors the ``STEPCOVNET_MERT_CACHE_DIR`` environment variable. Setting it
+    to ``"0"``, ``"false"``, or ``"off"`` disables disk caching and returns
+    ``None``.
+
+    Returns:
+        Cache directory path, or ``None`` if explicitly disabled via env var.
+    """
+    env_override = os.environ.get("STEPCOVNET_MERT_CACHE_DIR")
+    if env_override is not None:
+        cleaned = env_override.strip()
+        if cleaned.lower() in {"0", "false", "off", "none"}:
+            return None
+        if cleaned:
+            return pathlib.Path(cleaned)
+    return get_default_cache_dir() / "mert_cache"
 
 
 def _download_zip_and_extract_checkpoint(
@@ -181,6 +209,23 @@ def clear_model_cache() -> None:
         path = default_dir / name
         if path.is_file():
             path.unlink(missing_ok=True)
+
+
+def clear_mert_cache() -> int:
+    """Remove cached ``.mert.npy`` feature files from the default MERT cache directory.
+
+    Returns:
+        Number of cached feature files removed.
+    """
+    cache_dir = get_default_mert_cache_dir()
+    if cache_dir is None or not cache_dir.is_dir():
+        return 0
+    removed = 0
+    for path in cache_dir.glob("*.mert.npy"):
+        if path.is_file():
+            path.unlink(missing_ok=True)
+            removed += 1
+    return removed
 
 
 def refresh_model_cache() -> None:
