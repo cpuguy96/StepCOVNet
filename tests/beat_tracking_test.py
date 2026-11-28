@@ -1398,6 +1398,63 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             self.assertTrue((ui_pack / "CLI Song" / "CLI Song.sm").is_file())
             self.assertTrue((ui_pack / "CLI Song" / "song.ogg").is_file())
 
+    def test_piecewise_regularize_and_per_section_snap_for_medley(self) -> None:
+        # 1. Noisy 2-section medley: 120 BPM (24 beats, 1 dropped) -> 160 BPM (24 beats).
+        rng = np.random.default_rng(42)
+        sec1_true = 0.5 + np.arange(24, dtype=np.float64) * 0.5
+        sec2_true = sec1_true[-1] + 0.375 + np.arange(24, dtype=np.float64) * 0.375
+        sec1_noisy = np.delete(sec1_true + rng.normal(0.0, 0.008, 24), 10)
+        sec2_noisy = sec2_true + rng.normal(0.0, 0.008, 24)
+        raw_medley = beat_tracking.BeatGrid(
+            beat_times=np.concatenate([sec1_noisy, sec2_noisy]),
+            downbeat_times=np.concatenate([sec1_true[::4], sec2_true[::4]]),
+            bpm=138.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        reg = beat_tracking.regularize_beat_grid(raw_medley)
+        segs, _ = reg.sm_bpm_segments()
+        self.assertLessEqual(len(segs), 3)
+        seg_bpms = [bpm for _, bpm in segs]
+        self.assertTrue(any(abs(b - 120.0) < 0.6 for b in seg_bpms))
+        self.assertTrue(any(abs(b - 160.0) < 0.6 for b in seg_bpms))
+
+        # 2. Opposite phase errors across medley sections: sec1 +20ms late, sec2 -18ms early.
+        sr = constants.TARGET_SR
+        duration = float(sec2_true[-1]) + 1.5
+        y = np.zeros(int(duration * sr), dtype=np.float32)
+        true_all = np.concatenate([sec1_true, sec2_true])
+        burst = np.exp(-np.arange(256, dtype=np.float32) / 40.0) * np.sin(
+            2.0 * np.pi * 1000.0 * np.arange(256, dtype=np.float32) / float(sr)
+        )
+        for t in true_all:
+            idx = int(round(float(t) * sr))
+            end = min(y.size, idx + burst.size)
+            y[idx:end] += burst[: end - idx]
+
+        biased_grid = beat_tracking.BeatGrid(
+            beat_times=np.concatenate([sec1_true + 0.020, sec2_true - 0.018]),
+            downbeat_times=np.concatenate(
+                [sec1_true[::4] + 0.020, sec2_true[::4] - 0.018]
+            ),
+            bpm=140.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        with mock.patch.object(
+            beat_tracking.librosa,
+            "load",
+            return_value=(y, sr),
+            autospec=True,
+        ):
+            snapped = beat_tracking.snap_beats_to_onsets(
+                biased_grid, "medley.ogg", per_section=True
+            )
+
+        self.assertEqual(snapped.beat_times.size, true_all.size)
+        err_sec1 = np.abs(snapped.beat_times[:24] - sec1_true)
+        err_sec2 = np.abs(snapped.beat_times[24:] - sec2_true)
+        self.assertLess(float(np.median(err_sec1)), 0.004)
+        self.assertLess(float(np.median(err_sec2)), 0.004)
+
 
 if __name__ == "__main__":
     unittest.main()

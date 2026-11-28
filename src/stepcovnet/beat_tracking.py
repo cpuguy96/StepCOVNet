@@ -446,29 +446,144 @@ def _compute_attack_onset_envelope(
     return env, t_rms
 
 
+def _segment_beats_by_tempo(
+    bt: np.ndarray,
+    *,
+    rel_tol: float = 0.06,
+    min_section_beats: int = 16,
+) -> list[tuple[int, int]]:
+    """Partition beat indices into contiguous constant-tempo sections.
+
+    Smooths inter-beat intervals with a radius-3 median filter so isolated
+    1–2 beat tracker glitches do not trigger spurious splits, groups adjacent
+    intervals within ``rel_tol`` of the section median, and merges transient
+    runs shorter than ``min_section_beats`` into the closer neighboring tempo.
+
+    Args:
+        bt: Strictly increasing 1D float64 beat timestamps in seconds.
+        rel_tol: Fractional IBI change threshold to start a new tempo section.
+        min_section_beats: Minimum beat count for a standalone tempo section.
+
+    Returns:
+        List of non-overlapping ``(start_idx, end_idx)`` half-open index slices
+        covering ``[0, bt.size)``.
+    """
+    n = int(bt.size)
+    if n < max(4, int(min_section_beats)):
+        return [(0, n)]
+    ibis = np.diff(bt)
+    smooth = np.empty_like(ibis)
+    for i in range(ibis.size):
+        lo = max(0, i - 3)
+        hi = min(ibis.size, i + 4)
+        smooth[i] = float(np.median(ibis[lo:hi]))
+
+    runs: list[list[int]] = []
+    start = 0
+    ref = float(smooth[0])
+    for i in range(1, smooth.size):
+        if abs(float(smooth[i]) - ref) / max(ref, 1e-6) > float(rel_tol):
+            runs.append([start, i])
+            start = i
+            ref = float(smooth[i])
+        elif (i - start) % 4 == 0:
+            ref = float(np.median(smooth[start : i + 1]))
+    runs.append([start, int(smooth.size)])
+
+    changed = True
+    while changed and len(runs) > 1:
+        changed = False
+        lengths = [r[1] - r[0] + 1 for r in runs]
+        min_idx = int(np.argmin(lengths))
+        if lengths[min_idx] < int(min_section_beats):
+            r_lo, r_hi = runs[min_idx]
+            r_med = float(np.median(ibis[r_lo:r_hi])) if r_hi > r_lo else 0.5
+            left_diff = (
+                abs(
+                    r_med
+                    - float(
+                        np.median(ibis[runs[min_idx - 1][0] : runs[min_idx - 1][1]])
+                    )
+                )
+                if min_idx > 0
+                else float("inf")
+            )
+            right_diff = (
+                abs(
+                    r_med
+                    - float(
+                        np.median(ibis[runs[min_idx + 1][0] : runs[min_idx + 1][1]])
+                    )
+                )
+                if min_idx + 1 < len(runs)
+                else float("inf")
+            )
+            if left_diff <= right_diff:
+                runs[min_idx - 1][1] = runs[min_idx][1]
+            else:
+                runs[min_idx + 1][0] = runs[min_idx][0]
+            runs.pop(min_idx)
+            changed = True
+
+    sections: list[tuple[int, int]] = []
+    for idx, (s, _e_incl) in enumerate(runs):
+        e_excl = runs[idx + 1][0] if idx + 1 < len(runs) else n
+        if e_excl > s:
+            sections.append((s, e_excl))
+    return sections if sections else [(0, n)]
+
+
+def _optimal_attack_shift_sec(
+    bt: np.ndarray,
+    onset_env: np.ndarray,
+    env_times: np.ndarray,
+    shifts_sec: np.ndarray,
+    max_shift_sec: float,
+) -> float:
+    """Return the scalar shift maximizing mean attack-onset energy on ``bt``."""
+    env_end = float(env_times[-1])
+    interior = bt[(bt >= max_shift_sec) & (bt <= env_end - max_shift_sec)]
+    score_bt = interior if interior.size > 0 else bt
+    best_shift = 0.0
+    best_score = -float("inf")
+    for shift in shifts_sec:
+        shifted = score_bt + float(shift)
+        score = float(np.mean(np.interp(shifted, env_times, onset_env)))
+        if score > best_score:
+            best_score = score
+            best_shift = float(shift)
+    return best_shift
+
+
 def snap_beats_to_onsets(
     beat_grid: BeatGrid,
     audio_path: str,
     *,
     max_shift_ms: float = 35.0,
     step_ms: float = 0.5,
+    per_section: bool = True,
 ) -> BeatGrid:
-    """Apply a constant song-level phase shift aligning beats to audio attacks.
+    """Align beats to audio attacks via global (steady) or per-section phase snap.
 
-    Neural beat trackers trained on MIR beat annotations often sit ~15-30 ms
+    Neural beat trackers trained on MIR beat annotations often sit ~15–30 ms
     behind sharp percussive attack transients expected by rhythm-game charts.
-    This searches a single scalar shift ``delta in [-max_shift_ms, +max_shift_ms]``
-    maximizing mean zero-lag attack-onset strength at ``beat_times + delta``
-    without altering inter-beat spacing.
+    For steady-tempo tracks, this searches a single scalar shift
+    ``delta in [-max_shift_ms, +max_shift_ms]`` maximizing mean zero-lag
+    attack-onset strength without altering inter-beat spacing. For
+    variable-tempo tracks and medleys (when ``per_section`` is True), each
+    piecewise-constant tempo section is snapped independently so phase jumps
+    across mid-song BPM switches are corrected cleanly.
 
     Args:
         beat_grid: Input :class:`BeatGrid`.
         audio_path: Path to the source audio file.
         max_shift_ms: Maximum absolute shift in milliseconds (default ``35.0``).
         step_ms: Grid search resolution in milliseconds (default ``0.5``).
+        per_section: When True (default), snap each detected tempo section
+            independently on variable-tempo tracks/medleys.
 
     Returns:
-        New :class:`BeatGrid` shifted by the optimal scalar offset.
+        New :class:`BeatGrid` shifted onto audio attack transients.
     """
     if max_shift_ms <= 0.0 or step_ms <= 0.0:
         return beat_grid
@@ -478,23 +593,58 @@ def snap_beats_to_onsets(
         return beat_grid
 
     max_shift_sec = float(max_shift_ms) / 1000.0
-    env_end = float(env_times[-1])
-    bt = beat_grid.beat_times
-    interior = bt[(bt >= max_shift_sec) & (bt <= env_end - max_shift_sec)]
-    score_bt = interior if interior.size > 0 else bt
-
     shifts_sec = (
         np.arange(-max_shift_ms, max_shift_ms + 0.5 * step_ms, step_ms) / 1000.0
     )
-    best_shift = 0.0
-    best_score = -float("inf")
-    for shift in shifts_sec:
-        shifted = score_bt + float(shift)
-        score = float(np.mean(np.interp(shifted, env_times, onset_env)))
-        if score > best_score:
-            best_score = score
-            best_shift = float(shift)
+    bt = beat_grid.beat_times
+    ibis = np.diff(bt)
+    is_variable = ibis.size > 0 and float(np.max(ibis) - np.min(ibis)) > 0.005
 
+    if per_section and is_variable:
+        sections = _segment_beats_by_tempo(bt, rel_tol=0.06, min_section_beats=12)
+        if len(sections) > 1:
+            new_bt = bt.copy()
+            new_db_parts: list[np.ndarray] = []
+            db = beat_grid.downbeat_times
+            any_shift = False
+            for s, e_idx in sections:
+                sec_bt = bt[s:e_idx]
+                best_shift = _optimal_attack_shift_sec(
+                    sec_bt, onset_env, env_times, shifts_sec, max_shift_sec
+                )
+                if abs(best_shift) >= 1e-6:
+                    any_shift = True
+                new_bt[s:e_idx] = sec_bt + best_shift
+                if db.size > 0:
+                    t_lo = float(sec_bt[0]) - 1e-4
+                    t_hi = (
+                        float(bt[e_idx]) - 1e-4
+                        if e_idx < bt.size
+                        else float(sec_bt[-1]) + 1.0
+                    )
+                    sec_db = db[(db >= t_lo) & (db < t_hi)] + best_shift
+                    sec_db = sec_db[sec_db >= 0.0]
+                    if sec_db.size > 0:
+                        new_db_parts.append(sec_db)
+            if not any_shift:
+                return beat_grid
+            cleaned_bt = _clean_beat_times(new_bt[new_bt >= 0.0])
+            if cleaned_bt.size >= 2:
+                cleaned_db = (
+                    _clean_beat_times(np.concatenate(new_db_parts))
+                    if new_db_parts
+                    else np.zeros(0, dtype=np.float64)
+                )
+                return BeatGrid(
+                    beat_times=cleaned_bt,
+                    downbeat_times=cleaned_db,
+                    bpm=beat_grid.bpm,
+                    tracker=beat_grid.tracker,
+                )
+
+    best_shift = _optimal_attack_shift_sec(
+        bt, onset_env, env_times, shifts_sec, max_shift_sec
+    )
     if abs(best_shift) < 1e-6:
         return beat_grid
     raw_beats = beat_grid.beat_times + best_shift
@@ -533,8 +683,9 @@ def regularize_beat_grid(
     inlier_tol_sec: float = 0.035,
     min_inlier_fraction: float = 0.85,
     integer_bpm_tol: float = 0.03,
+    piecewise_sections: bool = True,
 ) -> BeatGrid:
-    """Fit a drift-free constant-BPM integer beat lattice when the track is steady.
+    """Fit a drift-free constant-BPM lattice (globally or per tempo section).
 
     Neural beat trackers occasionally drop a beat during silent breakdowns or
     emit spurious extra beats during fills. For steady-tempo songs (electronic,
@@ -544,8 +695,10 @@ def regularize_beat_grid(
     When the fitted BPM sits within ``integer_bpm_tol`` of an exact integer
     and locking to that integer keeps residuals and end-to-end drift flat,
     the exact integer BPM is adopted to eliminate residual long-song drift.
-    Songs with genuine tempo changes (fewer than ``min_inlier_fraction`` of
-    beats within ``inlier_tol_sec``) are returned unchanged.
+    For medleys and variable-tempo songs where a single global tempo fails
+    (when ``piecewise_sections`` is True), each contiguous constant-tempo
+    section is regularized independently while leaving unstructured rubato
+    sections untouched.
 
     Args:
         beat_grid: Input :class:`BeatGrid`.
@@ -557,10 +710,12 @@ def regularize_beat_grid(
             replace the raw grid with the regularized constant-BPM lattice.
         integer_bpm_tol: Maximum distance (BPM) from an integer tempo to test
             an exact integer-BPM lock (``0.0`` disables integer locking).
+        piecewise_sections: When True (default), fall back to per-section
+            constant-BPM regularization on variable-tempo songs and medleys.
 
     Returns:
-        Regularized :class:`BeatGrid` if the song fits a constant tempo, else
-        the original ``beat_grid`` unchanged.
+        Regularized :class:`BeatGrid` (global or piecewise-constant), or the
+        original ``beat_grid`` if no section fits a clean tempo lattice.
     """
     bt = np.asarray(beat_grid.beat_times, dtype=np.float64).reshape(-1)
     if bt.size < 8:
@@ -574,15 +729,18 @@ def regularize_beat_grid(
     ibi = float(np.mean(inlier_ibis)) if inlier_ibis.size > 0 else med_ibi
     anchor_t = float(bt[bt.size // 2])
 
+    global_fit_ok = True
     for _ in range(3):
         k = np.rint((bt - anchor_t) / ibi)
         resid = bt - (anchor_t + k * ibi)
         mask = np.abs(resid) <= max(inlier_tol_sec, 0.12 * ibi)
         if int(np.sum(mask)) < 4 or np.unique(k[mask]).size < 2:
-            return beat_grid
+            global_fit_ok = False
+            break
         slope, intercept = np.polyfit(k[mask], bt[mask], 1)
         if not (slope > 1e-4 and np.isfinite(slope) and np.isfinite(intercept)):
-            return beat_grid
+            global_fit_ok = False
+            break
         ibi = float(slope)
         anchor_t = float(intercept)
 
@@ -590,8 +748,78 @@ def regularize_beat_grid(
     resid_all = np.abs(bt - (anchor_t + k_all * ibi))
     inlier_mask = resid_all <= float(inlier_tol_sec)
     inlier_fraction = float(np.mean(inlier_mask))
-    if inlier_fraction < float(min_inlier_fraction):
-        return beat_grid
+    if not global_fit_ok or inlier_fraction < float(min_inlier_fraction):
+        if not piecewise_sections:
+            return beat_grid
+        sections = _segment_beats_by_tempo(bt, rel_tol=0.06, min_section_beats=16)
+        if len(sections) <= 1:
+            return beat_grid
+        db_all = np.asarray(beat_grid.downbeat_times, dtype=np.float64).reshape(-1)
+        merged_beats_parts: list[np.ndarray] = []
+        merged_db_parts: list[np.ndarray] = []
+        any_section_regularized = False
+        for s, e_idx in sections:
+            sec_bt = bt[s:e_idx]
+            sec_db = (
+                db_all[(db_all >= sec_bt[0] - 0.05) & (db_all <= sec_bt[-1] + 0.05)]
+                if db_all.size > 0
+                else np.zeros(0, dtype=np.float64)
+            )
+            if sec_bt.size >= 8:
+                sec_grid = BeatGrid(
+                    beat_times=sec_bt,
+                    downbeat_times=sec_db,
+                    bpm=_robust_bpm_from_beats(sec_bt),
+                    tracker=beat_grid.tracker,
+                )
+                sec_reg = regularize_beat_grid(
+                    sec_grid,
+                    inlier_tol_sec=inlier_tol_sec,
+                    min_inlier_fraction=min(0.75, float(min_inlier_fraction)),
+                    integer_bpm_tol=integer_bpm_tol,
+                    piecewise_sections=False,
+                )
+                sb = sec_reg.beat_times
+                sb = sb[(sb >= sec_bt[0] - 0.05) & (sb <= sec_bt[-1] + 0.05)]
+                if sb.size >= 2:
+                    if sec_reg is not sec_grid:
+                        any_section_regularized = True
+                    sd = sec_reg.downbeat_times
+                    sd = (
+                        sd[(sd >= sb[0] - 1e-4) & (sd <= sb[-1] + 1e-4)]
+                        if sd.size > 0
+                        else np.zeros(0, dtype=np.float64)
+                    )
+                else:
+                    sb, sd = sec_bt, sec_db
+            else:
+                sb, sd = sec_bt, sec_db
+
+            if merged_beats_parts and sb.size > 0:
+                min_t = float(merged_beats_parts[-1][-1]) + 0.05
+                sb = sb[sb >= min_t]
+                sd = sd[sd >= min_t]
+            if sb.size > 0:
+                merged_beats_parts.append(sb)
+            if sd.size > 0:
+                merged_db_parts.append(sd)
+
+        if not any_section_regularized or not merged_beats_parts:
+            return beat_grid
+        merged_bt = _clean_beat_times(np.concatenate(merged_beats_parts))
+        if merged_bt.size < 2:
+            return beat_grid
+        merged_db = (
+            _clean_beat_times(np.concatenate(merged_db_parts))
+            if merged_db_parts
+            else np.zeros(0, dtype=np.float64)
+        )
+        return BeatGrid(
+            beat_times=merged_bt,
+            downbeat_times=merged_db,
+            bpm=_robust_bpm_from_beats(merged_bt),
+            tracker=beat_grid.tracker,
+        )
 
     # Safe integer-BPM lock: eliminate ~0.01–0.02 BPM estimation drift on
     # steady studio/electronic tracks while preserving genuinely fractional BPMs.
