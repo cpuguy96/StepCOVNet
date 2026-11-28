@@ -8,8 +8,7 @@ import numpy as np
 
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
-from stepcovnet.itgpt import constants
-from stepcovnet.pytorch.itgpt import datasets
+from stepcovnet.itgpt import constants, datasets
 
 
 def _make_chart(n_beats: int = 10, *, mert: bool = False) -> ddcl_datasets.DdclChart:

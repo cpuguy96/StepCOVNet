@@ -6,9 +6,9 @@ import numpy as np
 import torch
 from torch import nn
 
+from stepcovnet import runtime
 from stepcovnet.ddcl import constants, datasets
-from stepcovnet.pytorch import runtime
-from stepcovnet.pytorch.itgpt import evaluation as slot_eval
+from stepcovnet.itgpt import evaluation as slot_eval
 
 
 @torch.no_grad()

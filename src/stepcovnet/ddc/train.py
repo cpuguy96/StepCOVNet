@@ -1,11 +1,10 @@
-"""CLI entrypoint: ``python -m stepcovnet.pytorch.ddc.train``."""
+"""CLI entrypoint: ``python -m stepcovnet.ddc.train``."""
 
 from __future__ import annotations
 
 import argparse
 
-from stepcovnet.ddc import config
-from stepcovnet.pytorch.ddc import trainers
+from stepcovnet.ddc import config, trainers
 
 
 def _build_parser() -> argparse.ArgumentParser:

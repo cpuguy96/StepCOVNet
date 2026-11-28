@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 
-from stepcovnet import config
-from stepcovnet.pytorch import runtime
-from stepcovnet.pytorch.core import arrow_models, losses, onset_models
+from stepcovnet import config, runtime
+from stepcovnet.core import arrow_models, losses, onset_models
+
+if TYPE_CHECKING:
+    from torch.utils.tensorboard import SummaryWriter
 
 
 def save_core_checkpoint(
@@ -181,7 +182,9 @@ def train_dense_onset(
 
     model.to(target_device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(learning_rate), eps=1e-7)
-    writer = SummaryWriter(log_dir=str(log_dir)) if log_dir is not None else None
+    writer: SummaryWriter | None = (
+        runtime.create_summary_writer(log_dir) if log_dir is not None else None
+    )
     out_path = pathlib.Path(output_dir) if output_dir is not None else None
     if out_path is not None:
         out_path.mkdir(parents=True, exist_ok=True)
@@ -311,7 +314,9 @@ def train_arrow(
 
     model.to(target_device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(learning_rate), eps=1e-7)
-    writer = SummaryWriter(log_dir=str(log_dir)) if log_dir is not None else None
+    writer: SummaryWriter | None = (
+        runtime.create_summary_writer(log_dir) if log_dir is not None else None
+    )
     out_path = pathlib.Path(output_dir) if output_dir is not None else None
     if out_path is not None:
         out_path.mkdir(parents=True, exist_ok=True)

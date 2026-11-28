@@ -1,4 +1,4 @@
-"""CLI entrypoint: ``python -m stepcovnet.pytorch.itgpt.eval``."""
+"""CLI entrypoint: ``python -m stepcovnet.itgpt.eval``."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ import argparse
 import json
 import pathlib
 
+from stepcovnet import runtime
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.itgpt import config, diagnostics
-from stepcovnet.pytorch import runtime
-from stepcovnet.pytorch.itgpt import datasets, evaluation, trainers
+from stepcovnet.itgpt import config, datasets, diagnostics, evaluation, trainers
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -12,8 +12,8 @@ import numpy as np
 import torch
 from torch.nn import functional as nn_func
 
+from stepcovnet import runtime
 from stepcovnet.ddc import config, datasets, models, trainers
-from stepcovnet.pytorch import runtime
 
 
 def _synthetic_chart() -> datasets.PlacementChart:
@@ -111,7 +111,7 @@ class DdcTrainersTest(unittest.TestCase):
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.ddc.trainers.evaluation.evaluate_placement",
+                    "stepcovnet.ddc.trainers.evaluation.evaluate_placement",
                     return_value=report,
                 ) as mock_eval,
             ):

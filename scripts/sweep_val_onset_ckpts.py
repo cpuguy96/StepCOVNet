@@ -8,8 +8,7 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/sweep_val_onset_ckpts.py")
 
-from stepcovnet import config, dense_overfit_eval, trainers
-from stepcovnet.pytorch import runtime
+from stepcovnet import config, dense_overfit_eval, runtime, trainers
 
 
 def main(argv: list[str] | None = None) -> int:

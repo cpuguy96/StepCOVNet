@@ -1,34 +1,50 @@
-"""CLI entrypoint: ``python -m stepcovnet.pytorch.ddcl.train``."""
+"""CLI entrypoint: ``python -m stepcovnet.itgpt.train``."""
 
 from __future__ import annotations
 
 import argparse
 
-from stepcovnet.ddcl import config
-from stepcovnet.pytorch.ddcl import trainers
+from stepcovnet.itgpt import config, trainers
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Train PyTorch DDCL ConvLSTM/MERT placement (M-slot48)."
+        description=(
+            "Train PyTorch ITGPT-faithful hierarchical transformer placement (48-slot)."
+        ),
     )
-    parser.add_argument("--config", required=True, help="Path to DDCL JSON config")
+    parser.add_argument("--config", required=True, help="Path to placement JSON config")
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--steps_per_epoch", type=int, default=None)
     parser.add_argument("--model_output_dir", type=str, default=None)
-    parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Target device ('auto', 'cuda', 'cuda:0', 'mps', 'cpu').",
+    )
     parser.add_argument(
         "--precision",
         type=str,
-        default="fp32",
+        default=None,
         choices=("fp32", "bf16", "fp16", "auto"),
+        help="Override precision (defaults to 'auto' when config mixed_precision=True).",
     )
-    parser.add_argument("--fresh", action="store_true")
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Enable torch.compile on the forward logits graph.",
+    )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Ignore resume backup checkpoint and start from epoch 0.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run PyTorch DDCL placement training.
+    """Run PyTorch ITGPT placement training.
 
     Args:
         argv: Optional CLI argument list.
@@ -37,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code.
     """
     args = _build_parser().parse_args(argv)
-    experiment = config.DdclExperimentConfig.from_json(args.config)
+    experiment = config.ItgptExperimentConfig.from_json(args.config)
     if args.epochs is not None:
         experiment.run.epoch = args.epochs
     if args.steps_per_epoch is not None:
@@ -50,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         experiment,
         device=args.device,
         precision=args.precision,
+        compile_model=bool(args.compile),
     )
     return 0
 

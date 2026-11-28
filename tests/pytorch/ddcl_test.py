@@ -15,11 +15,11 @@ from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.ddcl import config as ddcl_config
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
-from stepcovnet.pytorch.ddcl import eval as ddcl_eval_cli
-from stepcovnet.pytorch.ddcl import evaluation as ddcl_eval
-from stepcovnet.pytorch.ddcl import models as ddcl_models
-from stepcovnet.pytorch.ddcl import train as ddcl_train_cli
-from stepcovnet.pytorch.ddcl import trainers as ddcl_trainers
+from stepcovnet.ddcl import eval as ddcl_eval_cli
+from stepcovnet.ddcl import models as ddcl_models
+from stepcovnet.ddcl import torch_evaluation as ddcl_eval
+from stepcovnet.ddcl import train as ddcl_train_cli
+from stepcovnet.ddcl import trainers as ddcl_trainers
 
 
 def _make_synthetic_ddcl_chart(
@@ -339,11 +339,12 @@ def test_ddcl_cli_parsers() -> None:
 
 
 def test_ddcl_no_tensorflow_imported() -> None:
-    """Importing stepcovnet.pytorch.ddcl modules never imports TensorFlow or Keras."""
+    """Importing stepcovnet.ddcl modules never imports TensorFlow or Keras."""
     code = (
         "import sys; "
-        "import stepcovnet.pytorch.ddcl.models; "
-        "import stepcovnet.pytorch.ddcl.evaluation; "
+        "import stepcovnet.ddcl.models; "
+        "import stepcovnet.ddcl.evaluation; "
+        "import stepcovnet.ddcl.torch_evaluation; "
         "assert 'tensorflow' not in sys.modules; "
         "assert 'keras' not in sys.modules"
     )

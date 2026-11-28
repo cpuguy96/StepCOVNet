@@ -14,10 +14,9 @@ import torch
 from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
-from stepcovnet.itgpt import config, constants
-from stepcovnet.pytorch.itgpt import eval as eval_cli
-from stepcovnet.pytorch.itgpt import evaluation, models, trainers
-from stepcovnet.pytorch.itgpt import train as train_cli
+from stepcovnet.itgpt import config, constants, evaluation, models, trainers
+from stepcovnet.itgpt import eval as eval_cli
+from stepcovnet.itgpt import train as train_cli
 
 
 def _synthetic_chart(
@@ -92,7 +91,7 @@ class PyTorchItgptTrainersTest(unittest.TestCase):
                 ),
             )
             with mock.patch(
-                "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                 return_value=[chart],
             ):
                 trained = trainers.train_placement(experiment, device="cpu")
@@ -160,7 +159,7 @@ class PyTorchItgptTrainersTest(unittest.TestCase):
                 ),
             )
             with mock.patch(
-                "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                 return_value=[chart],
             ):
                 trainers.train_placement(experiment, device="cpu")
@@ -215,7 +214,7 @@ class PyTorchItgptTrainersTest(unittest.TestCase):
                 },
             )
             with mock.patch(
-                "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                 return_value=[chart],
             ):
                 trainers.train_placement(experiment, device="cpu")
@@ -232,7 +231,7 @@ class PyTorchItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[],
                 ),
                 self.assertRaises(ValueError),
@@ -240,7 +239,7 @@ class PyTorchItgptTrainersTest(unittest.TestCase):
                 trainers.train_placement(experiment, device="cpu")
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     side_effect=[[_synthetic_chart()], []],
                 ),
                 self.assertRaises(ValueError),
@@ -280,14 +279,14 @@ class PyTorchItgptTrainersTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with mock.patch(
-                "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                 return_value=[chart],
             ):
                 rc = train_cli.main(["--config", str(cfg_path), "--device", "cpu"])
             self.assertEqual(rc, 0)
 
             with mock.patch(
-                "stepcovnet.pytorch.itgpt.eval.datasets.load_split_charts",
+                "stepcovnet.itgpt.eval.datasets.load_split_charts",
                 return_value=[chart],
             ):
                 eval_out = pathlib.Path(tmpdir) / "eval_out.json"

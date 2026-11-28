@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stepcovnet.pytorch.core.losses import (
+from stepcovnet.core.losses import (
     arrow_label_smoothed_crossentropy,
     build_arrow_combined_loss,
     chart_validity_auxiliary_loss,

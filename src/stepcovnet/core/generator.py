@@ -10,7 +10,7 @@ import scipy.signal
 import torch
 
 from stepcovnet import constants
-from stepcovnet.pytorch.core import arrow_models, onset_models
+from stepcovnet.core import arrow_models, onset_models
 
 
 @dataclasses.dataclass(frozen=True)

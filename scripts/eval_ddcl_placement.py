@@ -11,9 +11,9 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/eval_ddcl_placement.py")
 
+from stepcovnet import runtime
 from stepcovnet.dataset_prep import training_index
 from stepcovnet.ddcl import config, datasets, evaluation, trainers
-from stepcovnet.pytorch import runtime
 
 
 def _build_parser() -> argparse.ArgumentParser:

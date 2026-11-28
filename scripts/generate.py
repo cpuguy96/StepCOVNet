@@ -13,8 +13,7 @@ from stepcovnet import wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/generate.py")
 
-from stepcovnet import beat_tracking, generator, pretrained, trainers
-from stepcovnet.pytorch import runtime
+from stepcovnet import beat_tracking, generator, pretrained, runtime, trainers
 
 PARSER = argparse.ArgumentParser(description="Generate step chart from audio.")
 PARSER.add_argument(

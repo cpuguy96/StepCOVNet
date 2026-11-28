@@ -13,11 +13,11 @@ import torch
 from stepcovnet.ddc import config as ddc_config
 from stepcovnet.ddc import constants as ddc_constants
 from stepcovnet.ddc import datasets as ddc_datasets
-from stepcovnet.pytorch.ddc import eval as ddc_eval_cli
-from stepcovnet.pytorch.ddc import evaluation as ddc_eval
-from stepcovnet.pytorch.ddc import models as ddc_models
-from stepcovnet.pytorch.ddc import train as ddc_train_cli
-from stepcovnet.pytorch.ddc import trainers as ddc_trainers
+from stepcovnet.ddc import eval as ddc_eval_cli
+from stepcovnet.ddc import evaluation as ddc_eval
+from stepcovnet.ddc import models as ddc_models
+from stepcovnet.ddc import train as ddc_train_cli
+from stepcovnet.ddc import trainers as ddc_trainers
 
 
 def _make_synthetic_chart(
@@ -186,11 +186,11 @@ def test_ddc_cli_parsers() -> None:
 
 
 def test_ddc_no_tensorflow_imported() -> None:
-    """Importing stepcovnet.pytorch.ddc modules never imports TensorFlow or Keras."""
+    """Importing stepcovnet.ddc modules never imports TensorFlow or Keras."""
     code = (
         "import sys; "
-        "import stepcovnet.pytorch.ddc.models; "
-        "import stepcovnet.pytorch.ddc.evaluation; "
+        "import stepcovnet.ddc.models; "
+        "import stepcovnet.ddc.evaluation; "
         "assert 'tensorflow' not in sys.modules; "
         "assert 'keras' not in sys.modules"
     )

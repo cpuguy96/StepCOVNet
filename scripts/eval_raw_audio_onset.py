@@ -34,13 +34,13 @@ from stepcovnet import beat_tracking, wsl_gpu
 
 wsl_gpu.bootstrap_gpu_script("scripts/eval_raw_audio_onset.py")
 
+from stepcovnet import runtime
 from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.dataset_prep import training_index
 from stepcovnet.ddc import peak_pick
 from stepcovnet.ddcl import features as ddcl_features
 from stepcovnet.ddcl import slots as ddcl_slots
-from stepcovnet.pytorch import runtime
-from stepcovnet.pytorch.itgpt import trainers as itgpt_trainers
+from stepcovnet.itgpt import trainers as itgpt_trainers
 
 VALID_MODES: tuple[str, ...] = (
     "oracle",

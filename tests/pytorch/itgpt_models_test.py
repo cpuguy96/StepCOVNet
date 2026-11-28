@@ -8,8 +8,7 @@ import unittest
 
 import torch
 
-from stepcovnet.itgpt import constants
-from stepcovnet.pytorch.itgpt import models
+from stepcovnet.itgpt import constants, models
 
 
 class PyTorchItgptModelsTest(unittest.TestCase):
@@ -20,7 +19,7 @@ class PyTorchItgptModelsTest(unittest.TestCase):
                 "-c",
                 (
                     "import sys; "
-                    "from stepcovnet.pytorch.itgpt import datasets, evaluation, models; "
+                    "from stepcovnet.itgpt import datasets, evaluation, models; "
                     "assert 'tensorflow' not in sys.modules, 'tensorflow imported'; "
                     "assert 'keras' not in sys.modules, 'keras imported'"
                 ),

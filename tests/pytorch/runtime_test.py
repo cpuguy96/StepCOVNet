@@ -9,7 +9,7 @@ from unittest import mock
 import torch
 from torch import nn
 
-from stepcovnet.pytorch import runtime
+from stepcovnet import runtime
 
 
 class RuntimeTest(unittest.TestCase):

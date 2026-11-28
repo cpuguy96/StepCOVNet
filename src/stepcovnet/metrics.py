@@ -9,7 +9,7 @@ import torch
 from torch.nn import functional as nn_func
 
 from stepcovnet import constants
-from stepcovnet.pytorch.core import losses as core_losses
+from stepcovnet.core import losses as core_losses
 
 _N_NOTE_KINDS = 6
 _EPS = 1e-7

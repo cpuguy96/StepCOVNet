@@ -12,7 +12,7 @@ from torch import nn
 from torch.nn import functional as nn_func
 
 from stepcovnet import config, constants
-from stepcovnet.pytorch.core.onset_models import (
+from stepcovnet.core.onset_models import (
     CausalConv1d,
     _CoreTransformerBlock,
     _init_xavier_uniform,

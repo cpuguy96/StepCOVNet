@@ -86,15 +86,15 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ) as mock_eval,
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
                     side_effect=lambda r, *, weights: {
                         **r.as_dict(),
                         "weights": weights,
@@ -131,7 +131,7 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[],
                 ),
                 self.assertRaises(ValueError),
@@ -139,7 +139,7 @@ class ItgptTrainersTest(unittest.TestCase):
                 trainers.train_placement(experiment, device="cpu")
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     side_effect=[[_synthetic_chart()], []],
                 ),
                 self.assertRaises(ValueError),
@@ -190,15 +190,15 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[mert_chart],
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ) as mock_eval,
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
                     side_effect=lambda r, *, weights: {
                         **r.as_dict(),
                         "weights": weights,
@@ -338,15 +338,15 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
                     side_effect=lambda r, *, weights: {
                         **r.as_dict(),
                         "weights": weights,
@@ -420,7 +420,7 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     side_effect=[[train_chart], val_charts],
                 ),
                 mock.patch.object(
@@ -430,11 +430,11 @@ class ItgptTrainersTest(unittest.TestCase):
                     side_effect=_spy_forward_logits,
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
                     side_effect=lambda r, *, weights: {
                         **r.as_dict(),
                         "weights": weights,
@@ -519,15 +519,15 @@ class ItgptTrainersTest(unittest.TestCase):
             )
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
                     side_effect=lambda r, *, weights: {
                         **r.as_dict(),
                         "weights": weights,
@@ -585,15 +585,15 @@ class ItgptTrainersTest(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
                     side_effect=lambda r, *, weights: {
                         **r.as_dict(),
                         "weights": weights,
@@ -643,7 +643,7 @@ class ItgptTrainersTest(unittest.TestCase):
                     resume=False,
                 ),
             )
-            from stepcovnet.pytorch.itgpt import trainers as pt_trainers
+            from stepcovnet.itgpt import trainers as pt_trainers
 
             pretrained = pt_trainers.build_model(base_cfg)
             with torch.no_grad():
@@ -655,15 +655,15 @@ class ItgptTrainersTest(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.evaluate_slot48",
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
                     return_value=report,
                 ),
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.evaluation.report_as_dict",
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
                     side_effect=lambda r, *, weights: {
                         **r.as_dict(),
                         "weights": weights,
@@ -683,7 +683,7 @@ class ItgptTrainersTest(unittest.TestCase):
             base_cfg.run.init_weights_path = str(pathlib.Path(tmpdir) / "missing.pt")
             with (
                 mock.patch(
-                    "stepcovnet.pytorch.itgpt.trainers.datasets.load_split_charts",
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
                     return_value=[chart],
                 ),
                 self.assertRaises(FileNotFoundError),

@@ -19,13 +19,19 @@ import librosa
 import numpy as np
 import torch
 
-from stepcovnet import beat_this_model, constants, pretrained, ssl_features, trainers
+from stepcovnet import (
+    beat_this_model,
+    constants,
+    pretrained,
+    runtime,
+    ssl_features,
+    trainers,
+)
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import features as ddcl_features
 from stepcovnet.itgpt import constants as itgpt_constants
-from stepcovnet.pytorch import runtime
-from stepcovnet.pytorch.itgpt import evaluation as itgpt_eval
-from stepcovnet.pytorch.itgpt import trainers as itgpt_trainers
+from stepcovnet.itgpt import evaluation as itgpt_eval
+from stepcovnet.itgpt import trainers as itgpt_trainers
 
 TRACKER_AUTO = "auto"
 TRACKER_BEAT_THIS = "beat_this"

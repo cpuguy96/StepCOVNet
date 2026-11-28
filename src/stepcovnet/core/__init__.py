@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from stepcovnet.pytorch.core import (
+from stepcovnet.core import (
     arrow_models,
     export_onnx,
     generator,

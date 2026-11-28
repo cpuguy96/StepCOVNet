@@ -9,10 +9,10 @@ import torch
 from torch import nn
 
 from stepcovnet import constants
-from stepcovnet.pytorch.core import arrow_models, onset_models
-from stepcovnet.pytorch.ddc import models as ddc_models
-from stepcovnet.pytorch.ddcl import models as ddcl_models
-from stepcovnet.pytorch.itgpt import models as itgpt_models
+from stepcovnet.core import arrow_models, onset_models
+from stepcovnet.ddc import models as ddc_models
+from stepcovnet.ddcl import models as ddcl_models
+from stepcovnet.itgpt import models as itgpt_models
 
 
 class _DictInputWrapper(nn.Module):

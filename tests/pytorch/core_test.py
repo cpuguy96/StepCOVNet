@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from stepcovnet import config, constants
-from stepcovnet.pytorch.core import (
+from stepcovnet.core import (
     arrow_models,
     export_onnx,
     generator,
@@ -338,10 +338,10 @@ def test_onnx_export_if_available(tmp_path: pathlib.Path) -> None:
 
 
 def test_core_no_tensorflow_imported() -> None:
-    """Importing stepcovnet.pytorch.core never imports TensorFlow or Keras."""
+    """Importing stepcovnet.core never imports TensorFlow or Keras."""
     code = (
         "import sys; "
-        "import stepcovnet.pytorch.core; "
+        "import stepcovnet.core; "
         "assert 'tensorflow' not in sys.modules; "
         "assert 'keras' not in sys.modules"
     )

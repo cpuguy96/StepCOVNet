@@ -14,7 +14,7 @@ from stepcovnet.dataset_prep import models as prep_models
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.itgpt import config, constants, diagnostics
-from stepcovnet.pytorch.itgpt import eval as pt_eval
+from stepcovnet.itgpt import eval as pt_eval
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -265,7 +265,7 @@ class ItgptDiagnosticsTest(unittest.TestCase):
             self.assertEqual(b_data["metric"], "itgpt_error_breakdown")
             self.assertEqual(b_data["total_errors"], 0)
 
-            # Also verify standalone --error_breakdown on stepcovnet.pytorch.itgpt.eval
+            # Also verify standalone --error_breakdown on stepcovnet.itgpt.eval
             pt_predictor = _ScriptedPredictor([pred])
             custom_bd = out_dir / "custom_bd.json"
             with (

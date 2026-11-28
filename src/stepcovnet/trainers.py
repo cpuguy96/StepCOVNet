@@ -12,12 +12,11 @@ import math
 import os
 import pathlib
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
 from torch.nn import functional as nn_func
-from torch.utils.tensorboard import SummaryWriter
 
 from stepcovnet import (
     config,
@@ -28,11 +27,14 @@ from stepcovnet import (
     metrics,
     models,
     reproducibility,
+    runtime,
     wsl_gpu,
 )
+from stepcovnet.core import trainers as core_trainers
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.pytorch import runtime
-from stepcovnet.pytorch.core import trainers as core_trainers
+
+if TYPE_CHECKING:
+    from torch.utils.tensorboard import SummaryWriter
 
 ONSET_CHECKPOINT_MONITOR = "val_onset_f1_score"
 POST_HOC_EVENT_F1_REPORT_NAME = "event_f1_sweep.json"
@@ -518,10 +520,8 @@ def run_train_from_config(
     ckpt_dir: pathlib.Path | None = None
     if run_config.callback_root_dir:
         _save_config(experiment_config, run_config.callback_root_dir, callback_name)
-        writer = SummaryWriter(
-            log_dir=str(
-                pathlib.Path(run_config.callback_root_dir) / "logs" / callback_name
-            )
+        writer = runtime.create_summary_writer(
+            pathlib.Path(run_config.callback_root_dir) / "logs" / callback_name
         )
         ckpt_dir = pathlib.Path(run_config.callback_root_dir) / "models" / callback_name
         ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -811,10 +811,8 @@ def run_arrow_train_from_config(
     ckpt_dir: pathlib.Path | None = None
     if run_config.callback_root_dir:
         _save_config(experiment_config, run_config.callback_root_dir, callback_name)
-        writer = SummaryWriter(
-            log_dir=str(
-                pathlib.Path(run_config.callback_root_dir) / "logs" / callback_name
-            )
+        writer = runtime.create_summary_writer(
+            pathlib.Path(run_config.callback_root_dir) / "logs" / callback_name
         )
         ckpt_dir = pathlib.Path(run_config.callback_root_dir) / "models" / callback_name
         ckpt_dir.mkdir(parents=True, exist_ok=True)

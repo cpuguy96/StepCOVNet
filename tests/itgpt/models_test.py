@@ -9,9 +9,9 @@ import unittest
 import numpy as np
 import torch
 
+from stepcovnet import runtime
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.itgpt import config, constants, models, trainers
-from stepcovnet.pytorch import runtime
 
 
 def _one_train_step(

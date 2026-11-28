@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from stepcovnet import config, constants
-from stepcovnet.pytorch.core import arrow_models, onset_models
+from stepcovnet.core import arrow_models, onset_models
 
 ArrowInputOptions = arrow_models.ArrowInputOptions
 ArrowOutputOptions = arrow_models.ArrowOutputOptions

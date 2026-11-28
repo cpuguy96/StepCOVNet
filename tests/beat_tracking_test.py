@@ -21,8 +21,8 @@ from stepcovnet import (
     models,
 )
 from stepcovnet.dataset_prep import simfile_parser
-from stepcovnet.pytorch.itgpt import models as itgpt_models
-from stepcovnet.pytorch.itgpt import trainers as itgpt_trainers
+from stepcovnet.itgpt import models as itgpt_models
+from stepcovnet.itgpt import trainers as itgpt_trainers
 
 _SCRIPT_DIR = str(pathlib.Path(__file__).resolve().parent.parent / "scripts")
 if _SCRIPT_DIR not in sys.path:
@@ -346,7 +346,7 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
                 return_value=fake_mert,
             ),
             mock.patch(
-                "stepcovnet.pytorch.itgpt.evaluation.predict_chart_slots",
+                "stepcovnet.itgpt.evaluation.predict_chart_slots",
                 return_value=fake_probs,
             ),
         ):

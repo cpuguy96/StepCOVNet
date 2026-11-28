@@ -4,12 +4,34 @@ from __future__ import annotations
 
 import contextlib
 import math
+import pathlib
 import random
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from torch import nn
+
+if TYPE_CHECKING:
+    from torch.utils.tensorboard import SummaryWriter
+
+
+def create_summary_writer(log_dir: str | pathlib.Path) -> SummaryWriter:
+    """Lazily instantiate a TensorBoard SummaryWriter.
+
+    Defers importing ``torch.utils.tensorboard`` (which eagerly imports
+    ``tensorflow`` when installed) until training actually starts writing logs.
+
+    Args:
+        log_dir: Target TensorBoard event log directory.
+
+    Returns:
+        Initialized :class:`torch.utils.tensorboard.SummaryWriter`.
+    """
+    from torch.utils.tensorboard import SummaryWriter  # noqa: PLC0415
+
+    return SummaryWriter(log_dir=str(log_dir))
 
 
 def resolve_device(device: str | torch.device | None = None) -> torch.device:

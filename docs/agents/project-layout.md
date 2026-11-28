@@ -28,11 +28,11 @@ Pre-push CI mirror: `python pre_submit.py` (from repository root).
 | `src/stepcovnet/ddc/` | DDC C-LSTM placement (`donahue2017ddc`, `M-ddc-20ms`) |
 | `src/stepcovnet/ddcl/` | DDCL ConvLSTM placement (`omalley2025ddcl`, `M-slot48`) |
 | `src/stepcovnet/itgpt/` | ITGPT hierarchical transformer placement (`omalley2026itgpt`, `M-slot48`) |
-| `src/stepcovnet/pytorch/` | PyTorch model/trainer/eval implementations (`core/`, `ddc/`, `ddcl/`, `itgpt/`, `onset_ar/`) |
+| `src/stepcovnet/core/` | PyTorch core dense onset, arrow sequence, generator, losses, ONNX export |
+| `src/stepcovnet/runtime.py` | Shared PyTorch device, seeding, AMP/TF32, EMA, LR, and lazy SummaryWriter helpers |
 | `src/stepcovnet/beat_this_model.py` | Self-contained pure-PyTorch Beat This! neural beat/downbeat tracker (`foscarin2024beatthis`, MIT) |
 | `src/stepcovnet/beat_tracking.py` | `BeatGrid`, Beat This! / `librosa` backends, offline fallback, transient snapping, ITGPT raw-audio inference |
 | `src/stepcovnet/onset_events/` | K-query event onset pipeline (research track) |
-| `src/stepcovnet/onset_ar/` | Autoregressive onset (`gate-tide-overfit` …); design [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
 | `src/stepcovnet/dataset_prep/` | Raw simfile → `final_data` preprocessing, `training_index`, `training_loader` (P8–P9) |
 | `src/stepcovnet/pairing.py` | Audio/chart pairing; `list_training_samples` for `final_data` |
 | `src/stepcovnet/mel_onset.py` | Mel spectrogram helpers (shared by dense path; breaks import cycles) |
@@ -60,11 +60,9 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `scripts/preprocess_dataset.py` | Raw simfile packs → nested `data/final_data` |
 | `scripts/build_training_index.py` | Train/val split manifest (`training_index.json`) |
 | `configs/` | JSON experiment configs — see [configs/README.md](../../configs/README.md) |
-| `configs/ar/` | AR onset (`tide.json`, `decode/`, `overfit_perfect/`) |
 | `configs/dense/` | Dense frame onset baselines and scoreboard |
 | `configs/event/` | K-query event onset |
 | `configs/overfit_tide/` | Tide single-song overfit smoke configs |
-| `scripts/train_onset_ar.py` | AR onset train / `--verify-only` — WSL GPU for full gate ([AR_ONSET_DESIGN.md §10](../research/AR_ONSET_DESIGN.md#10-experiment-protocol)) |
 
 **Common entry points → skill:**
 
@@ -72,7 +70,6 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | ------ | ----- |
 | `scripts/train_onset.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | `scripts/train_onset_event.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
-| `scripts/train_onset_ar.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) — AR tide gate |
 | `scripts/run_overfit_tide_suite.py` | [tide-overfit-protocol](../../.agents/skills/tide-overfit-protocol/SKILL.md) |
 | `scripts/run_overfit_tide_ablations.py` | [tide-ablations](../../.agents/skills/tide-ablations/SKILL.md) |
 | `scripts/run_overfit_tide_bisection.py` | `EXP-11` — no skill yet ([skills README § Scripts without skills](../../.agents/skills/README.md#scripts-without-skills-yet)) |
