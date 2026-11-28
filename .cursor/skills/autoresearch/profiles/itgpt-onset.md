@@ -27,7 +27,7 @@ Never crown a new champion solely from Dataset A's 9 validation songs.
    - For high-risk Tier-C architecture changes, an optional **32-epoch early screen** (`--epochs 32`, ~8 min on `L4`) is allowed because `best.pt` typically peaks around epochs 17–26; if clearly behind champion by `> 1.5 pp`, discard immediately, otherwise run full 64 epochs.
    - Promotion threshold from Stage 1: **`f1_at_05 > champion + 0.0020`** (`+0.20 pp`), OR a targeted error-slice win with non-negative overall `f1_at_05` and clean guardrails.
 2. **Stage 2 — Transfer Promotion Gate (`final_data` `300t/50v`):**
-   - Run the Stage-1 winner against the `300t/50v` champion using `final_data_300t_50v__meta,final_data_300t_50v__mert_l2_6_10_16` (~20–25 min on Colab `L4`).
+   - Run the Stage-1 winner against the `300t/50v` champion using `final_data__meta,final_data_300t_50v__mert_l2_6_10_16` (~20–25 min on Colab `L4`).
    - Only after Stage 2 beats (or matches with clear diagnostic improvement) the `300t/50v` champion does the recipe/code replace the champion on `master`.
 
 ## Preflight
@@ -67,18 +67,19 @@ You may run up to **3 orthogonal hypothesis chains in parallel** (1 per GPU targ
 
 ### Swarm mode (`/swarm` — optional, for 3+ hour multi-wave sessions)
 
-When the user explicitly launches `/swarm` for onset hill-climbing, enforce **fixed GPU-lane ownership** so workers never fight over Colab sessions or `EXPERIMENT_LOG.md`:
+When the user explicitly launches `/swarm` for onset hill-climbing, do **not** lock into a fixed org chart — enforce **strict 1:1 GPU ownership** and scale non-GPU roles dynamically around whatever stage is currently the bottleneck:
 
-| Role | Workspace | Owns |
-| ---- | --------- | ---- |
-| **Coordinator** | main repo (`master`) | Hypothesis routing, `itgpt_scoreboard.py`, serialized cherry-picks/merges to `master`, `EXPERIMENT_LOG.md`, final `colab sessions` = 0 audit |
-| **`lane-l4`** | `workspace:"share"` | Stage-1 & Stage-2 experiments exclusively on Colab `L4` (`--session exp-l4 --state-config /tmp/colab_l4.json --keep`) |
-| **`lane-t4`** | `workspace:"share"` | Orthogonal Stage-1 experiments exclusively on Colab `T4` (`--session exp-t4 --state-config /tmp/colab_t4.json --keep`) |
-| **`lane-local`** (optional) | `workspace:"share"` | Local WSL `RTX 2080` lane **or** pipelined Tier-C coding + unit tests for wave N+1 while `L4`/`T4` train |
+**Hard invariants (always):**
+- **Strict 1:1 GPU-to-runner ownership (`workspace:"share"`):** Assign one dedicated runner per active GPU target (e.g. `lane-l4`, `lane-t4`, `lane-local`) with a unique `--session exp-<lane> --state-config /tmp/colab_<lane>.json`. Never run two jobs on the same GPU, and avoid overloading an active GPU runner with non-GPU coding/research that leaves its GPU idle.
+- **Serialized coordination (`master` repo):** The coordinator owns hypothesis routing, `scripts/itgpt_scoreboard.py`, cherry-picks/merges onto `master`, and `EXPERIMENT_LOG.md`. Workers never push to `master` or edit `EXPERIMENT_LOG.md`.
+- **Board reporting:** Every run posts `F1@0.5`, `F1_max`, `±20ms`, `Δshuf`, `Δzero`, key breakdown slices (`16th_off`, `24th`, `intro`, `errors`), and branch/commit hash to the board so other lanes cross-pollinate immediately.
+- **Colab VM cleanup before worker shutdown:** Killing a swarm worker deletes its local workspace but **not** its remote Colab VM — each lane must drop `--keep` on its final run or explicitly `colab --auth=oauth2 --config /tmp/colab_<lane>.json stop -s exp-<lane>` before finishing (without touching untracked external runtimes).
 
-- **Board reporting:** Every lane posts `F1@0.5`, `F1_max`, `±20ms`, `Δshuf`, `Δzero`, key breakdown slices (`16th_off`, `24th`, `intro`, `errors`), and branch/commit hash to the board so other lanes cross-pollinate immediately.
-- **No direct `master` edits by workers:** Workers never push to `master` or edit `EXPERIMENT_LOG.md`.
-- **Colab VM cleanup before worker shutdown:** Killing a swarm worker deletes its local workspace but **not** its remote Colab VM — each lane must drop `--keep` on its final run or explicitly `colab --auth=oauth2 --config /tmp/colab_<lane>.json stop -s exp-<lane>` before finishing.
+**Adaptive bottleneck scaling (spawn on demand, kill when cleared):**
+- **GPU idle waiting on Tier-C code/tests:** Spawn or dedicate a `coder` (`workspace:"share"`) to implement Wave N+1 features, unit tests, lint/type checks, and `torch.compile` smokes in parallel while GPU runners train.
+- **Hypothesis quality / assumption blind spots:** Spawn a read-only `analyst` / `researcher` (`workspace:"inherit"`) while GPUs train to inspect worst-10 charts and `eval_val_breakdown.json`, verify codebase/cache/data-shape assumptions before GPU launch, search literature, or track multi-seed variance.
+- **Offline eval or landing backlog:** Spawn an `eval` / `verifier` worker for zero-shot cross-dataset evals, `--diagnose_decoding` sweeps, checkpoint-soup checks, or pre-push verification.
+- Keep worker count lean once a backlog clears so coding/research doesn't outrun GPU feedback on stale hypotheses.
 
 ## Orient
 
@@ -114,7 +115,7 @@ bash scripts/colab_run_remote.sh \
 
 - Single `--eval-cmd` with `--diagnose_grounding --error_breakdown` reuses the uncorrupted forward pass for both grounding and `eval_val_breakdown.json` (zero redundant inference) and auto-downloads both JSONs to `experiments/colab/<run_name>/`.
 - Re-attach with `--attach` when exit code `75` fires.
-- Stage-2 transfer datasets: `--datasets final_data_300t_50v__meta,final_data_300t_50v__mert_l2_6_10_16`.
+- Stage-2 transfer datasets: `--datasets final_data__meta,final_data_300t_50v__mert_l2_6_10_16`.
 - Live TensorBoard: cloud VMs auto-mirror to `MyDrive/StepCOVNet/live_tb/<run_name>/`; on local WSL, serve `experiments/colab/` on port `6008+`.
 
 ### Local WSL GPU (`RTX 2080`, third parallel lane)
@@ -149,8 +150,9 @@ Follow [research-session-workflow](../../research-session-workflow/SKILL.md): pr
 ## Anti-spam & Do Not Repeat
 
 - **Plateau rule:** `scripts/itgpt_scoreboard.py` raises a plateau warning after **5 consecutive timestamped runs** without `> +0.20 pp` `f1_at_05`. When plateaued, **forbid** single-knob hyperparameter nudges; upgrade to Tier B/C targeting the largest error bucket in `eval_val_breakdown.json`.
-- **Already rejected on Dataset A (do NOT retry unchanged — see `EXPERIMENT_LOG.md`):**
-  - `focal_gamma=1.0`, `early_film`, `grid_weight_24th=2.0`, `cyclic_measure_pos`, `continuous_beat_conv`, `gradient_accumulation_steps=4`, `mert_spectral_flux`, `max_bar_shift=15`.
+- **Already rejected (do NOT retry unchanged — see `EXPERIMENT_LOG.md`):**
+  - `EXP-20261124..26`: `focal_gamma=1.0`, `early_film`, `grid_weight_24th=2.0`, `cyclic_measure_pos`, `continuous_beat_conv`, `gradient_accumulation_steps=4`, `mert_spectral_flux`, `max_bar_shift=15`.
+  - `EXP-20261127-03`: `use_rope_level6`, `subbeat_skip_head`, `slot_refine_head`, `level6_drop_path=0.15`, `multiscale_conv_head`, `tversky_alpha=0.6`, `mert_temporal_delta`, `mert_delta_gate`, `chart_density_loss`, `mask_padded_beats`, `use_swiglu`, `mert_noise_std=0.08`, `decoupled_weight_decay=0.03 + lr=1.5e-4`, `Cosine-32`, and `subdiv_aux_head` on `300t/50v` or stacked with R-Drop.
 
 ## Gotchas
 
@@ -160,4 +162,5 @@ Follow [research-session-workflow](../../research-session-workflow/SKILL.md): pr
 | **Overfitting to Dataset A's 9 val songs** | Require Stage-2 `300t/50v` transfer pass before promoting any winner to champion. |
 | **Leaked Colab VMs after `--keep`** | Drop `--keep` on the last run and verify `colab --auth=oauth2 sessions` shows 0 active VMs. |
 | **Missing `eval_val_breakdown.json`** | Always include `--diagnose_grounding --error_breakdown` in `--eval-cmd`. |
+| **Pre-averaged MERT cache (`n_mert_layers=1`)** | `*.mert_l2_6_10_16.npy` is already pre-averaged `(T, 1024)`; per-layer mixing ideas require stacked caches (`*.mert_stack_*.npy`). |
 | **Dead flags piling up on `master`** | Discard rejected Tier-C branches via `colab_worktree.sh remove <idea> --delete-branch` after logging `EXP-…`. |
