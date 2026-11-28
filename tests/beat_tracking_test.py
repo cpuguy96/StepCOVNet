@@ -649,10 +649,19 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
         )
         self.assertEqual(
             [p.meter for p in beat_tracking.DEFAULT_DIFFICULTY_PACK],
-            [3, 5, 7, 9, 11],
+            [2, 4, 6, 9, 11],
         )
         densities = [p.target_density for p in beat_tracking.DEFAULT_DIFFICULTY_PACK]
         self.assertEqual(densities, sorted(densities))
+
+        # BPM-adaptive NPS lowers steps/beat at higher tempos to keep physical NPS steady.
+        challenge = beat_tracking.DEFAULT_DIFFICULTY_PACK[-1]
+        spb_95 = challenge.resolve_target_density(95.0)
+        spb_140 = challenge.resolve_target_density(140.0)
+        spb_180 = challenge.resolve_target_density(180.0)
+        self.assertGreater(spb_95, spb_140)
+        self.assertGreater(spb_140, spb_180)
+        self.assertAlmostEqual(spb_140 * (140.0 / 60.0), 4.90, places=2)
 
         with self.assertRaises(ValueError):
             beat_tracking.DifficultyPreset(name="  ", meter=5, target_density=1.0)
@@ -660,6 +669,10 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             beat_tracking.DifficultyPreset(name="Easy", meter=0, target_density=1.0)
         with self.assertRaises(ValueError):
             beat_tracking.DifficultyPreset(name="Easy", meter=5, target_density=0.0)
+        with self.assertRaises(ValueError):
+            beat_tracking.DifficultyPreset(
+                name="Easy", meter=5, target_density=1.0, target_nps=-1.0
+            )
 
     def test_predict_itgpt_pack_runs_beat_and_mert_once_with_topk_fallback(
         self,
@@ -677,8 +690,10 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             mean_density = float(np.sum(chart.slots)) / float(chart.slots.shape[0])
             seen_charts.append((chart.difficulty, int(chart.meter), mean_density))
             probs = np.zeros((chart.slots.shape[0], 48), dtype=np.float32)
+            # Inject a noisy non-musical slot (index 5) across all charts to verify filtering!
+            probs[:, 5] = 0.99
             if chart.difficulty == "Beginner":
-                # All below threshold=0.5 -> exercises fallback_top_k
+                # All valid slots below threshold=0.5 -> exercises fallback_top_k
                 probs[:, 0] = 0.2
                 probs[0, 0] = 0.35
                 probs[2, 0] = 0.30
@@ -725,11 +740,12 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             ["Beginner", "Easy", "Medium", "Hard", "Challenge"],
         )
         counts = [int(onsets_by_diff[d].size) for d in onsets_by_diff]
-        # Beginner must be non-empty thanks to top-k fallback, and counts rise monotonically.
+        # Beginner must be non-empty thanks to top-k fallback, noisy slot 5 excluded everywhere.
         self.assertGreater(counts[0], 0)
+        self.assertEqual(counts[1], 6)  # Easy: only slot 0 on 6 beats (slot 5 ignored)
         self.assertEqual(counts, sorted(counts))
         self.assertLess(counts[0], counts[-1])
-        self.assertEqual([m for _, m, _ in seen_charts], [3, 5, 7, 9, 11])
+        self.assertEqual([m for _, m, _ in seen_charts], [2, 4, 6, 9, 11])
 
         with self.assertRaises(ValueError):
             beat_tracking.predict_itgpt_pack_from_audio(
@@ -789,7 +805,7 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
         self.assertEqual(out.bpm, 120)
         self.assertEqual(
             out.meters,
-            {"Beginner": 3, "Easy": 5, "Medium": 7, "Hard": 9, "Challenge": 11},
+            {"Beginner": 2, "Easy": 4, "Medium": 6, "Hard": 9, "Challenge": 11},
         )
         sm_text = out.generate_sm_output(music_filename="demo.ogg")
         parsed = simfile_parser.parse_simfile_text(sm_text)
@@ -797,9 +813,9 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
         self.assertEqual(
             [(c.difficulty, int(c.meter)) for c in parsed.charts],
             [
-                ("Beginner", 3),
-                ("Easy", 5),
-                ("Medium", 7),
+                ("Beginner", 2),
+                ("Easy", 4),
+                ("Medium", 6),
                 ("Hard", 9),
                 ("Challenge", 11),
             ],
@@ -851,8 +867,26 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
                 "Beginner": [("0.5", "1000")],
                 "Challenge": [("0.5", "1000"), ("1.0", "0001")],
             },
-            meters={"Beginner": 3, "Challenge": 11},
+            meters={"Beginner": 2, "Challenge": 11},
         )
+        # CLI defaults snap_beats=True and supports --no-snap_beats opt-out.
+        default_args = generate_script.PARSER.parse_args(
+            ["--audio_path", "a.ogg", "--song_title", "T", "--output_file", "o.sm"]
+        )
+        self.assertTrue(default_args.snap_beats)
+        nosnap_args = generate_script.PARSER.parse_args(
+            [
+                "--audio_path",
+                "a.ogg",
+                "--song_title",
+                "T",
+                "--output_file",
+                "o.sm",
+                "--no-snap_beats",
+            ]
+        )
+        self.assertFalse(nosnap_args.snap_beats)
+
         with tempfile.TemporaryDirectory() as tmpdir:
             out_sm = pathlib.Path(tmpdir) / "pack.sm"
             with (
@@ -894,13 +928,14 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
                     ]
                 )
             self.assertTrue(mock_gen.call_args.kwargs["all_difficulties"])
+            self.assertTrue(mock_gen.call_args.kwargs["snap_beats"])
             parsed = simfile_parser.parse_simfile_text(out_sm.read_text())
             self.assertEqual(
                 [(c.difficulty, int(c.meter)) for c in parsed.charts],
-                [("Beginner", 3), ("Challenge", 11)],
+                [("Beginner", 2), ("Challenge", 11)],
             )
 
-            # UI _run_generation forwarding
+            # UI _run_generation forwarding (defaults snap_beats=True)
             q: queue.Queue = queue.Queue()
             out_ui_sm = pathlib.Path(tmpdir) / "ui_pack.sm"
             with (
@@ -945,6 +980,79 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             self.assertEqual(src, "generation")
             self.assertTrue(ok, msg=str(val))
             self.assertTrue(mock_ui_gen.call_args.kwargs["all_difficulties"])
+            self.assertTrue(mock_ui_gen.call_args.kwargs["snap_beats"])
+
+    def test_integer_bpm_lock_and_variable_tempo_sm_roundtrip(self) -> None:
+        # 1. Near-integer steady tempo (139.985 BPM) locks cleanly to exact 140.000 BPM.
+        ibi_near = 60.0 / 139.985
+        near_beats = 0.5 + np.arange(80, dtype=np.float64) * ibi_near
+        near_grid = beat_tracking.BeatGrid(
+            beat_times=near_beats,
+            downbeat_times=near_beats[::4],
+            bpm=139.985,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        locked = beat_tracking.regularize_beat_grid(near_grid)
+        self.assertAlmostEqual(locked.bpm, 140.0, places=6)
+
+        # Genuinely fractional tempo (128.35 BPM) must NOT snap to 128.0.
+        frac_beats = 0.5 + np.arange(80, dtype=np.float64) * (60.0 / 128.35)
+        frac_grid = beat_tracking.BeatGrid(
+            beat_times=frac_beats,
+            downbeat_times=frac_beats[::4],
+            bpm=128.35,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        kept_frac = beat_tracking.regularize_beat_grid(frac_grid)
+        self.assertAlmostEqual(kept_frac.bpm, 128.35, places=2)
+
+        # 2. Variable-tempo song (100 BPM for 16 beats -> 140 BPM for 16 beats)
+        # with pickup beats before first downbeat round-trips through StepMania parser.
+        first_half = 0.5 + np.arange(16, dtype=np.float64) * (60.0 / 100.0)
+        second_half = first_half[-1] + np.arange(1, 17, dtype=np.float64) * (
+            60.0 / 140.0
+        )
+        var_beats = np.concatenate([first_half, second_half])
+        var_grid = beat_tracking.BeatGrid(
+            beat_times=var_beats,
+            downbeat_times=np.array([var_beats[2], var_beats[18]], dtype=np.float64),
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        note_times = np.array(
+            [
+                var_beats[0],
+                var_beats[2],
+                var_beats[10],
+                var_beats[16],
+                var_beats[24],
+                var_beats[30],
+            ],
+            dtype=np.float64,
+        )
+        out = generator.OutputData(
+            title="Tempo Change Song",
+            bpm=120,
+            notes={"Challenge": [(str(t), "1000") for t in note_times]},
+            offset=var_grid.sm_offset_sec,
+            beat_grid=var_grid,
+        )
+        sm_text = out.generate_sm_output(music_filename="var.ogg", meter=10)
+        parsed = simfile_parser.parse_simfile_text(sm_text)
+        timing_data = simfile_parser.TimingData.from_simfile(parsed, parsed.charts[0])
+        # Exactly 2 clean constant-BPM plateaus (100 BPM and 140 BPM), no jitter!
+        self.assertEqual(len(timing_data.bpms), 2)
+        self.assertAlmostEqual(timing_data.bpms[0].value, 100.0, places=1)
+        self.assertAlmostEqual(timing_data.bpms[1].value, 140.0, places=1)
+        engine = simfile_parser.TimingEngine(timing_data)
+        recovered = np.asarray(
+            [
+                engine.time_at(n.beat)
+                for n in simfile_parser.iter_chart_notes(parsed.charts[0])
+            ],
+            dtype=np.float64,
+        )
+        np.testing.assert_allclose(recovered, note_times, atol=0.005)
 
 
 if __name__ == "__main__":

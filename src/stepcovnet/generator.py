@@ -24,25 +24,31 @@ def _format_sm_measures(
     bpm: float,
     anchor_time_sec: float,
     beat_grid: beat_tracking.BeatGrid | None,
+    shift_beats: float | None = None,
 ) -> tuple[str, float]:
     """Quantize chart notes into StepMania measure blocks and return ``(notes_body, sm_offset)``."""
     if not note_rows:
-        return "0000\n0000\n0000\n0000", -anchor_time_sec
+        bpm_f = max(float(bpm), 1.0)
+        eff_shift = 0.0 if shift_beats is None else float(shift_beats)
+        return "0000\n0000\n0000\n0000", -(anchor_time_sec - eff_shift * (60.0 / bpm_f))
 
     times = np.asarray([float(t) for t, _ in note_rows], dtype=np.float64)
     arrows = [str(a).zfill(4)[:4] for _, a in note_rows]
     bpm_f = max(float(bpm), 1.0)
-    measure_sec = 4.0 * 60.0 / bpm_f
 
     raw_beats = (
         beat_grid.times_to_beats(times, anchor_time_sec=anchor_time_sec)
         if beat_grid is not None
         else (times - anchor_time_sec) * (bpm_f / 60.0)
     )
-    min_beat = float(np.min(raw_beats))
-    shift_measures = int(math.ceil(-min_beat / 4.0)) if min_beat < -1e-6 else 0
-    beats = raw_beats + 4.0 * float(shift_measures)
-    effective_anchor = anchor_time_sec - float(shift_measures) * measure_sec
+    if shift_beats is None:
+        min_beat = float(np.min(raw_beats))
+        shift_measures = int(math.ceil(-min_beat / 4.0)) if min_beat < -1e-6 else 0
+        eff_shift_beats = 4.0 * float(shift_measures)
+    else:
+        eff_shift_beats = float(shift_beats)
+    beats = raw_beats + eff_shift_beats
+    effective_anchor = anchor_time_sec - eff_shift_beats * (60.0 / bpm_f)
     sm_offset = -effective_anchor
 
     ticks = np.maximum(0, np.rint(beats * (_SM_TICKS_PER_MEASURE / 4.0)).astype(int))
@@ -116,8 +122,10 @@ class OutputData:
         """Generate a StepMania ``.sm`` simfile aligned to tracked downbeats.
 
         Uses :attr:`beat_grid` (when available) to anchor Measure 1 Beat 0 on
-        the detected downbeat via ``#OFFSET`` and quantizes notes cleanly onto
-        the StepMania 192-tick measure grid.
+        the detected downbeat via ``#OFFSET``, writes a single ``#BPMS`` entry
+        for constant-tempo songs or smooth piecewise-constant ``#BPMS`` plateaus
+        for variable-tempo songs, and quantizes notes cleanly onto the
+        StepMania 192-tick measure grid.
 
         Args:
             music_filename: Audio filename written to ``#MUSIC``.
@@ -127,8 +135,11 @@ class OutputData:
         Returns:
             Formatted StepMania ``.sm`` file content.
         """
-        bpm_val = (
-            float(self.beat_grid.bpm) if self.beat_grid is not None else float(self.bpm)
+        bpm_val = max(
+            float(self.beat_grid.bpm)
+            if self.beat_grid is not None
+            else float(self.bpm),
+            1.0,
         )
         anchor_time = (
             self.beat_grid.anchor_time_sec
@@ -136,16 +147,34 @@ class OutputData:
             else -float(self.offset)
         )
 
-        # Compute a shared #OFFSET across all difficulty charts so every chart
-        # aligns to the same Measure 1 Beat 0.
+        # Compute a shared measure shift across all difficulty charts so every
+        # chart and every #BPMS segment aligns to the same Measure 1 Beat 0.
         all_rows = [row for rows in self.notes.values() for row in rows]
-        _, shared_offset = _format_sm_measures(
-            all_rows,
-            bpm=bpm_val,
-            anchor_time_sec=anchor_time,
-            beat_grid=self.beat_grid,
+        if all_rows:
+            all_times = np.asarray([float(t) for t, _ in all_rows], dtype=np.float64)
+            all_raw_beats = (
+                self.beat_grid.times_to_beats(all_times, anchor_time_sec=anchor_time)
+                if self.beat_grid is not None
+                else (all_times - anchor_time) * (bpm_val / 60.0)
+            )
+            min_beat = float(np.min(all_raw_beats))
+            shift_measures = int(math.ceil(-min_beat / 4.0)) if min_beat < -1e-6 else 0
+        else:
+            shift_measures = 0
+        shift_beats = 4.0 * float(shift_measures)
+
+        if self.beat_grid is not None:
+            bpm_segments, shared_offset = self.beat_grid.sm_bpm_segments(
+                anchor_time_sec=anchor_time,
+                shift_beats=shift_beats,
+            )
+        else:
+            bpm_segments = [(0.0, bpm_val)]
+            shared_offset = -(anchor_time - shift_beats * (60.0 / bpm_val))
+
+        bpms_str = ",".join(
+            f"{beat:.3f}={seg_bpm:.3f}" for beat, seg_bpm in bpm_segments
         )
-        shared_anchor = -shared_offset
 
         header = (
             f"#TITLE:{self.title};\n"
@@ -157,7 +186,7 @@ class OutputData:
             f"#SAMPLESTART:0.000;\n"
             f"#SAMPLELENGTH:15.000;\n"
             f"#SELECTABLE:YES;\n"
-            f"#BPMS:0.000={bpm_val:.3f};\n"
+            f"#BPMS:{bpms_str};\n"
             f"#STOPS:;\n"
         )
         note_blocks: list[str] = []
@@ -170,8 +199,9 @@ class OutputData:
             body, _ = _format_sm_measures(
                 rows,
                 bpm=bpm_val,
-                anchor_time_sec=shared_anchor,
+                anchor_time_sec=anchor_time,
                 beat_grid=self.beat_grid,
+                shift_beats=shift_beats,
             )
             note_blocks.append(
                 "\n#NOTES:\n"
@@ -408,6 +438,7 @@ def _decode_dense_onsets_for_preset(
     probs_1d: np.ndarray,
     preset: beat_tracking.DifficultyPreset,
     *,
+    bpm: float,
     base_threshold: float,
     use_post_processing: bool,
 ) -> np.ndarray:
@@ -416,7 +447,8 @@ def _decode_dense_onsets_for_preset(
     if probs.size == 0:
         return np.zeros(0, dtype=np.float64)
 
-    ratio = min(1.0, max(0.1, float(preset.target_density) / 3.0))
+    eff_density = preset.resolve_target_density(bpm)
+    ratio = min(1.0, max(0.1, float(eff_density) / 2.5))
     eff_threshold = min(
         0.95,
         float(base_threshold) + (1.0 - float(base_threshold)) * (1.0 - ratio) * 0.5,
@@ -548,6 +580,7 @@ def generate_output_data(
                 preset.name: _decode_dense_onsets_for_preset(
                     probs_1d,
                     preset,
+                    bpm=float(bpm),
                     base_threshold=threshold,
                     use_post_processing=use_post_processing,
                 )

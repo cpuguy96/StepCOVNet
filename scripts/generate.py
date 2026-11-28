@@ -75,10 +75,12 @@ PARSER.add_argument(
 )
 PARSER.add_argument(
     "--snap_beats",
-    action="store_true",
+    action=argparse.BooleanOptionalAction,
+    default=True,
     help=(
         "Apply a song-level constant phase shift aligning estimated beats "
-        "to audio onset-strength peaks."
+        "to audio attack transients (enabled by default; pass --no-snap_beats "
+        "to disable)."
     ),
 )
 PARSER.add_argument(

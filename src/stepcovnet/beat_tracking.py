@@ -166,6 +166,97 @@ class BeatGrid:
         beats = self.times_to_beats(times)
         return np.mod(beats, 1.0).astype(np.float32)
 
+    def sm_bpm_segments(
+        self,
+        *,
+        anchor_time_sec: float | None = None,
+        shift_beats: float = 0.0,
+        max_drift_sec: float = 0.025,
+    ) -> tuple[list[tuple[float, float]], float]:
+        """Compute piecewise-constant StepMania ``#BPMS`` segments and ``#OFFSET``.
+
+        Constant-tempo grids (all inter-beat intervals within 5 ms) return a
+        single ``[(0.0, self.bpm)]`` segment so steady songs are unaffected.
+        Variable-tempo grids are merged greedily into smooth constant-BPM
+        plateaus whose cumulative timing error stays within ``max_drift_sec``
+        without noisy beat-by-beat scroll-speed jitter.
+
+        Args:
+            anchor_time_sec: Beat-0 anchor timestamp before ``shift_beats``
+                (defaults to :attr:`anchor_time_sec`).
+            shift_beats: Non-negative beat shift added to accommodate pickup
+                notes before ``anchor_time_sec`` (typically ``4 * shift_measures``).
+            max_drift_sec: Maximum timing deviation (seconds) allowed inside
+                each constant-BPM plateau.
+
+        Returns:
+            Tuple ``(bpm_segments, sm_offset_sec)`` where ``bpm_segments`` is a
+            list of ``(beat, bpm)`` pairs starting at beat ``0.0`` and
+            ``sm_offset_sec`` is the matching StepMania ``#OFFSET``.
+        """
+        bt = np.asarray(self.beat_times, dtype=np.float64).reshape(-1)
+        anchor = (
+            self.anchor_time_sec if anchor_time_sec is None else float(anchor_time_sec)
+        )
+        ibis = np.diff(bt)
+        if ibis.size == 0 or float(np.max(ibis) - np.min(ibis)) <= 0.005:
+            bpm_f = max(float(self.bpm), 1.0)
+            t_beat0 = anchor - float(shift_beats) * (60.0 / bpm_f)
+            return [(0.0, bpm_f)], -t_beat0
+
+        # Greedy piecewise-linear segmentation over beat_times.
+        raw_segs: list[tuple[int, int, float]] = []
+        n = int(bt.size)
+        i = 0
+        while i < n - 1:
+            best_j = i + 1
+            for j in range(i + 2, n):
+                seg_ibi = (bt[j] - bt[i]) / float(j - i)
+                ks = np.arange(j - i + 1, dtype=np.float64)
+                pred = bt[i] + ks * seg_ibi
+                if float(np.max(np.abs(bt[i : j + 1] - pred))) <= float(max_drift_sec):
+                    best_j = j
+                else:
+                    break
+            seg_ibi = max((bt[best_j] - bt[i]) / float(best_j - i), 1e-4)
+            raw_segs.append((i, best_j, 60.0 / seg_ibi))
+            i = best_j
+
+        anchor_idx = float(
+            self.times_to_beats(
+                np.asarray([anchor], dtype=np.float64),
+                anchor_time_sec=float(bt[0]),
+            )[0]
+        )
+        idx_0 = anchor_idx - float(shift_beats)
+
+        # Evaluate audio time and active BPM at continuous beat index idx_0.
+        if idx_0 <= 0.0:
+            first_bpm = raw_segs[0][2]
+            t_beat0 = float(bt[0]) + idx_0 * (60.0 / first_bpm)
+            active_bpm = first_bpm
+        elif idx_0 >= float(n - 1):
+            last_bpm = raw_segs[-1][2]
+            t_beat0 = float(bt[-1]) + (idx_0 - float(n - 1)) * (60.0 / last_bpm)
+            active_bpm = last_bpm
+        else:
+            active_bpm = raw_segs[0][2]
+            t_beat0 = float(bt[0])
+            for s_i, s_j, s_bpm in raw_segs:
+                if float(s_i) <= idx_0 <= float(s_j):
+                    active_bpm = s_bpm
+                    t_beat0 = float(bt[s_i]) + (idx_0 - float(s_i)) * (60.0 / s_bpm)
+                    break
+
+        sm_segments: list[tuple[float, float]] = [(0.0, float(active_bpm))]
+        for s_i, _s_j, s_bpm in raw_segs:
+            if float(s_i) > idx_0 + 1e-6:
+                sm_beat = float(s_i) - idx_0
+                if abs(float(s_bpm) - sm_segments[-1][1]) >= 0.05:
+                    sm_segments.append((sm_beat, float(s_bpm)))
+
+        return sm_segments, -t_beat0
+
 
 def _clean_beat_times(
     raw_beats: np.ndarray, *, min_spacing_sec: float = 0.05
@@ -441,6 +532,7 @@ def regularize_beat_grid(
     audio_duration_sec: float | None = None,
     inlier_tol_sec: float = 0.035,
     min_inlier_fraction: float = 0.85,
+    integer_bpm_tol: float = 0.03,
 ) -> BeatGrid:
     """Fit a drift-free constant-BPM integer beat lattice when the track is steady.
 
@@ -449,6 +541,9 @@ def regularize_beat_grid(
     pop, and most rhythm-game tracks), fitting an integer-indexed lattice
     ``t(k) = t0 + k * ibi`` recovers tempo to ~0.01 BPM, bridges dropped beats,
     removes spurious beats, and aligns downbeats onto exact 4-beat bar lines.
+    When the fitted BPM sits within ``integer_bpm_tol`` of an exact integer
+    and locking to that integer keeps residuals and end-to-end drift flat,
+    the exact integer BPM is adopted to eliminate residual long-song drift.
     Songs with genuine tempo changes (fewer than ``min_inlier_fraction`` of
     beats within ``inlier_tol_sec``) are returned unchanged.
 
@@ -460,6 +555,8 @@ def regularize_beat_grid(
             inlier on the constant-BPM lattice.
         min_inlier_fraction: Minimum fraction of beats that must be inliers to
             replace the raw grid with the regularized constant-BPM lattice.
+        integer_bpm_tol: Maximum distance (BPM) from an integer tempo to test
+            an exact integer-BPM lock (``0.0`` disables integer locking).
 
     Returns:
         Regularized :class:`BeatGrid` if the song fits a constant tempo, else
@@ -489,10 +586,43 @@ def regularize_beat_grid(
         ibi = float(slope)
         anchor_t = float(intercept)
 
-    resid_all = np.abs(bt - (anchor_t + np.rint((bt - anchor_t) / ibi) * ibi))
-    inlier_fraction = float(np.mean(resid_all <= float(inlier_tol_sec)))
+    k_all = np.rint((bt - anchor_t) / ibi)
+    resid_all = np.abs(bt - (anchor_t + k_all * ibi))
+    inlier_mask = resid_all <= float(inlier_tol_sec)
+    inlier_fraction = float(np.mean(inlier_mask))
     if inlier_fraction < float(min_inlier_fraction):
         return beat_grid
+
+    # Safe integer-BPM lock: eliminate ~0.01–0.02 BPM estimation drift on
+    # steady studio/electronic tracks while preserving genuinely fractional BPMs.
+    cont_bpm = 60.0 / max(ibi, 1e-6)
+    nearest_int_bpm = round(cont_bpm)
+    if (
+        integer_bpm_tol > 0.0
+        and nearest_int_bpm >= 40
+        and abs(cont_bpm - float(nearest_int_bpm)) <= float(integer_bpm_tol)
+    ):
+        ibi_int = 60.0 / float(nearest_int_bpm)
+        inlier_bt = bt[inlier_mask]
+        inlier_k = k_all[inlier_mask]
+        anchor_int = float(np.median(inlier_bt - inlier_k * ibi_int))
+        resid_int_all = np.abs(
+            bt - (anchor_int + np.rint((bt - anchor_int) / ibi_int) * ibi_int)
+        )
+        signed_int = inlier_bt - (anchor_int + inlier_k * ibi_int)
+        q_n = max(1, signed_int.size // 4)
+        int_drift = abs(
+            float(np.median(signed_int[-q_n:])) - float(np.median(signed_int[:q_n]))
+        )
+        if (
+            float(np.mean(resid_int_all <= float(inlier_tol_sec)))
+            >= float(min_inlier_fraction)
+            and float(np.median(np.abs(signed_int)))
+            <= float(np.median(resid_all[inlier_mask])) + 0.005
+            and int_drift <= 0.015
+        ):
+            ibi = ibi_int
+            anchor_t = anchor_int
 
     end_time = (
         max(float(bt[-1]), float(audio_duration_sec) - 0.5 * ibi)
@@ -640,12 +770,20 @@ def load_onset_model_auto(
     return trainers.load_onset_model(str(checkpoint_path), device=target)
 
 
+SLOTS_8TH: frozenset[int] = frozenset({0, 24})
+SLOTS_16TH: frozenset[int] = frozenset(range(0, 48, 12))
+SLOTS_16TH_24TH: frozenset[int] = frozenset(
+    s for s in range(48) if s % 12 == 0 or s % 8 == 0
+)
+
+
 def decode_itgpt_slots_to_times(
     probs: np.ndarray,
     beat_grid: BeatGrid,
     *,
     threshold: float = 0.5,
     use_slot_centers: bool = True,
+    allowed_slots: collections.abc.Collection[int] | None = None,
 ) -> np.ndarray:
     """Decode ``(n_beats, n_slots)`` ITGPT probabilities to sorted onset times.
 
@@ -659,6 +797,9 @@ def decode_itgpt_slots_to_times(
             place notes at exact StepMania grid edges ``slot / n_slots`` so
             quarter/8th/16th/24th notes quantize cleanly without half-slot
             rounding jitter.
+        allowed_slots: Optional subset of valid slot indices (e.g.
+            :data:`SLOTS_16TH_24TH`) to suppress noisy non-musical slots that
+            would otherwise trigger 192-row StepMania measure blocks.
 
     Returns:
         Sorted 1D float64 array of onset timestamps in seconds.
@@ -675,6 +816,10 @@ def decode_itgpt_slots_to_times(
             f"probs has {grid.shape[0]} beats but beat_grid only has {bt_full.size - 1}"
         )
     n_slots = int(grid.shape[1])
+    if allowed_slots is not None:
+        allowed_set = {int(s) for s in allowed_slots if 0 <= int(s) < n_slots}
+        slot_mask = np.array([s in allowed_set for s in range(n_slots)], dtype=bool)
+        grid = np.where(slot_mask[None, :], grid, 0.0)
     slot_offset = 0.5 if use_slot_centers else 0.0
     times: list[float] = []
     for beat_idx, slot_idx in np.argwhere(grid >= float(threshold)):
@@ -711,23 +856,39 @@ def _load_or_extract_mert_for_audio(
 class DifficultyPreset:
     """Target StepMania difficulty metadata and step density for pack generation.
 
+    Supports either fixed steps-per-beat (``target_density``) or BPM-adaptive
+    physical foot speed (``target_nps``, converted via ``target_nps * 60 / bpm``
+    and clamped to ``[min_density, max_density]``).
+
     Attributes:
         name: Standard StepMania difficulty name (e.g. ``"Beginner"`` .. ``"Challenge"``).
         meter: StepMania numeric meter written into ``#NOTES``.
-        target_density: Target average steps per beat for density-conditioned
-            ITGPT models.
+        target_density: Fallback/reference average steps per beat for
+            density-conditioned ITGPT models.
+        target_nps: Optional target physical steps per second (NPS) used to
+            adapt steps-per-beat automatically across song tempos.
+        min_density: Lower clamp for BPM-adapted steps per beat.
+        max_density: Upper clamp for BPM-adapted steps per beat.
+        allowed_slots: Optional subset of valid 48-slot beat subdivisions
+            (e.g. :data:`SLOTS_8TH` for Beginner, :data:`SLOTS_16TH_24TH` for
+            Hard/Challenge).
     """
 
     name: str
     meter: int
     target_density: float
+    target_nps: float | None = None
+    min_density: float = 0.15
+    max_density: float = 3.5
+    allowed_slots: frozenset[int] | None = None
 
     def __post_init__(self) -> None:
-        """Validate difficulty name, meter, and positive target density.
+        """Validate difficulty name, meter, and positive target densities.
 
         Raises:
-            ValueError: If ``name`` is empty, ``meter < 1``, or
-                ``target_density <= 0``.
+            ValueError: If ``name`` is empty, ``meter < 1``,
+                ``target_density <= 0``, ``target_nps <= 0``, or density clamps
+                are invalid.
         """
         if not self.name.strip():
             raise ValueError("DifficultyPreset.name must be non-empty")
@@ -737,14 +898,81 @@ class DifficultyPreset:
             raise ValueError(
                 f"DifficultyPreset.target_density must be positive finite, got {self.target_density}"
             )
+        if self.target_nps is not None and not (
+            float(self.target_nps) > 0.0 and np.isfinite(self.target_nps)
+        ):
+            raise ValueError(
+                f"DifficultyPreset.target_nps must be positive finite, got {self.target_nps}"
+            )
+        if not (
+            float(self.min_density) > 0.0
+            and float(self.max_density) >= float(self.min_density)
+        ):
+            raise ValueError(
+                "DifficultyPreset density bounds must satisfy 0 < min_density <= max_density"
+            )
+
+    def resolve_target_density(self, bpm: float) -> float:
+        """Resolve effective steps-per-beat target for a given song ``bpm``.
+
+        Args:
+            bpm: Song tempo in beats per minute.
+
+        Returns:
+            Effective target average steps per beat.
+        """
+        if self.target_nps is not None and float(bpm) > 0.0 and np.isfinite(bpm):
+            raw_spb = float(self.target_nps) * 60.0 / float(bpm)
+            return float(np.clip(raw_spb, self.min_density, self.max_density))
+        return float(self.target_density)
 
 
 DEFAULT_DIFFICULTY_PACK: tuple[DifficultyPreset, ...] = (
-    DifficultyPreset(name="Beginner", meter=3, target_density=0.4),
-    DifficultyPreset(name="Easy", meter=5, target_density=0.8),
-    DifficultyPreset(name="Medium", meter=7, target_density=1.3),
-    DifficultyPreset(name="Hard", meter=9, target_density=2.0),
-    DifficultyPreset(name="Challenge", meter=11, target_density=3.0),
+    DifficultyPreset(
+        name="Beginner",
+        meter=2,
+        target_density=0.30,
+        target_nps=0.65,
+        min_density=0.18,
+        max_density=0.55,
+        allowed_slots=SLOTS_8TH,
+    ),
+    DifficultyPreset(
+        name="Easy",
+        meter=4,
+        target_density=0.67,
+        target_nps=1.45,
+        min_density=0.35,
+        max_density=1.05,
+        allowed_slots=SLOTS_16TH,
+    ),
+    DifficultyPreset(
+        name="Medium",
+        meter=6,
+        target_density=1.08,
+        target_nps=2.35,
+        min_density=0.65,
+        max_density=1.70,
+        allowed_slots=SLOTS_16TH,
+    ),
+    DifficultyPreset(
+        name="Hard",
+        meter=9,
+        target_density=1.66,
+        target_nps=3.60,
+        min_density=1.00,
+        max_density=2.50,
+        allowed_slots=SLOTS_16TH_24TH,
+    ),
+    DifficultyPreset(
+        name="Challenge",
+        meter=11,
+        target_density=2.26,
+        target_nps=4.90,
+        min_density=1.45,
+        max_density=3.30,
+        allowed_slots=SLOTS_16TH_24TH,
+    ),
 )
 
 
@@ -761,6 +989,7 @@ def _predict_itgpt_onsets_for_mert(
     max_beats: int | None,
     device: torch.device,
     fallback_top_k: bool = False,
+    allowed_slots: collections.abc.Collection[int] | None = SLOTS_16TH_24TH,
 ) -> np.ndarray:
     """Run ITGPT slot prediction and timestamp decoding on precomputed beat MERT."""
     n_beats = int(beat_mert.shape[0])
@@ -797,11 +1026,22 @@ def _predict_itgpt_onsets_for_mert(
         device=device,
     )
     onset_times = decode_itgpt_slots_to_times(
-        probs, grid, threshold=threshold, use_slot_centers=False
+        probs,
+        grid,
+        threshold=threshold,
+        use_slot_centers=False,
+        allowed_slots=allowed_slots,
     )
     if onset_times.size == 0 and fallback_top_k and probs.size > 0:
-        flat_probs = probs.reshape(-1)
-        k = min(flat_probs.size, max(1, target_n_steps))
+        masked_probs = np.asarray(probs, dtype=np.float64)
+        if allowed_slots is not None and masked_probs.ndim == 2:
+            n_slots = int(masked_probs.shape[1])
+            allowed_set = {int(s) for s in allowed_slots if 0 <= int(s) < n_slots}
+            slot_mask = np.array([s in allowed_set for s in range(n_slots)], dtype=bool)
+            masked_probs = np.where(slot_mask[None, :], masked_probs, -1.0)
+        flat_probs = masked_probs.reshape(-1)
+        valid_count = int(np.sum(flat_probs >= 0.0))
+        k = min(max(1, valid_count), max(1, target_n_steps))
         top_idx = np.argpartition(flat_probs, -k)[-k:]
         top_mask = np.zeros_like(flat_probs, dtype=np.float32)
         top_mask[top_idx] = 1.0
@@ -810,6 +1050,7 @@ def _predict_itgpt_onsets_for_mert(
             grid,
             threshold=0.5,
             use_slot_centers=False,
+            allowed_slots=allowed_slots,
         )
     return onset_times
 
@@ -828,6 +1069,7 @@ def predict_itgpt_onsets_from_audio(
     mert_layers: tuple[int, ...] = DEFAULT_MERT_LAYERS,
     mert_cache_suffix: str = DEFAULT_MERT_CACHE_SUFFIX,
     device: str | torch.device | None = None,
+    allowed_slots: collections.abc.Collection[int] | None = SLOTS_16TH_24TH,
 ) -> tuple[np.ndarray, BeatGrid]:
     """Run Beat This! + MERT + ITGPT-MERT onset placement on raw audio.
 
@@ -846,6 +1088,8 @@ def predict_itgpt_onsets_from_audio(
         mert_layers: MERT hidden layers to average when extracting on the fly.
         mert_cache_suffix: Sibling MERT cache suffix checked before extraction.
         device: Optional compute device override.
+        allowed_slots: Optional valid 48-slot beat subdivisions (defaults to
+            :data:`SLOTS_16TH_24TH` to avoid stray 192-row StepMania measures).
 
     Returns:
         Tuple ``(onset_times_sec, beat_grid)``.
@@ -889,6 +1133,7 @@ def predict_itgpt_onsets_from_audio(
         threshold=threshold,
         max_beats=max_beats,
         device=target_device,
+        allowed_slots=allowed_slots,
     )
     return onset_times, grid
 
@@ -913,7 +1158,7 @@ def predict_itgpt_pack_from_audio(
         audio_path: Path to the raw audio file.
         itgpt_model: Trained PyTorch :class:`ItgptPlacementModel`.
         difficulties: Sequence of :class:`DifficultyPreset` definitions
-            (defaults to 5-difficulty Beginner–Challenge pack).
+            (defaults to BPM-adaptive 5-difficulty Beginner–Challenge pack).
         beat_grid: Optional precomputed :class:`BeatGrid` (estimated when None).
         beat_tracker: Beat tracker backend (``"auto"``, ``"beat_this"``, ``"librosa"``).
         snap_beats: Apply song-level onset-strength phase alignment to beats.
@@ -958,17 +1203,19 @@ def predict_itgpt_pack_from_audio(
     song_key = pathlib.Path(audio_path).stem
     onsets_by_difficulty: dict[str, np.ndarray] = {}
     for preset in difficulties:
+        eff_density = preset.resolve_target_density(grid.bpm)
         onsets_by_difficulty[preset.name] = _predict_itgpt_onsets_for_mert(
             song_key,
             beat_mert,
             grid,
             itgpt_model,
             difficulty=preset.name,
-            target_density=preset.target_density,
+            target_density=eff_density,
             meter=preset.meter,
             threshold=threshold,
             max_beats=max_beats,
             device=target_device,
             fallback_top_k=True,
+            allowed_slots=preset.allowed_slots,
         )
     return onsets_by_difficulty, grid

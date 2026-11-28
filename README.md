@@ -65,7 +65,7 @@ allowing rhythm game enthusiasts to create charts for their favorite songs insta
 
 Generate a StepMania chart (`.sm` or `.txt` format) from an audio file using pre-trained models. If you do not have onset or arrow models yet, omit their paths and they will be downloaded automatically from Google Drive and cached locally.
 
-- **Direct `.sm` export:** Pass an `--output_file` ending in `.sm` to write a playable StepMania simfile with downbeat-aligned `#OFFSET` and `#BPMS` directly (no external converter required); `.txt` output remains supported for [`SMDataTools`](https://github.com/jhaco/SMDataTools).
+- **Direct `.sm` export:** Pass an `--output_file` ending in `.sm` to write a playable StepMania simfile with downbeat-aligned `#OFFSET` and `#BPMS` (single constant BPM for steady tracks, piecewise-constant plateaus for variable-tempo tracks) directly—no external converter required; `.txt` output remains supported for [`SMDataTools`](https://github.com/jhaco/SMDataTools).
 - **Built-in neural beat tracking (`Beat This!`):** StepCOVNet includes a self-contained pure-PyTorch implementation of Beat This! (ISMIR 2024) with sub-frame parabolic peak refinement (`stepcovnet.beat_this_model`) and an automatic offline fallback to `librosa`. No extra packages are required; pretrained beat-tracker weights (`final0.ckpt`, 77 MB) download and cache automatically on first use.
 - **ITGPT-MERT checkpoints:** Passing an ITGPT-MERT `.pt` checkpoint to `--onset_model_path` automatically runs Beat This! + MERT + 48-slot ITGPT placement end-to-end on raw audio.
 
@@ -87,11 +87,11 @@ python scripts/generate.py \
 | `--arrow_model_path`    | Path to the arrow prediction model (`.pt`); optional—omit to download and cache                        |
 | `--output_file`         | Output path (`.sm` writes a downbeat-aligned StepMania simfile; `.txt` writes plain-text format)       |
 | `--beat_tracker`        | Beat tracker backend: `auto` (built-in `beat_this` with offline `librosa` fallback), `beat_this`, `librosa` |
-| `--snap_beats`          | Apply a song-level constant phase shift aligning tracked beats to audio onset-strength peaks           |
+| `--snap_beats`          | Align tracked beats to audio attack transients via a constant song-level shift (default ON; `--no-snap_beats` to disable) |
 | `--target_density`      | Target average steps/beat for density-conditioned ITGPT-MERT models (default `2.0`)                    |
 | `--meter`               | Difficulty meter for meter-conditioned ITGPT checkpoints / `.sm` header (default `10`)                 |
 | `--threshold`           | Onset probability threshold (default `0.5`)                                                            |
-| `--all_difficulties`    | Generate a full 5-difficulty pack (`Beginner`–`Challenge`) in a single Beat This! + MERT pass          |
+| `--all_difficulties`    | Generate a BPM-adaptive 5-difficulty pack (`Beginner`–`Challenge`) in a single Beat This! + MERT pass  |
 | `--use_post_processing` | Refine legacy dense onset timings with peak-picking                                                    |
 | `--device`              | Compute device (`auto`, `cuda`, `mps`, `cpu`)                                                          |
 

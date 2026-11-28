@@ -143,7 +143,7 @@ def _run_generation(
     result_queue: queue.Queue,
     *,
     beat_tracker: str = beat_tracking.TRACKER_AUTO,
-    snap_beats: bool = False,
+    snap_beats: bool = True,
     target_density: float = 2.0,
     threshold: float = 0.5,
     all_difficulties: bool = False,
@@ -228,7 +228,7 @@ class _GeneratorApp:
         self.output_path_var = tk.StringVar()
         self.use_post_processing_var = tk.BooleanVar(value=False)
         self.beat_tracker_var = tk.StringVar(value=beat_tracking.TRACKER_AUTO)
-        self.snap_beats_var = tk.BooleanVar(value=False)
+        self.snap_beats_var = tk.BooleanVar(value=True)
         self.all_difficulties_var = tk.BooleanVar(value=False)
         self.target_density_var = tk.StringVar(value="2.0")
         self.threshold_var = tk.StringVar(value="0.5")
