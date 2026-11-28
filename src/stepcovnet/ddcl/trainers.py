@@ -14,11 +14,9 @@ import numpy as np
 import torch
 from torch import nn
 
-from stepcovnet import runtime
+from stepcovnet import runtime, slot48_eval
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.ddcl import config, constants, datasets, models
-from stepcovnet.ddcl import torch_evaluation as evaluation
-from stepcovnet.itgpt import evaluation as slot_eval
+from stepcovnet.ddcl import config, constants, datasets, evaluation, models
 
 if TYPE_CHECKING:
     from torch.utils.tensorboard import SummaryWriter
@@ -113,7 +111,7 @@ def tensorboard_run_log_dir(callback_root_dir: str, model_name: str) -> pathlib.
 
 
 def _write_eval_report(
-    report: slot_eval.Slot48EvalReport,
+    report: slot48_eval.Slot48EvalReport,
     path: pathlib.Path,
     *,
     weights: str,

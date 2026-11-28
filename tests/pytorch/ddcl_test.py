@@ -16,8 +16,8 @@ from stepcovnet.ddcl import config as ddcl_config
 from stepcovnet.ddcl import constants as ddcl_constants
 from stepcovnet.ddcl import datasets as ddcl_datasets
 from stepcovnet.ddcl import eval as ddcl_eval_cli
+from stepcovnet.ddcl import evaluation as ddcl_eval
 from stepcovnet.ddcl import models as ddcl_models
-from stepcovnet.ddcl import torch_evaluation as ddcl_eval
 from stepcovnet.ddcl import train as ddcl_train_cli
 from stepcovnet.ddcl import trainers as ddcl_trainers
 
@@ -344,7 +344,6 @@ def test_ddcl_no_tensorflow_imported() -> None:
         "import sys; "
         "import stepcovnet.ddcl.models; "
         "import stepcovnet.ddcl.evaluation; "
-        "import stepcovnet.ddcl.torch_evaluation; "
         "assert 'tensorflow' not in sys.modules; "
         "assert 'keras' not in sys.modules"
     )

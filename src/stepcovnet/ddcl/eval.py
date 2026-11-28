@@ -8,8 +8,7 @@ import pathlib
 
 from stepcovnet import runtime
 from stepcovnet.dataset_prep import training_index
-from stepcovnet.ddcl import config, datasets, trainers
-from stepcovnet.ddcl import torch_evaluation as evaluation
+from stepcovnet.ddcl import config, datasets, evaluation, trainers
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -7,19 +7,25 @@ ITGPT comparison table. This is **not** Hamming ±20 ms (`M-ddc-20ms`).
 from __future__ import annotations
 
 import dataclasses
-import typing
 
 import numpy as np
 import torch
 from torch import nn
 
-from stepcovnet import onset_null_baseline, timing_match
+from stepcovnet import onset_null_baseline, runtime, slot48_eval, timing_match
 from stepcovnet.ddc import peak_pick
 from stepcovnet.ddcl import constants, datasets, slots
 from stepcovnet.onset_events import metrics
 
-DEFAULT_THRESHOLDS = tuple(round(0.05 * step, 2) for step in range(1, 20))
-CORRUPTION_KINDS = ("none", "shuffle", "zeros")
+CORRUPTION_KINDS = slot48_eval.CORRUPTION_KINDS
+DEFAULT_THRESHOLDS = slot48_eval.DEFAULT_THRESHOLDS
+Slot48Counts = slot48_eval.Slot48Counts
+Slot48EvalReport = slot48_eval.Slot48EvalReport
+corrupt_chart_audio = slot48_eval.corrupt_chart_audio
+counts_at_threshold = slot48_eval.counts_at_threshold
+shuffle_slot_null = slot48_eval.shuffle_slot_null
+_prediction_shift_stats = slot48_eval.prediction_shift_stats
+
 DIAGNOSTIC_CONDITIONS = (
     "oracle",
     "raw",
@@ -29,186 +35,69 @@ DIAGNOSTIC_CONDITIONS = (
     "beat_top_k",
 )
 
-
-class _PredictProtocol(typing.Protocol):
-    """Minimal duck-typed predict interface used by test stubs."""
-
-    def predict(self, inputs: object, verbose: int = 0) -> object:
-        """Return slot probabilities.
-
-        Args:
-            inputs: Model input dict.
-            verbose: Unused verbosity flag.
-
-        Returns:
-            Array-like slot scores.
-        """
-
-
-SlotPredictor = nn.Module | _PredictProtocol
-
-
-@dataclasses.dataclass(frozen=True)
-class Slot48Counts:
-    """Pooled binary counts on the 48-slot grid.
-
-    Attributes:
-        true_positives: Predicted slots matched to a ground-truth 1.
-        false_positives: Predicted 1s with ground-truth 0.
-        false_negatives: Ground-truth 1s with predicted 0.
-    """
-
-    true_positives: int
-    false_positives: int
-    false_negatives: int
-
-    @property
-    def f_score(self) -> float:
-        """Return binary F1 from the pooled counts."""
-        return peak_pick.OnsetMatchCounts(
-            true_positives=self.true_positives,
-            false_positives=self.false_positives,
-            false_negatives=self.false_negatives,
-        ).f_score
-
-
-def counts_at_threshold(
-    pred: np.ndarray, target: np.ndarray, threshold: float
-) -> Slot48Counts:
-    """Score one ``(n_beats, 48)`` pair at a decision threshold.
-
-    Args:
-        pred: Predicted slot probabilities.
-        target: Ground-truth 0/1 slots.
-        threshold: Decision threshold.
-
-    Returns:
-        Pooled counts.
-    """
-    pred_bin = np.asarray(pred, dtype=np.float64) >= float(threshold)
-    tgt_bin = np.asarray(target, dtype=np.float64) >= 0.5
-    true_positives = int(np.logical_and(pred_bin, tgt_bin).sum())
-    false_positives = int(np.logical_and(pred_bin, np.logical_not(tgt_bin)).sum())
-    false_negatives = int(np.logical_and(np.logical_not(pred_bin), tgt_bin).sum())
-    return Slot48Counts(
-        true_positives=true_positives,
-        false_positives=false_positives,
-        false_negatives=false_negatives,
-    )
-
-
-def shuffle_slot_null(target: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """Permute beats of the GT slot matrix (density-matched, audio-blind).
-
-    Args:
-        target: Ground-truth ``(n_beats, n_slots)``.
-        rng: NumPy generator.
-
-    Returns:
-        Shuffled copy.
-    """
-    out = np.asarray(target, dtype=np.float32).copy()
-    order = rng.permutation(out.shape[0])
-    return out[order]
-
-
-@dataclasses.dataclass(frozen=True)
-class Slot48EvalReport:
-    """Pooled ``M-slot48`` scores.
-
-    Attributes:
-        f1_at_05: Micro F1 at threshold 0.5.
-        f1_max: Best micro F1 over the threshold sweep.
-        best_threshold: Threshold that achieved ``f1_max``.
-        null_f1_at_05: Beat-shuffled GT scored at 0.5 against real GT.
-        n_charts: Charts evaluated.
-        n_beats: Pooled beat count.
-        counts_at_05: Pooled counts at 0.5.
-    """
-
-    f1_at_05: float
-    f1_max: float
-    best_threshold: float
-    null_f1_at_05: float
-    n_charts: int
-    n_beats: int
-    counts_at_05: Slot48Counts
-
-    def as_dict(self) -> dict:
-        """Serialize for JSON.
-
-        Returns:
-            JSON-serializable mapping.
-        """
-        return {
-            "metric": "M-slot48",
-            "f1_at_05": self.f1_at_05,
-            "f1_max": self.f1_max,
-            "best_threshold": self.best_threshold,
-            "null_f1_at_05": self.null_f1_at_05,
-            "skill_f1_at_05": self.f1_at_05 - self.null_f1_at_05,
-            "n_charts": self.n_charts,
-            "n_beats": self.n_beats,
-            "true_positives": self.counts_at_05.true_positives,
-            "false_positives": self.counts_at_05.false_positives,
-            "false_negatives": self.counts_at_05.false_negatives,
-            "published_f1_at_05_expanded_fraxtil": (
-                constants.PUBLISHED_F1_AT_05_EXPANDED
-            ),
-            "published_f1_max_expanded_fraxtil": constants.PUBLISHED_F1_MAX_EXPANDED,
-            "citation": "omalley2025ddcl",
-        }
+SlotPredictor = nn.Module | slot48_eval.SlotPredictor
 
 
 def evaluate_slot48(
-    model: SlotPredictor,
+    model: nn.Module | slot48_eval.SlotPredictor,
     charts: list[datasets.DdclChart],
     *,
     seed: int = 42,
     thresholds: tuple[float, ...] = DEFAULT_THRESHOLDS,
+    device: torch.device | None = None,
+    amp_dtype: torch.dtype | None = None,
 ) -> Slot48EvalReport:
     """Predict every val chart and pool ``M-slot48``.
 
     Args:
-        model: PyTorch model with DDCL placement inputs.
+        model: PyTorch model or duck-typed :class:`SlotPredictor` stub.
         charts: Loaded beat-grid charts.
         seed: Null-shuffle seed.
         thresholds: Sweep for max-F1.
+        device: Optional inference device.
+        amp_dtype: Optional autocast dtype.
 
     Returns:
-        Pooled report.
+        Pooled :class:`Slot48EvalReport`.
 
     Raises:
         ValueError: If ``charts`` is empty.
     """
     if not charts:
         raise ValueError("charts must be non-empty")
-    rng = np.random.default_rng(seed)
-    pred_parts: list[np.ndarray] = []
-    tgt_parts: list[np.ndarray] = []
-    for chart in charts:
-        pred_parts.append(predict_chart_slots(model, chart))
-        tgt_parts.append(chart.slots)
-    pred_all = np.concatenate(pred_parts, axis=0)
-    tgt_all = np.concatenate(tgt_parts, axis=0)
-    counts_05 = counts_at_threshold(pred_all, tgt_all, constants.THRESHOLD_05)
-    best_threshold = constants.THRESHOLD_05
-    best_f1 = counts_05.f_score
-    for threshold in thresholds:
-        score = counts_at_threshold(pred_all, tgt_all, threshold).f_score
-        if score > best_f1:
-            best_f1 = score
-            best_threshold = threshold
-    null_pred = shuffle_slot_null(tgt_all, rng)
-    null_counts = counts_at_threshold(null_pred, tgt_all, constants.THRESHOLD_05)
-    return Slot48EvalReport(
-        f1_at_05=counts_05.f_score,
-        f1_max=best_f1,
-        best_threshold=best_threshold,
-        null_f1_at_05=null_counts.f_score,
-        n_charts=len(charts),
-        n_beats=int(tgt_all.shape[0]),
-        counts_at_05=counts_05,
+    pred_parts = [
+        predict_chart_slots(model, chart, device=device, amp_dtype=amp_dtype)
+        for chart in charts
+    ]
+    tgt_parts = [chart.slots for chart in charts]
+    return slot48_eval.score_slot48_predictions(
+        pred_parts,
+        tgt_parts,
+        seed=seed,
+        threshold_primary=constants.THRESHOLD_05,
+        thresholds=thresholds,
+        citation="omalley2025ddcl",
+        published_f1_at_05=constants.PUBLISHED_F1_AT_05_EXPANDED,
+        published_f1_max=constants.PUBLISHED_F1_MAX_EXPANDED,
+    )
+
+
+def report_as_dict(report: Slot48EvalReport, *, weights: str) -> dict[str, object]:
+    """Serialize a DDCL report with Table 2 citations.
+
+    Args:
+        report: Pooled ``M-slot48`` scores.
+        weights: Checkpoint tag.
+
+    Returns:
+        JSON-serializable mapping.
+    """
+    return slot48_eval.report_as_dict(
+        report,
+        weights=weights,
+        citation="omalley2025ddcl",
+        published_f1_at_05=constants.PUBLISHED_F1_AT_05_EXPANDED,
+        published_f1_max=constants.PUBLISHED_F1_MAX_EXPANDED,
     )
 
 
@@ -338,31 +227,52 @@ def evaluate_decoded_timing(
     )
 
 
-def predict_chart_slots(model: SlotPredictor, chart: datasets.DdclChart) -> np.ndarray:
-    """Return slot probabilities for one chart.
+def predict_chart_slots(
+    model: nn.Module | slot48_eval.SlotPredictor,
+    chart: datasets.DdclChart,
+    *,
+    batch_size: int = constants.PREDICT_BEAT_BATCH,
+    device: torch.device | None = None,
+    amp_dtype: torch.dtype | None = None,
+) -> np.ndarray:
+    """Return slot probabilities for one chart in beat chunks.
 
     Args:
         model: Trained PyTorch placement model or duck-typed predictor stub.
-        chart: Loaded chart.
+        chart: Loaded beat-grid chart.
+        batch_size: Beats per forward chunk for ``nn.Module`` inference.
+        device: Optional inference device (defaults to model device or CPU).
+        amp_dtype: Optional autocast dtype (default fp32).
 
     Returns:
         Probabilities ``(n_beats, 48)``.
     """
     parts: list[np.ndarray] = []
     if isinstance(model, nn.Module):
-        first_param = next(model.parameters(), None)
-        device = first_param.device if first_param is not None else torch.device("cpu")
+        if device is None:
+            first_param = next(model.parameters(), None)
+            target_device = (
+                first_param.device if first_param is not None else torch.device("cpu")
+            )
+        else:
+            target_device = device
         was_training = model.training
         model.eval()
+        step = max(1, int(batch_size))
         try:
             with torch.no_grad():
-                for beat_idxs in datasets.iter_window_batches(chart):
-                    inputs_np = datasets.windows_for_indices(chart, beat_idxs)
+                for start in range(0, chart.n_beats, step):
+                    indices = np.arange(
+                        start, min(chart.n_beats, start + step), dtype=np.int64
+                    )
+                    inputs_np = datasets.windows_for_indices(chart, indices)
                     inputs_t = {
-                        k: torch.as_tensor(v, dtype=torch.float32, device=device)
+                        k: torch.as_tensor(v, dtype=torch.float32, device=target_device)
                         for k, v in inputs_np.items()
                     }
-                    pred = model(inputs_t).detach().float().cpu().numpy()
+                    with runtime.autocast_context(target_device, amp_dtype):
+                        probs = model(inputs_t)
+                    pred = probs.detach().float().cpu().numpy()
                     if pred.ndim == 1:
                         pred = pred.reshape(1, -1)
                     parts.append(pred)
@@ -924,42 +834,6 @@ def diagnose_decoded_timing(
     )
 
 
-def corrupt_chart_audio(
-    chart: datasets.DdclChart,
-    corruption: str,
-    *,
-    seed: int = onset_null_baseline.DEFAULT_SEED,
-) -> datasets.DdclChart:
-    """Return a chart copy with ``beat_audio`` corrupted and ``stream`` intact.
-
-    Args:
-        chart: Source beat-grid chart.
-        corruption: One of :data:`CORRUPTION_KINDS` (``none``, ``shuffle``, ``zeros``).
-        seed: RNG seed used when ``corruption == "shuffle"``.
-
-    Returns:
-        Chart with modified ``beat_audio`` and identical metadata/targets.
-
-    Raises:
-        ValueError: If ``corruption`` is not supported.
-    """
-    if corruption == "none":
-        return chart
-    if corruption == "zeros":
-        return dataclasses.replace(
-            chart,
-            beat_audio=np.zeros_like(chart.beat_audio),
-        )
-    if corruption == "shuffle":
-        rng = np.random.default_rng(seed)
-        order = rng.permutation(chart.beat_audio.shape[0])
-        return dataclasses.replace(
-            chart,
-            beat_audio=chart.beat_audio[order].copy(),
-        )
-    raise ValueError(f"unsupported corruption kind: {corruption!r}")
-
-
 @dataclasses.dataclass(frozen=True)
 class AudioGroundingConditionReport:
     """Slot, decoded ±20 ms, and prediction-shift metrics for one corruption mode.
@@ -1063,43 +937,6 @@ class AudioGroundingReport:
         }
 
 
-def _prediction_shift_stats(
-    baseline_preds: list[np.ndarray],
-    other_preds: list[np.ndarray],
-    *,
-    threshold: float,
-) -> tuple[float, float, float]:
-    """Compare corrupted slot probabilities and binary decisions against ``none``.
-
-    Args:
-        baseline_preds: Uncorrupted ``(n_beats, 48)`` probability arrays.
-        other_preds: Corrupted probability arrays aligned with ``baseline_preds``.
-        threshold: Occupancy cutoff for binary decisions.
-
-    Returns:
-        Tuple ``(mean_abs_prob_delta, slot_flip_rate, occupied_jaccard_distance)``.
-    """
-    base_all = np.concatenate(
-        [np.asarray(arr, dtype=np.float64) for arr in baseline_preds],
-        axis=0,
-    )
-    other_all = np.concatenate(
-        [np.asarray(arr, dtype=np.float64) for arr in other_preds],
-        axis=0,
-    )
-    mean_abs_delta = float(np.mean(np.abs(other_all - base_all)))
-    base_bin = base_all >= float(threshold)
-    other_bin = other_all >= float(threshold)
-    flip_rate = float(np.mean(base_bin != other_bin))
-    union = int(np.logical_or(base_bin, other_bin).sum())
-    if union == 0:
-        jaccard_dist = 0.0
-    else:
-        intersection = int(np.logical_and(base_bin, other_bin).sum())
-        jaccard_dist = 1.0 - float(intersection) / float(union)
-    return mean_abs_delta, flip_rate, jaccard_dist
-
-
 def grounding_report_from_predictions(
     charts: list[datasets.DdclChart],
     predictions_by_corruption: dict[str, list[np.ndarray]],
@@ -1148,14 +985,12 @@ def grounding_report_from_predictions(
     for kind in CORRUPTION_KINDS:
         preds = predictions_by_corruption[kind]
         pred_all = np.concatenate(preds, axis=0)
-        counts_primary = counts_at_threshold(pred_all, tgt_all, float(threshold))
-        best_threshold = float(threshold)
-        best_f1 = counts_primary.f_score
-        for tau in thresholds:
-            score = counts_at_threshold(pred_all, tgt_all, float(tau)).f_score
-            if score > best_f1:
-                best_f1 = score
-                best_threshold = float(tau)
+        counts_primary, best_f1, best_threshold = slot48_eval.sweep_slot_counts(
+            pred_all,
+            tgt_all,
+            threshold=float(threshold),
+            thresholds=thresholds,
+        )
 
         masks = [
             (np.asarray(pred, dtype=np.float64) >= float(threshold)).astype(np.float64)
