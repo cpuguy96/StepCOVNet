@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-01: Commit and push to the remote after each verified phase on multi-phase tasks
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 00:35:29 |
+| **Category** | convention |
+| **Summary** | User steered that during the 5-phase codebase cleanup/optimization, commits should have been pushed after each verified phase rather than held locally until the end of all phases. |
+| **Artifact** | `AGENTS.md` (`Before commit / push` -> `Agent commits`); no new always-on rule added |
+| **Action taken** | Added explicit rule to `AGENTS.md` under `Agent commits` requiring multi-phase tasks to commit and push after each verified phase rather than batching local commits |
+| **Related** | `steering-correction-promotion` |
+
 ### JRN-20261127-01: Never declare a stage saturated or nudge to move on without auditing worst error slices first
 
 | Field | Value |
