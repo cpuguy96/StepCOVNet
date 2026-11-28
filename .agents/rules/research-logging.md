@@ -1,7 +1,7 @@
 ---
 description: Log EXP/NOTE and paper citations in docs/research/
 globs: docs/research/**
-alwaysApply: false
+trigger: glob
 ---
 
 # Research logging
@@ -23,4 +23,4 @@ Prior art is **cited** (ledger key + BibTeX). Recreating a published pipeline is
 
 **Training seeds:** `reproducibility.apply_training_seed(seed)` before model construction and dataset creation.
 
-Full workflow: [research-session-workflow skill](../../.cursor/skills/research-session-workflow/SKILL.md). Log runs in `EXPERIMENT_LOG.md`; citations in `PAPER_LEDGER.md` + `paper.bib`; `PAPER_OUTLINE.md` only when drafting the paper.
+Full workflow: [research-session-workflow skill](../skills/research-session-workflow/SKILL.md). Log runs in `EXPERIMENT_LOG.md`; citations in `PAPER_LEDGER.md` + `paper.bib`; `PAPER_OUTLINE.md` only when drafting the paper.

@@ -26,7 +26,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 
 ## For agents and contributors
 
-Cursor rule [research-logging.mdc](../../.cursor/rules/research-logging.mdc) requires persisting **both** discussion and experiments here during research work, not only in chat.
+Rule [research-logging.md](../../.agents/rules/research-logging.md) requires persisting **both** discussion and experiments here during research work, not only in chat.
 
 **Workflow:**
 

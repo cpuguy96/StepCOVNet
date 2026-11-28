@@ -74,14 +74,14 @@ This section is for **orchestrator / monitor agents** and **sub-agents**. The re
 | **Monitor (parent)** | Assign work packages, enforce [Locked decisions](#locked-decisions-pre-build), run verification commands, merge sub-agent output, update [Phase tracker](#phase-tracker). **Does not** parallelize conflicting file edits. |
 | **Sub-agent** | One [work package](#work-packages) at a time; touch only listed files; report exit criteria + pytest output. |
 
-Sub-agents do **not** auto-coordinate. The monitor must enforce **file ownership** and **phase order** below. If using Cursor `Task` / subagents, paste the [Sub-agent brief template](#sub-agent-brief-template) plus one work package per invocation.
+Sub-agents do **not** auto-coordinate. The monitor must enforce **file ownership** and **phase order** below. If using agent subagents, paste the [Sub-agent brief template](#sub-agent-brief-template) plus one work package per invocation.
 
 ### Invariants (every agent)
 
 - **Scope:** New code under `src/stepcovnet/onset_events/` and `tests/onset_events/` only, plus `scripts/train_onset_event.py`, `configs/event/audio_baseline.json`, and edits to this doc’s phase tracker. **Do not** change dense onset (`train_onset.py`, frame `datasets.create_dataset`, `models.build_unet_wavenet_model` sigmoid head) except **reuse** via import/copy patterns noted in the plan.
 - **I/O:** Raw audio in; continuous **seconds** + confidence out; **no** `HOP_COEFF` in labels/outputs; **no** mel/MERT feature files for this track.
 - **Constants:** `target_sample_rate=44100`, `max_audio_seconds=300`, `num_queries=1024`, `n_max_onsets=1024`, skip charts with **>1024** steps, `batch_size=1`, Hungarian matching, `λ_cls=1`, `λ_time=5`, `tolerance_sec=0.02`.
-- **Python:** `python` from repository root with project venv activated (CPU). WSL GPU: `python` after `source scripts/wsl_gpu_env.sh` (override with `STEPCOVNET_WSL_PYTHON`). See [wsl-gpu-stepcovnet](../../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+- **Python:** `python` from repository root with project venv activated (CPU). WSL GPU: `python` after `source scripts/wsl_gpu_env.sh` (override with `STEPCOVNET_WSL_PYTHON`). See [wsl-gpu-stepcovnet](../../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md).
 - **Tests (repo root):**  
   `python -m pytest tests/onset_events/ -m "not slow" --cov=stepcovnet.onset_events`  
   (per-package command in work packages may narrow path.)
@@ -616,7 +616,7 @@ Training command (target):
 python scripts/train_onset_event.py --config=configs/event/audio_baseline.json
 ```
 
-GPU on Windows: use WSL from repo root per [wsl-gpu-stepcovnet](../../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) (`STEPCOVNET_WSL_PYTHON` overrides the default WSL venv python).
+GPU on Windows: use WSL from repo root per [wsl-gpu-stepcovnet](../../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) (`STEPCOVNET_WSL_PYTHON` overrides the default WSL venv python).
 
 ---
 

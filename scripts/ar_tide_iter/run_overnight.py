@@ -8,7 +8,7 @@ Usage (repo root):
     venv\\Scripts\\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --once
     venv\\Scripts\\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --hours 6
 
-    # Unattended lattice planner (not for Cursor autoresearch skill):
+    # Unattended lattice planner (not for agent autoresearch skill):
     venv\\Scripts\\python.exe scripts/ar_tide_iter/run_overnight.py --hours 7 --allow-planner
 
 Exit codes (``--autoresearch`` remaps goal-not-met to 0):
@@ -380,7 +380,7 @@ def main() -> int:
         if not args.allow_planner:
             print(
                 "Refusing unattended --hours without --allow-planner.\n"
-                "For Cursor autoresearch use:\n"
+                "For agent autoresearch use:\n"
                 "  run_overnight.py --autoresearch --hours N\n"
                 "or per iteration:\n"
                 "  run_overnight.py --autoresearch --once",

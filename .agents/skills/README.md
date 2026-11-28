@@ -1,8 +1,8 @@
 # Project skills
 
-Procedure index for Cursor agents. Routed from [AGENTS.md](../../AGENTS.md).
+Procedure index for AI agents. Routed from [AGENTS.md](../../AGENTS.md).
 
-**Skills = multi-step playbooks.** Short policies live in [`.cursor/rules/`](../rules/). Agent state (layout, journal, ownership): [docs/agents/README.md](../../docs/agents/README.md).
+**Skills = multi-step playbooks.** Short policies live in [`.agents/rules/`](../rules/). Agent state (layout, journal, ownership): [docs/agents/README.md](../../docs/agents/README.md).
 
 ## Invocation
 
@@ -38,11 +38,11 @@ Canonical catalog: [docs/agents/agent-brain.md](../../docs/agents/agent-brain.md
 
 | Rule | Globs |
 | ---- | ----- |
-| `scripts-execution.mdc` | `scripts/**` |
-| `design-doc-fields.mdc` | `docs/**` |
-| `python-style.mdc` | `**/*.py` |
-| `python-tests.mdc` | `{src,scripts,tests}/**/*` |
-| `research-logging.mdc` | `docs/research/**` |
+| [`scripts-execution.md`](../rules/scripts-execution.md) | `scripts/**` |
+| [`design-doc-fields.md`](../rules/design-doc-fields.md) | `docs/**` |
+| [`python-style.md`](../rules/python-style.md) | `**/*.py` |
+| [`python-tests.md`](../rules/python-tests.md) | `{src,scripts,tests}/**/*` |
+| [`research-logging.md`](../rules/research-logging.md) | `docs/research/**` |
 
 Maintain this table during [agent-brain-refresh](agent-brain-refresh/SKILL.md).
 
@@ -60,6 +60,6 @@ Maintain this table during [agent-brain-refresh](agent-brain-refresh/SKILL.md).
 
 ## Adding a skill
 
-1. Create `.cursor/skills/<name>/SKILL.md` (Cursor create-skill format).
+1. Create `.agents/skills/<name>/SKILL.md` (standard `SKILL.md` format with `name` and `description` frontmatter).
 2. Add a row to **Playbooks** above.
 3. Prepend [self-journal.md](../../docs/agents/self-journal.md) if the skill closes a documented gap.

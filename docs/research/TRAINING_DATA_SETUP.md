@@ -242,7 +242,7 @@ venv\Scripts\python.exe scripts/extract_mert_features.py `
   --beside_audio --device=cuda --skip_existing
 ```
 
-Then train: `configs/dense/final_data_mert_bilstm_scoreboard_50t_100v.json` or full `final_data_mert_bilstm.json` — see [wsl-gpu-stepcovnet skill](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+Then train: `configs/dense/final_data_mert_bilstm_scoreboard_50t_100v.json` or full `final_data_mert_bilstm.json` — see [wsl-gpu-stepcovnet skill](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md).
 
 ---
 

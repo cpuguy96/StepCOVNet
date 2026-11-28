@@ -4,7 +4,7 @@ Iterative improvements to agent behavior, process, and conventions on this proje
 
 **Order:** newest entries first (prepend below).
 
-**Same-turn promotion:** The journal is a receipt, not the fix. Every entry must cite an **Artifact** path (rule, skill, or code) created or updated **in the same turn** before the JRN is written. See [agent-self-improvement skill](../../.cursor/skills/agent-self-improvement/SKILL.md).
+**Same-turn promotion:** The journal is a receipt, not the fix. Every entry must cite an **Artifact** path (rule, skill, or code) created or updated **in the same turn** before the JRN is written. See [agent-self-improvement skill](../../.agents/skills/agent-self-improvement/SKILL.md).
 
 ## When to prepend
 
@@ -15,7 +15,7 @@ Iterative improvements to agent behavior, process, and conventions on this proje
 - A mistake that wasted time or produced wrong conclusions
 - A fix or workaround that should become default
 - A user-established convention worth preserving
-- A repeated workflow missing from `.cursor/skills/`
+- A repeated workflow missing from `.agents/skills/`
 
 **Periodically** during work: after discrete tasks with process lessons, when the same friction recurs, or before switching task areas — journal in the same session; do not defer everything to session end.
 

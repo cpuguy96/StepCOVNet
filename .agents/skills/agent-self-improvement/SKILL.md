@@ -38,4 +38,4 @@ See [steering-correction-promotion § JRN receipt](../steering-correction-promot
 ## Do not
 
 - Store research findings in the journal (use EXPERIMENT_LOG / DISCUSSION_NOTES)
-- Create skills in `~/.cursor/skills-cursor/` (Cursor internal)
+- Create skills in IDE-internal built-in skill directories instead of project `.agents/skills/`

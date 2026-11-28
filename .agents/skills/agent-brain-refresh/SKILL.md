@@ -14,13 +14,13 @@ User phrases **refresh all rules**, **refresh agent brain**, and **audit rules**
 
 | You do | You do not |
 | ------ | ---------- |
-| **Read every** `.cursor/rules/*.mdc` from disk this turn — re-ground on bodies, not only `agent-brain.md` or audit stdout | Assume summarized chat memory is current |
-| Reconcile rules ↔ skills ↔ `AGENTS.md` ↔ catalogs; optimize scope and dedupe | Reload Cursor’s rule injection (alwaysApply is automatic) |
+| **Read every** `.agents/rules/*.md` from disk this turn — re-ground on bodies, not only `agent-brain.md` or audit stdout | Assume summarized chat memory is current |
+| Reconcile rules ↔ skills ↔ `AGENTS.md` ↔ catalogs; optimize scope and dedupe | Manually duplicate always-on rules into `AGENTS.md` (`trigger: always_on` is automatic) |
 | Run `audit_agent_brain.py` for inventory + drift; **you** edit catalogs if needed | Let the script write markdown |
 | Report **clean — no edits** when audit OK and content already agrees | Treat audit-only as sufficient without reading rule files |
 | Edit rule/skill/router files only when judgment finds drift, waste, or duplication | Add always-on rules or load multiple `AGENTS.md` indexes |
 
-**Rules are the center; the brain is the scope.** “All rules” means each `.mdc` is read and judged; refresh still covers skills and routing docs that must stay aligned with those rules.
+**Rules are the center; the brain is the scope.** “All rules” means each `.agents/rules/*.md` file is read and judged; refresh still covers skills and routing docs that must stay aligned with those rules.
 
 ## When to run
 
@@ -35,19 +35,19 @@ User phrases **refresh all rules**, **refresh agent brain**, and **audit rules**
 
 | File                                                              | Role                                                                        |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `.cursor/rules/*.mdc`                                             | **Source of truth** for behavior — Cursor loads `alwaysApply` automatically |
+| `.agents/rules/*.md`                                              | **Source of truth** for behavior (`trigger: always_on` vs `trigger: glob`) |
 | [docs/agents/agent-brain.md](../../../docs/agents/agent-brain.md) | **Human catalog** — **you** update during refresh; not script-generated     |
 | [AGENTS.md](../../../AGENTS.md)                                   | **Router only** — task index; link to catalog                               |
-| [.cursor/skills/README.md](../README.md)                          | Skill index + scoped-rules summary                                          |
+| [.agents/skills/README.md](../README.md)                          | Skill index + scoped-rules summary                                          |
 | `scripts/audit_agent_brain.py`                                    | **Read-only** — prints disk inventory + drift; does not write files         |
 
-**Minimize `alwaysApply` rules** — each one loads every turn. Prefer scoped rules (`globs`) or skills. No hard budget, but justify new always-on rules in JRN.
+**Minimize always-on rules (`trigger: always_on`)** — each one loads every turn. Prefer scoped rules (`trigger: glob` + `globs`) or skills. No hard budget, but justify new always-on rules in JRN.
 
 ## Refresh workflow
 
 ### 1. Re-read all rules (agent)
 
-Read **each** file in `.cursor/rules/*.mdc` (always-apply and scoped). Note scope, overlap with skills, and stale guidance.
+Read **each** file in `.agents/rules/*.md` (always-on and scoped). Note scope, overlap with skills, and stale guidance.
 
 ### 2. Audit disk vs indexes (script)
 
@@ -69,15 +69,15 @@ Use stdout **disk inventory** as a checklist. Fix any **DRIFT** lines.
 
 | Check                                     | Fix                                                         |
 | ----------------------------------------- | ----------------------------------------------------------- |
-| Each `*/SKILL.md` under `.cursor/skills/` | Row in skills README **Playbooks**                          |
-| Each scoped `.mdc`                        | Row in skills README **Agent brain** table + agent-brain.md |
+| Each `*/SKILL.md` under `.agents/skills/` | Row in skills README **Playbooks**                          |
+| Each scoped `.agents/rules/*.md`          | Row in skills README **Agent brain** table + agent-brain.md |
 | New skill needs routing                   | One row in AGENTS.md task index only                        |
 | Procedure text in AGENTS.md               | Move to skill; leave link                                   |
 
 ### 5. Optimize
 
 - **Merge** scoped rules that share globs or topic
-- **Demote** mistaken `alwaysApply: true` → set `globs`, `alwaysApply: false`
+- **Demote** mistaken `trigger: always_on` → set `globs`, `trigger: glob`
 - **Avoid** adding always-on rules unless every task needs them
 - **Delete** orphan rules; grep repo for stale filenames
 - **Dedupe** — one enforcement home (rule, skill, or code — not all three)
@@ -94,7 +94,7 @@ Exit 0 before finishing.
 ### 7. Report
 
 - **Clean** or drift fixes (bullets)
-- alwaysApply vs scoped counts (informational)
+- always-on vs scoped counts (informational)
 - Files you edited (or **none**)
 
 ### 8. Journal (if material changes)
@@ -103,7 +103,7 @@ Prepend JRN with **Artifact** paths when refresh changed rules, catalog, or inde
 
 ## Quick refresh (after promotion)
 
-1. Skim changed `.mdc` / skill files
+1. Skim changed rule / skill files
 2. `audit_agent_brain.py` (read)
 3. Update agent-brain.md / README if needed
 4. Re-run audit

@@ -19,7 +19,7 @@ North star: [PIPELINE_ARCHITECTURE.md](../../../docs/research/PIPELINE_ARCHITECT
 
 Tag changes by pipeline stage: `pre` | `model` | `post` | `metric` | `train`.
 
-Plan docs with JSON/schemas: [design-doc-fields.mdc](../../rules/design-doc-fields.mdc) and [DATASET_PREP_PIPELINE.md §6.3](../../../docs/research/DATASET_PREP_PIPELINE.md#63-schema-versions-and-field-rationale).
+Plan docs with JSON/schemas: [design-doc-fields.md](../../rules/design-doc-fields.md) and [DATASET_PREP_PIPELINE.md §6.3](../../../docs/research/DATASET_PREP_PIPELINE.md#63-schema-versions-and-field-rationale).
 
 ## Log experiment (`EXP-YYYYMMDD-NN`)
 

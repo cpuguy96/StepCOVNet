@@ -104,7 +104,7 @@ Use **session_brief** config diffs (`config_changes_vs_previous`, `last_run_vs_s
 
 ### How to run
 
-**One prompt (keep Cursor open — recommended):**
+**One prompt (keep the agent session open — recommended):**
 
 ```text
 Run autoresearch.
@@ -114,13 +114,13 @@ Budget: 7 hours.
 Go — do not ask me between runs.
 ```
 
-Agent follows [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md) + [ar-tide-overfit profile](../../.cursor/skills/autoresearch/profiles/ar-tide-overfit.md). **Not** bare `run_overnight --hours` (use `--autoresearch --hours` or `--allow-planner`).
+Agent follows [.agents/skills/autoresearch/SKILL.md](../../.agents/skills/autoresearch/SKILL.md) + [ar-tide-overfit profile](../../.agents/skills/autoresearch/profiles/ar-tide-overfit.md). **Not** bare `run_overnight --hours` (use `--autoresearch --hours` or `--allow-planner`).
 
 **Budget:** use the **full** wall-clock budget until goal or deadline — see skill § Budget discipline (~40–50 tide runs per 7 h). Do not stop when a pre-written queue empties.
 
 **Agent autoresearch (manual steps):**
 
-Load [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md), then each cycle:
+Load [.agents/skills/autoresearch/SKILL.md](../../.agents/skills/autoresearch/SKILL.md), then each cycle:
 
 ```text
 venv\Scripts\python.exe scripts/ar_tide_iter/session_brief.py
@@ -211,6 +211,6 @@ Example reasoning: iter43 scratch with SS=0.2 and lr=2e-5 only reached 56/634 te
 
 - Repo root: `venv\Scripts\python.exe` (auto WSL GPU dispatch)
 - GPU override: `STEPCOVNET_FORCE_GPU=1` or `run_exp.py --force`
-- Skills: [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md)
+- Skills: [.agents/skills/wsl-gpu-stepcovnet/SKILL.md](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md)
 
 **Mandate:** single-song overfit from **scratch** must reach teacher 634/634, then close free-run decode gap — no checkpoint chaining.

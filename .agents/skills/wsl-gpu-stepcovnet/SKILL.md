@@ -92,4 +92,4 @@ Without `source wsl_gpu_env.sh`, PyTorch may silently fall back to CPU.
 
 ## Console and logs
 
-When running scripts under `scripts/`, follow scoped rule [scripts-execution.mdc](../../rules/scripts-execution.mdc): visible terminal, **TensorBoard up before/with training**, captures under `logs/`, scratch under `_tmp/`.
+When running scripts under `scripts/`, follow scoped rule [scripts-execution.md](../../rules/scripts-execution.md): visible terminal, **TensorBoard up before/with training**, captures under `logs/`, scratch under `_tmp/`.

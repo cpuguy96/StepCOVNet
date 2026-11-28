@@ -23,31 +23,31 @@ class ParseFrontmatterTest(unittest.TestCase):
             "---\n"
             "description: Lint for Python\n"
             'globs: "**/*.py"\n'
-            "alwaysApply: false\n"
+            "trigger: glob\n"
             "---\n"
             "# body\n"
         )
         meta = brain._parse_frontmatter(text)
         self.assertEqual(meta["globs"], "**/*.py")
-        self.assertEqual(meta["alwaysApply"], "false")
+        self.assertEqual(meta["trigger"], "glob")
 
     def test_strips_bom(self) -> None:
-        text = "\ufeff---\ndescription: Entry routing\nalwaysApply: true\n---\n"
+        text = "\ufeff---\ndescription: Entry routing\ntrigger: always_on\n---\n"
         meta = brain._parse_frontmatter(text)
         self.assertEqual(meta["description"], "Entry routing")
-        self.assertEqual(meta["alwaysApply"], "true")
+        self.assertEqual(meta["trigger"], "always_on")
 
     def test_returns_empty_when_missing_frontmatter(self) -> None:
         self.assertEqual(brain._parse_frontmatter("# no yaml\n"), {})
 
 
 class StaleRuleNamesTest(unittest.TestCase):
-    def test_flags_unknown_mdc_references(self) -> None:
+    def test_flags_unknown_rule_md_and_legacy_mdc_references(self) -> None:
         stale = brain._stale_rule_names(
-            "see deleted-rule.mdc and kept.mdc",
-            {"kept.mdc"},
+            "see ../rules/deleted-rule.md, .agents/rules/kept.md, and old-rule.mdc",
+            {"kept.md"},
         )
-        self.assertEqual(stale, ["deleted-rule.mdc"])
+        self.assertEqual(stale, ["deleted-rule.md", "old-rule.mdc"])
 
 
 class SkillsInReadmeTest(unittest.TestCase):
@@ -61,13 +61,13 @@ class FormatDiskInventoryTest(unittest.TestCase):
     def test_lists_always_and_scoped_rules(self) -> None:
         rules = [
             {
-                "file": "entry.mdc",
+                "file": "entry.md",
                 "always_apply": "true",
                 "globs": "",
                 "description": "Route",
             },
             {
-                "file": "scoped.mdc",
+                "file": "scoped.md",
                 "always_apply": "false",
                 "globs": "scripts/**",
                 "description": "Scripts",
@@ -75,24 +75,24 @@ class FormatDiskInventoryTest(unittest.TestCase):
         ]
         text = brain.format_disk_inventory(rules, ["demo-skill"])
         self.assertIn("Always-apply (1)", text)
-        self.assertIn("entry.mdc", text)
+        self.assertIn("entry.md", text)
         self.assertIn("Scoped (1)", text)
         self.assertIn("demo-skill", text)
 
 
 class AuditFixtureTest(unittest.TestCase):
     def _write_minimal_repo(self, root: pathlib.Path) -> None:
-        rules = root / ".cursor" / "rules"
-        skills = root / ".cursor" / "skills" / "demo-skill"
+        rules = root / ".agents" / "rules"
+        skills = root / ".agents" / "skills" / "demo-skill"
         rules.mkdir(parents=True)
         skills.mkdir(parents=True)
-        (rules / "entry.mdc").write_text(
-            "---\ndescription: Entry\nalwaysApply: true\n---\n",
+        (rules / "entry.md").write_text(
+            "---\ndescription: Entry\ntrigger: always_on\n---\n",
             encoding="utf-8",
         )
         (skills / "SKILL.md").write_text("# demo\n", encoding="utf-8")
         (root / "AGENTS.md").write_text("# router\n", encoding="utf-8")
-        (root / ".cursor" / "skills" / "README.md").write_text(
+        (root / ".agents" / "skills" / "README.md").write_text(
             "| x | [demo](demo-skill/SKILL.md) |\n",
             encoding="utf-8",
         )
@@ -101,11 +101,11 @@ class AuditFixtureTest(unittest.TestCase):
         return mock.patch.multiple(
             brain,
             REPO=root,
-            RULES_DIR=root / ".cursor" / "rules",
-            SKILLS_DIR=root / ".cursor" / "skills",
+            RULES_DIR=root / ".agents" / "rules",
+            SKILLS_DIR=root / ".agents" / "skills",
             CATALOG_PATH=root / "docs/agents/agent-brain.md",
             AGENTS_MD=root / "AGENTS.md",
-            SKILLS_README=root / ".cursor/skills/README.md",
+            SKILLS_README=root / ".agents/skills/README.md",
         )
 
     def test_audit_passes_on_minimal_aligned_repo(self) -> None:
@@ -121,7 +121,7 @@ class AuditFixtureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             self._write_minimal_repo(root)
-            (root / ".cursor" / "skills" / "README.md").write_text(
+            (root / ".agents" / "skills" / "README.md").write_text(
                 "| x | [other](other-skill/SKILL.md) |\n",
                 encoding="utf-8",
             )
@@ -133,19 +133,43 @@ class AuditFixtureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             self._write_minimal_repo(root)
+            (root / "AGENTS.md").write_text(
+                ".agents/rules/old-rule.md\n", encoding="utf-8"
+            )
+            with self._patch_repo(root), redirect_stdout(io.StringIO()):
+                code = brain.audit()
+            self.assertEqual(code, 1)
+
+    def test_audit_fails_on_legacy_mdc_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self._write_minimal_repo(root)
             (root / "AGENTS.md").write_text("old-rule.mdc\n", encoding="utf-8")
             with self._patch_repo(root), redirect_stdout(io.StringIO()):
                 code = brain.audit()
             self.assertEqual(code, 1)
 
+    def test_load_rules_supports_legacy_always_apply_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self._write_minimal_repo(root)
+            (root / ".agents" / "rules" / "legacy.md").write_text(
+                "---\ndescription: Legacy\nalwaysApply: true\n---\n",
+                encoding="utf-8",
+            )
+            with self._patch_repo(root):
+                rules = brain.load_rules()
+            by_file = {r["file"]: r for r in rules}
+            self.assertEqual(by_file["legacy.md"]["always_apply"], "true")
+
     def test_many_always_apply_rules_do_not_fail_audit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             self._write_minimal_repo(root)
-            rules = root / ".cursor" / "rules"
+            rules = root / ".agents" / "rules"
             for idx in range(7):
-                (rules / f"rule{idx}.mdc").write_text(
-                    f"---\ndescription: R{idx}\nalwaysApply: true\n---\n",
+                (rules / f"rule{idx}.md").write_text(
+                    f"---\ndescription: R{idx}\ntrigger: always_on\n---\n",
                     encoding="utf-8",
                 )
             with self._patch_repo(root), redirect_stdout(io.StringIO()):

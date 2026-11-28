@@ -1,6 +1,6 @@
 ---
 description: Refresh repo state before routing edits; portable paths, scratch hygiene, Windows git hygiene
-alwaysApply: true
+trigger: always_on
 ---
 
 # State refresh and portable paths
@@ -11,7 +11,7 @@ Before edits that touch **linkages** — routing (`AGENTS.md`), README, workflow
 
 1. `git status` and `git log -1 --oneline`
 2. `git ls-files` for paths you will cite or link
-3. Read target files; confirm they exist on disk (especially gitignored `docs/` and `.cursor/`)
+3. Read target files; confirm they exist on disk (especially gitignored `docs/` and `.agents/`)
 4. For WSL helpers: prefer `scripts/wsl_common.sh` + env vars over hardcoded clone or username paths
 
 If a linked file is missing, fix the link or create the target — do not leave broken references in **tracked** files.
@@ -46,7 +46,7 @@ Never hardcode `C:\Users\...` or `/mnt/c/Users/<name>/...` clone paths. WSL `$HO
 
 **Do not** create `tmp_*` or `_tmp_*` files at the **repository root**. Delete `_tmp/` contents when done; never commit them.
 
-On user steering about agent process (paths, hygiene, “remember this”), run [steering-correction-promotion](../../.cursor/skills/steering-correction-promotion/SKILL.md) **same turn** — journal alone is incomplete.
+On user steering about agent process (paths, hygiene, “remember this”), run [steering-correction-promotion](../skills/steering-correction-promotion/SKILL.md) **same turn** — journal alone is incomplete.
 
 ## Git on Windows (PowerShell)
 

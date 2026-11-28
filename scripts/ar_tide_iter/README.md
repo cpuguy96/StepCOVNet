@@ -9,8 +9,8 @@ Train/eval loop for free-run **634/634 @ 20 ms** experiments on tide.
 | `scripts/ar_tide_iter/run_overnight.py` | Agent autoresearch: `--autoresearch --once` or `--autoresearch --hours N`; lattice planner: `--hours --allow-planner` |
 | `scripts/ar_tide_iter/run_summary.py` | JSON summary + exit-code remap for `--autoresearch` |
 | `scripts/ar_tide_iter/overnight_planner.py` | Unattended JSON lattice search (not for meaningful autoresearch) |
-| `.cursor/skills/autoresearch/SKILL.md` | Generic one-prompt autoresearch loop |
-| `.cursor/skills/autoresearch/profiles/ar-tide-overfit.md` | Tide iter: brief, `next_experiment.json`, `--once` |
+| `.agents/skills/autoresearch/SKILL.md` | Generic one-prompt autoresearch loop |
+| `.agents/skills/autoresearch/profiles/ar-tide-overfit.md` | Tide iter: brief, `next_experiment.json`, `--once` |
 | `scripts/ar_tide_iter/run_exp.py` | One experiment: build config, train (WSL GPU), offline `--ar_decode` eval, append logs |
 | `scripts/ar_tide_iter/results_history.py` | Parse `results.jsonl` and config snapshots for briefs |
 | `scripts/ar_tide_iter/experiments.json` | Registry — one recipe per id (tracked) |
@@ -31,7 +31,7 @@ venv\Scripts\python.exe scripts/ar_tide_iter/run_overnight.py --autoresearch --o
 
 Look for `=== AUTORESEARCH_SUMMARY ===` in output (teacher/free-run counts, remapped exit code).
 
-**Budgeted autoresearch:** when the user gives hours (e.g. 7 h), the agent must **replan and run until deadline or 634/634** — not stop when a fixed plan list ends. See [.cursor/skills/autoresearch/SKILL.md](../../.cursor/skills/autoresearch/SKILL.md) § Budget discipline.
+**Budgeted autoresearch:** when the user gives hours (e.g. 7 h), the agent must **replan and run until deadline or 634/634** — not stop when a fixed plan list ends. See [.agents/skills/autoresearch/SKILL.md](../../.agents/skills/autoresearch/SKILL.md) § Budget discipline.
 
 **Single manual experiment** (recipe already in `experiments.json`):
 

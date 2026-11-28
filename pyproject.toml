@@ -130,7 +130,7 @@ select = [
     "N",      # pep8-naming
     "SIM",    # flake8-simplify
     "PTH",    # flake8-use-pathlib
-    "PLC0415",  # import-outside-top-level (see python-style.mdc exceptions)
+    "PLC0415",  # import-outside-top-level (see python-style.md exceptions)
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)

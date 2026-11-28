@@ -233,7 +233,7 @@ When writing methods or results:
 2. State which stage each experiment varied (see ablation tags in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md)).
 3. Separate **inference POST** from **metric POST** when they differ (e.g. min-gap in mingap metric only).
 
-Update [PAPER_OUTLINE.md](PAPER_OUTLINE.md) incrementally when promoting findings for publication — see [research-session-workflow skill](../../.cursor/skills/research-session-workflow/SKILL.md). Experiment history stays in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md).
+Update [PAPER_OUTLINE.md](PAPER_OUTLINE.md) incrementally when promoting findings for publication — see [research-session-workflow skill](../../.agents/skills/research-session-workflow/SKILL.md). Experiment history stays in [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md).
 
 ---
 

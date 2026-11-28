@@ -1,7 +1,7 @@
 ---
 description: Visible console, TensorBoard with train jobs, logs/_tmp captures, no repo-root tmp
 globs: scripts/**
-alwaysApply: false
+trigger: glob
 ---
 
 # Script execution — console and temp output
@@ -10,7 +10,7 @@ Applies when running or editing files under `scripts/`.
 
 ## Visible console
 
-- Stream train/decode/long jobs to a **visible Cursor terminal**; log-only redirect as the sole sink is not OK.
+- Stream train/decode/long jobs to a **visible terminal**; log-only redirect as the sole sink is not OK.
 - **Console + `logs/<topic>.log` (tee)** is fine — terminal remains primary.
 - Never launch a long job with `> logs/... 2>&1`, `*> logs/...`, or any equivalent that hides live output from the terminal.
 
@@ -24,7 +24,7 @@ if ($code -ne 0) { exit $code }
 
 **PowerShell anti-pattern (hides the console):** never combine a file redirect with Tee like
 `1> logs/out.json 2>&1 | Tee-Object ...` or `> logs/out.log 2>&1 | Tee-Object ...`.
-Stdout is bound to the file **before** the pipeline, so Tee (and the Cursor terminal) receive nothing — progress vanishes into the file only. That violates visible-console even if a log path looks correct.
+Stdout is bound to the file **before** the pipeline, so Tee (and the terminal) receive nothing — progress vanishes into the file only. That violates visible-console even if a log path looks correct.
 
 For scripts that split **JSON on stdout** / **progress on stderr** (e.g. `eval_ar_onset_offline.py`):
 
@@ -85,7 +85,7 @@ When the user says **rerun** / **increase epochs** / tweak hyperparams on an exi
 
 ## GPU scheduling
 
-WSL GPU jobs are **serial**: one training run at a time; no parallel GPU training + GPU inference. Enforced by `logs/gpu_wsl.lock` in `stepcovnet.wsl_gpu_lock` (see [wsl-gpu-stepcovnet skill](../../skills/wsl-gpu-stepcovnet/SKILL.md) § GPU scheduling).
+WSL GPU jobs are **serial**: one training run at a time; no parallel GPU training + GPU inference. Enforced by `logs/gpu_wsl.lock` in `stepcovnet.wsl_gpu_lock` (see [wsl-gpu-stepcovnet skill](../skills/wsl-gpu-stepcovnet/SKILL.md) § GPU scheduling).
 
 ## PowerShell note
 

@@ -1,6 +1,6 @@
 ---
 description: Which Python executable to use — Windows venv (CPU) vs WSL (GPU)
-alwaysApply: true
+trigger: always_on
 ---
 
 # Python environment
@@ -40,7 +40,7 @@ venv\Scripts\python.exe -m pip ...
 
 ## WSL GPU (summary)
 
-Full command templates: [wsl-gpu-stepcovnet skill](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+Full command templates: [wsl-gpu-stepcovnet skill](../skills/wsl-gpu-stepcovnet/SKILL.md).
 
 Shared shell vars: `scripts/wsl_common.sh`. Bootstrap: `scripts/wsl_ensure_env.sh`. Always `source scripts/wsl_gpu_env.sh` before PyTorch GPU import. Set `STEPCOVNET_IN_WSL=1`. If already inside WSL, do not nest another `wsl` call.
 

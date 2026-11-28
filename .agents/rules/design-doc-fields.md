@@ -1,7 +1,7 @@
 ---
 description: Schema versions and per-field rationale in design/plan docs
 globs: docs/**
-alwaysApply: false
+trigger: glob
 ---
 
 # Design doc fields

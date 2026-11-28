@@ -14,14 +14,16 @@ import pathlib
 import re
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-RULES_DIR = REPO / ".cursor" / "rules"
-SKILLS_DIR = REPO / ".cursor" / "skills"
+RULES_DIR = REPO / ".agents" / "rules"
+SKILLS_DIR = REPO / ".agents" / "skills"
 CATALOG_PATH = REPO / "docs" / "agents" / "agent-brain.md"
 AGENTS_MD = REPO / "AGENTS.md"
 SKILLS_README = SKILLS_DIR / "README.md"
 
 FRONTMATTER_RE = re.compile(r"^---\s*\r?\n(.*?)\r?\n---", re.DOTALL)
 SKILL_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+\.md)\)")
+RULE_PATH_RE = re.compile(r"(?:^|[\s(`\"'/])(?:[\w./-]*rules/)([\w-]+\.md)\b")
+LEGACY_RULE_RE = re.compile(r"[\w-]+\.mdc")
 
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
@@ -40,14 +42,29 @@ def _parse_frontmatter(text: str) -> dict[str, str]:
 
 
 def load_rules() -> list[dict[str, str]]:
-    """Load rule metadata from ``.cursor/rules/*.mdc``."""
+    """Load rule metadata from ``.agents/rules/*.md``.
+
+    Returns:
+        Sorted rule metadata dicts with ``file``, ``always_apply``, ``globs``,
+        and ``description`` keys.
+    """
     rules: list[dict[str, str]] = []
-    for path in sorted(RULES_DIR.glob("*.mdc")):
+    if not RULES_DIR.is_dir():
+        return rules
+    for path in sorted(RULES_DIR.glob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue
         meta = _parse_frontmatter(path.read_text(encoding="utf-8"))
+        trigger = meta.get("trigger", "").lower()
+        always_apply = (
+            "true"
+            if trigger == "always_on" or meta.get("alwaysApply", "").lower() == "true"
+            else "false"
+        )
         rules.append(
             {
                 "file": path.name,
-                "always_apply": meta.get("alwaysApply", "false"),
+                "always_apply": always_apply,
                 "globs": meta.get("globs", ""),
                 "description": meta.get("description", ""),
             }
@@ -56,7 +73,11 @@ def load_rules() -> list[dict[str, str]]:
 
 
 def load_skills() -> list[str]:
-    """List skill directory names that contain ``SKILL.md``."""
+    """List skill directory names that contain ``SKILL.md``.
+
+    Returns:
+        Sorted skill directory names.
+    """
     return sorted(
         p.parent.name
         for p in SKILLS_DIR.glob("*/SKILL.md")
@@ -65,11 +86,23 @@ def load_skills() -> list[str]:
 
 
 def _stale_rule_names(text: str, rule_files: set[str]) -> list[str]:
-    hits: list[str] = []
-    for name in re.findall(r"[\w-]+\.mdc", text):
+    """Return referenced rule filenames in ``text`` that do not exist in ``rule_files``.
+
+    Args:
+        text: Markdown text to scan for ``rules/<name>.md`` and legacy ``.mdc`` names.
+        rule_files: Known rule filenames on disk.
+
+    Returns:
+        Sorted list of stale rule filenames.
+    """
+    hits: set[str] = set()
+    for name in RULE_PATH_RE.findall(text):
         if name not in rule_files:
-            hits.append(name)
-    return sorted(set(hits))
+            hits.add(name)
+    for name in LEGACY_RULE_RE.findall(text):
+        if name not in rule_files:
+            hits.add(name)
+    return sorted(hits)
 
 
 def _skills_in_readme(text: str) -> set[str]:
@@ -83,7 +116,15 @@ def _skills_in_readme(text: str) -> set[str]:
 
 
 def format_disk_inventory(rules: list[dict[str, str]], skills: list[str]) -> str:
-    """Return a read-only markdown summary of rules and skills on disk."""
+    """Return a read-only markdown summary of rules and skills on disk.
+
+    Args:
+        rules: Rule metadata dicts loaded from disk.
+        skills: Sorted skill directory names.
+
+    Returns:
+        Formatted markdown inventory string.
+    """
     lines = ["## Disk inventory", ""]
     always = [r for r in rules if r["always_apply"].lower() == "true"]
     scoped = [r for r in rules if r["always_apply"].lower() != "true"]
@@ -106,7 +147,11 @@ def format_disk_inventory(rules: list[dict[str, str]], skills: list[str]) -> str
 
 
 def audit() -> int:
-    """Print inventory and drift; return 0 if OK, 1 if drift found."""
+    """Print inventory and drift; return 0 if OK, 1 if drift found.
+
+    Returns:
+        Process exit code (``0`` if clean, ``1`` if drift is detected).
+    """
     rules = load_rules()
     skills = load_skills()
     rule_files = {r["file"] for r in rules}

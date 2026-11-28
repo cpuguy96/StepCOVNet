@@ -441,7 +441,7 @@ python scripts/train_onset_ar.py \
   --model_output_dir models/ar_10song_smoke
 ```
 
-WSL GPU: run from repo root per [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md). Verify tide load without training:
+WSL GPU: run from repo root per [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md). Verify tide load without training:
 
 ```bash
 python scripts/train_onset_ar.py --config configs/ar/tide_overfit.json --verify-only

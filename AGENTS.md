@@ -4,7 +4,7 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 
 | If the task is… | Index |
 | --------------- | ----- |
-| A **procedure** (train, overfit, WSL, log EXP/NOTE, debug playbooks) | [.cursor/skills/README.md](.cursor/skills/README.md) |
+| A **procedure** (train, overfit, WSL, log EXP/NOTE, debug playbooks) | [.agents/skills/README.md](.agents/skills/README.md) |
 | **Research** (experiments, design, pipeline; log runs in EXPERIMENT_LOG) | [docs/research/README.md](docs/research/README.md) |
 | **Paper draft / citations** (related work, BibTeX keys, claim ledger) | [docs/research/PAPER_LEDGER.md](docs/research/PAPER_LEDGER.md) · [paper.bib](docs/research/paper.bib) · [PAPER_OUTLINE.md](docs/research/PAPER_OUTLINE.md) |
 | **DDC placement recreation** (Dataset A, `M-ddc-20ms`) | [configs/ddc/placement_fraxtil.json](configs/ddc/placement_fraxtil.json) · `scripts/train_ddc_placement.py` |
@@ -12,21 +12,21 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | **Onset metrics** (`timing_match`, F1, gates) | [docs/research/ONSET_METRICS.md](docs/research/ONSET_METRICS.md) |
 | **AR onset design** (locked stack, gates, debug notes) | [docs/research/AR_ONSET_DESIGN.md](docs/research/AR_ONSET_DESIGN.md) |
 | **Scaling AR training** (how to add songs and keep numbers comparable) | [docs/research/AR_SCALING_LADDER.md](docs/research/AR_SCALING_LADDER.md) |
-| **What's next** / **what to do now** / orientation | [.cursor/skills/whats-next/SKILL.md](.cursor/skills/whats-next/SKILL.md) → [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
-| **Research autoresearch** (one-prompt goal + budget loop) | [.cursor/skills/autoresearch/SKILL.md](.cursor/skills/autoresearch/SKILL.md) |
+| **What's next** / **what to do now** / orientation | [.agents/skills/whats-next/SKILL.md](.agents/skills/whats-next/SKILL.md) → [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
+| **Research autoresearch** (one-prompt goal + budget loop) | [.agents/skills/autoresearch/SKILL.md](.agents/skills/autoresearch/SKILL.md) |
 | **AR tide overfit** (gate **PASS** — champion v8) | [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase · champion: [configs/ar/tide_overfit.json](configs/ar/tide_overfit.json) |
-| GPU training, WSL, overfit smoke tests | [.cursor/skills/wsl-gpu-stepcovnet/SKILL.md](.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
-| **Colab GPU training & Drive sync** (parallel cloud runs, never GitHub) | [.cursor/skills/colab-gpu-stepcovnet/SKILL.md](.cursor/skills/colab-gpu-stepcovnet/SKILL.md) |
+| GPU training, WSL, overfit smoke tests | [.agents/skills/wsl-gpu-stepcovnet/SKILL.md](.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| **Colab GPU training & Drive sync** (parallel cloud runs, never GitHub) | [.agents/skills/colab-gpu-stepcovnet/SKILL.md](.agents/skills/colab-gpu-stepcovnet/SKILL.md) |
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |
 | Dataset prep / `final_data` pipeline | [docs/research/DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) |
 | **Recreate training data** (SMO downloads → prep) | [docs/research/TRAINING_DATA_SETUP.md](docs/research/TRAINING_DATA_SETUP.md) |
 | Pre-push validation (same as CI) | [pre_submit.py](pre_submit.py) · [`.github/workflows/pre-submit.yml`](.github/workflows/pre-submit.yml) |
-| Steering correction — how the agent decides / promotes lessons | [.cursor/skills/steering-correction-promotion/SKILL.md](.cursor/skills/steering-correction-promotion/SKILL.md) |
-| **Refresh agent brain** / **refresh all rules** — audit rules, skills, catalogs | [.cursor/skills/agent-brain-refresh/SKILL.md](.cursor/skills/agent-brain-refresh/SKILL.md) |
+| Steering correction — how the agent decides / promotes lessons | [.agents/skills/steering-correction-promotion/SKILL.md](.agents/skills/steering-correction-promotion/SKILL.md) |
+| **Refresh agent brain** / **refresh all rules** — audit rules, skills, catalogs | [.agents/skills/agent-brain-refresh/SKILL.md](.agents/skills/agent-brain-refresh/SKILL.md) |
 
 North star: [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md).
 
-**Rules catalog** (always vs scoped — Cursor loads `alwaysApply` automatically): [docs/agents/agent-brain.md](docs/agents/agent-brain.md).
+**Rules catalog** (always-on vs scoped — always-on rules live in `.agents/rules/`): [docs/agents/agent-brain.md](docs/agents/agent-brain.md).
 
 ---
 
@@ -50,7 +50,7 @@ Optional hooks (once): `pre-commit install --install-hooks --hook-type pre-commi
 
 **WSL GPU:** `source scripts/wsl_gpu_env.sh` after `bash scripts/wsl_ensure_env.sh` — see tracked `scripts/wsl_*.sh`.
 
-**Colab sync (proactive, private Drive only — never GitHub):** Whenever preparing experiments or checking Colab results, proactively open and follow [.cursor/skills/colab-gpu-stepcovnet/SKILL.md](.cursor/skills/colab-gpu-stepcovnet/SKILL.md) without waiting to be asked.
+**Colab sync (proactive, private Drive only — never GitHub):** Whenever preparing experiments or checking Colab results, proactively open and follow [.agents/skills/colab-gpu-stepcovnet/SKILL.md](.agents/skills/colab-gpu-stepcovnet/SKILL.md) without waiting to be asked.
 
 ### Cloud VM & Colab hard defaults (every session)
 

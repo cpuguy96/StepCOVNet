@@ -1,7 +1,7 @@
 ---
 description: Tests and coverage when changing src/, scripts/, or tests/
 globs: "{src,scripts,tests}/**/*"
-alwaysApply: false
+trigger: glob
 ---
 
 # Tests and coverage
@@ -18,15 +18,15 @@ venv\Scripts\pydoclint.exe src/stepcovnet/<package>/
 venv\Scripts\pyright.exe src/stepcovnet/<package>/
 ```
 
-Narrow paths to changed files/packages when appropriate. Docstring rules: [python-style.mdc](python-style.mdc).
+Narrow paths to changed files/packages when appropriate. Docstring rules: [python-style.md](python-style.md).
 
-4. **Verify** with Windows venv (see [python-environment.mdc](python-environment.mdc)):
+4. **Verify** with Windows venv (see [python-environment.md](python-environment.md)):
 
 ```text
 venv\Scripts\python.exe -m pytest tests/ -m "not slow" --cov=stepcovnet --cov=scripts
 ```
 
-Use the relevant test file when scope is narrow. Import conventions beyond Ruff: [python-style.mdc](python-style.mdc).
+Use the relevant test file when scope is narrow. Import conventions beyond Ruff: [python-style.md](python-style.md).
 
 ## Scripts (`scripts/`)
 

@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 # Autoresearch (agent loop)
 
-**You** run the research loop in this Cursor session. Harness scripts train, eval, and record numbers; **you** choose hypotheses from evidence. Do **not** hand reasoning to unattended knob mutators (`overnight_planner`, fixed queues, lattice search) when this skill is active.
+**You** run the research loop in this agent session. Harness scripts train, eval, and record numbers; **you** choose hypotheses from evidence. Do **not** hand reasoning to unattended knob mutators (`overnight_planner`, fixed queues, lattice search) when this skill is active.
 
 North star: [PIPELINE_ARCHITECTURE.md](../../../docs/research/PIPELINE_ARCHITECTURE.md).  
 Logging: [research-session-workflow](../research-session-workflow/SKILL.md).  
@@ -160,7 +160,7 @@ Do **not** stop because a pre-seeded experiment list finished while `now < deadl
 | **Single-knob spam after plateau**      | Primary metric flat for many runs; agent keeps nudging one λ or lr                          | Enforce [anti-spam](#anti-spam); upgrade tier or switch hypothesis class                               |
 | **Changing success metric mid-session** | Incomparable runs (e.g. swap checkpoint metric or eval gate)                                | Keep profile pinned eval policy; change only with user approval                                        |
 | **Finite queue / early exit**           | Pre-written N experiments finish in ~1 h; agent declares “session done” on 7 h budget        | [Budget discipline](#budget-discipline): replan when buffer empty; only stop at deadline or goal       |
-| **Long Cursor session**                 | Context fills after many iterations; agent may stop early                                   | User says _continue autoresearch_ with **remaining** budget; summarize state first                   |
+| **Long agent session** | Context fills after many iterations; agent may stop early | User says _continue autoresearch_ with **remaining** budget; summarize state first |
 | **Uncommitted harness vs disk**         | `experiments.json` / logs ahead of git; brief may still work off `results.jsonl`            | Do not assume registry is committed; read `logs/` + brief                                              |
 | **Background train**                    | No epoch lines in chat; looks idle while GPU is busy                                        | Profile watch command or `show_status`; foreground `--once` when possible                              |
 | **Committing `logs/`**                  | Huge artifacts, machine paths in PR                                                         | Never commit `logs/`; research logs in `docs/research/` only                                           |

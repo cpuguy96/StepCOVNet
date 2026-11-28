@@ -119,7 +119,7 @@ Keep prose tight. Link configs and docs with repo-relative paths.
 
 **Execution rules:**
 
-- Follow [scripts-execution.mdc](../../rules/scripts-execution.mdc): visible terminal, tee to `logs/<topic>_<run>.log`, TensorBoard before/with GPU training.
+- Follow [scripts-execution.md](../../rules/scripts-execution.md): visible terminal, tee to `logs/<topic>_<run>.log`, TensorBoard before/with GPU training.
 - Follow [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md): one WSL GPU job at a time; check GPU lock first.
 - Follow [research-session-workflow](../research-session-workflow/SKILL.md): log `EXP-…` when a run finishes or aborts; update Current phase compact block if routing changes.
 - Reuse the same `model_output_dir` / `callback_root_dir` on reruns unless the user asked for a separate artifact tree.

@@ -15,7 +15,7 @@ Commands assume **repository root** as the working directory (clone path is arbi
 | GPU from Windows | `python scripts/...` | Auto-dispatch via `wsl_gpu.py` when the script supports it |
 | Checkpoints / callbacks | `models_wsl/`, `callbacks/` | Gitignored; paths in JSON configs are repo-relative |
 
-Shared WSL shell vars: `scripts/wsl_common.sh`. See [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md).
+Shared WSL shell vars: `scripts/wsl_common.sh`. See [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md).
 
 Pre-push CI mirror: `python pre_submit.py` (from repository root).
 
@@ -70,13 +70,13 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 
 | Script | Skill |
 | ------ | ----- |
-| `scripts/train_onset.py` | [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
-| `scripts/train_onset_event.py` | [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) |
-| `scripts/train_onset_ar.py` | [wsl-gpu-stepcovnet](../../.cursor/skills/wsl-gpu-stepcovnet/SKILL.md) — AR tide gate |
-| `scripts/run_overfit_tide_suite.py` | [tide-overfit-protocol](../../.cursor/skills/tide-overfit-protocol/SKILL.md) |
-| `scripts/run_overfit_tide_ablations.py` | [tide-ablations](../../.cursor/skills/tide-ablations/SKILL.md) |
-| `scripts/run_overfit_tide_bisection.py` | `EXP-11` — no skill yet ([skills README § Scripts without skills](../../.cursor/skills/README.md#scripts-without-skills-yet)) |
-| `scripts/debug_onset_overfit.py` | [onset-event-eval-matching](../../.cursor/skills/onset-event-eval-matching/SKILL.md) |
+| `scripts/train_onset.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| `scripts/train_onset_event.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| `scripts/train_onset_ar.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) — AR tide gate |
+| `scripts/run_overfit_tide_suite.py` | [tide-overfit-protocol](../../.agents/skills/tide-overfit-protocol/SKILL.md) |
+| `scripts/run_overfit_tide_ablations.py` | [tide-ablations](../../.agents/skills/tide-ablations/SKILL.md) |
+| `scripts/run_overfit_tide_bisection.py` | `EXP-11` — no skill yet ([skills README § Scripts without skills](../../.agents/skills/README.md#scripts-without-skills-yet)) |
+| `scripts/debug_onset_overfit.py` | [onset-event-eval-matching](../../.agents/skills/onset-event-eval-matching/SKILL.md) |
 
 ---
 
@@ -101,6 +101,6 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `docs/research/` | Lab notebook (EXP, NOTE, paper) — incl. [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
 | `docs/research/archive/` | Superseded research plans (e.g. event-onset WP handoff) |
 | `docs/agents/` | Agent state — [README](README.md), layout, self-journal |
-| `.cursor/skills/` | Task playbooks (procedures) |
+| `.agents/skills/` | Task playbooks (procedures) |
 | `docs/onset_output_targets_planning.md` | Design planning |
 | `AGENTS.md` (repo root) | Session entry router |

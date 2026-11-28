@@ -1,7 +1,7 @@
 ---
 description: Python code style — imports, third-party submodules, and docstrings
 globs: "**/*.py"
-alwaysApply: false
+trigger: glob
 ---
 
 # Python style

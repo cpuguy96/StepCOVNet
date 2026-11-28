@@ -148,10 +148,12 @@ experiments/
 
 .vscode/
 .cursor/**
-!.cursor/rules/
-!.cursor/rules/*.mdc
-!.cursor/skills/
-!.cursor/skills/**
+
+.agents/**
+!.agents/rules/
+!.agents/rules/*.md
+!.agents/skills/
+!.agents/skills/**
 
 docs/**
 !docs/agents/
