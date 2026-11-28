@@ -31,12 +31,12 @@ Never claim you cannot launch Colab from a fresh cloud VM — run the one-comman
 ```bash
 bash scripts/colab_cloud_bootstrap.sh
 # Installs google-colab-cli (Python 3.13) + rclone + ~/.ssh/id_ed25519,
-# auto-pulls MyDrive/StepCOVNet/.secrets/rclone.conf (chmod 600) via gdrive CLI
-# (or installs an uploaded /home/antigravity/upload/rclone.conf / --rclone-token '<JSON>';
+# configures rclone from --rclone-conf / ${STEPCOVNET_UPLOAD_DIR:-$HOME/upload}/rclone.conf /
+# --rclone-token '<JSON>' (or auto-pulls MyDrive/StepCOVNet/.secrets/rclone.conf when `gdrive` CLI is available;
 # pass --save-to-drive once to seed MyDrive/StepCOVNet/.secrets/rclone.conf).
 ```
 
-If `colab` is not yet signed in, start the remote copy-paste OAuth flow (`PYTHONUNBUFFERED=1 PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring ~/.local/bin/colab --auth=oauth2 whoami`), hand the user the printed URL, and pipe their code to stdin. Once `rclone` is configured, `scripts/colab_run_remote.sh` streams directly from Drive → Colab at ~75–100 MB/s. Without `rclone`, fall back to `gdrive readonly download` + `colab --auth=oauth2 ssh -s <name> -- 'tar -xf - -C /content/StepCOVNet/data' < archive.tar` (never `colab upload` on >100 MB archives).
+If `colab` is not yet signed in, start the remote copy-paste OAuth flow (`PYTHONUNBUFFERED=1 PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring ~/.local/bin/colab --auth=oauth2 whoami`), hand the user the printed URL, and pipe their code to stdin. Once `rclone` is configured, `scripts/colab_run_remote.sh` streams directly from Drive → Colab at ~75–100 MB/s. Otherwise push via `--rclone-conf` / `--rclone-token` (or, where an optional `gdrive` CLI is installed, `gdrive readonly download` + `colab --auth=oauth2 ssh -s <name> -- 'tar -xf - -C /content/StepCOVNet/data' < archive.tar` — never `colab upload` on >100 MB archives).
 
 ## Dataset archives on Google Drive
 

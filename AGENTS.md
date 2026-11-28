@@ -13,8 +13,11 @@ Open **one** relevant doc or skill below per task. Do not load multiple index fi
 | **Dataset prep / recreating training data** | [DATASET_PREP_PIPELINE.md](docs/research/DATASET_PREP_PIPELINE.md) · [TRAINING_DATA_SETUP.md](docs/research/TRAINING_DATA_SETUP.md) |
 | **GPU training — Colab (preferred) or WSL** | [colab-gpu-stepcovnet](.agents/skills/colab-gpu-stepcovnet/SKILL.md) · [wsl-gpu-stepcovnet](.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | **Repo layout** (`src/`, `scripts/`, `configs/`, data) | [project-layout.md](docs/agents/project-layout.md) |
+| **Git, commits, CI & PR hygiene** | [git-and-ci.md](.agents/rules/git-and-ci.md) |
+| **Python env, style & tests** | [python-env.md](.agents/rules/python-env.md) · [python-style.md](.agents/rules/python-style.md) · [python-tests.md](.agents/rules/python-tests.md) |
+| **Research doc schemas** | [docs-and-research.md](.agents/rules/docs-and-research.md) |
 | **Steering correction / brain audit / evals** | [agent-maintenance](.agents/skills/agent-maintenance/SKILL.md) · `scripts/audit_agent_brain.py` · `scripts/eval_agent_setup.py` |
 
 - **North star:** [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md)
 - **Pre-submit gate (CI mirror):** `python pre_submit.py --fast` (quick static checks) · `python pre_submit.py --skip-install` (full suite; see [pre-submit.yml](.github/workflows/pre-submit.yml))
-- **Rules & skills:** Declarative rules (`model_decision` and `glob`) live in `.agents/rules/`; multi-step playbooks auto-discover from `.agents/skills/`.
+- **Rules & skills:** Declarative rules live in `.agents/rules/` (auto-loaded by supporting harnesses or opened via the table links above); multi-step playbooks follow the Agent Skills layout in `.agents/skills/`.

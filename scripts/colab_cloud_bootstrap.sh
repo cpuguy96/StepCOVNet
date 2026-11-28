@@ -10,9 +10,9 @@
 #   3. Ensures ~/.ssh/id_ed25519 exists for `colab ssh`.
 #   4. Configures ~/.config/rclone/rclone.conf (chmod 600) automatically via the first available source:
 #        a) --rclone-conf PATH
-#        b) /home/antigravity/upload/rclone.conf (moved & scrubbed from upload/)
+#        b) ${STEPCOVNET_UPLOAD_DIR:-$HOME/upload}/rclone.conf (moved & scrubbed from upload/)
 #        c) --rclone-token '<json>' (from `rclone authorize "drive"`)
-#        d) Private Google Drive auto-pull: MyDrive/StepCOVNet/.secrets/rclone.conf (via `gdrive` CLI)
+#        d) Private Google Drive auto-pull: MyDrive/StepCOVNet/.secrets/rclone.conf (optional, when `gdrive` CLI is installed)
 #      Pass --save-to-drive with (a)/(b)/(c) to save/update MyDrive/StepCOVNet/.secrets/rclone.conf
 #      so all future cloud VMs configure rclone automatically with zero clicks.
 #   5. Verifies rclone and prints Colab auth status (or starts remote copy-paste OAuth if needed).
@@ -99,7 +99,7 @@ fi
 
 # 4. Configure rclone (explicit source -> uploaded file -> token -> Drive auto-pull)
 TARGET_CONF="$HOME/.config/rclone/rclone.conf"
-UPLOAD_CONF="/home/antigravity/upload/rclone.conf"
+UPLOAD_CONF="${STEPCOVNET_UPLOAD_DIR:-$HOME/upload}/rclone.conf"
 
 if [[ -n "$RCLONE_CONF_SRC" ]]; then
   install -m 600 "$RCLONE_CONF_SRC" "$TARGET_CONF"

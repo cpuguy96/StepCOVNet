@@ -118,8 +118,6 @@ mypy_path = "scripts"
 [tool.ruff]
 target-version = "py313"
 line-length = 88
-# Antigravity run_workflow script uses top-level await and runtime-injected globals.
-extend-exclude = [".agents/skills/agent-maintenance/scripts/run_workflow_eval.py"]
 
 [tool.ruff.lint]
 select = [

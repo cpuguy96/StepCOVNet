@@ -17,6 +17,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 RULES_DIR = REPO / ".agents" / "rules"
 SKILLS_DIR = REPO / ".agents" / "skills"
 AGENTS_MD = REPO / "AGENTS.md"
+CLAUDE_MD = REPO / "CLAUDE.md"
 PROJECT_LAYOUT = REPO / "docs" / "agents" / "project-layout.md"
 
 VALID_RULE_TRIGGERS = {"always_on", "glob", "model_decision"}
@@ -28,6 +29,10 @@ MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 LEGACY_RULE_RE = re.compile(r"[\w-]+\.mdc\b")
 CURSOR_DIR_RE = re.compile(r"\.cursor/")
 ABS_USER_PATH_RE = re.compile(r"(?:[A-Za-z]:\\Users\\|/mnt/[a-z]/Users/)")
+HARNESS_LOCKIN_RE = re.compile(
+    r"(?:\bantigravity\b|/home/antigravity|\brun_workflow\b)",
+    re.IGNORECASE,
+)
 
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
@@ -97,7 +102,7 @@ def load_rules() -> list[dict[str, str]]:
                 "file": path.name,
                 "trigger": trigger,
                 "always_apply": always_apply,
-                "globs": meta.get("globs", ""),
+                "globs": meta.get("globs", "") or meta.get("paths", ""),
                 "description": meta.get("description", ""),
             }
         )
@@ -160,18 +165,19 @@ def _broken_relative_links(
 
 
 def _hygiene_violations(text: str) -> list[str]:
-    """Collect legacy Cursor references and machine-specific paths in ``text``.
+    """Collect legacy Cursor, harness lock-in, and machine-specific tokens.
 
     Args:
         text: Markdown contents of an active agent configuration file.
 
     Returns:
-        Sorted list of matched legacy or non-portable substrings.
+        Sorted list of matched legacy, lock-in, or non-portable substrings.
     """
     hits: set[str] = set()
     hits.update(LEGACY_RULE_RE.findall(text))
     hits.update(CURSOR_DIR_RE.findall(text))
     hits.update(ABS_USER_PATH_RE.findall(text))
+    hits.update(HARNESS_LOCKIN_RE.findall(text))
     return sorted(hits)
 
 
@@ -179,12 +185,14 @@ def _active_markdown_files() -> list[pathlib.Path]:
     """Collect active agent markdown files subject to link and hygiene checks.
 
     Returns:
-        Existing markdown file paths across ``AGENTS.md``, ``.agents/``, and
-        ``docs/agents/project-layout.md``.
+        Existing markdown file paths across ``AGENTS.md``, ``CLAUDE.md``,
+        ``.agents/``, and ``docs/agents/project-layout.md``.
     """
     files: list[pathlib.Path] = []
     if AGENTS_MD.is_file():
         files.append(AGENTS_MD)
+    if CLAUDE_MD.is_file():
+        files.append(CLAUDE_MD)
     if RULES_DIR.is_dir():
         files.extend(sorted(RULES_DIR.glob("*.md")))
     if SKILLS_DIR.is_dir():

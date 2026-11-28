@@ -76,6 +76,6 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `docs/research/archive/` | Superseded research plans |
 | `docs/agents/project-layout.md` | Repo layout (this file) |
 | `docs/agents/self-journal.md` | Agent process receipt journal (`JRN-…`) |
-| `.agents/rules/` | Declarative rules (`model_decision` and file-scoped `glob`) |
-| `.agents/skills/` | Auto-discoverable task playbooks + local `evals/suite.json` (gitignored; scored by `scripts/eval_agent_setup.py`) |
-| `AGENTS.md` (repo root) | Thin session entry router |
+| `.agents/rules/` | Declarative rules (`model_decision` and file-scoped `glob` / `paths`) |
+| `.agents/skills/` | Agent Skills playbooks (`SKILL.md`) + local `evals/suite.json` (gitignored; scored by `scripts/eval_agent_setup.py`) |
+| `AGENTS.md` · `CLAUDE.md` (repo root) | Harness-neutral entry router (`CLAUDE.md` delegates via `@AGENTS.md`) |

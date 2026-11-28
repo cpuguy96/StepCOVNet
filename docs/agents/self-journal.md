@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-09: Make agent entrypoints, eval runner, and cloud bootstrap harness-agnostic
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 10:30:00 |
+| **Category** | convention |
+| **Summary** | User asked to remove remaining Antigravity-specific coupling (mirroring earlier `.cursor/` cleanup) so any coding-agent harness (Claude Code, Codex, Cursor, etc.) can develop and run evals cleanly. |
+| **Artifact** | `CLAUDE.md`, `AGENTS.md`, `docs/agents/project-layout.md`, `scripts/colab_cloud_bootstrap.sh`, `.agents/skills/colab-gpu-stepcovnet/SKILL.md`, `.agents/skills/agent-maintenance/SKILL.md`, `scripts/run_agent_eval.py`, `tests/run_agent_eval_test.py`, `scripts/eval_agent_setup.py`, `scripts/audit_agent_brain.py`, `tests/audit_agent_brain_test.py`, `pyproject.toml` (plus removed `.agents/skills/agent-maintenance/scripts/run_workflow_eval.py`) |
+| **Action taken** | Added `@AGENTS.md` pointer in `CLAUDE.md` and rule links in `AGENTS.md`, replaced the Antigravity-only `run_workflow_eval.py` DSL script (and its Ruff `extend-exclude`) with pure-Python CLI `scripts/run_agent_eval.py` (`dump`/`cmd`/`openai`/`anthropic`/`gemini` backends), replaced hardcoded `/home/antigravity/upload` with `${STEPCOVNET_UPLOAD_DIR:-$HOME/upload}`, framed `gdrive` CLI as optional, and extended `audit_agent_brain.py` to support `paths:` alongside `globs:` and flag harness lock-in tokens |
+| **Related** | `agent-maintenance`, `colab-gpu-stepcovnet`, `JRN-20261128-08` |
+
 ### JRN-20261128-08: Enforce test-diff gate in pre_submit, add c8c5435 worker tests, and fix 27 Codacy ErrorProne issues
 
 | Field | Value |

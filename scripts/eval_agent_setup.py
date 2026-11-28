@@ -599,7 +599,7 @@ def score_predictions(
 
     Args:
         suite: Merged suite dictionary from ``load_merged_suite()``.
-        predictions: Predictions payload from ``run_workflow_eval.py`` or fixture.
+        predictions: Predictions payload from ``run_agent_eval.py`` or fixture.
 
     Returns:
         Structured report with summary metrics, per-target stats, and case rows.

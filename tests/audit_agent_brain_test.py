@@ -80,11 +80,25 @@ class LinkAndHygieneTest(unittest.TestCase):
     def test_hygiene_violations_flags_mdc_cursor_and_abs_paths(self) -> None:
         win_prefix = "C:\\" + "Users\\"
         wsl_prefix = "/mnt/" + "c/Users/"
-        text = f"see old.mdc, .cursor/rules, {win_prefix}alice, {wsl_prefix}bob"
+        lockin_tok = "antigravity"
+        text = (
+            f"see old.mdc, .cursor/rules, {win_prefix}alice, {wsl_prefix}bob, "
+            f"{lockin_tok}, /home/{lockin_tok}, run_workflow"
+        )
         hits = brain._hygiene_violations(text)
         self.assertEqual(
             hits,
-            [".cursor/", wsl_prefix, win_prefix, "old.mdc"],
+            sorted(
+                [
+                    ".cursor/",
+                    wsl_prefix,
+                    f"/home/{lockin_tok}",
+                    win_prefix,
+                    lockin_tok,
+                    "old.mdc",
+                    "run_workflow",
+                ]
+            ),
         )
 
 
@@ -153,8 +167,26 @@ class AuditFixtureTest(unittest.TestCase):
             RULES_DIR=root / ".agents" / "rules",
             SKILLS_DIR=root / ".agents" / "skills",
             AGENTS_MD=root / "AGENTS.md",
+            CLAUDE_MD=root / "CLAUDE.md",
             PROJECT_LAYOUT=root / "docs" / "agents" / "project-layout.md",
         )
+
+    def test_audit_accepts_paths_synonym_and_checks_claude_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            self._write_minimal_repo(root)
+            (root / ".agents" / "rules" / "py.md").write_text(
+                '---\ndescription: Py\ntrigger: glob\npaths: "**/*.py"\n---\n',
+                encoding="utf-8",
+            )
+            (root / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+            with (
+                self._patch_repo(root),
+                contextlib.redirect_stdout(io.StringIO()) as out,
+            ):
+                code = brain.audit()
+            self.assertEqual(code, 0)
+            self.assertIn("Scoped (1)", out.getvalue())
 
     def test_audit_passes_on_minimal_aligned_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
