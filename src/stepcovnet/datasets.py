@@ -720,11 +720,6 @@ def _create_target_gaussian(
 def onset_density_scalar(n_onsets: int, duration_sec: float) -> float:
     """Map an onset count and duration to a unit density conditioning value.
 
-    Matches ``onset_ar.config.compute_density_scalar`` in ``onset_density`` mode
-    so both tracks condition on the same scale. The AR track chose measured
-    density over the simfile difficulty label because those labels are partly
-    wrong (NOTE-20260803-01).
-
     Args:
         n_onsets: Ground-truth onset count for the chart.
         duration_sec: Audio duration in seconds.

@@ -34,10 +34,10 @@ EXP_INDEX_RE = re.compile(
     re.MULTILINE,
 )
 LADDER_CONFIGS = (
-    "configs/ar/ladder_10t_50v.json",
-    "configs/ar/ladder_50t_50v.json",
-    "configs/ar/ladder_200t_50v.json",
-    "configs/ar/ladder_300t_50v.json",
+    "configs/ddc/itgpt_mert_placement_ladder_50t_50v.json",
+    "configs/ddc/itgpt_mert_placement_ladder_200t_50v.json",
+    "configs/ddc/itgpt_mert_placement_ladder_300t_50v_cosine64_l2_6_10_16_ema_density_specaug_keep0_beataux015_dice005_pw125.json",
+    "configs/ddc/itgpt_mert_placement_final_full_cosine32_l2_6_10_16_ema_density_specaug_keep0_beataux015_dice005_pw125.json",
 )
 
 

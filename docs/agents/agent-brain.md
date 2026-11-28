@@ -39,7 +39,6 @@ audits — not duplicated into [AGENTS.md](../../AGENTS.md) as prose.
 | agent-brain-refresh           | [SKILL.md](../../.agents/skills/agent-brain-refresh/SKILL.md)           |
 | agent-self-improvement        | [SKILL.md](../../.agents/skills/agent-self-improvement/SKILL.md)        |
 | autoresearch                  | [SKILL.md](../../.agents/skills/autoresearch/SKILL.md)                  |
-| ar-tide-autoresearch (deprecated alias) | [SKILL.md](../../.agents/skills/ar-tide-autoresearch/SKILL.md) |
 | onset-event-eval-matching     | [SKILL.md](../../.agents/skills/onset-event-eval-matching/SKILL.md)     |
 | research-session-workflow     | [SKILL.md](../../.agents/skills/research-session-workflow/SKILL.md)     |
 | steering-correction-promotion | [SKILL.md](../../.agents/skills/steering-correction-promotion/SKILL.md) |

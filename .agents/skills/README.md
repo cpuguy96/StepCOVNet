@@ -20,8 +20,6 @@ Most skills set `disable-model-invocation: true` — **open the matching `SKILL.
 | tide overfit, overfit suite, frontend ablation, smoke test on tide       | tide-overfit-protocol     | [tide-overfit-protocol/SKILL.md](tide-overfit-protocol/SKILL.md)         |
 | run autoresearch, research goal + time budget, one-prompt overnight loop | autoresearch              | [autoresearch/SKILL.md](autoresearch/SKILL.md)                             |
 | ITGPT-MERT onset hill-climbing, parallel Colab/WSL experiments (profile) | autoresearch → itgpt-onset | [autoresearch/profiles/itgpt-onset.md](autoresearch/profiles/itgpt-onset.md) |
-| AR tide 634/634 scratch overfit (profile)                                  | autoresearch → ar-tide-overfit | [autoresearch/profiles/ar-tide-overfit.md](autoresearch/profiles/ar-tide-overfit.md) |
-| deprecated AR tide autoresearch links                                      | ar-tide-autoresearch alias | [ar-tide-autoresearch/SKILL.md](ar-tide-autoresearch/SKILL.md)             |
 | F1 zero or low, conv1d collapse, train vs eval matching, threshold debug | onset-event-eval-matching | [onset-event-eval-matching/SKILL.md](onset-event-eval-matching/SKILL.md) |
 | loss weights, arch ablation, threshold sweep, plateau investigation      | tide-ablations            | [tide-ablations/SKILL.md](tide-ablations/SKILL.md)                       |
 | what to do now, what's next, where are we, project status, orientation; **do it** after whats-next | whats-next                  | [whats-next/SKILL.md](whats-next/SKILL.md)                               |
@@ -56,7 +54,6 @@ Maintain this table during [agent-brain-refresh](agent-brain-refresh/SKILL.md).
 | DDC placement train / `M-ddc-20ms` eval | `scripts/train_ddc_placement.py`, `scripts/eval_ddc_placement.py`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
 | bisection, half-cheat, grid oracle, smoke gate bug hunt | `scripts/run_overfit_tide_bisection.py`, [EXP-11](../../docs/research/EXPERIMENT_LOG.md) |
 | what to do now / project orientation                     | `scripts/project_status.py`, [whats-next/SKILL.md](whats-next/SKILL.md) |
-| AR onset train / `gate-tide-overfit` debug            | `scripts/train_onset_ar.py`, [AR_ONSET_DESIGN.md](../../docs/research/AR_ONSET_DESIGN.md) §10.5 |
 
 ## Adding a skill
 

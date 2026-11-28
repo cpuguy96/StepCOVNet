@@ -4,7 +4,7 @@ description: >-
   One-prompt agent autoresearch loop for StepCOVNet: goal + time budget → orient,
   hypothesize, run, log, repeat until success or deadline. Use when the user says
   "run autoresearch", gives a research goal with a budget, or names a profile
-  (e.g. ar-tide-overfit). Not for unattended Python planners (--hours / lattice).
+  (e.g. itgpt-onset). Not for unattended Python planners (--hours / lattice).
 disable-model-invocation: true
 ---
 
@@ -29,13 +29,13 @@ When the user sends **one message** with a **goal** and **time budget**, run the
 | **Budget**  | No                                                          | **3 hours**                                                                                             |
 | **Go**      | Implied if user says autoresearch / do not ask between runs | Loop autonomously                                                                                       |
 
-**Example (tide):**
+**Example (ITGPT onset):**
 
 ```text
 Run autoresearch.
-Profile: ar-tide-overfit
-Goal: scratch teacher 634/634 then free-run 634/634 on tide @ 20 ms.
-Budget: 7 hours.
+Profile: itgpt-onset
+Goal: Beat Stage 1 Dataset A and Stage 2 300t/50v F1@0.5 champions with clean grounding.
+Budget: 4 hours.
 Go — do not ask me between runs.
 ```
 
@@ -43,7 +43,7 @@ Go — do not ask me between runs.
 
 ```text
 Run autoresearch.
-Goal: reduce pytest time for tests/onset_ar/ by 20% without failing tests.
+Goal: reduce pytest time for tests/itgpt/ by 20% without failing tests.
 Budget: 2 hours.
 Metric: pytest wall time + pass/fail.
 Go.
@@ -64,18 +64,13 @@ Go.
    - **Log** — profile research log
    - **Judge** — if goal not met and time remains → **immediately** plan the next iteration; do not end the session
 5. **Do not ask** the user mid-loop except: hard block, cheat/policy violation, tests red, unrecoverable GPU.
-6. **End with** session summary: best metric, last experiment id/run, stop reason (**only** success / budget exhausted / blocked).
-
-**Aliases:** `run ar-tide autoresearch` → profile `ar-tide-overfit`.
-
 ## Choose a profile
 
-| Profile             | Use when                                                                                 | Detail                                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| **itgpt-onset**     | PyTorch ITGPT-MERT onset placement hill-climbing (multi-GPU Colab + WSL, diagnostics)    | [profiles/itgpt-onset.md](profiles/itgpt-onset.md)                         |
-| **ar-tide-overfit** | AR tide single-chart 634/634 gate, `ar_tide_iter`, overnight tide prompt                 | [profiles/ar-tide-overfit.md](profiles/ar-tide-overfit.md)                 |
-| **experiment-log**  | General research; log `EXP-…` in EXPERIMENT_LOG; no `ar_tide_iter` harness               | [profiles/experiment-log.md](profiles/experiment-log.md)                   |
-| **custom**          | User defines metric + run command in the goal                                            | You define orient/run/log for that session; still follow tiers + anti-spam |
+| Profile            | Use when                                                                                 | Detail                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **itgpt-onset**    | PyTorch ITGPT-MERT onset placement hill-climbing (multi-GPU Colab + WSL, diagnostics)    | [profiles/itgpt-onset.md](profiles/itgpt-onset.md)        |
+| **experiment-log** | General research; log `EXP-…` in EXPERIMENT_LOG                                          | [profiles/experiment-log.md](profiles/experiment-log.md)  |
+| **custom**         | User defines metric + run command in the goal                                            | You define orient/run/log for that session; still follow tiers + anti-spam |
 
 If the user names a playbook skill (e.g. tide-ablations), treat it as **custom** or follow that skill **inside** one autoresearch iteration, then return to the judge step.
 

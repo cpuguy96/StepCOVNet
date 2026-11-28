@@ -24,8 +24,7 @@ DENSITY_CONDITIONING_MODES = frozenset(
     {DENSITY_CONDITIONING_NONE, DENSITY_CONDITIONING_ONSET}
 )
 
-# Onsets-per-second that maps to a conditioning value of 1.0; matches
-# ``onset_ar.config.compute_density_scalar`` so both tracks share a scale.
+# Onsets-per-second that maps to a conditioning value of 1.0.
 DENSITY_ONSET_HZ_NORM = 15.0
 
 # Peak-picked event metrics; selecting on these requires the dense event

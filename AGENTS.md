@@ -14,7 +14,6 @@ Open **one** index below. Do not load multiple. Specialized rows (e.g. dataset p
 | **Scaling AR training** (how to add songs and keep numbers comparable) | [docs/research/AR_SCALING_LADDER.md](docs/research/AR_SCALING_LADDER.md) |
 | **What's next** / **what to do now** / orientation | [.agents/skills/whats-next/SKILL.md](.agents/skills/whats-next/SKILL.md) → [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase |
 | **Research autoresearch** (one-prompt goal + budget loop) | [.agents/skills/autoresearch/SKILL.md](.agents/skills/autoresearch/SKILL.md) |
-| **AR tide overfit** (gate **PASS** — champion v8) | [EXPERIMENT_LOG.md](docs/research/EXPERIMENT_LOG.md) § Current phase · champion: [configs/ar/tide_overfit.json](configs/ar/tide_overfit.json) |
 | GPU training, WSL, overfit smoke tests | [.agents/skills/wsl-gpu-stepcovnet/SKILL.md](.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | **Colab GPU training & Drive sync** (parallel cloud runs, never GitHub) | [.agents/skills/colab-gpu-stepcovnet/SKILL.md](.agents/skills/colab-gpu-stepcovnet/SKILL.md) |
 | Repo layout (`src/`, `scripts/`, `configs/`, data) | [docs/agents/project-layout.md](docs/agents/project-layout.md) |

@@ -1,6 +1,6 @@
 # Profile: experiment-log
 
-General StepCOVNet research **without** the `ar_tide_iter` harness. Use for pipeline stages, ablations, or one-off scripts where success is defined in the user goal.
+General StepCOVNet research. Use for pipeline stages, ablations, or one-off scripts where success is defined in the user goal.
 
 ## Success criteria
 
@@ -35,9 +35,8 @@ User goal or standard script from [project layout](../../../../docs/agents/proje
 
 | Task            | Entry                                           |
 | --------------- | ----------------------------------------------- |
-| AR train        | `scripts/train_onset_ar.py` + WSL               |
+| ITGPT placement | [itgpt-onset](itgpt-onset.md) / `scripts/train_itgpt_placement.py` |
 | Dense ablations | [tide-ablations](../../tide-ablations/SKILL.md) |
-| AR debug eval   | `scripts/eval_ar_onset_offline.py`             |
 
 ## Log
 
@@ -52,5 +51,4 @@ Same global rules: plateau → tier upgrade; no identical reruns; Tier C needs t
 | Gotcha                             | What to do                                                                                                              |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Re-running without checking log    | `grep` [EXPERIMENT_LOG.md](../../../../docs/research/EXPERIMENT_LOG.md) for checkpoint/config before proposing same job |
-| Dense vs AR stack                  | AR tide profile is wrong harness — use `train_onset_ar` / AR docs, not `train_onset.py` unless goal says dense          |
 | Logging every run in PAPER_OUTLINE | Use EXPERIMENT_LOG; promote to paper only when drafting                                                                 |

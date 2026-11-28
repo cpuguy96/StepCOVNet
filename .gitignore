@@ -172,7 +172,6 @@ stepcovnet-venv-wsl/
 configs/**
 !configs/**/
 !configs/README.md
-!configs/ar/**
 !configs/ddc/**
 !configs/dense/**
 !configs/event/**

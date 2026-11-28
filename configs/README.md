@@ -6,8 +6,7 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 
 | Directory                                    | Track                                | Contents                                            |
 | -------------------------------------------- | ------------------------------------ | --------------------------------------------------- |
-| [`ar/`](ar/)                                 | Autoregressive onset (`onset_ar/`)   | Champion [`tide_overfit.json`](ar/tide_overfit.json); versioned experiments in [`ar/versions/`](ar/versions/) |
-| [`ddc/`](ddc/)                                 | DDC C-LSTM and DDCL ConvLSTM placement | Fraxtil Dataset A; DDC smoke `placement_fraxtil_smoke.json`; DDCL smoke `ddcl_placement_fraxtil_smoke.json` |
+| [`ddc/`](ddc/)                                 | DDC, DDCL, and ITGPT placement       | Fraxtil Dataset A, `300t/50v` ladder, full `final_data` |
 | [`dense/`](dense/)                           | Dense frame onset                    | Baseline, `final_data` scoreboard, ladder windowed TCN / density A/B |
 | [`event/`](event/)                           | K-query event onset                  | Multi-song baseline, single-song overfit            |
 | [`arrow/`](arrow/)                           | Arrow model                          | Baseline, sweep, local dev configs                  |
@@ -21,8 +20,6 @@ JSON configs for training, eval, and smoke runs. Paths are repo-relative; pass t
 | ----------------------------- | ------------------------------------------- |
 | DDC placement on original Fraxtil | `configs/ddc/placement_fraxtil.json` → `models_wsl/ddc/placement_fraxtil/` |
 | DDCL placement on original Fraxtil | `configs/ddc/ddcl_placement_fraxtil.json` → `models_wsl/ddc/ddcl_placement_fraxtil/` |
-| AR tide overfit (champion)    | `configs/ar/tide_overfit.json` → `models_wsl/ar/tide_overfit/` |
-| AR tide overfit experiments | `configs/ar/versions/tide_overfit/vN.json` (frozen history) |
 | Dense `final_data` scoreboard | `configs/dense/final_data_mert_bilstm.json` |
 | Dense ladder windowed TCN     | `configs/dense/ladder_v1_50t_50v_mert_tcn_windowed.json` |
 | Event multi-song baseline     | `configs/event/audio_baseline.json`         |
