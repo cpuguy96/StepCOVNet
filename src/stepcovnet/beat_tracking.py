@@ -9,6 +9,7 @@ generation without a pre-existing ``.sm`` beat grid.
 
 from __future__ import annotations
 
+import collections.abc
 import dataclasses
 import pathlib
 import warnings
@@ -623,6 +624,113 @@ def _load_or_extract_mert_for_audio(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class DifficultyPreset:
+    """Target StepMania difficulty metadata and step density for pack generation.
+
+    Attributes:
+        name: Standard StepMania difficulty name (e.g. ``"Beginner"`` .. ``"Challenge"``).
+        meter: StepMania numeric meter written into ``#NOTES``.
+        target_density: Target average steps per beat for density-conditioned
+            ITGPT models.
+    """
+
+    name: str
+    meter: int
+    target_density: float
+
+    def __post_init__(self) -> None:
+        """Validate difficulty name, meter, and positive target density.
+
+        Raises:
+            ValueError: If ``name`` is empty, ``meter < 1``, or
+                ``target_density <= 0``.
+        """
+        if not self.name.strip():
+            raise ValueError("DifficultyPreset.name must be non-empty")
+        if int(self.meter) < 1:
+            raise ValueError(f"DifficultyPreset.meter must be >= 1, got {self.meter}")
+        if not (float(self.target_density) > 0.0 and np.isfinite(self.target_density)):
+            raise ValueError(
+                f"DifficultyPreset.target_density must be positive finite, got {self.target_density}"
+            )
+
+
+DEFAULT_DIFFICULTY_PACK: tuple[DifficultyPreset, ...] = (
+    DifficultyPreset(name="Beginner", meter=3, target_density=0.4),
+    DifficultyPreset(name="Easy", meter=5, target_density=0.8),
+    DifficultyPreset(name="Medium", meter=7, target_density=1.3),
+    DifficultyPreset(name="Hard", meter=9, target_density=2.0),
+    DifficultyPreset(name="Challenge", meter=11, target_density=3.0),
+)
+
+
+def _predict_itgpt_onsets_for_mert(
+    song_key: str,
+    beat_mert: np.ndarray,
+    grid: BeatGrid,
+    itgpt_model: Any,
+    *,
+    difficulty: str,
+    target_density: float,
+    meter: int,
+    threshold: float,
+    max_beats: int | None,
+    device: torch.device,
+    fallback_top_k: bool = False,
+) -> np.ndarray:
+    """Run ITGPT slot prediction and timestamp decoding on precomputed beat MERT."""
+    n_beats = int(beat_mert.shape[0])
+    stream = np.zeros((n_beats, 2), dtype=np.float32)
+    stream[:, 0] = float(meter)
+    stream[:, 1] = grid.per_beat_bpm()[:n_beats]
+
+    # Populate dummy_slots with the exact target total step count so
+    # density-conditioned ITGPT models receive mean(steps_per_beat) == target_density.
+    dummy_slots = np.zeros((n_beats, itgpt_constants.N_SLOTS), dtype=np.float32)
+    target_n_steps = max(1, int(round(float(target_density) * float(n_beats))))
+    flat_slots = dummy_slots.reshape(-1)
+    flat_slots[: min(target_n_steps, flat_slots.size)] = 1.0
+
+    synth_chart = ddcl_datasets.DdclChart(
+        song_key=song_key,
+        difficulty=difficulty,
+        meter=int(meter),
+        beat_audio=beat_mert,
+        stream=stream,
+        slots=dummy_slots,
+        memlen=0,
+    )
+
+    effective_max_beats = int(
+        max_beats
+        if max_beats is not None
+        else getattr(itgpt_model, "max_beats", itgpt_constants.MAX_BEATS)
+    )
+    probs = itgpt_eval.predict_chart_slots(
+        itgpt_model,
+        synth_chart,
+        max_beats=effective_max_beats,
+        device=device,
+    )
+    onset_times = decode_itgpt_slots_to_times(
+        probs, grid, threshold=threshold, use_slot_centers=False
+    )
+    if onset_times.size == 0 and fallback_top_k and probs.size > 0:
+        flat_probs = probs.reshape(-1)
+        k = min(flat_probs.size, max(1, target_n_steps))
+        top_idx = np.argpartition(flat_probs, -k)[-k:]
+        top_mask = np.zeros_like(flat_probs, dtype=np.float32)
+        top_mask[top_idx] = 1.0
+        onset_times = decode_itgpt_slots_to_times(
+            top_mask.reshape(probs.shape),
+            grid,
+            threshold=0.5,
+            use_slot_centers=False,
+        )
+    return onset_times
+
+
 def predict_itgpt_onsets_from_audio(
     audio_path: str,
     itgpt_model: Any,
@@ -687,40 +795,97 @@ def predict_itgpt_onsets_from_audio(
         mert_100hz, grid.beat_times_with_end, n_frames=n_frames
     ).astype(np.float32)
 
-    n_beats = int(beat_mert.shape[0])
-    stream = np.zeros((n_beats, 2), dtype=np.float32)
-    stream[:, 0] = float(meter)
-    stream[:, 1] = grid.per_beat_bpm()[:n_beats]
-
-    # Populate dummy_slots with the exact target total step count so
-    # density-conditioned ITGPT models receive mean(steps_per_beat) == target_density.
-    dummy_slots = np.zeros((n_beats, itgpt_constants.N_SLOTS), dtype=np.float32)
-    target_n_steps = max(1, int(round(float(target_density) * float(n_beats))))
-    flat_slots = dummy_slots.reshape(-1)
-    flat_slots[: min(target_n_steps, flat_slots.size)] = 1.0
-
-    synth_chart = ddcl_datasets.DdclChart(
-        song_key=pathlib.Path(audio_path).stem,
-        difficulty="generated",
-        meter=int(meter),
-        beat_audio=beat_mert,
-        stream=stream,
-        slots=dummy_slots,
-        memlen=0,
-    )
-
-    effective_max_beats = int(
-        max_beats
-        if max_beats is not None
-        else getattr(itgpt_model, "max_beats", itgpt_constants.MAX_BEATS)
-    )
-    probs = itgpt_eval.predict_chart_slots(
+    onset_times = _predict_itgpt_onsets_for_mert(
+        pathlib.Path(audio_path).stem,
+        beat_mert,
+        grid,
         itgpt_model,
-        synth_chart,
-        max_beats=effective_max_beats,
+        difficulty="generated",
+        target_density=target_density,
+        meter=meter,
+        threshold=threshold,
+        max_beats=max_beats,
         device=target_device,
     )
-    onset_times = decode_itgpt_slots_to_times(
-        probs, grid, threshold=threshold, use_slot_centers=False
-    )
     return onset_times, grid
+
+
+def predict_itgpt_pack_from_audio(
+    audio_path: str,
+    itgpt_model: Any,
+    *,
+    difficulties: collections.abc.Sequence[DifficultyPreset] = DEFAULT_DIFFICULTY_PACK,
+    beat_grid: BeatGrid | None = None,
+    beat_tracker: str = TRACKER_AUTO,
+    snap_beats: bool = False,
+    threshold: float = 0.5,
+    max_beats: int | None = None,
+    mert_layers: tuple[int, ...] = DEFAULT_MERT_LAYERS,
+    mert_cache_suffix: str = DEFAULT_MERT_CACHE_SUFFIX,
+    device: str | torch.device | None = None,
+) -> tuple[dict[str, np.ndarray], BeatGrid]:
+    """Run Beat This! and MERT once and decode onsets for a full difficulty pack.
+
+    Args:
+        audio_path: Path to the raw audio file.
+        itgpt_model: Trained PyTorch :class:`ItgptPlacementModel`.
+        difficulties: Sequence of :class:`DifficultyPreset` definitions
+            (defaults to 5-difficulty Beginner–Challenge pack).
+        beat_grid: Optional precomputed :class:`BeatGrid` (estimated when None).
+        beat_tracker: Beat tracker backend (``"auto"``, ``"beat_this"``, ``"librosa"``).
+        snap_beats: Apply song-level onset-strength phase alignment to beats.
+        threshold: Slot probability cutoff (default ``0.5``).
+        max_beats: Maximum beat chunk length (defaults to model's ``max_beats``).
+        mert_layers: MERT hidden layers to average when extracting on the fly.
+        mert_cache_suffix: Sibling MERT cache suffix checked before extraction.
+        device: Optional compute device override.
+
+    Returns:
+        Tuple ``(onsets_by_difficulty, beat_grid)`` where keys follow the
+        ordering of ``difficulties``.
+
+    Raises:
+        ValueError: If ``difficulties`` is empty.
+    """
+    if not difficulties:
+        raise ValueError("difficulties must contain at least one DifficultyPreset")
+
+    target_device = runtime.resolve_device(device)
+    grid = (
+        beat_grid
+        if beat_grid is not None
+        else estimate_beats(
+            audio_path,
+            tracker=beat_tracker,
+            device=target_device,
+            snap_to_onsets=snap_beats,
+        )
+    )
+    mert_100hz = _load_or_extract_mert_for_audio(
+        audio_path,
+        mert_layers=mert_layers,
+        mert_cache_suffix=mert_cache_suffix,
+        device="cuda" if target_device.type == "cuda" else "cpu",
+    )
+    n_frames = int(getattr(itgpt_model, "n_frames_per_beat", 24))
+    beat_mert = ddcl_features.beats_to_mert_tensor(
+        mert_100hz, grid.beat_times_with_end, n_frames=n_frames
+    ).astype(np.float32)
+
+    song_key = pathlib.Path(audio_path).stem
+    onsets_by_difficulty: dict[str, np.ndarray] = {}
+    for preset in difficulties:
+        onsets_by_difficulty[preset.name] = _predict_itgpt_onsets_for_mert(
+            song_key,
+            beat_mert,
+            grid,
+            itgpt_model,
+            difficulty=preset.name,
+            target_density=preset.target_density,
+            meter=preset.meter,
+            threshold=threshold,
+            max_beats=max_beats,
+            device=target_device,
+            fallback_top_k=True,
+        )
+    return onsets_by_difficulty, grid

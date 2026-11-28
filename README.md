@@ -91,12 +91,13 @@ python scripts/generate.py \
 | `--target_density`      | Target average steps/beat for density-conditioned ITGPT-MERT models (default `2.0`)                    |
 | `--meter`               | Difficulty meter for meter-conditioned ITGPT checkpoints / `.sm` header (default `10`)                 |
 | `--threshold`           | Onset probability threshold (default `0.5`)                                                            |
+| `--all_difficulties`    | Generate a full 5-difficulty pack (`Beginner`–`Challenge`) in a single Beat This! + MERT pass          |
 | `--use_post_processing` | Refine legacy dense onset timings with peak-picking                                                    |
 | `--device`              | Compute device (`auto`, `cuda`, `mps`, `cpu`)                                                          |
 
 #### Generator UI
 
-A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset (dense or ITGPT-MERT `.pt`) and arrow models—or leave those fields blank to download default models—configure beat tracker (`auto` / `beat_this` / `librosa`), ITGPT target density, onset threshold, transient beat snapping, and save as `.sm` or `.txt`. Launch it with:
+A simple desktop UI is available to run the generator without the command line: select an input audio file, optionally choose onset (dense or ITGPT-MERT `.pt`) and arrow models—or leave those fields blank to download default models—configure beat tracker (`auto` / `beat_this` / `librosa`), ITGPT target density, onset threshold, transient beat snapping, full 5-difficulty pack generation (`Beginner`–`Challenge`), and save as `.sm` or `.txt`. Launch it with:
 
 ```bash
 python scripts/generate_ui.py

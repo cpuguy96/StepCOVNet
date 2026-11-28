@@ -103,6 +103,14 @@ PARSER.add_argument(
     help="Onset probability threshold (default: 0.5).",
 )
 PARSER.add_argument(
+    "--all_difficulties",
+    action="store_true",
+    help=(
+        "Generate a full 5-difficulty pack (Beginner–Challenge) in a single "
+        "Beat This! + MERT pass."
+    ),
+)
+PARSER.add_argument(
     "--device",
     type=str,
     default="auto",
@@ -141,6 +149,7 @@ def main(argv: list[str] | None = None) -> None:
         target_density=args.target_density,
         meter=args.meter,
         threshold=args.threshold,
+        all_difficulties=args.all_difficulties,
     )
 
     out_path = pathlib.Path(args.output_file)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections.abc
 import dataclasses
 import math
 from typing import Any
@@ -81,6 +82,7 @@ class OutputData:
             Measure 1 Beat 0 starts at ``anchor_time_sec``).
         beat_grid: Optional :class:`stepcovnet.beat_tracking.BeatGrid` carrying
             tracked beats and downbeats from raw audio.
+        meters: Optional mapping from difficulty name to numeric StepMania meter.
     """
 
     title: str
@@ -88,6 +90,7 @@ class OutputData:
     notes: dict[str, list[tuple[str, str]]]
     offset: float = 0.0
     beat_grid: beat_tracking.BeatGrid | None = None
+    meters: dict[str, int] | None = None
 
     def generate_txt_output(self) -> str:
         """Generate a formatted string representation of the step chart.
@@ -118,7 +121,8 @@ class OutputData:
 
         Args:
             music_filename: Audio filename written to ``#MUSIC``.
-            meter: Difficulty meter written to each ``#NOTES`` block.
+            meter: Default difficulty meter written to ``#NOTES`` blocks when
+                :attr:`meters` does not provide a per-difficulty meter.
 
         Returns:
             Formatted StepMania ``.sm`` file content.
@@ -158,6 +162,11 @@ class OutputData:
         )
         note_blocks: list[str] = []
         for difficulty, rows in self.notes.items():
+            chart_meter = (
+                int(self.meters[difficulty])
+                if self.meters is not None and difficulty in self.meters
+                else int(meter)
+            )
             body, _ = _format_sm_measures(
                 rows,
                 bpm=bpm_val,
@@ -169,7 +178,7 @@ class OutputData:
                 "     dance-single:\n"
                 "     :\n"
                 f"     {difficulty}:\n"
-                f"     {int(meter)}:\n"
+                f"     {chart_meter}:\n"
                 "     0.000,0.000,0.000,0.000,0.000:\n"
                 f"{body}\n"
                 ";\n"
@@ -342,6 +351,102 @@ def _run_arrow_inference(
     return np.asarray(out)
 
 
+def _predict_arrows_for_onsets(
+    onsets: np.ndarray,
+    *,
+    arrow_model: Any,
+    required_arrow: list[str],
+    bpm: int,
+    beat_grid: beat_tracking.BeatGrid | None,
+    normalized_spec: np.ndarray | None,
+) -> list[tuple[str, str]]:
+    """Build arrow-model feature inputs for ``onsets`` and decode arrow rows."""
+    max_onset = float(np.max(onsets))
+    denom = max_onset if max_onset > 0.0 else 1.0
+    normalized_onsets = np.expand_dims(
+        (onsets / denom).astype(np.float32), axis=(0, -1)
+    )
+
+    arrow_feed: dict[str, np.ndarray] = {}
+    for base in required_arrow:
+        if base == "timing_input":
+            arrow_feed[base] = normalized_onsets
+        elif base == "interval_input":
+            intervals_norm = datasets.normalized_intervals_from_times(onsets)
+            arrow_feed[base] = np.expand_dims(intervals_norm, axis=(0, -1))
+        elif base == "interval_log_input":
+            interval_log = datasets.log_normalized_intervals_from_times(onsets)
+            arrow_feed[base] = np.expand_dims(interval_log, axis=(0, -1))
+        elif base == "interval_next_input":
+            interval_next = datasets.next_interval_normalized_from_times(onsets)
+            arrow_feed[base] = np.expand_dims(interval_next, axis=(0, -1))
+        elif base == "step_index_input":
+            step_idx = datasets.step_index_normalized(len(onsets))
+            arrow_feed[base] = np.expand_dims(step_idx, axis=(0, -1))
+        elif base == "beat_phase_input":
+            beat_ph = (
+                beat_grid.beat_phase_for_times(onsets)
+                if beat_grid is not None
+                else datasets.beat_phase_from_times_bpm(onsets, float(bpm))
+            )
+            arrow_feed[base] = np.expand_dims(beat_ph, axis=(0, -1))
+        elif base == "snippet_input":
+            assert normalized_spec is not None
+            in_opts = getattr(arrow_model, "input_options", None)
+            half_frames = int(getattr(in_opts, "snippet_half_frames", 0))
+            snippets = datasets.extract_snippets_from_spec(
+                normalized_spec, onsets, half_frames
+            )
+            arrow_feed[base] = np.expand_dims(snippets, axis=0)
+
+    arrows_pred = _run_arrow_inference(arrow_model, arrow_feed)
+    arrows = np.argmax(arrows_pred[0], axis=-1)
+    return _create_txt_mapping(onsets=list(onsets), arrows=list(arrows))
+
+
+def _decode_dense_onsets_for_preset(
+    probs_1d: np.ndarray,
+    preset: beat_tracking.DifficultyPreset,
+    *,
+    base_threshold: float,
+    use_post_processing: bool,
+) -> np.ndarray:
+    """Decode legacy frame-level onset probabilities for one difficulty preset."""
+    probs = np.asarray(probs_1d, dtype=np.float64).reshape(-1)
+    if probs.size == 0:
+        return np.zeros(0, dtype=np.float64)
+
+    ratio = min(1.0, max(0.1, float(preset.target_density) / 3.0))
+    eff_threshold = min(
+        0.95,
+        float(base_threshold) + (1.0 - float(base_threshold)) * (1.0 - ratio) * 0.5,
+    )
+    min_dist_ms = 50.0 / ratio
+
+    if use_post_processing:
+        onsets = _post_process_predictions(
+            probs, threshold=eff_threshold, min_distance_ms=min_dist_ms
+        )
+    else:
+        min_distance_frames = max(
+            1, int(round((min_dist_ms / 1000.0) / datasets.HOP_COEFF))
+        )
+        raw_indices = np.where(probs > eff_threshold)[0]
+        kept: list[int] = []
+        last_idx = -min_distance_frames
+        for idx in raw_indices:
+            idx_i = int(idx)
+            if idx_i - last_idx >= min_distance_frames:
+                kept.append(idx_i)
+                last_idx = idx_i
+        onsets = np.asarray(kept, dtype=np.float64) * datasets.HOP_COEFF
+
+    if onsets.size == 0 and float(np.max(probs)) > 0.0:
+        best_idx = int(np.argmax(probs))
+        onsets = np.asarray([best_idx * datasets.HOP_COEFF], dtype=np.float64)
+    return onsets
+
+
 def generate_output_data(
     *,
     audio_path: str,
@@ -355,6 +460,9 @@ def generate_output_data(
     target_density: float = 2.0,
     meter: int = 10,
     threshold: float = 0.5,
+    all_difficulties: bool = False,
+    difficulties: collections.abc.Sequence[beat_tracking.DifficultyPreset]
+    | None = None,
 ) -> OutputData:
     """Generate step chart data for an audio file using PyTorch models.
 
@@ -376,16 +484,98 @@ def generate_output_data(
         target_density: Target steps per beat for density-conditioned ITGPT models.
         meter: Difficulty meter for meter-conditioned ITGPT models.
         threshold: Onset probability threshold.
+        all_difficulties: When True, generate a full 5-difficulty pack
+            (``Beginner`` through ``Challenge``) in a single beat-tracking and
+            MERT pass.
+        difficulties: Optional custom sequence of
+            :class:`stepcovnet.beat_tracking.DifficultyPreset` overrides (implies
+            multi-difficulty pack generation).
 
     Returns:
         Populated :class:`OutputData`.
 
     Raises:
-        ValueError: If no onsets are predicted or BPM cannot be estimated.
+        ValueError: If no onsets are predicted, ``difficulties`` is empty, or BPM
+            cannot be estimated.
     """
     required_arrow = _required_arrow_inputs(arrow_model)
     normalized_spec: np.ndarray | None = None
     beat_grid: beat_tracking.BeatGrid | None = None
+    pack_mode = bool(all_difficulties or difficulties is not None)
+
+    if pack_mode:
+        presets = (
+            tuple(difficulties)
+            if difficulties is not None
+            else beat_tracking.DEFAULT_DIFFICULTY_PACK
+        )
+        if not presets:
+            raise ValueError("difficulties must contain at least one DifficultyPreset")
+
+        if _is_itgpt_placement_model(onset_model):
+            onsets_by_diff, beat_grid = beat_tracking.predict_itgpt_pack_from_audio(
+                audio_path,
+                onset_model,
+                difficulties=presets,
+                beat_tracker=beat_tracker,
+                snap_beats=snap_beats,
+                threshold=threshold,
+                device=_model_device(onset_model),
+            )
+            if bpm is None:
+                bpm = max(1, min(9999, int(round(beat_grid.bpm))))
+            if "snippet_input" in required_arrow:
+                spec = datasets.audio_to_spectrogram(audio_path).T
+                normalized_spec = datasets.normalize_onset_spectrogram(spec)
+        else:
+            if bpm is None:
+                if beat_tracker != beat_tracking.TRACKER_LIBROSA:
+                    beat_grid = beat_tracking.estimate_beats(
+                        audio_path,
+                        tracker=beat_tracker,
+                        snap_to_onsets=snap_beats,
+                    )
+                    bpm = max(1, min(9999, int(round(beat_grid.bpm))))
+                else:
+                    bpm = _estimate_bpm_from_audio(
+                        audio_path, beat_tracker=beat_tracker
+                    )
+            spec = datasets.audio_to_spectrogram(audio_path).T
+            normalized_spec = datasets.normalize_onset_spectrogram(spec)
+            onset_pred = _run_onset_inference(onset_model, normalized_spec)
+            probs_1d = np.asarray(onset_pred[0]).reshape(-1)
+            onsets_by_diff = {
+                preset.name: _decode_dense_onsets_for_preset(
+                    probs_1d,
+                    preset,
+                    base_threshold=threshold,
+                    use_post_processing=use_post_processing,
+                )
+                for preset in presets
+            }
+
+        notes_by_diff: dict[str, list[tuple[str, str]]] = {}
+        for preset in presets:
+            diff_onsets = onsets_by_diff[preset.name]
+            if not diff_onsets.shape[0]:
+                raise ValueError("Failed to predict any onsets for the audio file.")
+            notes_by_diff[preset.name] = _predict_arrows_for_onsets(
+                diff_onsets,
+                arrow_model=arrow_model,
+                required_arrow=required_arrow,
+                bpm=int(bpm),
+                beat_grid=beat_grid,
+                normalized_spec=normalized_spec,
+            )
+
+        return OutputData(
+            title=song_title,
+            bpm=int(bpm),
+            notes=notes_by_diff,
+            offset=beat_grid.sm_offset_sec if beat_grid is not None else 0.0,
+            beat_grid=beat_grid,
+            meters={preset.name: int(preset.meter) for preset in presets},
+        )
 
     if _is_itgpt_placement_model(onset_model):
         onsets, beat_grid = beat_tracking.predict_itgpt_onsets_from_audio(
@@ -427,52 +617,18 @@ def generate_output_data(
     if not onsets.shape[0]:
         raise ValueError("Failed to predict any onsets for the audio file.")
 
-    max_onset = float(np.max(onsets))
-    denom = max_onset if max_onset > 0.0 else 1.0
-    normalized_onsets = np.expand_dims(
-        (onsets / denom).astype(np.float32), axis=(0, -1)
-    )
-
-    arrow_feed: dict[str, np.ndarray] = {}
-    for base in required_arrow:
-        if base == "timing_input":
-            arrow_feed[base] = normalized_onsets
-        elif base == "interval_input":
-            intervals_norm = datasets.normalized_intervals_from_times(onsets)
-            arrow_feed[base] = np.expand_dims(intervals_norm, axis=(0, -1))
-        elif base == "interval_log_input":
-            interval_log = datasets.log_normalized_intervals_from_times(onsets)
-            arrow_feed[base] = np.expand_dims(interval_log, axis=(0, -1))
-        elif base == "interval_next_input":
-            interval_next = datasets.next_interval_normalized_from_times(onsets)
-            arrow_feed[base] = np.expand_dims(interval_next, axis=(0, -1))
-        elif base == "step_index_input":
-            step_idx = datasets.step_index_normalized(len(onsets))
-            arrow_feed[base] = np.expand_dims(step_idx, axis=(0, -1))
-        elif base == "beat_phase_input":
-            beat_ph = (
-                beat_grid.beat_phase_for_times(onsets)
-                if beat_grid is not None
-                else datasets.beat_phase_from_times_bpm(onsets, float(bpm))
-            )
-            arrow_feed[base] = np.expand_dims(beat_ph, axis=(0, -1))
-        elif base == "snippet_input":
-            assert normalized_spec is not None
-            in_opts = getattr(arrow_model, "input_options", None)
-            half_frames = int(getattr(in_opts, "snippet_half_frames", 0))
-            snippets = datasets.extract_snippets_from_spec(
-                normalized_spec, onsets, half_frames
-            )
-            arrow_feed[base] = np.expand_dims(snippets, axis=0)
-
-    arrows_pred = _run_arrow_inference(arrow_model, arrow_feed)
-    arrows = np.argmax(arrows_pred[0], axis=-1)
-
     return OutputData(
         title=song_title,
         bpm=int(bpm),
         notes={
-            "Challenge": _create_txt_mapping(onsets=list(onsets), arrows=list(arrows)),
+            "Challenge": _predict_arrows_for_onsets(
+                onsets,
+                arrow_model=arrow_model,
+                required_arrow=required_arrow,
+                bpm=int(bpm),
+                beat_grid=beat_grid,
+                normalized_spec=normalized_spec,
+            ),
         },
         offset=beat_grid.sm_offset_sec if beat_grid is not None else 0.0,
         beat_grid=beat_grid,

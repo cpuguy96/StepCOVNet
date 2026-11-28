@@ -640,6 +640,310 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
         unchanged = beat_tracking.regularize_beat_grid(var_grid)
         np.testing.assert_allclose(unchanged.beat_times, var_grid.beat_times, atol=1e-9)
 
+    def test_difficulty_preset_validation_and_defaults(self) -> None:
+        self.assertEqual(
+            [p.name for p in beat_tracking.DEFAULT_DIFFICULTY_PACK],
+            ["Beginner", "Easy", "Medium", "Hard", "Challenge"],
+        )
+        self.assertEqual(
+            [p.meter for p in beat_tracking.DEFAULT_DIFFICULTY_PACK],
+            [3, 5, 7, 9, 11],
+        )
+        densities = [p.target_density for p in beat_tracking.DEFAULT_DIFFICULTY_PACK]
+        self.assertEqual(densities, sorted(densities))
+
+        with self.assertRaises(ValueError):
+            beat_tracking.DifficultyPreset(name="  ", meter=5, target_density=1.0)
+        with self.assertRaises(ValueError):
+            beat_tracking.DifficultyPreset(name="Easy", meter=0, target_density=1.0)
+        with self.assertRaises(ValueError):
+            beat_tracking.DifficultyPreset(name="Easy", meter=5, target_density=0.0)
+
+    def test_predict_itgpt_pack_runs_beat_and_mert_once_with_topk_fallback(
+        self,
+    ) -> None:
+        grid = beat_tracking.BeatGrid(
+            beat_times=np.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0], dtype=np.float64),
+            downbeat_times=np.array([0.5, 2.5], dtype=np.float64),
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        fake_mert = np.zeros((400, 1024), dtype=np.float32)
+        seen_charts: list[tuple[str, int, float]] = []
+
+        def fake_predict_chart_slots(_model, chart, **_kwargs) -> np.ndarray:
+            mean_density = float(np.sum(chart.slots)) / float(chart.slots.shape[0])
+            seen_charts.append((chart.difficulty, int(chart.meter), mean_density))
+            probs = np.zeros((chart.slots.shape[0], 48), dtype=np.float32)
+            if chart.difficulty == "Beginner":
+                # All below threshold=0.5 -> exercises fallback_top_k
+                probs[:, 0] = 0.2
+                probs[0, 0] = 0.35
+                probs[2, 0] = 0.30
+            elif chart.difficulty == "Easy":
+                probs[:, 0] = 0.8
+            elif chart.difficulty == "Medium":
+                probs[:, 0] = 0.8
+                probs[:, 24] = 0.8
+            elif chart.difficulty == "Hard":
+                probs[:, [0, 12, 24]] = 0.85
+            else:
+                probs[:, [0, 12, 24, 36]] = 0.9
+            return probs
+
+        dummy_model = mock.Mock(n_frames_per_beat=24, max_beats=64)
+        with (
+            mock.patch.object(
+                beat_tracking, "estimate_beats", return_value=grid
+            ) as mock_beats,
+            mock.patch.object(
+                beat_tracking,
+                "_load_or_extract_mert_for_audio",
+                return_value=fake_mert,
+            ) as mock_mert,
+            mock.patch.object(
+                beat_tracking.itgpt_eval,
+                "predict_chart_slots",
+                side_effect=fake_predict_chart_slots,
+            ) as mock_slots,
+        ):
+            onsets_by_diff, out_grid = beat_tracking.predict_itgpt_pack_from_audio(
+                "/songs/demo.ogg",
+                dummy_model,
+                threshold=0.5,
+                device="cpu",
+            )
+
+        mock_beats.assert_called_once()
+        mock_mert.assert_called_once()
+        self.assertEqual(mock_slots.call_count, 5)
+        self.assertIs(out_grid, grid)
+        self.assertEqual(
+            list(onsets_by_diff.keys()),
+            ["Beginner", "Easy", "Medium", "Hard", "Challenge"],
+        )
+        counts = [int(onsets_by_diff[d].size) for d in onsets_by_diff]
+        # Beginner must be non-empty thanks to top-k fallback, and counts rise monotonically.
+        self.assertGreater(counts[0], 0)
+        self.assertEqual(counts, sorted(counts))
+        self.assertLess(counts[0], counts[-1])
+        self.assertEqual([m for _, m, _ in seen_charts], [3, 5, 7, 9, 11])
+
+        with self.assertRaises(ValueError):
+            beat_tracking.predict_itgpt_pack_from_audio(
+                "/songs/demo.ogg", dummy_model, difficulties=()
+            )
+
+    def test_generate_output_data_all_difficulties_itgpt_and_dense_sm_roundtrip(
+        self,
+    ) -> None:
+        grid = beat_tracking.BeatGrid(
+            beat_times=np.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0], dtype=np.float64),
+            downbeat_times=np.array([0.5, 2.5], dtype=np.float64),
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        itgpt_model = itgpt_models.build_itgpt_placement_model(
+            d_model=32,
+            n_heads=4,
+            n_enc_layers=1,
+            dropout_rate=0.0,
+            max_beats=64,
+            audio_feature_type="mert",
+            n_frames_per_beat=24,
+            feature_dim=16,
+            difficulty_source="density",
+            beat_aux_head=True,
+        ).eval()
+        arrow_model = models.build_arrow_model().eval()
+
+        fake_pack = {
+            "Beginner": np.array([0.5, 1.5], dtype=np.float64),
+            "Easy": np.array([0.5, 1.0, 1.5, 2.0], dtype=np.float64),
+            "Medium": np.array([0.5, 1.0, 1.25, 1.5, 2.0, 2.5], dtype=np.float64),
+            "Hard": np.array(
+                [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5], dtype=np.float64
+            ),
+            "Challenge": np.array(
+                [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75],
+                dtype=np.float64,
+            ),
+        }
+
+        with mock.patch.object(
+            beat_tracking,
+            "predict_itgpt_pack_from_audio",
+            return_value=(fake_pack, grid),
+        ) as mock_pack:
+            out = generator.generate_output_data(
+                audio_path="/songs/demo.ogg",
+                song_title="Five Pack",
+                onset_model=itgpt_model,
+                arrow_model=arrow_model,
+                all_difficulties=True,
+            )
+
+        mock_pack.assert_called_once()
+        self.assertEqual(out.bpm, 120)
+        self.assertEqual(
+            out.meters,
+            {"Beginner": 3, "Easy": 5, "Medium": 7, "Hard": 9, "Challenge": 11},
+        )
+        sm_text = out.generate_sm_output(music_filename="demo.ogg")
+        parsed = simfile_parser.parse_simfile_text(sm_text)
+        self.assertEqual(len(parsed.charts), 5)
+        self.assertEqual(
+            [(c.difficulty, int(c.meter)) for c in parsed.charts],
+            [
+                ("Beginner", 3),
+                ("Easy", 5),
+                ("Medium", 7),
+                ("Hard", 9),
+                ("Challenge", 11),
+            ],
+        )
+        for chart in parsed.charts:
+            self.assertGreater(len(list(simfile_parser.iter_chart_notes(chart))), 0)
+
+        # Also verify legacy dense onset model supports all_difficulties=True in one pass.
+        probs = np.zeros((1, 400, 1), dtype=np.float32)
+        for idx in range(10, 380, 10):
+            probs[0, idx, 0] = 0.9 if idx % 40 == 0 else 0.7
+        dense_onset = mock.Mock(return_value=probs)
+        del dense_onset.forward_logits
+        del dense_onset.predict
+        fake_spec = np.zeros((constants.N_MELS, 400), dtype=np.float32)
+        with (
+            mock.patch.object(
+                generator.datasets, "audio_to_spectrogram", return_value=fake_spec
+            ),
+            mock.patch.object(
+                generator.datasets,
+                "normalize_onset_spectrogram",
+                side_effect=lambda x: x,
+            ),
+        ):
+            dense_out = generator.generate_output_data(
+                audio_path="/songs/demo.ogg",
+                song_title="Dense Pack",
+                bpm=128,
+                onset_model=dense_onset,
+                arrow_model=arrow_model,
+                all_difficulties=True,
+                use_post_processing=True,
+            )
+        dense_onset.assert_called_once()
+        self.assertEqual(
+            list(dense_out.notes.keys()),
+            ["Beginner", "Easy", "Medium", "Hard", "Challenge"],
+        )
+        dense_counts = [len(dense_out.notes[d]) for d in dense_out.notes]
+        self.assertGreater(dense_counts[0], 0)
+        self.assertLessEqual(dense_counts[0], dense_counts[-1])
+
+    def test_cli_and_ui_forward_all_difficulties_flag(self) -> None:
+        fake_out = generator.OutputData(
+            title="Pack CLI",
+            bpm=128,
+            notes={
+                "Beginner": [("0.5", "1000")],
+                "Challenge": [("0.5", "1000"), ("1.0", "0001")],
+            },
+            meters={"Beginner": 3, "Challenge": 11},
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_sm = pathlib.Path(tmpdir) / "pack.sm"
+            with (
+                mock.patch.object(
+                    generate_script.pretrained,
+                    "resolve_onset_model_path",
+                    return_value="/fake/onset.pt",
+                ),
+                mock.patch.object(
+                    generate_script.pretrained,
+                    "resolve_arrow_model_path",
+                    return_value="/fake/arrow.pt",
+                ),
+                mock.patch.object(
+                    generate_script, "_load_onset_model_auto", return_value=mock.Mock()
+                ),
+                mock.patch.object(
+                    generate_script.trainers,
+                    "load_arrow_model",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_script.generator,
+                    "generate_output_data",
+                    return_value=fake_out,
+                ) as mock_gen,
+            ):
+                generate_script.main(
+                    [
+                        "--audio_path",
+                        "/songs/demo.ogg",
+                        "--song_title",
+                        "Pack CLI",
+                        "--output_file",
+                        str(out_sm),
+                        "--all_difficulties",
+                        "--device",
+                        "cpu",
+                    ]
+                )
+            self.assertTrue(mock_gen.call_args.kwargs["all_difficulties"])
+            parsed = simfile_parser.parse_simfile_text(out_sm.read_text())
+            self.assertEqual(
+                [(c.difficulty, int(c.meter)) for c in parsed.charts],
+                [("Beginner", 3), ("Challenge", 11)],
+            )
+
+            # UI _run_generation forwarding
+            q: queue.Queue = queue.Queue()
+            out_ui_sm = pathlib.Path(tmpdir) / "ui_pack.sm"
+            with (
+                mock.patch.object(
+                    generate_ui_script.pretrained,
+                    "resolve_onset_model_path",
+                    return_value="/fake/onset.pt",
+                ),
+                mock.patch.object(
+                    generate_ui_script.pretrained,
+                    "resolve_arrow_model_path",
+                    return_value="/fake/arrow.pt",
+                ),
+                mock.patch.object(
+                    generate_ui_script.trainers,
+                    "load_onset_model",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_ui_script.trainers,
+                    "load_arrow_model",
+                    return_value=mock.Mock(),
+                ),
+                mock.patch.object(
+                    generate_ui_script.generator,
+                    "generate_output_data",
+                    return_value=fake_out,
+                ) as mock_ui_gen,
+            ):
+                generate_ui_script._run_generation(
+                    audio_path="/songs/demo.ogg",
+                    song_title="Pack UI",
+                    bpm=None,
+                    onset_model_path=None,
+                    arrow_model_path=None,
+                    output_path=str(out_ui_sm),
+                    use_post_processing=False,
+                    result_queue=q,
+                    all_difficulties=True,
+                )
+            src, ok, val = q.get_nowait()
+            self.assertEqual(src, "generation")
+            self.assertTrue(ok, msg=str(val))
+            self.assertTrue(mock_ui_gen.call_args.kwargs["all_difficulties"])
+
 
 if __name__ == "__main__":
     unittest.main()

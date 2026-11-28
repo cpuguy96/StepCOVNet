@@ -146,6 +146,7 @@ def _run_generation(
     snap_beats: bool = False,
     target_density: float = 2.0,
     threshold: float = 0.5,
+    all_difficulties: bool = False,
 ) -> None:
     """Load models, run generator, write output. Puts (True, output_path) or (False, error_msg) into result_queue."""
     try:
@@ -167,6 +168,7 @@ def _run_generation(
             snap_beats=snap_beats,
             target_density=target_density,
             threshold=threshold,
+            all_difficulties=all_difficulties,
         )
         out_path = pathlib.Path(output_path)
         if out_path.suffix.lower() == ".sm":
@@ -197,6 +199,7 @@ class _GeneratorApp:
         use_post_processing_var: BooleanVar for post-processing toggle.
         beat_tracker_var: StringVar for beat tracker backend (auto/beat_this/librosa).
         snap_beats_var: BooleanVar for onset-transient beat snapping toggle.
+        all_difficulties_var: BooleanVar for generating a 5-difficulty pack.
         target_density_var: StringVar for ITGPT target density (steps/beat).
         threshold_var: StringVar for onset probability threshold.
         status_var: StringVar for status text.
@@ -209,7 +212,7 @@ class _GeneratorApp:
         self.root = root
         root.title("StepCOVNet Generator")
         root.minsize(400, 320)
-        root.geometry("480x640")
+        root.geometry("480x660")
         root.resizable(True, True)
         root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -226,6 +229,7 @@ class _GeneratorApp:
         self.use_post_processing_var = tk.BooleanVar(value=False)
         self.beat_tracker_var = tk.StringVar(value=beat_tracking.TRACKER_AUTO)
         self.snap_beats_var = tk.BooleanVar(value=False)
+        self.all_difficulties_var = tk.BooleanVar(value=False)
         self.target_density_var = tk.StringVar(value="2.0")
         self.threshold_var = tk.StringVar(value="0.5")
         self.status_var = tk.StringVar(value="")
@@ -332,6 +336,11 @@ class _GeneratorApp:
         cb_frame = tk.Frame(main_frame)
         cb_frame.grid(row=self._row, column=0, sticky=tk.W, pady=(4, 12))
         self._row += 1
+        tk.Checkbutton(
+            cb_frame,
+            text="Generate full 5-difficulty pack (Beginner–Challenge)",
+            variable=self.all_difficulties_var,
+        ).pack(anchor=tk.W)
         tk.Checkbutton(
             cb_frame,
             text="Use post-processing (peak-picking for legacy onset timings)",
@@ -442,6 +451,8 @@ class _GeneratorApp:
         assert isinstance(adv_result, tuple)
         beat_tracker, target_density, threshold = adv_result
         snap_beats = bool(self.snap_beats_var.get())
+        all_difficulties = bool(self.all_difficulties_var.get())
+        use_post_processing = bool(self.use_post_processing_var.get())
 
         self.run_btn.config(state=tk.DISABLED)
         self.set_status("Processing…")
@@ -454,12 +465,13 @@ class _GeneratorApp:
                 onset_model_path=onset_path,
                 arrow_model_path=arrow_path,
                 output_path=output_path,
-                use_post_processing=self.use_post_processing_var.get(),
+                use_post_processing=use_post_processing,
                 result_queue=self.result_queue,
                 beat_tracker=beat_tracker,
                 snap_beats=snap_beats,
                 target_density=target_density,
                 threshold=threshold,
+                all_difficulties=all_difficulties,
             )
 
         thread = threading.Thread(target=worker, daemon=True)
