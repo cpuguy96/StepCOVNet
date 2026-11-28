@@ -45,7 +45,7 @@
         ["_tmp/"],
         ["logs/"]
       ],
-      "must_not_contain_regex": [
+      "commands_not_contain_regex": [
         "STEPCOVNET_NO_WSL=1"
       ],
       "rubric": [

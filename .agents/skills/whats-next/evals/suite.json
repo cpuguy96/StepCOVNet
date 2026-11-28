@@ -8,7 +8,7 @@
       "id": "trig-whats-next-status",
       "prompt": "Where are we right now on ITGPT placement and what should we do next?",
       "expected_rules": [],
-      "optional_rules": [],
+      "optional_rules": ["python-env.md"],
       "forbidden_rules": ["git-and-ci.md"],
       "expected_skills": ["whats-next"],
       "optional_skills": ["onset-evaluation"],
