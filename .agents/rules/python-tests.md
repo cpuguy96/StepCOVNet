@@ -9,21 +9,12 @@ trigger: glob
 When you add or modify code under `src/`, `scripts/`, or `tests/`:
 
 1. **Update tests** in `tests/` (one test module per source module: `stepcovnet/foo.py` -> `tests/foo_test.py`; `scripts/bar.py` -> `tests/bar_test.py` when the script rule below applies).
-2. **Delta coverage** ΓÇö aim for **100%** of changed/new code via **public API** tests; high 90s only as last resort. Do not test private helpers solely for coverage.
-3. **Lint** with Ruff, pydoclint, and pyright on changed paths (`pyproject.toml` ΓÇö import order, Google docstrings, pathlib, types):
+2. **Delta coverage** — aim for **100%** of changed/new code via **public API** tests; high 90s only as last resort. Do not test private helpers solely for coverage.
+3. **Lint & type checks:** Run Ruff, pydoclint, and pyright per [python-style.md](python-style.md) (`pyproject.toml` — import order, Google docstrings, pathlib, types).
+4. **Verify** from repo root using the project venv (see [workspace.md](workspace.md)):
 
 ```text
-venv\Scripts\python.exe -m ruff check .
-venv\Scripts\pydoclint.exe src/stepcovnet/<package>/
-venv\Scripts\pyright.exe src/stepcovnet/<package>/
-```
-
-Narrow paths to changed files/packages when appropriate. Docstring rules: [python-style.md](python-style.md).
-
-4. **Verify** with Windows venv (see [python-environment.md](python-environment.md)):
-
-```text
-venv\Scripts\python.exe -m pytest tests/ -m "not slow" --cov=stepcovnet --cov=scripts
+python -m pytest tests/ -m "not slow" --cov=stepcovnet --cov=scripts
 ```
 
 Use the relevant test file when scope is narrow. Import conventions beyond Ruff: [python-style.md](python-style.md).

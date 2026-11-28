@@ -2,7 +2,7 @@
 
 **Purpose:** Items to decide before / during ablation runs. Mark status as we go: `open` · `decided` · `deferred`.
 
-**Timestamps:** Research log entries use `YYYY-MM-DD HH:MM:SS` from the system clock at write time (see [research-logging.md](../../.agents/rules/research-logging.md) and [research-session-workflow skill](../../.agents/skills/research-session-workflow/SKILL.md)).
+**Timestamps:** Research log entries use `YYYY-MM-DD HH:MM:SS` from the system clock at write time (see [docs-and-research.md](../../.agents/rules/docs-and-research.md) and [research-session-workflow skill](../../.agents/skills/research-session-workflow/SKILL.md)).
 
 **Pipeline:** audio → **pre** → **model** → raw outputs → **post** → final list → **metrics** → training feedback
 

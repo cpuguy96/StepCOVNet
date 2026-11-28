@@ -26,7 +26,7 @@ Lab notebook and paper-oriented notes for StepCOVNet research (onset detection a
 
 ## For agents and contributors
 
-Rule [research-logging.md](../../.agents/rules/research-logging.md) requires persisting **both** discussion and experiments here during research work, not only in chat.
+Rule [docs-and-research.md](../../.agents/rules/docs-and-research.md) requires persisting **both** discussion and experiments here during research work, not only in chat.
 
 **Workflow:**
 

@@ -6,22 +6,18 @@ trigger: glob
 
 # Python style
 
-Applies to all Python in `src/`, `scripts/`, and `tests/`.
+Applies to all Python in `src/`, `scripts/`, and `tests/`. Follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) for formatting and docstrings unless this file or `pyproject.toml` says otherwise.
 
-Follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) for formatting and docstrings unless this file says otherwise.
-
-**Lint:** After editing Python, run Ruff from the project venv at **repo root** (config in `pyproject.toml`). Use the same scope as CI (`ruff check .`), not only changed folders:
+**Lint:** After editing Python, run Ruff from repo root using the active project venv (see [workspace.md](workspace.md)) at the same CI scope (`ruff check .`):
 
 ```text
-venv\Scripts\python.exe -m ruff check .
-venv\Scripts\python.exe -m ruff format src scripts tests
-venv\Scripts\pydoclint.exe src/stepcovnet/<package>/
-venv\Scripts\pyright.exe src/stepcovnet/<package>/
+python -m ruff check .
+python -m ruff format src scripts tests
+python -m pydoclint src/stepcovnet/<package>/
+python -m pyright src/stepcovnet/<package>/
 ```
 
-**Before push:** `venv\Scripts\python.exe pre_submit.py --fast` for ruff; full `pre_submit.py --skip-install` before PR. Or install hooks once: `pre-commit install --install-hooks --hook-type pre-commit`.
-
-Use a narrower path when scope is small. Fix any remaining diagnostics Ruff, pydoclint, and pyright report. Config: `[tool.pydoclint]` and `[tool.pyright]` in `pyproject.toml`.
+Before commit/push, run `python pre_submit.py --fast` (or `--skip-install` for the full CI mirror). Config: `[tool.ruff]`, `[tool.pydoclint]`, and `[tool.pyright]` in `pyproject.toml`.
 
 ---
 
@@ -29,16 +25,16 @@ Use a narrower path when scope is small. Fix any remaining diagnostics Ruff, pyd
 
 Follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) unless this file or `pyproject.toml` says otherwise.
 
-| Google topic                        | Enforced by                          | Notes / deviations                                                                                          |
-| ----------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Line length (80 cols)               | Ruff format (`line-length = 88`)     | **88 columns** — Black-compatible; do not wrap to 80 in new code.                                           |
-| Imports                             | Ruff `I` + `PLC0415` + rules above | **Module-level only** in `src/`; see exceptions table in Imports section.     |
-| Naming (`N`)                        | Ruff `N`                             | **`N806` ignored** for ML locals (`X`, `y`, …).                                                             |
-| `PTH`)      | Ruff `PTH`                           | **Full repo:** `ruff check .` at repo root (same scope as CI). Fix violations in touched files; do not commit with a red tree. |
-| Simplify (`SIM`)                    | Ruff `SIM`                           | Prefer combined `with` contexts where Ruff suggests.                                                        |
-| Docstrings (§3.8)                   | pydoclint + rules below              | Google-style **Args / Returns / Raises** on **public and `_private` functions**; see docstring section.     |
-| Type hints (§2.22)                  | pyright (`typeCheckingMode = basic`) | Run on packages you change; fix missing imports and obvious type errors.                                    |
-| `main()` guard, exceptions, strings | Agent review                         | No dedicated linter — match surrounding module style.                                                       |
+| Google topic                        | Enforced by                          | Notes / deviations                                                                                                             |
+| ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Line length (80 cols)               | Ruff format (`line-length = 88`)     | **88 columns** — Black-compatible; do not wrap to 80 in new code.                                                              |
+| Imports                             | Ruff `I` + `PLC0415` + rules below   | **Module-level only** in `src/`; see exceptions table in Imports section.                                                      |
+| Naming (`N`)                        | Ruff `N`                             | **`N806` ignored** for ML locals (`X`, `y`, …).                                                                                |
+| Pathlib (`PTH`)                     | Ruff `PTH`                           | **Full repo:** `ruff check .` at repo root (same scope as CI). Fix violations in touched files; do not commit with a red tree. |
+| Simplify (`SIM`)                    | Ruff `SIM`                           | Prefer combined `with` contexts where Ruff suggests.                                                                           |
+| Docstrings (§3.8)                   | pydoclint + rules below              | Google-style **Args / Returns / Raises** on **public and `_private` functions**; see docstring section.                        |
+| Type hints (§2.22)                  | pyright (`typeCheckingMode = basic`) | Run on packages you change; fix missing imports and obvious type errors.                                                       |
+| `main()` guard, exceptions, strings | Agent review                         | No dedicated linter — match surrounding module style.                                                                          |
 
 ---
 
@@ -205,7 +201,6 @@ def validate_prep_config(config: PrepConfig) -> None:
 ### Agent checklist (before finishing Python edits)
 
 1. Run **`ruff check .`** at repo root (CI scope), then format changed paths.
-2. Run **pydoclint** on any `src/stepcovnet/` package you changed.
-3. Run **pyright** on the same package(s) when you add or change type hints or public APIs.
-4. Before **commit**: `venv\Scripts\python.exe pre_submit.py` (or at minimum `ruff check .` + pytest for touched areas).
-5. For each new/changed function or method (public **or** `_private`): summary line; **Args** if not obvious; **Raises** when applicable; **Returns** only per table above.
+2. Run **pydoclint** and **pyright** on changed `src/stepcovnet/` packages (and modified scripts when adding types/docstrings).
+3. Before push: run `python pre_submit.py --fast` (or `--skip-install` before PR).
+4. For each new/changed function or method (public **or** `_private`): summary line; **Args** if not obvious; **Raises** when applicable; **Returns** only per table above.
