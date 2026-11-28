@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "owner": "git-and-ci.md",
+  "owner_type": "rule",
+  "description": "Local trigger and behavior evals for the git-and-ci model_decision rule.",
+  "trigger_cases": [
+    {
+      "id": "trig-rule-git-commit-push",
+      "prompt": "Commit these verified changes cleanly across our refactor phases and push them to origin/master.",
+      "expected_rules": ["git-and-ci.md"],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": [],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "autoresearch", "whats-next"]
+    },
+    {
+      "id": "trig-rule-ci-tooling",
+      "prompt": "Update the Ruff lint configuration and GitHub pre-submit workflow, then rebase and push to master.",
+      "expected_rules": ["git-and-ci.md"],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": [],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "autoresearch", "onset-evaluation"]
+    },
+    {
+      "id": "trig-rule-git-neg",
+      "prompt": "How many epochs did ITGPT train in configs/ddc/itgpt_placement_fraxtil_orig_128ep.json?",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": []
+    }
+  ],
+  "behavior_cases": [
+    {
+      "id": "beh-git-multiphase-push",
+      "target": "git-and-ci.md",
+      "prompt": "We just completed and verified Phase 1 of an approved 3-phase refactor in StepCOVNet. Should we keep Phase 1 uncommitted/local until Phase 3 is done, or what should we do next before starting Phase 2?",
+      "must_contain_any": [
+        ["git push"],
+        ["pre_submit.py", "ruff"]
+      ],
+      "must_not_contain_regex": [
+        "--no-verify"
+      ],
+      "rubric": [
+        "Explicitly states that Phase 1 must be verified, committed, and pushed to the remote before starting Phase 2 rather than holding commits locally."
+      ]
+    }
+  ]
+}

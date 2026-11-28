@@ -77,5 +77,5 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `docs/agents/project-layout.md` | Repo layout (this file) |
 | `docs/agents/self-journal.md` | Agent process receipt journal (`JRN-…`) |
 | `.agents/rules/` | Declarative rules (`model_decision` and file-scoped `glob`) |
-| `.agents/skills/` | Auto-discoverable task playbooks |
+| `.agents/skills/` | Auto-discoverable task playbooks + local `evals/suite.json` (scored by `scripts/eval_agent_setup.py`) |
 | `AGENTS.md` (repo root) | Thin session entry router |

@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-05: Add skill-local and rule-local TDD evals and hill-climbing runner
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 01:33:17 |
+| **Category** | skill-gap |
+| **Summary** | User requested measurable evals to hill-climb and improve skills (requiring new/improved evals that fail before edits and pass after), with eval suites stored locally inside each skill directory rather than a single universal repo folder. |
+| **Artifact** | skill: `.agents/skills/agent-maintenance/SKILL.md` (`Workflow C`) + `.agents/skills/agent-maintenance/scripts/run_workflow_eval.py`; local suites: `.agents/skills/*/evals/suite.json` + `.agents/rules/evals/*.json`; scorer: `scripts/eval_agent_setup.py`; tests: `tests/eval_agent_setup_test.py` |
+| **Action taken** | Co-located `evals/suite.json` inside each skill (plus `.agents/rules/evals/*.json` for rules), added `scripts/eval_agent_setup.py` for local discovery/validation/Layer 2+3 scoring/hill-climb diffing, added `run_workflow_eval.py` for `run_workflow` execution, and documented TDD skill hill-climbing in `agent-maintenance` |
+| **Related** | `agent-maintenance`, `JRN-20261128-04` |
+
 ### JRN-20261128-04: Add dedicated onset-evaluation skill and router entry
 
 | Field | Value |

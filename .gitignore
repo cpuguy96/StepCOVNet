@@ -152,6 +152,8 @@ experiments/
 .agents/**
 !.agents/rules/
 !.agents/rules/*.md
+!.agents/rules/evals/
+!.agents/rules/evals/*.json
 !.agents/skills/
 !.agents/skills/**
 
