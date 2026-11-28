@@ -1,7 +1,6 @@
 ---
 name: colab-gpu-stepcovnet
 description: Launches and manages StepCOVNet GPU training runs on Google Colab via google-colab-cli and private Google Drive (rclone), without pushing WIP code to GitHub. Use proactively whenever preparing parallel experiments, syncing datasets/code for Colab, or inspecting remote Colab results.
-disable-model-invocation: true
 ---
 
 # Colab GPU (StepCOVNet)

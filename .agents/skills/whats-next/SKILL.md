@@ -11,10 +11,10 @@ Also load this skill when the user says **do it**, **go ahead**, **start it**, o
 
 ## Workflow (same turn)
 
-1. Run status (repo root, Windows venv):
+1. Run status from repo root with the project venv (see [workspace.md](../../rules/workspace.md)):
 
    ```text
-   venv\Scripts\python.exe scripts/project_status.py
+   python scripts/project_status.py
    ```
 
    Use `--json` only when merging into another tool.
@@ -47,26 +47,11 @@ Copying Current phase **Next action** verbatim is wrong when that line is an unp
 
 **Do not** edit this skill to record a new F1, EXP id, config path, or today's Next action. Put those in Current phase (and the EXP entry). This file stays **how to choose**, not **what is current**.
 
-### No ladder scale-up unless asked
-
-Do **not** put R3+ / more train songs / “scale the ladder” in **Now** or **If you say "do it"** unless the user **explicitly** asks to scale. Prefer fixed-R2 diagnostics, architecture, or objective changes. Scale may appear only under **Alternate** (and only if evidence supports it).
-
-### No hard locality hacks as the product path
-
-Hard prev-relative windows (`pointer_local_ce_radius` / force-advance / min_ahead) are **diagnostic crutches**: they shrink the search space using chart gap statistics and **fail on long pauses**. Do **not** put further R-shrink, force-advance, or similar hard decode/CE masks in **Now** / **do it** as the long-term approach — even if they raise val numbers.
-
-| Allowed | Not the goal |
-| ------- | ------------ |
-| Use hard-R results as **evidence** that diffuse full-suffix CE was the failure mode | Treat hard-R / force-advance as the system to ship or keep stacking |
-| Prefer objectives/architecture that **learn** to localize under mono/full support and still handle long gaps | Optimize R for this val set’s gap histogram |
-
-If the user asks for another hard-mask probe anyway, run it under **Alternate** and label it diagnostic-only.
-
 ### Literature recreation
 
 When Current phase is literature recreation: match the paper’s corpus, split, grid, and metric; cite bibliography keys; do not mix placement metrics in one table. Which paper or stage is current is in Current phase — not here.
 
-Do **not** put `final_data` dense/MERT/AR trains in **Now** / **do it** as a literature scoreboard unless the user asks. That corpus is transfer/generalization only until shown otherwise.
+Do **not** put `final_data` dense/MERT trains in **Now** / **do it** as a literature scoreboard unless the user asks or Stage-2 transfer gating explicitly calls for it.
 
 ### Stay on the user's task
 
@@ -145,5 +130,4 @@ See [research-session-workflow § Session end](../research-session-workflow/SKIL
 ## Related
 
 - Strategic record: [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md)
-- AR ladder protocol: [AR_SCALING_LADDER.md](../../../docs/research/AR_SCALING_LADDER.md)
 - Local checks: [scripts/project_status.py](../../../scripts/project_status.py)

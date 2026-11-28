@@ -6,18 +6,7 @@
 
 ## Environment conventions
 
-Commands assume **repository root** as the working directory (clone path is arbitrary).
-
-| Workload | Executable | Notes |
-| -------- | ---------- | ----- |
-| CPU pytest, lint, `preprocess_dataset.py` | `python` (project venv activated) | From repository root |
-| GPU train / MERT (WSL) | `python` after `source scripts/wsl_gpu_env.sh` | Override with `STEPCOVNET_WSL_PYTHON` or `WSL_VENV` |
-| GPU from Windows | `python scripts/...` | Auto-dispatch via `wsl_gpu.py` when the script supports it |
-| Checkpoints / callbacks | `models_wsl/`, `callbacks/` | Gitignored; paths in JSON configs are repo-relative |
-
-Shared WSL shell vars: `scripts/wsl_common.sh`. See [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md).
-
-Pre-push CI mirror: `python pre_submit.py` (from repository root).
+Commands assume **repository root** as the working directory. See [workspace.md](../../.agents/rules/workspace.md) for Windows vs WSL vs cloud-VM Python executables, `_tmp/`/`logs/` scratch paths, and `python pre_submit.py`. Checkpoints and TensorBoard roots (`models_wsl/`, `callbacks/`) are repo-relative and gitignored.
 
 ---
 
@@ -83,9 +72,10 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 
 | Path | Role |
 | ---- | ---- |
-| `docs/research/` | Lab notebook (EXP, NOTE, paper) — incl. [AR_ONSET_DESIGN.md](../research/AR_ONSET_DESIGN.md) |
-| `docs/research/archive/` | Superseded research plans (e.g. event-onset WP handoff) |
-| `docs/agents/` | Agent state — [README](README.md), layout, self-journal |
-| `.agents/skills/` | Task playbooks (procedures) |
-| `docs/onset_output_targets_planning.md` | Design planning |
-| `AGENTS.md` (repo root) | Session entry router |
+| `docs/research/` | Lab notebook (`EXPERIMENT_LOG.md`, `DISCUSSION_NOTES.md`, `PAPER_LEDGER.md`, `PIPELINE_ARCHITECTURE.md`) |
+| `docs/research/archive/` | Superseded research plans |
+| `docs/agents/project-layout.md` | Repo layout (this file) |
+| `docs/agents/self-journal.md` | Agent process receipt journal (`JRN-…`) |
+| `.agents/rules/` | Universal (`workspace.md`) and file-scoped (`**/*.py`, `scripts/**`, `docs/**`) rules |
+| `.agents/skills/` | Auto-discoverable task playbooks |
+| `AGENTS.md` (repo root) | Thin session entry router |

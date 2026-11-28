@@ -1,14 +1,13 @@
 ---
 name: wsl-gpu-stepcovnet
-description: Runs StepCOVNet GPU training and MERT extraction on Windows via WSL with PyTorch CUDA libraries. Use for train_onset, overfit scripts, extract_mert_features with cuda, or when PyTorch sees zero GPUs in WSL.
-disable-model-invocation: true
+description: Runs StepCOVNet GPU training and MERT extraction on Windows via WSL with PyTorch CUDA libraries. Use for train_*_placement, train_onset, extract_mert_features with cuda, or when PyTorch sees zero GPUs in WSL.
 ---
 
 # WSL GPU (StepCOVNet)
 
 ## Windows development model
 
-On Windows, **CPU work stays in the clone's Windows venv**; **CUDA work runs in WSL**. The repo clone can live on any drive or folder — dispatch code derives WSL paths from the current checkout, not from a fixed username or `/mnt/c/Users/...` string.
+On Windows, **CPU work stays in the clone's Windows venv**; **CUDA work runs in WSL**. The repo clone can live on any drive or folder — dispatch code derives WSL paths from the current checkout, not from a fixed username or drive-mount path. See [workspace.md](../../rules/workspace.md) for Python executable overrides (`WSL_VENV`, `STEPCOVNET_WSL_PYTHON`, `STEPCOVNET_IN_WSL`, `STEPCOVNET_NO_WSL`).
 
 | Setting | Default | Override |
 | ------- | ------- | -------- |
@@ -37,7 +36,7 @@ The WSL GPU is **single-tenant** for the agent:
 | Rule | Detail |
 | ---- | ------ |
 | **One training job** | Do not start a second WSL GPU **training** run while one is already active (train, overfit, MERT extract with `--device=cuda`). |
-| **No train + infer overlap** | Do not run GPU **training** and GPU **inference** (`debug_*`, `--ar_decode`, `eval_dense_*`, `model.predict`) in **separate processes** at the same time. |
+| **No train + infer overlap** | Do not run GPU **training** and GPU **inference** (`eval_*`, `generate.py`) in **separate processes** at the same time. |
 | **Before launching** | `assert_wsl_gpu_free_for_training()` checks `nvidia-smi` **and** `logs/gpu_wsl.lock` (`stepcovnet.wsl_gpu_lock`). Windows dispatch acquires the lock before `wsl`; a second parallel launch fails on `O_EXCL`. Override: `STEPCOVNET_FORCE_GPU=1`. |
 | **Manual check** | `python -c "from stepcovnet import wsl_gpu; wsl_gpu.assert_wsl_gpu_free_for_training()"` |
 | **After training** | Offline decode/eval on GPU is fine **sequentially** once training has exited. |

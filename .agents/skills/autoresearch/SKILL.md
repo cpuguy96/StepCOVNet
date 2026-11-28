@@ -4,13 +4,12 @@ description: >-
   One-prompt agent autoresearch loop for StepCOVNet: goal + time budget → orient,
   hypothesize, run, log, repeat until success or deadline. Use when the user says
   "run autoresearch", gives a research goal with a budget, or names a profile
-  (e.g. itgpt-onset). Not for unattended Python planners (--hours / lattice).
-disable-model-invocation: true
+  (e.g. itgpt-onset).
 ---
 
 # Autoresearch (agent loop)
 
-**You** run the research loop in this agent session. Harness scripts train, eval, and record numbers; **you** choose hypotheses from evidence. Do **not** hand reasoning to unattended knob mutators (`overnight_planner`, fixed queues, lattice search) when this skill is active.
+**You** run the research loop in this agent session. Harness scripts train, eval, and record numbers; **you** choose hypotheses from evidence rather than handing reasoning to unattended knob mutators.
 
 North star: [PIPELINE_ARCHITECTURE.md](../../../docs/research/PIPELINE_ARCHITECTURE.md).  
 Logging: [research-session-workflow](../research-session-workflow/SKILL.md).  
@@ -72,7 +71,7 @@ Go.
 | **experiment-log** | General research; log `EXP-…` in EXPERIMENT_LOG                                          | [profiles/experiment-log.md](profiles/experiment-log.md)  |
 | **custom**         | User defines metric + run command in the goal                                            | You define orient/run/log for that session; still follow tiers + anti-spam |
 
-If the user names a playbook skill (e.g. tide-ablations), treat it as **custom** or follow that skill **inside** one autoresearch iteration, then return to the judge step.
+If the user names a specific skill or script workflow, treat it as **custom** or execute that workflow inside one autoresearch iteration, then return to the judge step.
 
 ## Change tiers (all profiles)
 
@@ -92,7 +91,7 @@ Tier A must include **reasoning**: what failed, what you expect, what changed vs
 2. **No repeats:** Do not rerun the same recipe/config fingerprint unless infra retry.
 3. **Pinned policy:** Do not change eval gates / success metrics mid-session unless the profile allows it.
 4. **One job per GPU target:** No duplicate training drivers on the same GPU (profile preflight). Parallel chains across distinct GPUs (e.g. Colab `L4` + `T4` + local WSL) and parallel Tier-C coding are allowed when the profile isolates git worktrees (see [profiles/itgpt-onset.md](profiles/itgpt-onset.md)).
-5. **No planner handoff:** Do not use unattended `--hours` / lattice planners while this skill is active — they replace agent reasoning.
+| **No planner handoff:** Do not delegate reasoning to unattended lattice/sweep planners while this skill is active.
 
 ## Budget discipline
 
@@ -104,14 +103,14 @@ When the user gives a **budget** (e.g. “7 hours”, “overnight”, “until 
 | **Valid stop reasons only** | **Success** (goal met), **budget exhausted**, or **hard block** (GPU dead, tests red, policy). |
 | **Invalid stop reasons** | “Queue finished”, “ran N experiments”, “no more pre-written plans”, “good enough progress”, “session summary written”. |
 | **No finite queue exit** | Never use a fixed list of experiments as the session boundary. Seed plans are OK as a **buffer**; when the buffer empties, **replan from evidence** and continue until deadline. |
-| **Throughput estimate** | Before starting: `expected_runs ≈ budget_minutes / minutes_per_run` (profile-specific). A 7 h tide session ≈ **40–50** runs at ~8–10 min each — plan for that volume, not a handful. |
-| **After each run** | If `now < deadline` and goal not met → **next plan + next run** in the same session (or feed the harness before `plan-wait` expires). |
-| **Background drivers** | If you background a harness, **you** remain responsible for supplying the next plan until deadline or goal. Monitor completion; do not fire-and-forget. |
+| **Throughput estimate** | Before starting: `expected_runs ≈ budget_minutes / minutes_per_run` (profile-specific; e.g. ~16–20 min per Stage-1 Colab run). |
+| **After each run** | If `now < deadline` and goal not met → **next plan + next run** in the same session. |
+| **Background drivers** | If you background a run, **you** remain responsible for monitoring completion (`--attach` / logs) and supplying the next plan until deadline or goal. |
 | **Resume** | If context or chat ends early but wall-clock budget remains, user may say _continue autoresearch_ — pick up with **remaining** budget, not a fresh short queue. |
 
-**Wrong (stops at ~1 h on a 7 h budget):** pre-write 8 recipes → custom script iterates list → exit when list empty.
+**Wrong (stops early on a multi-hour budget):** pre-write 4 configs → run queue → exit when queue empties.
 
-**Right:** `deadline = now + 7h` → loop: `session_brief` → `next_experiment.json` → `--autoresearch --once` → repeat until `now >= deadline` or 634/634 free-run.
+**Right:** `deadline = now + budget` → loop: orient (`itgpt_scoreboard.py` + `eval_val_breakdown.json`) → hypothesize Tier A/B/C → train/eval (`colab_run_remote.sh` or local WSL) → log `EXP-…` → repeat until `now >= deadline` or target metric + guardrails pass.
 
 ## Core loop (pseudocode)
 
@@ -145,15 +144,15 @@ Do **not** stop because a pre-seeded experiment list finished while `now < deadl
 
 | Gotcha                                  | What goes wrong                                                                             | What to do                                                                                             |
 | --------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Planner instead of agent**            | `run_overnight --hours` / lattice scripts tweak JSON knobs without reasoning; plateaus fast | Use `--autoresearch --once` or `--autoresearch --hours N`; never bare `--hours`       |
+| **Unattended sweeper instead of agent** | Automated parameter sweeps tweak JSON knobs without reasoning and plateau fast              | Drive hypotheses directly per iteration in this session                                                |
 | **Duplicate drivers**                   | Two drivers on the same GPU → overlapping GPU jobs, OOM, corrupt lock state                 | Preflight every session; max one job per GPU target; isolate parallel lanes in worktrees               |
-| **Tier C without tests**                | 200-epoch GPU run on broken decode/metrics path                                             | `pytest` + `pre_submit.py --fast` **before** WSL train                                                 |
+| **Tier C without tests**                | Long GPU run on broken decode/metrics path                                                  | `pytest` + `pre_submit.py --fast` **before** GPU launch                                                |
 | **Single-knob spam after plateau**      | Primary metric flat for many runs; agent keeps nudging one λ or lr                          | Enforce [anti-spam](#anti-spam); upgrade tier or switch hypothesis class                               |
 | **Changing success metric mid-session** | Incomparable runs (e.g. swap checkpoint metric or eval gate)                                | Keep profile pinned eval policy; change only with user approval                                        |
-| **Finite queue / early exit**           | Pre-written N experiments finish in ~1 h; agent declares “session done” on 7 h budget        | [Budget discipline](#budget-discipline): replan when buffer empty; only stop at deadline or goal       |
-| **Long agent session** | Context fills after many iterations; agent may stop early | User says _continue autoresearch_ with **remaining** budget; summarize state first |
-| **Uncommitted harness vs disk**         | `experiments.json` / logs ahead of git; brief may still work off `results.jsonl`            | Do not assume registry is committed; read `logs/` + brief                                              |
-| **Background train**                    | No epoch lines in chat; looks idle while GPU is busy                                        | Profile watch command or `show_status`; foreground `--once` when possible                              |
+| **Finite queue / early exit**           | Pre-written N experiments finish early; agent declares “session done” with budget left      | [Budget discipline](#budget-discipline): replan when buffer empty; only stop at deadline or goal       |
+| **Long agent session**                  | Context fills after many iterations; agent may stop early                                   | User says _continue autoresearch_ with **remaining** budget; summarize state first                     |
+| **Uncommitted outputs vs disk**         | `experiments/colab/` / `logs/` ahead of git                                                 | Check disk outputs and scoreboard before concluding a run is missing                                   |
+| **Background train**                    | Long remote run returns poll timeout                                                      | Re-attach (`--attach`) or inspect live logs / TensorBoard                                              |
 | **Committing `logs/`**                  | Huge artifacts, machine paths in PR                                                         | Never commit `logs/`; research logs in `docs/research/` only                                           |
 | **Bare `python`**                       | Wrong env on Windows/WSL                                                                    | Project venv `python` from repo root; WSL per [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md)     |
 

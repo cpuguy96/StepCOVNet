@@ -36,7 +36,7 @@ User goal or standard script from [project layout](../../../../docs/agents/proje
 | Task            | Entry                                           |
 | --------------- | ----------------------------------------------- |
 | ITGPT placement | [itgpt-onset](itgpt-onset.md) / `scripts/train_itgpt_placement.py` |
-| Dense ablations | [tide-ablations](../../tide-ablations/SKILL.md) |
+| Dense / DDCL / DDC | `scripts/train_onset.py`, `scripts/train_ddcl_placement.py`, `scripts/train_ddc_placement.py` |
 
 ## Log
 

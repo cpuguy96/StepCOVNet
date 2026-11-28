@@ -1,7 +1,6 @@
 ---
 name: research-session-workflow
 description: Starts a research session and logs EXP and NOTE entries with timestamps. Use when beginning research work, logging experiments, or writing discussion notes. Promote findings to PAPER_OUTLINE only when drafting the paper.
-disable-model-invocation: true
 ---
 
 # Research session workflow
@@ -19,34 +18,30 @@ North star: [PIPELINE_ARCHITECTURE.md](../../../docs/research/PIPELINE_ARCHITECT
 
 Tag changes by pipeline stage: `pre` | `model` | `post` | `metric` | `train`.
 
-Plan docs with JSON/schemas: [design-doc-fields.md](../../rules/design-doc-fields.md) and [DATASET_PREP_PIPELINE.md §6.3](../../../docs/research/DATASET_PREP_PIPELINE.md#63-schema-versions-and-field-rationale).
+Plan docs with JSON/schemas: [docs-and-research.md](../../rules/docs-and-research.md) and [DATASET_PREP_PIPELINE.md §6.3](../../../docs/research/DATASET_PREP_PIPELINE.md#63-schema-versions-and-field-rationale).
 
 ## Log experiment (`EXP-YYYYMMDD-NN`)
 
 **Same turn, no ask:** After any measurable run or offline eval (`eval_itgpt_placement.py`, `eval_ddcl_placement.py`, `eval_dense_onset.py`, threshold sweep, training finish), prepend or update [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) in the **same session** — do not offer to log or wait for user confirmation.
 
-**Complete the series:** When a thread has multiple runs (run1, run2, v3, v4, offline `--ar_decode` logs under `logs/`), append **every** run’s key numbers to the same `EXP-…` entry in the session you discover them — not only the latest run and not vague “local v4” hand-waves.
+**Complete the series:** When a thread has multiple runs (multi-seed, sweep variants, logs under `logs/` or `experiments/colab/`), append **every** run’s key numbers to the same `EXP-…` entry in the session you discover them — not only the latest run.
 
-**Before suggesting a re-run:** `grep` [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) and `logs/` for the checkpoint/config — if decode already exists on disk, read it and update the log instead of proposing the job again.
+**Before suggesting a re-run:** `grep` [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) and `logs/` for the checkpoint/config — if evaluation already exists on disk, read it and update the log instead of proposing the job again.
 
 **Before suggesting a new experiment / loss / architecture probe:** gather **evidence first** (existing ckpt metrics, ablation, cheap analysis). Do not recommend a train because Current phase named a lever — that line is a candidate until measurements support it. See [whats-next § Evidence before recommending a run](../whats-next/SKILL.md#evidence-before-recommending-a-run).
 
-Prepend to [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) after measurable runs:
+Prepend to [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) after measurable runs (match existing entry format):
 
 - Top of `## Experiment entries` + new index row at top
 - **Timestamp:** `YYYY-MM-DD HH:MM:SS` from system clock (`Get-Date -Format "yyyy-MM-dd HH:mm:ss"` / `date +"%Y-%m-%d %H:%M:%S"`). No approximate suffixes.
-- Track, status, config paths, key numbers, conclusion
+- Track, status, config paths, key numbers (`F1@0.5`, `F1_max`, grounding drops, error slices), and conclusion
 - Increment `NN` per calendar day; check latest ID before prepending
-
-Template: [_EXPERIMENT_ENTRY_TEMPLATE.md](../../../docs/research/_EXPERIMENT_ENTRY_TEMPLATE.md)
 
 ## Log discussion (`NOTE-YYYYMMDD-NN`)
 
-Prepend to [DISCUSSION_NOTES.md](../../../docs/research/DISCUSSION_NOTES.md) for design insights, Q&A, failure analysis — even without a new run.
+Prepend to [DISCUSSION_NOTES.md](../../../docs/research/DISCUSSION_NOTES.md) for design insights, Q&A, failure analysis — even without a new run. Match existing entry format:
 
-Fields: Timestamp, Topic, Context, Discovery, Implication, Open (optional), Related.
-
-Template: [_DISCUSSION_NOTE_TEMPLATE.md](../../../docs/research/_DISCUSSION_NOTE_TEMPLATE.md)
+- Fields: Timestamp (`YYYY-MM-DD HH:MM:SS`), Topic, Context, Discovery, Implication, Open (optional), Related.
 
 ## Log citation (prior art)
 
@@ -69,6 +64,6 @@ Cite `EXP-…` / `NOTE-…` and bibliography keys. Link back to EXPERIMENT_LOG f
 
 ## Session end
 
-- Prepend [self-journal.md](../../../docs/agents/self-journal.md) if a process gap was found → [agent-self-improvement](../agent-self-improvement/SKILL.md)
+- Prepend [self-journal.md](../../../docs/agents/self-journal.md) if a process gap was found → [agent-maintenance](../agent-maintenance/SKILL.md)
 - After any `EXP-…` that changes routing (pass, fail, abort, new gate), refresh the compact block at the top of § **Current phase** in [EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) **same turn** — at minimum **Updated**, **Next action**, and **Blockers** (see [whats-next § Maintenance](../whats-next/SKILL.md#maintenance-agents))
 - Keep detail tables below the compact block; do not duplicate long prose in **Next action**

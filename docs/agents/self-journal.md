@@ -4,7 +4,7 @@ Iterative improvements to agent behavior, process, and conventions on this proje
 
 **Order:** newest entries first (prepend below).
 
-**Same-turn promotion:** The journal is a receipt, not the fix. Every entry must cite an **Artifact** path (rule, skill, or code) created or updated **in the same turn** before the JRN is written. See [agent-self-improvement skill](../../.agents/skills/agent-self-improvement/SKILL.md).
+**Same-turn promotion:** The journal is a receipt, not the fix. Every entry must cite an **Artifact** path (rule, skill, or code) created or updated **in the same turn** before the JRN is written. See [agent-maintenance skill](../../.agents/skills/agent-maintenance/SKILL.md).
 
 ## When to prepend
 
@@ -41,6 +41,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 ---
 
 ## Entries
+
+### JRN-20261128-02: Restructure agent setup for progressive disclosure and single-source-of-truth rules
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 00:47:42 |
+| **Category** | convention |
+| **Summary** | User directed a full restructure of the agent setup after seeing operational rules (`Agent commits`, `Cloud VM & Colab hard defaults`, duplicated path tables) had bloated `AGENTS.md`, while 3 always-on rules, 5 scoped rules, 3 redundant meta-skills, dead AR/tide skills, and 3 redundant manual index docs created drift and context overhead. |
+| **Artifact** | `AGENTS.md` (thin router); rules: `.agents/rules/workspace.md` (`always_on`), `docs-and-research.md`, `python-style.md`, `python-tests.md`, `scripts-execution.md`; skills: `.agents/skills/agent-maintenance/SKILL.md` + cleaned auto-discoverable active skills; layout: `docs/agents/project-layout.md`; validator: `scripts/audit_agent_brain.py` |
+| **Action taken** | Consolidated always-on workspace/env/git/cloud-VM rules into `.agents/rules/workspace.md` and docs/research rules into `.agents/rules/docs-and-research.md`, slimmed `AGENTS.md` to a ~20-line router, merged 3 meta-skills into `agent-maintenance`, removed dead tide/onset-event skills and manual indexes (`agent-brain.md`, `.agents/skills/README.md`, `docs/agents/README.md`), enabled native progressive disclosure (`disable-model-invocation` removed), and upgraded `audit_agent_brain.py` to enforce frontmatter, link integrity, and router bounds |
+| **Related** | `agent-maintenance`, `JRN-20261128-01` |
 
 ### JRN-20261128-01: Commit and push to the remote after each verified phase on multi-phase tasks
 
