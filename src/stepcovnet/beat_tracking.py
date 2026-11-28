@@ -286,26 +286,95 @@ def estimate_beats_librosa(audio_path: str) -> BeatGrid:
     )
 
 
+def _compute_attack_onset_envelope(
+    y: np.ndarray,
+    sr: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute a zero-lag short-window attack-onset envelope and its timestamps.
+
+    Combines a short-window causal log-RMS attack jump (for percussive kicks and
+    snares) with short-window centered log-mel spectral flux (for tonal/melodic
+    attacks without large broadband RMS jumps). Unlike default
+    ``librosa.onset.onset_strength`` (``n_fft=2048`` backward diff), this peaks
+    within ~1–2 ms of the physical waveform transient leading edge.
+
+    Args:
+        y: Mono 1D audio waveform.
+        sr: Sample rate in Hz.
+
+    Returns:
+        Tuple ``(envelope, env_times_sec)`` on a ~1.5 ms frame grid.
+    """
+    y_arr = np.asarray(y, dtype=np.float32).reshape(-1)
+    if y_arr.size < 256:
+        return np.zeros(0, dtype=np.float64), np.zeros(0, dtype=np.float64)
+
+    rms_hop = 64
+    rms = librosa.feature.rms(
+        y=y_arr, frame_length=256, hop_length=rms_hop, center=True
+    )[0]
+    n_rms = int(rms.size)
+    if n_rms < 4:
+        return np.zeros(0, dtype=np.float64), np.zeros(0, dtype=np.float64)
+
+    log_rms = np.log(rms.astype(np.float64) + 1e-4)
+    k = 4  # ~5.8 ms pre/post comparison window at 44.1 kHz
+    pad = np.pad(log_rms, (k, k), mode="edge")
+    cs = np.concatenate([[0.0], np.cumsum(pad)])
+    pre = (cs[k : k + n_rms] - cs[:n_rms]) / float(k)
+    post = (cs[2 * k : 2 * k + n_rms] - cs[k : k + n_rms]) / float(k)
+    e_rms = np.maximum(0.0, post - pre)
+    t_rms = librosa.frames_to_time(np.arange(n_rms), sr=sr, hop_length=rms_hop)
+
+    env = np.zeros(n_rms, dtype=np.float64)
+    rms_std = float(np.std(e_rms))
+    if rms_std > 1e-12:
+        env += 0.5 * (e_rms / rms_std)
+
+    mel_hop = 128
+    if y_arr.size >= 512:
+        mel = librosa.feature.melspectrogram(
+            y=y_arr,
+            sr=sr,
+            n_fft=512,
+            hop_length=mel_hop,
+            n_mels=64,
+            power=1.0,
+        )
+        if mel.shape[1] >= 3:
+            log_mel = np.log1p(10.0 * mel.astype(np.float64))
+            e_mel = np.maximum(0.0, log_mel[:, 2:] - log_mel[:, :-2]).mean(axis=0)
+            t_mel = librosa.frames_to_time(
+                np.arange(1, 1 + e_mel.size), sr=sr, hop_length=mel_hop
+            )
+            e_mel_interp = np.interp(t_rms, t_mel, e_mel)
+            mel_std = float(np.std(e_mel_interp))
+            if mel_std > 1e-12:
+                env += 0.5 * (e_mel_interp / mel_std)
+
+    return env, t_rms
+
+
 def snap_beats_to_onsets(
     beat_grid: BeatGrid,
     audio_path: str,
     *,
-    max_shift_ms: float = 25.0,
-    step_ms: float = 1.0,
+    max_shift_ms: float = 35.0,
+    step_ms: float = 0.5,
 ) -> BeatGrid:
-    """Apply a constant song-level phase shift aligning beats to audio transients.
+    """Apply a constant song-level phase shift aligning beats to audio attacks.
 
-    Neural beat trackers trained on MIR beat annotations often sit ~10-15 ms
+    Neural beat trackers trained on MIR beat annotations often sit ~15-30 ms
     behind sharp percussive attack transients expected by rhythm-game charts.
     This searches a single scalar shift ``delta in [-max_shift_ms, +max_shift_ms]``
-    maximizing mean onset strength at ``beat_times + delta`` without altering
-    inter-beat spacing.
+    maximizing mean zero-lag attack-onset strength at ``beat_times + delta``
+    without altering inter-beat spacing.
 
     Args:
         beat_grid: Input :class:`BeatGrid`.
         audio_path: Path to the source audio file.
-        max_shift_ms: Maximum absolute shift in milliseconds.
-        step_ms: Grid search resolution in milliseconds.
+        max_shift_ms: Maximum absolute shift in milliseconds (default ``35.0``).
+        step_ms: Grid search resolution in milliseconds (default ``0.5``).
 
     Returns:
         New :class:`BeatGrid` shifted by the optimal scalar offset.
@@ -313,24 +382,23 @@ def snap_beats_to_onsets(
     if max_shift_ms <= 0.0 or step_ms <= 0.0:
         return beat_grid
     y, sr = librosa.load(audio_path, sr=constants.TARGET_SR, mono=True)
-    hop_length = 256
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
-    if onset_env.size == 0:
+    onset_env, env_times = _compute_attack_onset_envelope(y, int(sr))
+    if onset_env.size == 0 or float(np.max(onset_env)) <= 0.0:
         return beat_grid
-    env_times = librosa.frames_to_time(
-        np.arange(onset_env.size), sr=sr, hop_length=hop_length
-    )
+
+    max_shift_sec = float(max_shift_ms) / 1000.0
+    env_end = float(env_times[-1])
+    bt = beat_grid.beat_times
+    interior = bt[(bt >= max_shift_sec) & (bt <= env_end - max_shift_sec)]
+    score_bt = interior if interior.size > 0 else bt
 
     shifts_sec = (
         np.arange(-max_shift_ms, max_shift_ms + 0.5 * step_ms, step_ms) / 1000.0
     )
     best_shift = 0.0
     best_score = -float("inf")
-    bt = beat_grid.beat_times
     for shift in shifts_sec:
-        shifted = bt + float(shift)
-        if np.any(shifted < 0.0):
-            continue
+        shifted = score_bt + float(shift)
         score = float(np.mean(np.interp(shifted, env_times, onset_env)))
         if score > best_score:
             best_score = score
@@ -338,12 +406,27 @@ def snap_beats_to_onsets(
 
     if abs(best_shift) < 1e-6:
         return beat_grid
-    shifted_beats = np.maximum(0.0, beat_grid.beat_times + best_shift)
-    shifted_downbeats = (
-        np.maximum(0.0, beat_grid.downbeat_times + best_shift)
-        if beat_grid.downbeat_times.size > 0
-        else beat_grid.downbeat_times
-    )
+    raw_beats = beat_grid.beat_times + best_shift
+    kept_beats = raw_beats[raw_beats >= 0.0]
+    if kept_beats.size < 2:
+        # Preserve strict monotonicity if fewer than 2 non-negative beats remain.
+        shift_floor = float(np.min(beat_grid.beat_times))
+        applied_shift = max(best_shift, -shift_floor)
+        shifted_beats = beat_grid.beat_times + applied_shift
+        shifted_downbeats = (
+            beat_grid.downbeat_times + applied_shift
+            if beat_grid.downbeat_times.size > 0
+            else beat_grid.downbeat_times
+        )
+    else:
+        shifted_beats = kept_beats
+        shifted_downbeats = (
+            (beat_grid.downbeat_times + best_shift)[
+                beat_grid.downbeat_times + best_shift >= 0.0
+            ]
+            if beat_grid.downbeat_times.size > 0
+            else beat_grid.downbeat_times
+        )
     return BeatGrid(
         beat_times=shifted_beats,
         downbeat_times=shifted_downbeats,

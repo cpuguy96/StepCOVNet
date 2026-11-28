@@ -254,43 +254,45 @@ class BeatTrackerBackendsTest(unittest.TestCase):
 
     def test_snap_beats_to_onsets_aligns_constant_phase_offset(self) -> None:
         sr = constants.TARGET_SR
-        hop_length = 256
-        n_env = 400
-        env_times = beat_tracking.librosa.frames_to_time(
-            np.arange(n_env), sr=sr, hop_length=hop_length
+        # Synthetic 120 BPM kick + synth-pad waveform with exact attacks at 0.5s intervals
+        true_beats = np.array(
+            [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0], dtype=np.float64
         )
-        # Put sharp onset-strength spikes at exact 0.500s intervals
-        true_beats = np.array([0.5, 1.0, 1.5, 2.0, 2.5], dtype=np.float64)
-        onset_env = np.zeros(n_env, dtype=np.float32)
+        n = int(round(4.6 * sr))
+        t = np.arange(n, dtype=np.float64) / sr
+        y = 0.10 * np.sin(2.0 * np.pi * 220.0 * t)
         for tb in true_beats:
-            onset_env += np.exp(-0.5 * ((env_times - tb) / 0.006) ** 2).astype(
-                np.float32
-            )
+            i0 = int(round(tb * sr))
+            length = int(round(0.12 * sr))
+            lt = np.arange(length, dtype=np.float64) / sr
+            env = (1.0 - np.exp(-lt / 0.004)) * np.exp(-lt / 0.045)
+            phase = 2.0 * np.pi * np.cumsum(50.0 + 110.0 * np.exp(-lt / 0.02)) / sr
+            y[i0 : i0 + length] += 0.75 * env * np.sin(phase)
+        y_f32 = y.astype(np.float32)
 
-        # Start with a +14 ms late beat grid (typical neural beat tracker bias)
+        # Start with a +24 ms late beat grid AND a beat near t=0 (0.015s) to verify
+        # negative shifts are not blocked by Beat 0 proximity.
+        late_beats = np.concatenate([[0.015], true_beats + 0.024])
         late_grid = beat_tracking.BeatGrid(
-            beat_times=true_beats + 0.014,
-            downbeat_times=np.array([0.514], dtype=np.float64),
+            beat_times=late_beats,
+            downbeat_times=np.array([0.015, 2.024], dtype=np.float64),
             bpm=120.0,
             tracker=beat_tracking.TRACKER_BEAT_THIS,
         )
-        with (
-            mock.patch.object(
-                beat_tracking.librosa,
-                "load",
-                return_value=(np.zeros(sr * 3, dtype=np.float32), sr),
-            ),
-            mock.patch.object(
-                beat_tracking.librosa.onset,
-                "onset_strength",
-                return_value=onset_env,
-            ),
+        with mock.patch.object(
+            beat_tracking.librosa,
+            "load",
+            return_value=(y_f32, sr),
         ):
             snapped = beat_tracking.snap_beats_to_onsets(
-                late_grid, "song.ogg", max_shift_ms=25.0, step_ms=1.0
+                late_grid, "song.ogg", max_shift_ms=35.0, step_ms=0.5
             )
+        # Beat 0 shifted slightly negative and was dropped cleanly; remaining 8 beats align within 3 ms.
+        self.assertEqual(snapped.beat_times.size, true_beats.size)
+        self.assertTrue(np.all(snapped.beat_times >= 0.0))
         residual_ms = float(np.mean(np.abs(snapped.beat_times - true_beats)) * 1000.0)
         self.assertLess(residual_ms, 3.0)
+        self.assertAlmostEqual(float(snapped.downbeat_times[0]), 2.0, delta=0.003)
 
 
 class ItgptRawAudioGenerationTest(unittest.TestCase):
