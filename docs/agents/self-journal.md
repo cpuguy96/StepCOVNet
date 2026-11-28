@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-03: Replace always_on caps and scripts-execution rule with model_decision rules and skill runbooks
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 01:11:54 |
+| **Category** | convention |
+| **Summary** | User questioned why arbitrary `MAX_ALWAYS_ON_RULES`/`MAX_AGENTS_MD_LINES` caps existed, why non-universal policies sat in `always_on` instead of `model_decision`, and why runbooks sat in `glob` rules instead of skills. |
+| **Artifact** | rules: `.agents/rules/git-and-ci.md` (`model_decision`), `.agents/rules/python-env.md` (`model_decision`), slimmed `docs-and-research.md`; skills: `.agents/skills/wsl-gpu-stepcovnet/SKILL.md`, `colab-gpu-stepcovnet/SKILL.md`, `whats-next/SKILL.md`, `agent-maintenance/SKILL.md`; validator: `scripts/audit_agent_brain.py`, `tests/audit_agent_brain_test.py` |
+| **Action taken** | Deleted `workspace.md` (`always_on`) and `scripts-execution.md` (`glob`), moved git/CI and Python env/paths policies into `model_decision` rules, absorbed console/TensorBoard/rerun runbooks into `wsl-gpu-stepcovnet` and Cloud-VM/Colab details cleanly into `colab-gpu-stepcovnet`, and removed `MAX_ALWAYS_ON_RULES`/`MAX_AGENTS_MD_LINES` caps from `audit_agent_brain.py` while validating `model_decision` triggers |
+| **Related** | `agent-maintenance`, `JRN-20261128-02` |
+
 ### JRN-20261128-02: Restructure agent setup for progressive disclosure and single-source-of-truth rules
 
 | Field | Value |

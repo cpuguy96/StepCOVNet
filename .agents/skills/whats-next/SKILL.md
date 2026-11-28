@@ -11,7 +11,7 @@ Also load this skill when the user says **do it**, **go ahead**, **start it**, o
 
 ## Workflow (same turn)
 
-1. Run status from repo root with the project venv (see [workspace.md](../../rules/workspace.md)):
+1. Run status from repo root with the project venv (see [python-env.md](../../rules/python-env.md)):
 
    ```text
    python scripts/project_status.py
@@ -106,8 +106,7 @@ Keep prose tight. Link configs and docs with repo-relative paths.
 
 **Execution rules:**
 
-- Follow [scripts-execution.md](../../rules/scripts-execution.md): visible terminal, tee to `logs/<topic>_<run>.log`, TensorBoard before/with GPU training.
-- Follow [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md): one WSL GPU job at a time; check GPU lock first.
+- Follow [wsl-gpu-stepcovnet](../wsl-gpu-stepcovnet/SKILL.md): visible terminal, tee to `logs/<topic>_<run>.log`, TensorBoard before/with local GPU training, one WSL GPU job at a time (check GPU lock first).
 - Follow [research-session-workflow](../research-session-workflow/SKILL.md): log `EXP-…` when a run finishes or aborts; update Current phase compact block if routing changes.
 - Reuse the same `model_output_dir` / `callback_root_dir` on reruns unless the user asked for a separate artifact tree.
 

@@ -17,4 +17,4 @@ Open **one** relevant doc or skill below per task. Do not load multiple index fi
 
 - **North star:** [PIPELINE_ARCHITECTURE.md](docs/research/PIPELINE_ARCHITECTURE.md)
 - **Pre-submit gate (CI mirror):** `python pre_submit.py --fast` (quick static checks) · `python pre_submit.py --skip-install` (full suite; see [pre-submit.yml](.github/workflows/pre-submit.yml))
-- **Rules & skills:** Universal rules load from [workspace.md](.agents/rules/workspace.md); file-scoped rules live in `.agents/rules/`; skills auto-discover from `.agents/skills/`.
+- **Rules & skills:** Declarative rules (`model_decision` and `glob`) live in `.agents/rules/`; multi-step playbooks auto-discover from `.agents/skills/`.

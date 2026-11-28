@@ -1,5 +1,5 @@
 ---
-description: Design doc schema fields and research logging rules under docs/
+description: Design doc schema fields and declarative research logging constraints under docs/
 globs: docs/**
 trigger: glob
 ---
@@ -17,20 +17,11 @@ When creating or updating design/plan docs under `docs/` that define dataclasses
 
 Reference shape: [DATASET_PREP_PIPELINE.md §6.3](../../docs/research/DATASET_PREP_PIPELINE.md#63-schema-versions-and-field-rationale).
 
-## Research logging (`docs/research/**`)
+## Research logging constraints (`docs/research/**`)
 
-When work under `docs/research/` produces runs, design decisions, or durable insights, persist them in the **same turn** without asking the user to approve logging:
+- Persist measurable runs (`EXP-YYYYMMDD-NN`), design tradeoffs/insights (`NOTE-YYYYMMDD-NN`), and prior-art citations (`PAPER_LEDGER.md` + `paper.bib`) in the **same turn** without asking for approval.
+- Use `YYYY-MM-DD HH:MM:SS` from the system clock on every entry; cite prior art (never describe baselines as stealing).
+- Grep `EXPERIMENT_LOG.md` and `logs/` before proposing a re-run; promote to `PAPER_OUTLINE.md` only when drafting.
+- Call `reproducibility.apply_training_seed(seed)` before model construction and dataset creation.
 
-| Artifact | When | ID / key |
-| -------- | ---- | -------- |
-| `EXPERIMENT_LOG.md` | Measurable or reproducible run (training, eval, threshold sweep) | `EXP-YYYYMMDD-NN` |
-| `DISCUSSION_NOTES.md` | Design Q&A, tradeoffs, failure analysis | `NOTE-YYYYMMDD-NN` |
-| `PAPER_LEDGER.md` + `paper.bib` | Paper, codebase, pack, or metric used as prior art / baseline / method / data | citation key |
-| `PAPER_OUTLINE.md` | Paper-worthy results only (optional; when drafting) | — |
-
-- **Timestamps:** Use `YYYY-MM-DD HH:MM:SS` from the system clock at write time.
-- **No duplicate runs:** Grep `EXPERIMENT_LOG.md` and `logs/` before proposing a re-run.
-- **Prior art:** Cite prior work via `PAPER_LEDGER.md` + `paper.bib`; recreating a published pipeline is a baseline, not stealing.
-- **Training seeds:** Call `reproducibility.apply_training_seed(seed)` before model construction and dataset creation.
-
-Full workflow: [research-session-workflow](../skills/research-session-workflow/SKILL.md).
+Full procedure: [research-session-workflow](../skills/research-session-workflow/SKILL.md).

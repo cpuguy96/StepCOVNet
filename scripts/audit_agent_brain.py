@@ -4,8 +4,8 @@
 Usage (repo root, project venv):
     python scripts/audit_agent_brain.py
 
-Verifies rule and skill frontmatter, relative markdown link integrity, router
-and always-on context budgets, and legacy/path portability hygiene.
+Verifies rule and skill frontmatter, relative markdown link integrity, and
+legacy/path portability hygiene.
 """
 
 from __future__ import annotations
@@ -19,8 +19,7 @@ SKILLS_DIR = REPO / ".agents" / "skills"
 AGENTS_MD = REPO / "AGENTS.md"
 PROJECT_LAYOUT = REPO / "docs" / "agents" / "project-layout.md"
 
-MAX_AGENTS_MD_LINES = 65
-MAX_ALWAYS_ON_RULES = 2
+VALID_RULE_TRIGGERS = {"always_on", "glob", "model_decision"}
 
 FRONTMATTER_RE = re.compile(r"^---\s*\r?\n(.*?)\r?\n---", re.DOTALL)
 FENCED_CODE_RE = re.compile(r"```.*?```", re.DOTALL)
@@ -196,7 +195,7 @@ def _active_markdown_files() -> list[pathlib.Path]:
 
 
 def _validate_rules(rules: list[dict[str, str]]) -> list[str]:
-    """Validate rule frontmatter fields and always-on budget.
+    """Validate rule frontmatter fields.
 
     Args:
         rules: Rule metadata dicts returned by ``load_rules()``.
@@ -205,24 +204,18 @@ def _validate_rules(rules: list[dict[str, str]]) -> list[str]:
         Human-readable validation error strings.
     """
     errors: list[str] = []
-    always_count = 0
     for rule in rules:
         name = rule["file"]
         if not rule["description"]:
             errors.append(f".agents/rules/{name}: missing frontmatter description")
         trigger = rule["trigger"]
-        if trigger not in {"always_on", "glob"}:
+        if trigger not in VALID_RULE_TRIGGERS:
+            allowed = ", ".join(sorted(VALID_RULE_TRIGGERS))
             errors.append(
-                f".agents/rules/{name}: trigger must be 'always_on' or 'glob' (got {trigger!r})"
+                f".agents/rules/{name}: trigger must be one of {allowed} (got {trigger!r})"
             )
         if trigger == "glob" and not rule["globs"]:
             errors.append(f".agents/rules/{name}: trigger 'glob' requires globs")
-        if rule["always_apply"] == "true":
-            always_count += 1
-    if always_count > MAX_ALWAYS_ON_RULES:
-        errors.append(
-            f"Too many always_on rules ({always_count} > {MAX_ALWAYS_ON_RULES}); scope or merge them"
-        )
     return errors
 
 
@@ -268,10 +261,22 @@ def format_disk_inventory(
     """
     lines = ["## Disk inventory", ""]
     always = [r for r in rules if r["always_apply"].lower() == "true"]
-    scoped = [r for r in rules if r["always_apply"].lower() != "true"]
+    model_decided = [
+        r for r in rules if r.get("trigger", "").lower() == "model_decision"
+    ]
+    scoped = [
+        r
+        for r in rules
+        if r["always_apply"].lower() != "true"
+        and r.get("trigger", "").lower() != "model_decision"
+    ]
 
     lines.append(f"Always-apply ({len(always)}):")
     for r in always:
+        lines.append(f"  - {r['file']}: {r['description']}")
+
+    lines.append(f"\nModel-decision ({len(model_decided)}):")
+    for r in model_decided:
         lines.append(f"  - {r['file']}: {r['description']}")
 
     lines.append(f"\nScoped ({len(scoped)}):")
@@ -300,13 +305,6 @@ def audit() -> int:
     errors.extend(_validate_rules(rules))
     errors.extend(_validate_skills(skills))
 
-    if AGENTS_MD.is_file():
-        line_count = len(AGENTS_MD.read_text(encoding="utf-8").splitlines())
-        if line_count > MAX_AGENTS_MD_LINES:
-            errors.append(
-                f"AGENTS.md has {line_count} lines (limit {MAX_AGENTS_MD_LINES}); keep it a thin router"
-            )
-
     repo_resolved = REPO.resolve()
     for path in _active_markdown_files():
         text = path.read_text(encoding="utf-8")
@@ -320,10 +318,14 @@ def audit() -> int:
             errors.append(f"{rel}: disallowed legacy/path token ({hit})")
 
     always_count = sum(1 for r in rules if r["always_apply"].lower() == "true")
+    model_count = sum(
+        1 for r in rules if r.get("trigger", "").lower() == "model_decision"
+    )
+    scoped_count = len(rules) - always_count - model_count
     print(format_disk_inventory(rules, skills))
     print(
         f"Summary: {len(rules)} rules "
-        f"({always_count} always-apply, {len(rules) - always_count} scoped), "
+        f"({always_count} always-apply, {model_count} model-decision, {scoped_count} scoped), "
         f"{len(skills)} skills"
     )
 

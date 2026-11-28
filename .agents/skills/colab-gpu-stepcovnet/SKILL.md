@@ -1,6 +1,6 @@
 ---
 name: colab-gpu-stepcovnet
-description: Launches and manages StepCOVNet GPU training runs on Google Colab via google-colab-cli and private Google Drive (rclone), without pushing WIP code to GitHub. Use proactively whenever preparing parallel experiments, syncing datasets/code for Colab, or inspecting remote Colab results.
+description: Launches and manages StepCOVNet GPU training runs on Google Colab (strict GPU priority L4 → T4 → local RTX 2080 → A100) via google-colab-cli and private Google Drive (rclone), including fresh cloud-VM bootstrap, autonomous launch without pushing WIP code, live Drive TensorBoard sync (never localhost on remote VMs), VM cleanup, and parallel worktrees.
 ---
 
 # Colab GPU (StepCOVNet)
@@ -13,7 +13,8 @@ Run StepCOVNet training and eval directly on Google Colab GPUs (`T4`, `L4`, `A10
 - **Launch autonomously (do not hand commands back):** Whenever `colab` (`~/.local/bin/colab`) and `rclone` (`~/.local/bin/rclone`) are present in the environment, sync datasets/code and launch Colab jobs directly yourself via `scripts/colab_run_remote.sh` without waiting to be asked or asking the user to run the command.
 - **Never push WIP code to GitHub for Colab.** Code is uploaded directly from the local working tree via `colab upload` (or mirrored privately to `gdrive:StepCOVNet/code/code.tar.gz`).
 - **Keep credentials local:** `rclone`'s `client_secret` and `refresh_token` stay in `~/.config/rclone/rclone.conf` (`chmod 600`); `colab_run_remote.sh` only passes a short-lived `access_token` in memory during dataset streaming and immediately drops it.
-- **Always stop idle VMs:** `colab_run_remote.sh` stops the Colab session automatically on exit unless `--keep` is passed. Verify no leaked sessions with `~/.local/bin/colab sessions` and check quota with `~/.local/bin/colab usage`.
+- **Always stop idle VMs & use `--max-poll-seconds 420`:** For long runs, pass `--max-poll-seconds 420` and re-attach with `--attach`; `colab_run_remote.sh` stops the Colab session automatically on exit unless `--keep` is passed. Verify no leaked sessions with `~/.local/bin/colab --auth=oauth2 sessions` (0 active VMs on exit) and check quota with `~/.local/bin/colab usage`.
+- **MERT cache dtype:** Keep MERT caches saved as `float32` (never `float16`).
 - **Low-verbosity logs & live TensorBoard:** `colab_run_remote.sh` filters per-step progress-bar spam (keeping only epoch summaries, checkpoint/eval lines, and errors) and syncs TensorBoard `events.out.tfevents.*` every ~60 s (plus at completion) both locally into `experiments/colab/<run_name>/tb/` and privately to **`MyDrive/StepCOVNet/live_tb/<run_name>/`** so Google Drive for Desktop feeds the user's PC TensorBoard live even for remote cloud-VM launches. On **local WSL**, start a local TensorBoard daemon on a free port (`6008+`) comparing `experiments/colab/<run_name>/tb/` against the baseline run. On **remote cloud VMs**, never link `http://localhost:6006`/`6008` (unreachable from the user's browser), never use `cloudflared`, and never tell the user to run Colab cells.
 
 ## Prerequisites (already installed in WSL)

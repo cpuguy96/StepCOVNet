@@ -47,10 +47,10 @@ class ParseFrontmatterTest(unittest.TestCase):
         )
 
     def test_strips_bom(self) -> None:
-        text = "\ufeff---\ndescription: Workspace\ntrigger: always_on\n---\n"
+        text = "\ufeff---\ndescription: Env\ntrigger: model_decision\n---\n"
         meta = brain._parse_frontmatter(text)
-        self.assertEqual(meta["description"], "Workspace")
-        self.assertEqual(meta["trigger"], "always_on")
+        self.assertEqual(meta["description"], "Env")
+        self.assertEqual(meta["trigger"], "model_decision")
 
     def test_returns_empty_when_missing_frontmatter(self) -> None:
         self.assertEqual(brain._parse_frontmatter("# no yaml\n"), {})
@@ -89,27 +89,35 @@ class LinkAndHygieneTest(unittest.TestCase):
 
 
 class FormatDiskInventoryTest(unittest.TestCase):
-    def test_lists_always_and_scoped_rules_and_skills(self) -> None:
+    def test_lists_always_model_decision_and_scoped_rules(self) -> None:
         rules = [
             {
-                "file": "workspace.md",
+                "file": "core.md",
                 "trigger": "always_on",
                 "always_apply": "true",
                 "globs": "",
-                "description": "Universal",
+                "description": "Core",
             },
             {
-                "file": "scripts.md",
+                "file": "git.md",
+                "trigger": "model_decision",
+                "always_apply": "false",
+                "globs": "",
+                "description": "Git rules",
+            },
+            {
+                "file": "py.md",
                 "trigger": "glob",
                 "always_apply": "false",
-                "globs": "scripts/**",
-                "description": "Scripts",
+                "globs": "**/*.py",
+                "description": "Python",
             },
         ]
         skills = [{"dir": "demo-skill", "name": "demo-skill", "description": "Demo"}]
         text = brain.format_disk_inventory(rules, skills)
         self.assertIn("Always-apply (1)", text)
-        self.assertIn("workspace.md", text)
+        self.assertIn("Model-decision (1)", text)
+        self.assertIn("git.md", text)
         self.assertIn("Scoped (1)", text)
         self.assertIn("demo-skill", text)
 
@@ -122,8 +130,8 @@ class AuditFixtureTest(unittest.TestCase):
         rules.mkdir(parents=True)
         skills.mkdir(parents=True)
         docs_agents.mkdir(parents=True)
-        (rules / "workspace.md").write_text(
-            "---\ndescription: Universal\ntrigger: always_on\n---\n",
+        (rules / "git.md").write_text(
+            "---\ndescription: Git\ntrigger: model_decision\n---\n",
             encoding="utf-8",
         )
         (skills / "SKILL.md").write_text(
@@ -156,6 +164,7 @@ class AuditFixtureTest(unittest.TestCase):
             with self._patch_repo(root), contextlib.redirect_stdout(out):
                 code = brain.audit()
             self.assertEqual(code, 0)
+            self.assertIn("Model-decision (1)", out.getvalue())
             self.assertIn("demo-skill", out.getvalue())
 
     def test_audit_fails_on_invalid_rule_frontmatter(self) -> None:
@@ -165,6 +174,9 @@ class AuditFixtureTest(unittest.TestCase):
             (root / ".agents" / "rules" / "bad.md").write_text(
                 "---\ntrigger: glob\n---\n", encoding="utf-8"
             )
+            (root / ".agents" / "rules" / "bad_trig.md").write_text(
+                "---\ndescription: X\ntrigger: manual\n---\n", encoding="utf-8"
+            )
             with (
                 self._patch_repo(root),
                 contextlib.redirect_stdout(io.StringIO()) as out,
@@ -173,24 +185,27 @@ class AuditFixtureTest(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("missing frontmatter description", out.getvalue())
             self.assertIn("requires globs", out.getvalue())
+            self.assertIn("trigger must be one of", out.getvalue())
 
-    def test_audit_fails_on_too_many_always_on_rules(self) -> None:
+    def test_many_always_on_rules_and_long_agents_md_do_not_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             self._write_minimal_repo(root)
             rules = root / ".agents" / "rules"
-            for idx in range(2):
+            for idx in range(5):
                 (rules / f"extra{idx}.md").write_text(
                     f"---\ndescription: Extra {idx}\ntrigger: always_on\n---\n",
                     encoding="utf-8",
                 )
+            long_agents = "\n".join(f"line {i}" for i in range(120))
+            (root / "AGENTS.md").write_text(f"{long_agents}\n", encoding="utf-8")
             with (
                 self._patch_repo(root),
                 contextlib.redirect_stdout(io.StringIO()) as out,
             ):
                 code = brain.audit()
-            self.assertEqual(code, 1)
-            self.assertIn("Too many always_on rules", out.getvalue())
+            self.assertEqual(code, 0)
+            self.assertIn("Always-apply (5)", out.getvalue())
 
     def test_audit_fails_on_skill_name_mismatch_and_missing_skill_md(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -212,15 +227,12 @@ class AuditFixtureTest(unittest.TestCase):
             self.assertIn("missing frontmatter description", out.getvalue())
             self.assertIn("empty-dir: missing SKILL.md", out.getvalue())
 
-    def test_audit_fails_on_broken_link_hygiene_and_bloated_agents_md(self) -> None:
+    def test_audit_fails_on_broken_link_and_hygiene_violation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             self._write_minimal_repo(root)
-            filler = "\n".join(
-                f"line {i}" for i in range(brain.MAX_AGENTS_MD_LINES + 1)
-            )
             (root / "AGENTS.md").write_text(
-                f"[broken](missing.md)\n.cursor/rules\n{filler}\n",
+                "[broken](missing.md)\n.cursor/rules\n",
                 encoding="utf-8",
             )
             with (
@@ -231,7 +243,6 @@ class AuditFixtureTest(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("broken relative link (missing.md)", out.getvalue())
             self.assertIn("disallowed legacy/path token (.cursor/)", out.getvalue())
-            self.assertIn("keep it a thin router", out.getvalue())
 
 
 if __name__ == "__main__":

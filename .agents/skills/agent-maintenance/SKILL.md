@@ -17,28 +17,29 @@ Pick the **smallest durable layer** (stop at the first match):
 
 | Layer | Context cost | Use for |
 | ----- | ------------ | ------- |
-| **Skill section** (`.agents/skills/*/SKILL.md`) | Loaded on task match | Multi-step procedures, decision workflows, playbook fixes |
-| **Scoped rule** (`.agents/rules/*.md`, `trigger: glob`) | Loaded when matching files are in play | Path-scoped constraints (`**/*.py`, `scripts/**`, `docs/**`) |
-| **Universal rule** ([workspace.md](../../rules/workspace.md)) | Loaded every turn (`always_on`) | Short (<5 line) universal constraint truly needed on *every* turn |
-| **Live scoreboard** ([EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) § Current phase) | On research orient | Live metrics, `EXP-…` IDs, today's next action (never put these in rules/skills) |
+| **Skill section** (`.agents/skills/*/SKILL.md`) | Loaded on task match | Multi-step procedures, runbooks, tool commands, workflows |
+| **Scoped rule** (`.agents/rules/*.md`, `trigger: glob`) | Loaded when matching files are touched | Path-scoped constraints (`**/*.py`, `docs/**`) |
+| **Model-decision rule** (`.agents/rules/*.md`, `trigger: model_decision`) | Loaded when task description matches | Short declarative policies across non-file tasks (git/CI, Python env) |
+| **Universal rule** (`trigger: always_on`) | Loaded every turn (**last resort**) | Only constraints truly unavoidable on every single turn |
+| **Live scoreboard** ([EXPERIMENT_LOG.md](../../../docs/research/EXPERIMENT_LOG.md) § Current phase) | On research orient | Live metrics, `EXP-…` IDs, today's next action (never put in rules/skills) |
 | **Router** ([AGENTS.md](../../../AGENTS.md)) | Entry only | Task-index rows only — never paste rules or procedure prose here |
 | **Code / tests** | Zero prompt cost | Mechanical bugs or checks enforceable in scripts/tests |
 
-Never create a new `trigger: always_on` rule when an existing rule, skill, or test can enforce the lesson. Keep **one** enforcement home (do not duplicate the same rule across `AGENTS.md`, rules, and skills).
+Keep **one** enforcement home (do not duplicate the same rule across `AGENTS.md`, rules, and skills). Put runbooks in skills, not rules.
 
 ### Same-turn steps
 
 1. **Implement & dedupe** in the chosen artifact (plus tests/code if applicable).
 2. **Prepend receipt** to [self-journal.md](../../../docs/agents/self-journal.md) with `Timestamp` (`YYYY-MM-DD HH:MM:SS` from system clock), `Artifact` path + layer, and one-line `Action taken`. Journal-only entries without an artifact are incomplete.
 3. **Verify** with `python scripts/audit_agent_brain.py`.
-4. **Confirm in chat**: artifact updated, `JRN-…` ID, and what stayed out of `always_on`.
+4. **Confirm in chat**: artifact updated, `JRN-…` ID, and layer chosen.
 
 ## B. Brain refresh / audit
 
 Run on **refresh agent brain**, **refresh all rules**, **audit rules**, or after structural changes to `.agents/`:
 
-1. Read each `.agents/rules/*.md` from disk to inspect scope, staleness, and duplication with skills or `AGENTS.md`.
+1. Refresh state (`git status`, `git ls-files`) and read each `.agents/rules/*.md` from disk to inspect scope, trigger fit (`model_decision` vs `glob` vs `always_on`), staleness, and overlap with skills or `AGENTS.md`.
 2. Run `python scripts/audit_agent_brain.py` from repo root.
-3. Fix any drift, broken links, dead-track references, bloat in `AGENTS.md`, or redundant `always_on` rules.
+3. Fix any drift, broken links, dead-track references, bloated `always_on` rules, or runbooks sitting in rules instead of skills.
 4. Re-run `python scripts/audit_agent_brain.py` until exit code `0`.
 5. Prepend a `JRN-…` entry in [self-journal.md](../../../docs/agents/self-journal.md) only if material edits were made; otherwise report **clean — no edits**.

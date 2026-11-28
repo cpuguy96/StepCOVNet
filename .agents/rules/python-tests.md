@@ -11,7 +11,7 @@ When you add or modify code under `src/`, `scripts/`, or `tests/`:
 1. **Update tests** in `tests/` (one test module per source module: `stepcovnet/foo.py` -> `tests/foo_test.py`; `scripts/bar.py` -> `tests/bar_test.py` when the script rule below applies).
 2. **Delta coverage** — aim for **100%** of changed/new code via **public API** tests; high 90s only as last resort. Do not test private helpers solely for coverage.
 3. **Lint & type checks:** Run Ruff, pydoclint, and pyright per [python-style.md](python-style.md) (`pyproject.toml` — import order, Google docstrings, pathlib, types).
-4. **Verify** from repo root using the project venv (see [workspace.md](workspace.md)):
+4. **Verify** from repo root using the project venv (see [python-env.md](python-env.md)):
 
 ```text
 python -m pytest tests/ -m "not slow" --cov=stepcovnet --cov=scripts

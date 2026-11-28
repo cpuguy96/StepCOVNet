@@ -6,7 +6,7 @@
 
 ## Environment conventions
 
-Commands assume **repository root** as the working directory. See [workspace.md](../../.agents/rules/workspace.md) for Windows vs WSL vs cloud-VM Python executables, `_tmp/`/`logs/` scratch paths, and `python pre_submit.py`. Checkpoints and TensorBoard roots (`models_wsl/`, `callbacks/`) are repo-relative and gitignored.
+Commands assume **repository root** as the working directory. See [python-env.md](../../.agents/rules/python-env.md) for Windows vs WSL vs cloud-VM Python executables, `_tmp/`/`logs/` scratch paths, and `pre_submit.py`. Checkpoints and TensorBoard roots (`models_wsl/`, `callbacks/`) are repo-relative and gitignored.
 
 ---
 
@@ -76,6 +76,6 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 | `docs/research/archive/` | Superseded research plans |
 | `docs/agents/project-layout.md` | Repo layout (this file) |
 | `docs/agents/self-journal.md` | Agent process receipt journal (`JRN-…`) |
-| `.agents/rules/` | Universal (`workspace.md`) and file-scoped (`**/*.py`, `scripts/**`, `docs/**`) rules |
+| `.agents/rules/` | Declarative rules (`model_decision` and file-scoped `glob`) |
 | `.agents/skills/` | Auto-discoverable task playbooks |
 | `AGENTS.md` (repo root) | Thin session entry router |

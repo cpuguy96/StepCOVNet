@@ -8,7 +8,7 @@ trigger: glob
 
 Applies to all Python in `src/`, `scripts/`, and `tests/`. Follow the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) for formatting and docstrings unless this file or `pyproject.toml` says otherwise.
 
-**Lint:** After editing Python, run Ruff from repo root using the active project venv (see [workspace.md](workspace.md)) at the same CI scope (`ruff check .`):
+**Lint:** After editing Python, run Ruff from repo root using the active project venv (see [python-env.md](python-env.md)) at the same CI scope (`ruff check .`):
 
 ```text
 python -m ruff check .
