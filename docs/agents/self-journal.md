@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261127-01: Never declare a stage saturated or nudge to move on without auditing worst error slices first
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-27 21:58:00 |
+| **Category** | mistake |
+| **Summary** | User caught a recurring mistake: telling the user Stage 1 onset was "effectively saturated / diminishing returns" and repeatedly nudging to move on to Stage 2, even though immediately after the user pushed back, piecewise tempo-section regularization + per-section phase snap yielded `+1.43–1.50 pp` overall (`95.3% → 97.1%` Arm C, `95.8% → 97.7%` zero-shot; `+4.2 pp` on `kokeshi_neko_medley`, `+3.8–4.5 pp` on `west`, `+2.9 pp` on `isis`), and concrete per-song gaps (`kokeshi_neko_medley −9.8 pp`, `goin_under −7.5 pp`, `west −4.3 pp`) still remained unaudited. |
+| **Artifact** | skill: `.agents/skills/whats-next/SKILL.md` (`### Stay on the user's task`); log fix: `docs/research/EXPERIMENT_LOG.md` (`EXP-20261127-08` Interpretation). No new `always_on` rule — extended existing decision skill per Step 1 of `steering-correction-promotion`. |
+| **Action taken** | Extended `whats-next` `### Stay on the user's task` to forbid declaring a stage saturated/diminishing-returns or nudging to the next stage without first inspecting the worst failing songs/slices for concrete fixes, and replaced the premature saturation line in `EXP-20261127-08` with the actual remaining per-song gaps. |
+| **Related** | `whats-next`, `JRN-20260817-01`, `EXP-20261127-07`, `EXP-20261127-08` |
+
 ### JRN-20261126-03: Sync live Colab TensorBoard to `MyDrive/StepCOVNet/live_tb/` + enforce cloud-VM defaults in `AGENTS.md`
 
 | Field | Value |

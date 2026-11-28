@@ -70,7 +70,9 @@ Do **not** put `final_data` dense/MERT/AR trains in **Now** / **do it** as a lit
 
 ### Stay on the user's task
 
-Do not jump to the next pipeline stage because a number exists (placement F1 does not mean start selection). Stay on the task the user last confirmed until they switch it. A Current phase **Next action** that names a later stage is a candidate, not an order.
+Do not jump to the next pipeline stage or nudge the user to move on because an aggregate number looks strong (placement F1 does not mean start selection). Stay on the task the user last confirmed until they switch it. A Current phase **Next action** that names a later stage is a candidate, not an order.
+
+**Never declare a stage "saturated", "solved", or "at diminishing returns" without inspecting the worst failing songs/slices first.** Aggregate averages hide concrete, fixable bugs (e.g., per-song timing drift, octave switches, missed breakdowns, or slice-specific `FP`/`FN` errors). When the user asks whether further improvements exist, audit the largest remaining error cases directly from the data and report concrete gaps and fixes — do not dismiss them or steer toward a later stage.
 
 ### No extra eval on a frozen baseline unless asked
 

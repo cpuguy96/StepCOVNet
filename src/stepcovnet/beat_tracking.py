@@ -676,6 +676,182 @@ def snap_beats_to_onsets(
     )
 
 
+def _harmonic_ibi_fraction(
+    ibis: np.ndarray,
+    base_ibi: float,
+    *,
+    rel_tol: float = 0.12,
+) -> float:
+    """Return fraction of raw IBIs matching a power-of-2 multiple of ``base_ibi``.
+
+    Args:
+        ibis: 1D array of raw inter-beat intervals in seconds.
+        base_ibi: Candidate reference inter-beat interval in seconds.
+        rel_tol: Maximum relative error from ``{0.25, 0.5, 1, 2, 4} * base_ibi``.
+
+    Returns:
+        Fraction of intervals in ``[0.0, 1.0]`` matching a power-of-2 harmonic.
+    """
+    if ibis.size == 0 or base_ibi <= 1e-6:
+        return 0.0
+    ratios = ibis / float(base_ibi)
+    harmonics = np.asarray([0.25, 0.5, 1.0, 2.0, 4.0], dtype=np.float64)
+    rel_err = np.min(
+        np.abs(ratios[:, None] - harmonics[None, :]) / harmonics[None, :], axis=1
+    )
+    return float(np.mean(rel_err <= float(rel_tol)))
+
+
+def _choose_musical_octave_and_phase(
+    bt: np.ndarray,
+    db: np.ndarray,
+    fine_ibi: float,
+    fine_anchor: float,
+    *,
+    max_bpm: float = 250.0,
+) -> tuple[float, float]:
+    """Fold an ultra-fast fine lattice into ``<= max_bpm`` using beat/downbeat parity.
+
+    Args:
+        bt: Raw beat timestamps in seconds.
+        db: Raw downbeat timestamps in seconds (may be empty).
+        fine_ibi: Fine-lattice inter-beat interval in seconds.
+        fine_anchor: Fine-lattice anchor timestamp in seconds.
+        max_bpm: Upper bound of the natural musical tempo octave (default ``250.0``).
+
+    Returns:
+        Tuple ``(folded_ibi, folded_anchor)`` aligned to the dominant beat parity.
+    """
+    stride = 1
+    while 60.0 / max(fine_ibi * float(stride), 1e-6) > float(max_bpm):
+        stride *= 2
+    if stride == 1:
+        return float(fine_ibi), float(fine_anchor)
+
+    tol = min(0.035, 0.28 * float(fine_ibi))
+    scores = np.zeros(stride, dtype=np.float64)
+    k_bt = np.rint((bt - fine_anchor) / fine_ibi).astype(np.int64)
+    r_bt = np.abs(bt - (fine_anchor + k_bt * fine_ibi))
+    valid_bt = k_bt[r_bt <= tol]
+    if valid_bt.size > 0:
+        for p in range(stride):
+            scores[p] += float(np.sum(np.mod(valid_bt, stride) == p))
+    if db.size > 0:
+        k_db = np.rint((db - fine_anchor) / fine_ibi).astype(np.int64)
+        r_db = np.abs(db - (fine_anchor + k_db * fine_ibi))
+        valid_db = k_db[r_db <= tol]
+        for p in range(stride):
+            scores[p] += 4.0 * float(np.sum(np.mod(valid_db, stride) == p))
+    best_p = int(np.argmax(scores))
+    return float(fine_ibi) * float(stride), float(fine_anchor) + float(best_p) * float(
+        fine_ibi
+    )
+
+
+def _fit_octave_aware_global_lattice(
+    bt: np.ndarray,
+    db: np.ndarray,
+    *,
+    inlier_tol_sec: float = 0.035,
+    min_inlier_fraction: float = 0.85,
+    max_bpm: float = 250.0,
+) -> tuple[float, float] | None:
+    """Fit a global constant-BPM lattice across ``0.5× / 1× / 2×`` tracker octaves.
+
+    Uses progressive span expansion (``8 s -> 24 s -> 72 s -> full``) to avoid
+    phase-wrapping on long or fast tracks and enforces a power-of-2 IBI
+    consistency guard so genuine non-harmonic medleys are never collapsed into
+    a single tempo.
+
+    Args:
+        bt: Raw beat timestamps in seconds.
+        db: Raw downbeat timestamps in seconds (may be empty).
+        inlier_tol_sec: Maximum beat residual in seconds.
+        min_inlier_fraction: Minimum fraction of raw beats on the sub-lattice.
+        max_bpm: Upper bound when folding a fine sub-lattice to musical BPM.
+
+    Returns:
+        Tuple ``(final_ibi, final_anchor)`` if an octave-consistent global
+        lattice passes all guards, else ``None``.
+    """
+    if bt.size < 8:
+        return None
+    ibis = np.diff(bt)
+    q_ibis = [
+        float(np.median(ibis)),
+        float(np.percentile(ibis, 25)),
+        float(np.percentile(ibis, 75)),
+    ]
+    raw_cands: list[float] = []
+    for base in q_ibis:
+        if base <= 1e-4:
+            continue
+        for mult in (1.0, 0.5, 0.25):
+            ci = base * mult
+            bpm_c = 60.0 / max(ci, 1e-6)
+            if 60.0 <= bpm_c <= 520.0:
+                raw_cands.append(ci)
+    # Deduplicate near-identical seeds, preferring coarsest (largest IBI) first.
+    raw_cands.sort(reverse=True)
+    seeds: list[float] = []
+    for ci in raw_cands:
+        if not seeds or abs(ci - seeds[-1]) / max(seeds[-1], 1e-6) > 0.02:
+            seeds.append(ci)
+
+    best_fit: tuple[float, float, float, float] | None = None
+    for seed_ibi in seeds:
+        for q in (0.5, 0.25, 0.75):
+            anchor_t = float(bt[int(q * (bt.size - 1))])
+            cur_ibi = float(seed_ibi)
+            ok = True
+            for span_sec in (8.0, 24.0, 72.0, 1e9):
+                local = bt[np.abs(bt - anchor_t) <= span_sec]
+                if local.size < 4:
+                    local = bt
+                k = np.rint((local - anchor_t) / cur_ibi)
+                resid = local - (anchor_t + k * cur_ibi)
+                tol = min(float(inlier_tol_sec), 0.26 * cur_ibi)
+                mask = np.abs(resid) <= tol
+                if int(np.sum(mask)) < 4 or np.unique(k[mask]).size < 2:
+                    ok = False
+                    break
+                slope, intercept = np.polyfit(k[mask], local[mask], 1)
+                if not (slope > 1e-4 and np.isfinite(slope) and np.isfinite(intercept)):
+                    ok = False
+                    break
+                cur_ibi = float(slope)
+                anchor_t = float(intercept)
+            if not ok:
+                continue
+
+            tol_eval = min(float(inlier_tol_sec), 0.24 * cur_ibi)
+            k_all = np.rint((bt - anchor_t) / cur_ibi)
+            resid_all = np.abs(bt - (anchor_t + k_all * cur_ibi))
+            inlier_mask = resid_all <= tol_eval
+            frac = float(np.mean(inlier_mask))
+            if frac < float(min_inlier_fraction):
+                continue
+            med_err = float(np.median(resid_all[inlier_mask]))
+            if med_err > min(0.012, 0.08 * cur_ibi):
+                continue
+
+            final_ibi, final_anchor = _choose_musical_octave_and_phase(
+                bt, db, cur_ibi, anchor_t, max_bpm=max_bpm
+            )
+            if _harmonic_ibi_fraction(ibis, final_ibi) < 0.80:
+                continue
+            if (
+                best_fit is None
+                or frac > best_fit[0] + 0.03
+                or (abs(frac - best_fit[0]) <= 0.03 and med_err < best_fit[1] - 0.0005)
+            ):
+                best_fit = (frac, med_err, final_ibi, final_anchor)
+
+    if best_fit is None:
+        return None
+    return best_fit[2], best_fit[3]
+
+
 def regularize_beat_grid(
     beat_grid: BeatGrid,
     *,
@@ -684,21 +860,22 @@ def regularize_beat_grid(
     min_inlier_fraction: float = 0.85,
     integer_bpm_tol: float = 0.03,
     piecewise_sections: bool = True,
+    octave_aware: bool = True,
 ) -> BeatGrid:
     """Fit a drift-free constant-BPM lattice (globally or per tempo section).
 
-    Neural beat trackers occasionally drop a beat during silent breakdowns or
-    emit spurious extra beats during fills. For steady-tempo songs (electronic,
-    pop, and most rhythm-game tracks), fitting an integer-indexed lattice
-    ``t(k) = t0 + k * ibi`` recovers tempo to ~0.01 BPM, bridges dropped beats,
-    removes spurious beats, and aligns downbeats onto exact 4-beat bar lines.
-    When the fitted BPM sits within ``integer_bpm_tol`` of an exact integer
-    and locking to that integer keeps residuals and end-to-end drift flat,
-    the exact integer BPM is adopted to eliminate residual long-song drift.
-    For medleys and variable-tempo songs where a single global tempo fails
-    (when ``piecewise_sections`` is True), each contiguous constant-tempo
-    section is regularized independently while leaving unstructured rubato
-    sections untouched.
+    Neural beat trackers occasionally drop a beat during silent breakdowns,
+    emit spurious extra beats during fills, or flicker between tempo octaves
+    (``0.5× / 1× / 2×``). For steady-tempo songs, fitting an integer-indexed
+    lattice ``t(k) = t0 + k * ibi`` recovers tempo to ~0.01 BPM, bridges
+    dropped beats, removes spurious beats, and aligns downbeats onto exact
+    4-beat bar lines. When a single 1× fit fails because the tracker flickered
+    between power-of-2 octaves (when ``octave_aware`` is True), an octave-aware
+    global lattice unifies the song onto one musical constant-BPM grid. For
+    genuine medleys and variable-tempo songs (when ``piecewise_sections`` is
+    True), each contiguous constant-tempo section is regularized independently
+    (with ultra-fast ``> 250 BPM`` double-time sections folded back into the
+    natural octave) while leaving unstructured rubato sections untouched.
 
     Args:
         beat_grid: Input :class:`BeatGrid`.
@@ -712,6 +889,9 @@ def regularize_beat_grid(
             an exact integer-BPM lock (``0.0`` disables integer locking).
         piecewise_sections: When True (default), fall back to per-section
             constant-BPM regularization on variable-tempo songs and medleys.
+        octave_aware: When True (default), unify power-of-2 octave flickers
+            (``0.5× / 1× / 2×``) onto a single musical BPM grid and fold
+            ``> 250 BPM`` double-time sections.
 
     Returns:
         Regularized :class:`BeatGrid` (global or piecewise-constant), or the
@@ -748,78 +928,147 @@ def regularize_beat_grid(
     resid_all = np.abs(bt - (anchor_t + k_all * ibi))
     inlier_mask = resid_all <= float(inlier_tol_sec)
     inlier_fraction = float(np.mean(inlier_mask))
+    octave_global_used = False
+
     if not global_fit_ok or inlier_fraction < float(min_inlier_fraction):
-        if not piecewise_sections:
-            return beat_grid
-        sections = _segment_beats_by_tempo(bt, rel_tol=0.06, min_section_beats=16)
-        if len(sections) <= 1:
-            return beat_grid
         db_all = np.asarray(beat_grid.downbeat_times, dtype=np.float64).reshape(-1)
-        merged_beats_parts: list[np.ndarray] = []
-        merged_db_parts: list[np.ndarray] = []
-        any_section_regularized = False
-        for s, e_idx in sections:
-            sec_bt = bt[s:e_idx]
-            sec_db = (
-                db_all[(db_all >= sec_bt[0] - 0.05) & (db_all <= sec_bt[-1] + 0.05)]
-                if db_all.size > 0
-                else np.zeros(0, dtype=np.float64)
+        oct_fit = (
+            _fit_octave_aware_global_lattice(
+                bt,
+                db_all,
+                inlier_tol_sec=inlier_tol_sec,
+                min_inlier_fraction=min_inlier_fraction,
             )
-            if sec_bt.size >= 8:
-                sec_grid = BeatGrid(
-                    beat_times=sec_bt,
-                    downbeat_times=sec_db,
-                    bpm=_robust_bpm_from_beats(sec_bt),
-                    tracker=beat_grid.tracker,
+            if octave_aware
+            else None
+        )
+        if oct_fit is not None:
+            ibi, anchor_t = oct_fit
+            k_all = np.rint((bt - anchor_t) / ibi)
+            resid_all = np.abs(bt - (anchor_t + k_all * ibi))
+            inlier_mask = resid_all <= float(inlier_tol_sec)
+            octave_global_used = True
+        else:
+            if not piecewise_sections:
+                return beat_grid
+            sections = _segment_beats_by_tempo(bt, rel_tol=0.06, min_section_beats=16)
+            if len(sections) <= 1:
+                return beat_grid
+            merged_beats_parts: list[np.ndarray] = []
+            merged_db_parts: list[np.ndarray] = []
+            any_section_regularized = False
+            for s, e_idx in sections:
+                sec_bt = bt[s:e_idx]
+                sec_db = (
+                    db_all[(db_all >= sec_bt[0] - 0.05) & (db_all <= sec_bt[-1] + 0.05)]
+                    if db_all.size > 0
+                    else np.zeros(0, dtype=np.float64)
                 )
-                sec_reg = regularize_beat_grid(
-                    sec_grid,
-                    inlier_tol_sec=inlier_tol_sec,
-                    min_inlier_fraction=min(0.75, float(min_inlier_fraction)),
-                    integer_bpm_tol=integer_bpm_tol,
-                    piecewise_sections=False,
-                )
-                sb = sec_reg.beat_times
-                sb = sb[(sb >= sec_bt[0] - 0.05) & (sb <= sec_bt[-1] + 0.05)]
-                if sb.size >= 2:
-                    if sec_reg is not sec_grid:
-                        any_section_regularized = True
-                    sd = sec_reg.downbeat_times
-                    sd = (
-                        sd[(sd >= sb[0] - 1e-4) & (sd <= sb[-1] + 1e-4)]
-                        if sd.size > 0
-                        else np.zeros(0, dtype=np.float64)
+                if sec_bt.size >= 8:
+                    sec_grid = BeatGrid(
+                        beat_times=sec_bt,
+                        downbeat_times=sec_db,
+                        bpm=_robust_bpm_from_beats(sec_bt),
+                        tracker=beat_grid.tracker,
                     )
+                    sec_reg = regularize_beat_grid(
+                        sec_grid,
+                        inlier_tol_sec=inlier_tol_sec,
+                        min_inlier_fraction=min(0.75, float(min_inlier_fraction)),
+                        integer_bpm_tol=integer_bpm_tol,
+                        piecewise_sections=False,
+                        octave_aware=False,
+                    )
+                    sb = sec_reg.beat_times
+                    sb = sb[(sb >= sec_bt[0] - 0.05) & (sb <= sec_bt[-1] + 0.05)]
+                    if sb.size >= 2:
+                        if sec_reg is not sec_grid:
+                            any_section_regularized = True
+                        if octave_aware and sec_reg.bpm > 250.0:
+                            sec_ibi = 60.0 / max(float(sec_reg.bpm), 1e-6)
+                            folded_ibi, folded_anchor = (
+                                _choose_musical_octave_and_phase(
+                                    sec_bt,
+                                    sec_db,
+                                    sec_ibi,
+                                    float(sb[0]),
+                                    max_bpm=250.0,
+                                )
+                            )
+                            k_lo = int(
+                                np.ceil((sec_bt[0] - 0.05 - folded_anchor) / folded_ibi)
+                            )
+                            k_hi = int(
+                                np.floor(
+                                    (sec_bt[-1] + 0.05 - folded_anchor) / folded_ibi
+                                )
+                            )
+                            if k_hi - k_lo >= 1:
+                                ks_f = np.arange(k_lo, k_hi + 1, dtype=np.int64)
+                                sb = (
+                                    folded_anchor + ks_f.astype(np.float64) * folded_ibi
+                                )
+                                any_section_regularized = True
+                                if sec_db.size > 0:
+                                    db_kf = np.rint(
+                                        (sec_db - folded_anchor) / folded_ibi
+                                    ).astype(np.int64)
+                                    db_rf = np.abs(
+                                        sec_db - (folded_anchor + db_kf * folded_ibi)
+                                    )
+                                    v_db = db_kf[db_rf <= float(inlier_tol_sec)]
+                                    if v_db.size > 0:
+                                        bp = int(
+                                            np.argmax(
+                                                np.bincount(
+                                                    np.mod(v_db, 4), minlength=4
+                                                )
+                                            )
+                                        )
+                                        sd = sb[np.mod(ks_f, 4) == bp]
+                                    else:
+                                        sd = sb[::4]
+                                else:
+                                    sd = np.zeros(0, dtype=np.float64)
+                            else:
+                                sd = sec_reg.downbeat_times
+                        else:
+                            sd = sec_reg.downbeat_times
+                        sd = (
+                            sd[(sd >= sb[0] - 1e-4) & (sd <= sb[-1] + 1e-4)]
+                            if sd.size > 0
+                            else np.zeros(0, dtype=np.float64)
+                        )
+                    else:
+                        sb, sd = sec_bt, sec_db
                 else:
                     sb, sd = sec_bt, sec_db
-            else:
-                sb, sd = sec_bt, sec_db
 
-            if merged_beats_parts and sb.size > 0:
-                min_t = float(merged_beats_parts[-1][-1]) + 0.05
-                sb = sb[sb >= min_t]
-                sd = sd[sd >= min_t]
-            if sb.size > 0:
-                merged_beats_parts.append(sb)
-            if sd.size > 0:
-                merged_db_parts.append(sd)
+                if merged_beats_parts and sb.size > 0:
+                    min_t = float(merged_beats_parts[-1][-1]) + 0.05
+                    sb = sb[sb >= min_t]
+                    sd = sd[sd >= min_t]
+                if sb.size > 0:
+                    merged_beats_parts.append(sb)
+                if sd.size > 0:
+                    merged_db_parts.append(sd)
 
-        if not any_section_regularized or not merged_beats_parts:
-            return beat_grid
-        merged_bt = _clean_beat_times(np.concatenate(merged_beats_parts))
-        if merged_bt.size < 2:
-            return beat_grid
-        merged_db = (
-            _clean_beat_times(np.concatenate(merged_db_parts))
-            if merged_db_parts
-            else np.zeros(0, dtype=np.float64)
-        )
-        return BeatGrid(
-            beat_times=merged_bt,
-            downbeat_times=merged_db,
-            bpm=_robust_bpm_from_beats(merged_bt),
-            tracker=beat_grid.tracker,
-        )
+            if not any_section_regularized or not merged_beats_parts:
+                return beat_grid
+            merged_bt = _clean_beat_times(np.concatenate(merged_beats_parts))
+            if merged_bt.size < 2:
+                return beat_grid
+            merged_db = (
+                _clean_beat_times(np.concatenate(merged_db_parts))
+                if merged_db_parts
+                else np.zeros(0, dtype=np.float64)
+            )
+            return BeatGrid(
+                beat_times=merged_bt,
+                downbeat_times=merged_db,
+                bpm=_robust_bpm_from_beats(merged_bt),
+                tracker=beat_grid.tracker,
+            )
 
     # Safe integer-BPM lock: eliminate ~0.01–0.02 BPM estimation drift on
     # steady studio/electronic tracks while preserving genuinely fractional BPMs.
@@ -829,6 +1078,7 @@ def regularize_beat_grid(
         integer_bpm_tol > 0.0
         and nearest_int_bpm >= 40
         and abs(cont_bpm - float(nearest_int_bpm)) <= float(integer_bpm_tol)
+        and int(np.sum(inlier_mask)) >= 4
     ):
         ibi_int = 60.0 / float(nearest_int_bpm)
         inlier_bt = bt[inlier_mask]
@@ -842,9 +1092,13 @@ def regularize_beat_grid(
         int_drift = abs(
             float(np.median(signed_int[-q_n:])) - float(np.median(signed_int[:q_n]))
         )
+        req_frac = (
+            float(np.mean(inlier_mask)) - 0.02
+            if octave_global_used
+            else float(min_inlier_fraction)
+        )
         if (
-            float(np.mean(resid_int_all <= float(inlier_tol_sec)))
-            >= float(min_inlier_fraction)
+            float(np.mean(resid_int_all <= float(inlier_tol_sec))) >= req_frac
             and float(np.median(np.abs(signed_int)))
             <= float(np.median(resid_all[inlier_mask])) + 0.005
             and int_drift <= 0.015

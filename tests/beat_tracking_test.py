@@ -1455,6 +1455,55 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
         self.assertLess(float(np.median(err_sec1)), 0.004)
         self.assertLess(float(np.median(err_sec2)), 0.004)
 
+    def test_octave_aware_regularize_unifies_flickers_and_folds_double_time(
+        self,
+    ) -> None:
+        rng = np.random.default_rng(123)
+        # 1. Constant 210 BPM track where tracker flickers 105 -> 420 -> 210 BPM.
+        ibi_210 = 60.0 / 210.0
+        base_210 = 0.4 + np.arange(160, dtype=np.float64) * ibi_210
+        part_half = base_210[:80:2]  # 105 BPM (0.5x)
+        part_double = 0.4 + np.arange(160, 200, dtype=np.float64) * (0.5 * ibi_210)
+        part_full = base_210[100:160]  # 210 BPM (1x)
+        raw_flicker = np.sort(
+            np.concatenate([part_half, part_double, part_full])
+            + rng.normal(
+                0.0, 0.003, size=part_half.size + part_double.size + part_full.size
+            )
+        )
+        flicker_grid = beat_tracking.BeatGrid(
+            beat_times=raw_flicker,
+            downbeat_times=base_210[::4],
+            bpm=140.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        unified = beat_tracking.regularize_beat_grid(flicker_grid)
+        segs, _ = unified.sm_bpm_segments()
+        self.assertEqual(len(segs), 1)
+        self.assertAlmostEqual(unified.bpm, 210.0, places=2)
+        # Every beat sits within 5ms of the true 210 BPM lattice (exact parity!).
+        dists = [float(np.min(np.abs(base_210 - t))) for t in unified.beat_times[:120]]
+        self.assertLess(float(np.median(dists)), 0.005)
+
+        # 2. Genuine medley (186 BPM -> 422 BPM double-time of 211 BPM) must NOT
+        # collapse to 1 BPM, and must fold the 422 BPM section down to ~211 BPM.
+        sec1 = 0.5 + np.arange(40, dtype=np.float64) * (60.0 / 186.0)
+        sec2_211 = sec1[-1] + 0.3 + np.arange(32, dtype=np.float64) * (60.0 / 211.0)
+        sec2_422 = sec1[-1] + 0.3 + np.arange(64, dtype=np.float64) * (60.0 / 422.0)
+        medley_grid = beat_tracking.BeatGrid(
+            beat_times=np.concatenate([sec1, sec2_422]),
+            downbeat_times=np.concatenate([sec1[::4], sec2_211[::4]]),
+            bpm=280.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        reg_medley = beat_tracking.regularize_beat_grid(medley_grid)
+        m_segs, _ = reg_medley.sm_bpm_segments()
+        self.assertGreaterEqual(len(m_segs), 2)
+        seg_bpms = [bpm for _, bpm in m_segs]
+        self.assertTrue(any(abs(b - 186.0) < 0.6 for b in seg_bpms))
+        self.assertTrue(any(abs(b - 211.0) < 0.6 for b in seg_bpms))
+        self.assertTrue(all(b <= 255.0 for b in seg_bpms))
+
 
 if __name__ == "__main__":
     unittest.main()
