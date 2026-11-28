@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "owner": "autoresearch",
+  "owner_type": "skill",
+  "description": "Local trigger and behavior evals for the autoresearch skill.",
+  "trigger_cases": [
+    {
+      "id": "trig-autoresearch-budget",
+      "prompt": "Run autoresearch on profile itgpt-onset with a 4 hour budget to beat the Stage 1 champion — do not ask between runs.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["autoresearch"],
+      "optional_skills": ["colab-gpu-stepcovnet", "onset-evaluation", "research-session-workflow", "wsl-gpu-stepcovnet"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-autoresearch-generic",
+      "prompt": "Run an autonomous 2 hour research loop to improve val F1 without exceeding our time budget.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["autoresearch"],
+      "optional_skills": ["research-session-workflow", "colab-gpu-stepcovnet", "onset-evaluation"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-autoresearch-neg",
+      "prompt": "What is the learning rate and batch size in configs/ddc/itgpt_placement_fraxtil_orig_128ep.json?",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["autoresearch"]
+    }
+  ],
+  "behavior_cases": [
+    {
+      "id": "beh-autoresearch-budget",
+      "target": "autoresearch",
+      "prompt": "In a 4-hour `itgpt-onset` autoresearch session, 5 consecutive single-knob config runs did not beat the Stage 1 champion by +0.20 pp, and 2 hours still remain on the budget. What does the skill require next?",
+      "must_contain_any": [
+        ["plateau", "tier", "eval_val_breakdown.json"]
+      ],
+      "must_not_contain_regex": [],
+      "rubric": [
+        "Enforces the plateau rule by forbidding further single-knob hyperparameter nudges and upgrading to Tier B/C targeting eval_val_breakdown.json bottlenecks.",
+        "Continues iterating until goal is met or wall-clock deadline is reached rather than stopping early after a fixed queue."
+      ]
+    }
+  ]
+}

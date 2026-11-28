@@ -20,9 +20,19 @@ import eval_agent_setup as eval_mod  # noqa: E402
 
 
 class LiveSuiteAndCatalogTest(unittest.TestCase):
-    def test_live_suite_validates_cleanly(self) -> None:
-        suite = eval_mod.load_json(eval_mod.DEFAULT_SUITE)
-        errors = eval_mod.validate_suite(suite)
+    def test_live_local_suites_validate_cleanly(self) -> None:
+        paths = eval_mod.discover_suites()
+        self.assertGreaterEqual(len(paths), 9)
+        errors = eval_mod.validate_local_suites(paths, check_all_coverage=True)
+        self.assertEqual(errors, [])
+
+    def test_single_skill_discovery_points_inside_skill_dir(self) -> None:
+        paths = eval_mod.discover_suites(skill="onset-evaluation")
+        self.assertEqual(
+            paths,
+            [eval_mod.SKILLS_DIR / "onset-evaluation" / "evals" / "suite.json"],
+        )
+        errors = eval_mod.validate_local_suites(paths, check_all_coverage=False)
         self.assertEqual(errors, [])
 
     def test_load_live_catalog_finds_model_decision_rules_and_skills(self) -> None:
@@ -38,59 +48,87 @@ class LiveSuiteAndCatalogTest(unittest.TestCase):
         self.assertIn("One-prompt agent autoresearch loop", autoresearch_desc)
 
 
-class ValidateSuiteErrorsTest(unittest.TestCase):
-    def test_flags_schema_duplicate_overlap_unknown_and_uncovered(self) -> None:
-        catalog = {
-            "rules": [
-                {"id": "git.md", "description": "Git"},
-                {"id": "uncovered.md", "description": "Unused"},
-            ],
-            "skills": [
-                {"id": "alpha", "description": "Alpha"},
-                {"id": "missing-cov", "description": "Uncovered skill"},
-            ],
-        }
-        suite = {
-            "schema_version": 99,
-            "trigger_cases": [
-                {
-                    "id": "c1",
-                    "prompt": "run git",
-                    "expected_rules": ["git.md"],
-                    "forbidden_rules": ["git.md"],
-                    "expected_skills": ["alpha", "ghost"],
-                },
-                {
-                    "id": "c1",
-                    "prompt": "",
-                    "expected_rules": [],
-                    "expected_skills": [],
-                },
-            ],
-            "behavior_cases": [
-                {
-                    "id": "b1",
-                    "target": "no-such-target",
-                    "prompt": "hi",
-                    "must_contain_regex": ["[unclosed"],
-                }
-            ],
-        }
-        errors = eval_mod.validate_suite(suite, catalog=catalog)
-        joined = "\n".join(errors)
-        self.assertIn("schema_version", joined)
-        self.assertIn("Duplicate case id 'c1'", joined)
-        self.assertIn("unknown expected_skills entry 'ghost'", joined)
-        self.assertIn("overlap", joined)
-        self.assertIn("Uncovered model_decision rule", joined)
-        self.assertIn("Uncovered skill", joined)
-        self.assertIn("invalid regex", joined)
+class ValidateLocalSuitesErrorsTest(unittest.TestCase):
+    def test_flags_missing_suite_owner_mismatch_missing_neg_and_duplicates(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            rules_dir = root / ".agents" / "rules"
+            rule_evals = rules_dir / "evals"
+            skills_dir = root / ".agents" / "skills"
+            rule_evals.mkdir(parents=True)
+            (rules_dir / "git.md").write_text(
+                "---\ndescription: Git\ntrigger: model_decision\n---\n",
+                encoding="utf-8",
+            )
+            (skills_dir / "alpha" / "evals").mkdir(parents=True)
+            (skills_dir / "alpha" / "SKILL.md").write_text(
+                "---\nname: alpha\ndescription: Alpha skill\n---\n",
+                encoding="utf-8",
+            )
+            (skills_dir / "beta").mkdir(parents=True)
+            (skills_dir / "beta" / "SKILL.md").write_text(
+                "---\nname: beta\ndescription: Beta skill\n---\n",
+                encoding="utf-8",
+            )
+
+            alpha_suite = {
+                "schema_version": 1,
+                "owner": "wrong-owner",
+                "owner_type": "skill",
+                "trigger_cases": [
+                    {
+                        "id": "dup-1",
+                        "prompt": "do alpha",
+                        "expected_skills": ["ghost"],
+                        "forbidden_skills": [],
+                    },
+                    {
+                        "id": "dup-1",
+                        "prompt": "again",
+                        "expected_skills": ["alpha"],
+                        "forbidden_skills": ["alpha"],
+                    },
+                ],
+                "behavior_cases": [
+                    {
+                        "id": "beh-bad",
+                        "target": "no-such",
+                        "prompt": "hi",
+                        "must_contain_regex": ["[unclosed"],
+                    }
+                ],
+            }
+            alpha_p = skills_dir / "alpha" / "evals" / "suite.json"
+            alpha_p.write_text(json.dumps(alpha_suite), encoding="utf-8")
+
+            paths = eval_mod.discover_suites(
+                skills_dir=skills_dir, rule_evals_dir=rule_evals
+            )
+            errors = eval_mod.validate_local_suites(
+                paths,
+                rules_dir=rules_dir,
+                skills_dir=skills_dir,
+                rule_evals_dir=rule_evals,
+                check_all_coverage=True,
+            )
+            joined = "\n".join(errors)
+            self.assertIn("Missing local skill eval suite", joined)
+            self.assertIn("Missing local model_decision rule eval suite", joined)
+            self.assertIn("unknown owner skill 'wrong-owner'", joined)
+            self.assertIn("Duplicate case id 'dup-1'", joined)
+            self.assertIn("unknown expected_skills entry 'ghost'", joined)
+            self.assertIn("overlap", joined)
+            self.assertIn("invalid regex", joined)
 
 
 class ScoreAndHillClimbDiffTest(unittest.TestCase):
     def _sample_suite(self) -> dict[str, object]:
         return {
             "schema_version": 1,
+            "owner": "onset-evaluation",
+            "owner_type": "skill",
             "trigger_cases": [
                 {
                     "id": "t-pos",
@@ -207,7 +245,7 @@ class ScoreAndHillClimbDiffTest(unittest.TestCase):
             cand_p.write_text(json.dumps(good), encoding="utf-8")
 
             with (
-                mock.patch.object(eval_mod, "validate_suite", return_value=[]),
+                mock.patch.object(eval_mod, "validate_local_suites", return_value=[]),
                 contextlib.redirect_stdout(io.StringIO()) as out,
             ):
                 rc_fix = eval_mod.main(
@@ -229,7 +267,7 @@ class ScoreAndHillClimbDiffTest(unittest.TestCase):
             self.assertTrue(out_p.is_file())
 
             with (
-                mock.patch.object(eval_mod, "validate_suite", return_value=[]),
+                mock.patch.object(eval_mod, "validate_local_suites", return_value=[]),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 rc_reg = eval_mod.main(

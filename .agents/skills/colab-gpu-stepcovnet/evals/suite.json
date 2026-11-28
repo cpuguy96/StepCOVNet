@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "owner": "colab-gpu-stepcovnet",
+  "owner_type": "skill",
+  "description": "Local trigger and behavior evals for the colab-gpu-stepcovnet skill.",
+  "trigger_cases": [
+    {
+      "id": "trig-colab-launch",
+      "prompt": "Launch this ITGPT MERT placement training run on Google Colab and sync datasets and TensorBoard to Drive.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["colab-gpu-stepcovnet"],
+      "optional_skills": ["research-session-workflow", "onset-evaluation"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-colab-cloud-vm",
+      "prompt": "We are on a fresh remote cloud VM without colab or rclone installed — bootstrap them and start an L4 GPU training run.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["colab-gpu-stepcovnet"],
+      "optional_skills": [],
+      "forbidden_skills": ["wsl-gpu-stepcovnet", "agent-maintenance"]
+    },
+    {
+      "id": "trig-colab-neg",
+      "prompt": "Commit these Python unit test updates cleanly and push them to origin/master.",
+      "expected_rules": ["git-and-ci.md"],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": [],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet"]
+    }
+  ],
+  "behavior_cases": [
+    {
+      "id": "beh-colab-cloud-vm",
+      "target": "colab-gpu-stepcovnet",
+      "prompt": "We are on a fresh remote cloud VM without colab CLI or rclone installed. Describe the exact bootstrap + remote Colab launch workflow and how TensorBoard monitoring should work for the user.",
+      "must_contain_any": [
+        ["colab_cloud_bootstrap.sh"],
+        ["colab_run_remote.sh"],
+        ["live_tb", "MyDrive/StepCOVNet/live_tb"]
+      ],
+      "must_not_contain_regex": [
+        "localhost:600[68]",
+        "cloudflared",
+        "git push.*wip"
+      ],
+      "rubric": [
+        "Follows GPU priority L4 -> T4 -> local -> A100 and chooses L4 by default.",
+        "Avoids linking localhost TensorBoard URLs or cloudflared, relying on MyDrive/StepCOVNet/live_tb/ instead.",
+        "Launches autonomously via scripts/colab_run_remote.sh with VM cleanup (or --max-poll-seconds 420 / sessions check) and does not push WIP code to GitHub."
+      ]
+    }
+  ]
+}

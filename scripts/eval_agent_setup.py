@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Validate, render, score, and diff StepCOVNet agent-setup evaluations.
+"""Validate, discover, render, score, and diff skill-local/rule-local agent evals.
 
 Usage (repo root, project venv):
     python scripts/eval_agent_setup.py validate
+    python scripts/eval_agent_setup.py validate --skill onset-evaluation
+    python scripts/eval_agent_setup.py list-suites --format json
     python scripts/eval_agent_setup.py render-catalog --format json
-    python scripts/eval_agent_setup.py score --predictions logs/agent_evals/cand.json --baseline logs/agent_evals/base.json
+    python scripts/eval_agent_setup.py score --skill onset-evaluation --predictions cand.json --baseline base.json
 """
 
 from __future__ import annotations
@@ -17,8 +19,8 @@ from typing import Any
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 RULES_DIR = REPO / ".agents" / "rules"
+RULE_EVALS_DIR = RULES_DIR / "evals"
 SKILLS_DIR = REPO / ".agents" / "skills"
-DEFAULT_SUITE = REPO / "evals" / "agent_setup" / "suite.json"
 SCHEMA_VERSION = 1
 
 FRONTMATTER_RE = re.compile(r"^---\s*\r?\n(.*?)\r?\n---", re.DOTALL)
@@ -148,6 +150,69 @@ def load_json(path: pathlib.Path | str) -> dict[str, Any]:
     return data
 
 
+def discover_suites(
+    skill: str = "",
+    rule: str = "",
+    suite_path: str = "",
+    *,
+    skills_dir: pathlib.Path | None = None,
+    rule_evals_dir: pathlib.Path | None = None,
+) -> list[pathlib.Path]:
+    """Resolve local skill and rule eval suite JSON files.
+
+    Args:
+        skill: Optional single skill directory name.
+        rule: Optional single rule filename or stem (e.g. ``git-and-ci.md``).
+        suite_path: Optional explicit suite JSON file path.
+        skills_dir: Override ``.agents/skills`` directory.
+        rule_evals_dir: Override ``.agents/rules/evals`` directory.
+
+    Returns:
+        Sorted list of resolved suite paths.
+    """
+    if suite_path:
+        return [pathlib.Path(suite_path)]
+    s_dir = skills_dir or SKILLS_DIR
+    re_dir = rule_evals_dir or RULE_EVALS_DIR
+    if skill:
+        return [s_dir / skill / "evals" / "suite.json"]
+    if rule:
+        stem = rule.removesuffix(".md")
+        return [re_dir / f"{stem}.json"]
+
+    paths: list[pathlib.Path] = []
+    if s_dir.is_dir():
+        paths.extend(sorted(s_dir.glob("*/evals/suite.json")))
+    if re_dir.is_dir():
+        paths.extend(sorted(re_dir.glob("*.json")))
+    return paths
+
+
+def load_merged_suite(paths: list[pathlib.Path]) -> dict[str, Any]:
+    """Merge local skill and rule eval JSON files into one combined suite dict.
+
+    Args:
+        paths: Ordered list of local suite JSON paths to read and combine.
+
+    Returns:
+        Merged suite dict with ``trigger_cases`` and ``behavior_cases`` lists.
+    """
+    merged_triggers: list[dict[str, Any]] = []
+    merged_behaviors: list[dict[str, Any]] = []
+    for path in paths:
+        data = load_json(path)
+        for case in data.get("trigger_cases", []):
+            merged_triggers.append(case)
+        for case in data.get("behavior_cases", []):
+            merged_behaviors.append(case)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "suites": [str(p) for p in paths],
+        "trigger_cases": merged_triggers,
+        "behavior_cases": merged_behaviors,
+    }
+
+
 def _validate_target_names(
     case_id: str,
     names: Any,
@@ -163,165 +228,244 @@ def _validate_target_names(
     return errors
 
 
-def validate_suite(
-    suite: dict[str, Any],
+def validate_local_suites(
+    paths: list[pathlib.Path],
     catalog: dict[str, list[dict[str, str]]] | None = None,
+    *,
+    rules_dir: pathlib.Path | None = None,
+    skills_dir: pathlib.Path | None = None,
+    rule_evals_dir: pathlib.Path | None = None,
+    check_all_coverage: bool = True,
 ) -> list[str]:
-    """Validate an agent-setup evaluation suite against disk rules and skills.
+    """Validate skill-local and rule-local eval suites against disk definitions.
 
     Args:
-        suite: Parsed ``suite.json`` dictionary.
+        paths: Local suite JSON paths to validate.
         catalog: Optional pre-loaded live catalog; loaded from disk when omitted.
+        rules_dir: Override ``.agents/rules`` directory.
+        skills_dir: Override ``.agents/skills`` directory.
+        rule_evals_dir: Override ``.agents/rules/evals`` directory.
+        check_all_coverage: Whether to require every skill and ``model_decision``
+            rule on disk to have a local eval suite file.
 
     Returns:
-        List of human-readable validation error strings (empty when valid).
+        List of human-readable validation errors (empty when valid).
     """
-    cat = catalog or load_live_catalog()
-    known_rules = {item["id"] for item in cat.get("rules", [])}
+    r_dir = rules_dir or RULES_DIR
+    s_dir = skills_dir or SKILLS_DIR
+    re_dir = rule_evals_dir or (r_dir / "evals")
+    cat = catalog or load_live_catalog(rules_dir=r_dir, skills_dir=s_dir)
+
+    known_model_rules = {item["id"] for item in cat.get("rules", [])}
     known_skills = {item["id"] for item in cat.get("skills", [])}
-    all_targets = known_rules | known_skills
+    all_rule_files = (
+        {p.name for p in r_dir.glob("*.md") if p.name.lower() != "readme.md"}
+        if r_dir.is_dir()
+        else set()
+    )
+    all_targets = known_skills | all_rule_files
 
     errors: list[str] = []
-    if suite.get("schema_version") != SCHEMA_VERSION:
-        errors.append(f"schema_version must be {SCHEMA_VERSION}")
-
-    trigger_cases = suite.get("trigger_cases")
-    behavior_cases = suite.get("behavior_cases")
-    if not isinstance(trigger_cases, list) or not trigger_cases:
-        errors.append("trigger_cases must be a non-empty list")
-        trigger_cases = []
-    if not isinstance(behavior_cases, list) or not behavior_cases:
-        errors.append("behavior_cases must be a non-empty list")
-        behavior_cases = []
+    if not paths:
+        return ["No local eval suite files found"]
 
     seen_ids: set[str] = set()
-    covered_rules: set[str] = set()
-    covered_skills: set[str] = set()
-    negative_controls = 0
 
-    for idx, case in enumerate(trigger_cases):
-        if not isinstance(case, dict):
-            errors.append(f"trigger_cases[{idx}] must be an object")
-            continue
-        cid = str(case.get("id", "")).strip()
-        if not cid:
-            errors.append(f"trigger_cases[{idx}] missing non-empty id")
-            continue
-        if cid in seen_ids:
-            errors.append(f"Duplicate case id {cid!r}")
-        seen_ids.add(cid)
-
-        prompt = str(case.get("prompt", "")).strip()
-        if not prompt:
-            errors.append(f"{cid}: prompt must be non-empty")
-
-        exp_rules = case.get("expected_rules", [])
-        opt_rules = case.get("optional_rules", [])
-        forb_rules = case.get("forbidden_rules", [])
-        exp_skills = case.get("expected_skills", [])
-        opt_skills = case.get("optional_skills", [])
-        forb_skills = case.get("forbidden_skills", [])
-
-        errors.extend(
-            _validate_target_names(cid, exp_rules, known_rules, "expected_rules")
-        )
-        errors.extend(
-            _validate_target_names(cid, opt_rules, known_rules, "optional_rules")
-        )
-        errors.extend(
-            _validate_target_names(cid, forb_rules, known_rules, "forbidden_rules")
-        )
-        errors.extend(
-            _validate_target_names(cid, exp_skills, known_skills, "expected_skills")
-        )
-        errors.extend(
-            _validate_target_names(cid, opt_skills, known_skills, "optional_skills")
-        )
-        errors.extend(
-            _validate_target_names(cid, forb_skills, known_skills, "forbidden_skills")
-        )
-
-        if isinstance(exp_rules, list) and isinstance(forb_rules, list):
-            overlap_r = set(exp_rules) & set(forb_rules)
-            if overlap_r:
+    if check_all_coverage:
+        for skill_id in sorted(known_skills):
+            expected_path = s_dir / skill_id / "evals" / "suite.json"
+            if not expected_path.is_file():
+                errors.append(f"Missing local skill eval suite: {expected_path}")
+        for rule_id in sorted(known_model_rules):
+            stem = rule_id.removesuffix(".md")
+            expected_path = re_dir / f"{stem}.json"
+            if not expected_path.is_file():
                 errors.append(
-                    f"{cid}: expected_rules and forbidden_rules overlap: {sorted(overlap_r)}"
+                    f"Missing local model_decision rule eval suite: {expected_path}"
                 )
-            covered_rules.update(r for r in exp_rules if isinstance(r, str))
-        if isinstance(exp_skills, list) and isinstance(forb_skills, list):
-            overlap_s = set(exp_skills) & set(forb_skills)
-            if overlap_s:
-                errors.append(
-                    f"{cid}: expected_skills and forbidden_skills overlap: {sorted(overlap_s)}"
-                )
-            covered_skills.update(s for s in exp_skills if isinstance(s, str))
 
-        if (
-            isinstance(exp_rules, list)
-            and isinstance(exp_skills, list)
-            and not exp_rules
-            and not exp_skills
-        ):
-            if (not isinstance(forb_rules, list) or not forb_rules) and (
-                not isinstance(forb_skills, list) or not forb_skills
-            ):
-                errors.append(
-                    f"{cid}: negative control trigger case must set forbidden_rules or forbidden_skills"
-                )
-            negative_controls += 1
-
-    for missing_rule in sorted(known_rules - covered_rules):
-        errors.append(f"Uncovered model_decision rule in trigger_cases: {missing_rule}")
-    for missing_skill in sorted(known_skills - covered_skills):
-        errors.append(f"Uncovered skill in trigger_cases: {missing_skill}")
-    if negative_controls == 0:
-        errors.append("trigger_cases must include at least one negative control case")
-
-    for idx, case in enumerate(behavior_cases):
-        if not isinstance(case, dict):
-            errors.append(f"behavior_cases[{idx}] must be an object")
+    for path in paths:
+        if not path.is_file():
+            errors.append(f"Missing eval suite file: {path}")
             continue
-        cid = str(case.get("id", "")).strip()
-        if not cid:
-            errors.append(f"behavior_cases[{idx}] missing non-empty id")
-            continue
-        if cid in seen_ids:
-            errors.append(f"Duplicate case id {cid!r}")
-        seen_ids.add(cid)
+        suite = load_json(path)
+        label = path.as_posix()
 
-        target = str(case.get("target", "")).strip()
-        # Scoped glob rules may also be targets; check RULES_DIR too.
-        glob_rules = (
-            {p.name for p in RULES_DIR.glob("*.md")} if RULES_DIR.is_dir() else set()
-        )
-        if target not in (all_targets | glob_rules):
-            errors.append(f"{cid}: unknown target {target!r}")
-        if not str(case.get("prompt", "")).strip():
-            errors.append(f"{cid}: prompt must be non-empty")
+        if suite.get("schema_version") != SCHEMA_VERSION:
+            errors.append(f"{label}: schema_version must be {SCHEMA_VERSION}")
 
-        must_any = case.get("must_contain_any", [])
-        must_re = case.get("must_contain_regex", [])
-        forb_re = case.get("must_not_contain_regex", [])
-        rubric = case.get("rubric", [])
-        if not must_any and not must_re and not forb_re and not rubric:
+        owner = str(suite.get("owner", "")).strip()
+        owner_type = str(suite.get("owner_type", "")).strip()
+        if owner_type not in {"skill", "rule"}:
+            errors.append(f"{label}: owner_type must be 'skill' or 'rule'")
+        elif owner_type == "skill":
+            if owner not in known_skills:
+                errors.append(f"{label}: unknown owner skill {owner!r}")
+            elif path.parent.parent.name != owner:
+                errors.append(
+                    f"{label}: owner {owner!r} does not match skill directory {path.parent.parent.name!r}"
+                )
+        elif owner_type == "rule":
+            if owner not in all_rule_files:
+                errors.append(f"{label}: unknown owner rule {owner!r}")
+            elif f"{path.stem}.md" != owner:
+                errors.append(
+                    f"{label}: owner {owner!r} does not match filename {path.name!r}"
+                )
+
+        trigger_cases = suite.get("trigger_cases", [])
+        behavior_cases = suite.get("behavior_cases", [])
+        if not isinstance(trigger_cases, list):
+            errors.append(f"{label}: trigger_cases must be a list")
+            trigger_cases = []
+        if not isinstance(behavior_cases, list):
+            errors.append(f"{label}: behavior_cases must be a list")
+            behavior_cases = []
+        if not trigger_cases and not behavior_cases:
             errors.append(
-                f"{cid}: must define at least one deterministic check or rubric"
+                f"{label}: suite must define at least one trigger or behavior case"
             )
 
-        for field_name, patterns in (
-            ("must_contain_regex", must_re),
-            ("must_not_contain_regex", forb_re),
-        ):
-            if not isinstance(patterns, list):
-                errors.append(f"{cid}: {field_name} must be a list")
+        pos_for_owner = 0
+        neg_for_owner = 0
+
+        for idx, case in enumerate(trigger_cases):
+            if not isinstance(case, dict):
+                errors.append(f"{label}: trigger_cases[{idx}] must be an object")
                 continue
-            for pat in patterns:
-                try:
-                    re.compile(str(pat))
-                except re.error as exc:
+            cid = str(case.get("id", "")).strip()
+            if not cid:
+                errors.append(f"{label}: trigger_cases[{idx}] missing non-empty id")
+                continue
+            if cid in seen_ids:
+                errors.append(f"Duplicate case id {cid!r}")
+            seen_ids.add(cid)
+
+            if not str(case.get("prompt", "")).strip():
+                errors.append(f"{cid}: prompt must be non-empty")
+
+            exp_rules = case.get("expected_rules", [])
+            opt_rules = case.get("optional_rules", [])
+            forb_rules = case.get("forbidden_rules", [])
+            exp_skills = case.get("expected_skills", [])
+            opt_skills = case.get("optional_skills", [])
+            forb_skills = case.get("forbidden_skills", [])
+
+            errors.extend(
+                _validate_target_names(
+                    cid, exp_rules, known_model_rules, "expected_rules"
+                )
+            )
+            errors.extend(
+                _validate_target_names(
+                    cid, opt_rules, known_model_rules, "optional_rules"
+                )
+            )
+            errors.extend(
+                _validate_target_names(
+                    cid, forb_rules, known_model_rules, "forbidden_rules"
+                )
+            )
+            errors.extend(
+                _validate_target_names(cid, exp_skills, known_skills, "expected_skills")
+            )
+            errors.extend(
+                _validate_target_names(cid, opt_skills, known_skills, "optional_skills")
+            )
+            errors.extend(
+                _validate_target_names(
+                    cid, forb_skills, known_skills, "forbidden_skills"
+                )
+            )
+
+            if isinstance(exp_rules, list) and isinstance(forb_rules, list):
+                overlap_r = set(exp_rules) & set(forb_rules)
+                if overlap_r:
                     errors.append(
-                        f"{cid}: invalid regex {pat!r} in {field_name}: {exc}"
+                        f"{cid}: expected_rules and forbidden_rules overlap: {sorted(overlap_r)}"
                     )
+            if isinstance(exp_skills, list) and isinstance(forb_skills, list):
+                overlap_s = set(exp_skills) & set(forb_skills)
+                if overlap_s:
+                    errors.append(
+                        f"{cid}: expected_skills and forbidden_skills overlap: {sorted(overlap_s)}"
+                    )
+
+            if (
+                owner_type == "skill"
+                and isinstance(exp_skills, list)
+                and owner in exp_skills
+            ):
+                pos_for_owner += 1
+            if (
+                owner_type == "skill"
+                and isinstance(forb_skills, list)
+                and owner in forb_skills
+            ):
+                neg_for_owner += 1
+            if (
+                owner_type == "rule"
+                and owner in known_model_rules
+                and isinstance(exp_rules, list)
+                and owner in exp_rules
+            ):
+                pos_for_owner += 1
+
+        if owner_type == "skill":
+            if pos_for_owner == 0:
+                errors.append(
+                    f"{label}: skill suite must include >=1 trigger case expecting {owner!r}"
+                )
+            if neg_for_owner == 0:
+                errors.append(
+                    f"{label}: skill suite must include >=1 negative trigger case forbidding {owner!r}"
+                )
+        elif owner_type == "rule" and owner in known_model_rules and pos_for_owner == 0:
+            errors.append(
+                f"{label}: model_decision rule suite must include >=1 trigger case expecting {owner!r}"
+            )
+
+        for idx, case in enumerate(behavior_cases):
+            if not isinstance(case, dict):
+                errors.append(f"{label}: behavior_cases[{idx}] must be an object")
+                continue
+            cid = str(case.get("id", "")).strip()
+            if not cid:
+                errors.append(f"{label}: behavior_cases[{idx}] missing non-empty id")
+                continue
+            if cid in seen_ids:
+                errors.append(f"Duplicate case id {cid!r}")
+            seen_ids.add(cid)
+
+            target = str(case.get("target", "")).strip()
+            if target not in all_targets:
+                errors.append(f"{cid}: unknown target {target!r}")
+            if not str(case.get("prompt", "")).strip():
+                errors.append(f"{cid}: prompt must be non-empty")
+
+            must_any = case.get("must_contain_any", [])
+            must_re = case.get("must_contain_regex", [])
+            forb_re = case.get("must_not_contain_regex", [])
+            rubric = case.get("rubric", [])
+            if not must_any and not must_re and not forb_re and not rubric:
+                errors.append(
+                    f"{cid}: must define at least one deterministic check or rubric"
+                )
+
+            for field_name, patterns in (
+                ("must_contain_regex", must_re),
+                ("must_not_contain_regex", forb_re),
+            ):
+                if not isinstance(patterns, list):
+                    errors.append(f"{cid}: {field_name} must be a list")
+                    continue
+                for pat in patterns:
+                    try:
+                        re.compile(str(pat))
+                    except re.error as exc:
+                        errors.append(
+                            f"{cid}: invalid regex {pat!r} in {field_name}: {exc}"
+                        )
 
     return errors
 
@@ -426,10 +570,10 @@ def _score_behavior_case(case: dict[str, Any], pred: dict[str, Any]) -> dict[str
 def score_predictions(
     suite: dict[str, Any], predictions: dict[str, Any]
 ) -> dict[str, Any]:
-    """Score trigger and behavior predictions against a validated eval suite.
+    """Score trigger and behavior predictions against a merged or local suite.
 
     Args:
-        suite: Loaded ``suite.json`` dictionary.
+        suite: Merged suite dictionary from ``load_merged_suite()``.
         predictions: Predictions payload from ``run_workflow_eval.py`` or fixture.
 
     Returns:
@@ -525,7 +669,7 @@ def diff_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[st
 
     Returns:
         Diff dictionary with ``fixed``, ``regressed``, ``still_failing``,
-        ``new_cases``, and metric deltas in percentage points.
+        ``new_passed``, ``new_failed``, and metric deltas in percentage points.
     """
     base_cases: dict[str, tuple[str, bool]] = {}
     cand_cases: dict[str, tuple[str, bool]] = {}
@@ -664,37 +808,53 @@ def _cmd_render_catalog(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_list_suites(args: argparse.Namespace) -> int:
+    paths = discover_suites(skill=args.skill, rule=args.rule)
+    if args.format == "json":
+        print(json.dumps([str(p) for p in paths], indent=2))
+    else:
+        for p in paths:
+            print(p)
+    return 0
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
-    suite_path = pathlib.Path(args.suite)
-    suite = load_json(suite_path)
-    errors = validate_suite(suite)
-    n_trig = len(suite.get("trigger_cases", []))
-    n_beh = len(suite.get("behavior_cases", []))
+    paths = discover_suites(skill=args.skill, rule=args.rule, suite_path=args.suite)
+    check_all = not (args.skill or args.rule or args.suite)
+    errors = validate_local_suites(paths, check_all_coverage=check_all)
     if errors:
-        print(f"INVALID {suite_path} ({len(errors)} errors):")
+        print(f"INVALID local eval suites ({len(errors)} errors):")
         for err in errors:
             print(f"  - {err}")
         return 1
-    print(f"OK - {suite_path} valid ({n_trig} trigger cases, {n_beh} behavior cases).")
+    merged = load_merged_suite(paths)
+    n_trig = len(merged["trigger_cases"])
+    n_beh = len(merged["behavior_cases"])
+    print(
+        f"OK - {len(paths)} local suite(s) valid "
+        f"({n_trig} trigger cases, {n_beh} behavior cases)."
+    )
     return 0
 
 
 def _cmd_score(args: argparse.Namespace) -> int:
-    suite = load_json(args.suite)
-    errors = validate_suite(suite)
+    paths = discover_suites(skill=args.skill, rule=args.rule, suite_path=args.suite)
+    check_all = not (args.skill or args.rule or args.suite)
+    errors = validate_local_suites(paths, check_all_coverage=check_all)
     if errors:
         print("Suite validation errors:")
         for err in errors:
             print(f"  - {err}")
         return 1
 
+    merged_suite = load_merged_suite(paths)
     cand_preds = load_json(args.predictions)
-    cand_report = score_predictions(suite, cand_preds)
+    cand_report = score_predictions(merged_suite, cand_preds)
 
     diff: dict[str, Any] | None = None
     if args.baseline:
         base_preds = load_json(args.baseline)
-        base_report = score_predictions(suite, base_preds)
+        base_report = score_predictions(merged_suite, base_preds)
         diff = diff_reports(base_report, cand_report)
 
     print(format_report_markdown(cand_report, diff=diff))
@@ -721,7 +881,7 @@ def _cmd_score(args: argparse.Namespace) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Validate, render, score, and diff StepCOVNet agent evals."
+        description="Validate, render, score, and diff local agent eval suites."
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -733,19 +893,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output format (default: markdown).",
     )
 
-    p_val = sub.add_parser("validate", help="Validate eval suite against disk.")
-    p_val.add_argument(
-        "--suite",
-        default=str(DEFAULT_SUITE),
-        help="Path to suite.json.",
+    p_list = sub.add_parser(
+        "list-suites", help="List discovered skill-local and rule-local eval suites."
+    )
+    p_list.add_argument("--skill", default="", help="Filter to one skill name.")
+    p_list.add_argument("--rule", default="", help="Filter to one rule name/stem.")
+    p_list.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format (default: text).",
     )
 
+    p_val = sub.add_parser("validate", help="Validate local eval suites against disk.")
+    p_val.add_argument("--skill", default="", help="Validate only one skill suite.")
+    p_val.add_argument("--rule", default="", help="Validate only one rule suite.")
+    p_val.add_argument("--suite", default="", help="Validate an explicit suite path.")
+
     p_score = sub.add_parser("score", help="Score predictions and optional diff.")
-    p_score.add_argument(
-        "--suite",
-        default=str(DEFAULT_SUITE),
-        help="Path to suite.json.",
-    )
+    p_score.add_argument("--skill", default="", help="Score only one skill suite.")
+    p_score.add_argument("--rule", default="", help="Score only one rule suite.")
+    p_score.add_argument("--suite", default="", help="Score an explicit suite path.")
     p_score.add_argument(
         "--predictions",
         required=True,
@@ -781,6 +949,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "render-catalog":
         return _cmd_render_catalog(args)
+    if args.command == "list-suites":
+        return _cmd_list_suites(args)
     if args.command == "validate":
         return _cmd_validate(args)
     return _cmd_score(args)
