@@ -525,6 +525,7 @@ def train_placement(
             target_device.type == "cuda"
             and sys.platform != "win32"
             and len(train_charts) >= 8
+            and experiment.dataset.lazy_mert_cache_size <= 0
         )
         else 0
     )
