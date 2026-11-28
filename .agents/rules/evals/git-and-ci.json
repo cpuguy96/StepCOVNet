@@ -44,7 +44,7 @@
         ["git push"],
         ["pre_submit.py", "ruff"]
       ],
-      "must_not_contain_regex": [
+      "commands_not_contain_regex": [
         "--no-verify"
       ],
       "rubric": [

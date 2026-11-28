@@ -45,7 +45,7 @@
         ["colab_run_remote.sh"],
         ["live_tb", "MyDrive/StepCOVNet/live_tb"]
       ],
-      "must_not_contain_regex": [
+      "commands_not_contain_regex": [
         "localhost:600[68]",
         "cloudflared",
         "git push.*wip"

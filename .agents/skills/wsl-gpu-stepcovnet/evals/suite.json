@@ -45,7 +45,7 @@
         ["Tee-Object", "tee"],
         ["gpu_wsl.lock", "one training job", "single-tenant", "serial"]
       ],
-      "must_not_contain_regex": [
+      "commands_not_contain_regex": [
         "STEPCOVNET_NO_WSL=1",
         ">\\s*logs/"
       ],

@@ -1,5 +1,5 @@
 ---
-description: Python executable selection (Windows venv vs WSL CUDA vs Linux/Cloud VM), portable repo-relative paths, and _tmp/logs scratch hygiene. Apply when running Python, pytest, lint, scripts, or creating temp/log files.
+description: Local Python executable selection (Windows venv vs local WSL CUDA), portable repo-relative paths, and _tmp/logs scratch hygiene. Apply when running local Python, pytest, lint, or creating local temp/log files; skip for remote Colab launches (colab-gpu-stepcovnet) or autonomous autoresearch loops.
 trigger: model_decision
 ---
 

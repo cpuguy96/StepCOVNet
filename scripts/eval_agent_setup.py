@@ -24,6 +24,7 @@ SKILLS_DIR = REPO / ".agents" / "skills"
 SCHEMA_VERSION = 1
 
 FRONTMATTER_RE = re.compile(r"^---\s*\r?\n(.*?)\r?\n---", re.DOTALL)
+FENCED_CODE_RE = re.compile(r"```(?:[^\n]*)\n(.*?)```", re.DOTALL)
 
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
@@ -446,8 +447,17 @@ def validate_local_suites(
             must_any = case.get("must_contain_any", [])
             must_re = case.get("must_contain_regex", [])
             forb_re = case.get("must_not_contain_regex", [])
+            cmds_forb_re = case.get("commands_not_contain_regex", [])
+            code_forb_re = case.get("code_not_contain_regex", [])
             rubric = case.get("rubric", [])
-            if not must_any and not must_re and not forb_re and not rubric:
+            if (
+                not must_any
+                and not must_re
+                and not forb_re
+                and not cmds_forb_re
+                and not code_forb_re
+                and not rubric
+            ):
                 errors.append(
                     f"{cid}: must define at least one deterministic check or rubric"
                 )
@@ -455,6 +465,8 @@ def validate_local_suites(
             for field_name, patterns in (
                 ("must_contain_regex", must_re),
                 ("must_not_contain_regex", forb_re),
+                ("commands_not_contain_regex", cmds_forb_re),
+                ("code_not_contain_regex", code_forb_re),
             ):
                 if not isinstance(patterns, list):
                     errors.append(f"{cid}: {field_name} must be a list")
@@ -514,7 +526,10 @@ def _score_trigger_case(case: dict[str, Any], pred: dict[str, Any]) -> dict[str,
 def _score_behavior_case(case: dict[str, Any], pred: dict[str, Any]) -> dict[str, Any]:
     response = str(pred.get("response", ""))
     commands = [str(c) for c in pred.get("commands", [])]
-    combined = response + "\n" + "\n".join(commands)
+    commands_text = "\n".join(commands)
+    code_blocks = FENCED_CODE_RE.findall(response)
+    code_text = "\n".join(code_blocks + commands)
+    combined = response + "\n" + commands_text
     combined_lower = combined.lower()
 
     failures: list[str] = []
@@ -531,6 +546,14 @@ def _score_behavior_case(case: dict[str, Any], pred: dict[str, Any]) -> dict[str
     for pat in case.get("must_not_contain_regex", []):
         if re.search(str(pat), combined, re.IGNORECASE):
             failures.append(f"matched forbidden regex /{pat}/")
+
+    for pat in case.get("commands_not_contain_regex", []):
+        if re.search(str(pat), commands_text, re.IGNORECASE):
+            failures.append(f"command matched forbidden regex /{pat}/")
+
+    for pat in case.get("code_not_contain_regex", []):
+        if re.search(str(pat), code_text, re.IGNORECASE):
+            failures.append(f"code matched forbidden regex /{pat}/")
 
     rubric = [str(item) for item in case.get("rubric", [])]
     raw_results = pred.get("rubric_results", [])

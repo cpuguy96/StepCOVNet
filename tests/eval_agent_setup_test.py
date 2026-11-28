@@ -208,6 +208,54 @@ class ScoreAndHillClimbDiffTest(unittest.TestCase):
         self.assertEqual(diff["regressed"], ["behavior:b-1"])
         self.assertEqual(diff["trigger_f1_delta_pp"], 100.0)
 
+    def test_commands_and_code_not_contain_regex_ignore_prose(self) -> None:
+        suite = {
+            "schema_version": 1,
+            "behavior_cases": [
+                {
+                    "id": "b-cmd",
+                    "target": "git-and-ci.md",
+                    "prompt": "push",
+                    "commands_not_contain_regex": ["--no-verify"],
+                },
+                {
+                    "id": "b-code",
+                    "target": "python-style.md",
+                    "prompt": "pathlib",
+                    "code_not_contain_regex": ["from pathlib import"],
+                },
+            ],
+        }
+        clean_preds = {
+            "behavior_predictions": {
+                "b-cmd": {
+                    "response": "Never pass --no-verify when pushing.",
+                    "commands": ["git push origin master"],
+                },
+                "b-code": {
+                    "response": "Never use `from pathlib import Path`.\n```python\nimport pathlib\n```",
+                    "commands": ["ruff check ."],
+                },
+            }
+        }
+        clean_rep = eval_mod.score_predictions(suite, clean_preds)
+        self.assertEqual(clean_rep["behavior"]["passed"], 2)
+
+        bad_preds = {
+            "behavior_predictions": {
+                "b-cmd": {
+                    "response": "Pushing now.",
+                    "commands": ["git push --no-verify"],
+                },
+                "b-code": {
+                    "response": "Here:\n```python\nfrom pathlib import Path\n```",
+                    "commands": [],
+                },
+            }
+        }
+        bad_rep = eval_mod.score_predictions(suite, bad_preds)
+        self.assertEqual(bad_rep["behavior"]["passed"], 0)
+
     def test_cli_score_exits_one_on_regression_and_zero_when_clean(self) -> None:
         suite = self._sample_suite()
         with tempfile.TemporaryDirectory() as tmp:

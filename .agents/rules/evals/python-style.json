@@ -13,7 +13,7 @@
         ["import pathlib"],
         ["Args:"]
       ],
-      "must_not_contain_regex": [
+      "code_not_contain_regex": [
         "from pathlib import"
       ],
       "rubric": [
