@@ -42,6 +42,17 @@ Insert **at the top** of [Entries](#entries) (below this section):
 
 ## Entries
 
+### JRN-20261128-08: Enforce test-diff gate in pre_submit, add c8c5435 worker tests, and fix 27 Codacy ErrorProne issues
+
+| Field | Value |
+| ----- | ----- |
+| **Timestamp** | 2026-11-28 10:09:42 |
+| **Category** | mistake |
+| **Summary** | Commit `c8c5435` added an inline `lazy_mert_cache_size <= 0` worker guard in `train_placement()` without adding a regression test, and `.agents/skills/agent-maintenance/scripts/run_workflow_eval.py` + `scripts/colab_cloud_bootstrap.sh` carried 27 Codacy `ErrorProne` findings. Undetected because `pre_submit.py` lacked a code-vs-tests diff check (allowing `--fast` on `src/` edits without `tests/` changes), `pyproject.toml` `[tool.coverage.run]` lacked `branch = true` (leaving CPU-only tests at 100% line coverage over the CUDA ternary), `.agents/rules/python-tests.md` is glob-triggered while `.agents/rules/git-and-ci.md` lacked a test-diff reminder, and Codacy Ruff checks scanned `run_workflow_eval.py` without respecting `pyproject.toml` `extend-exclude`. Validated via local rule eval (`beh-git-code-changes-need-tests`, `base_git_and_ci_v2` `50.0%` -> `cand_git_and_ci_v2` `100.0%`, `+50.00 pp`, `0` regressions). |
+| **Artifact** | `pre_submit.py`, `tests/pre_submit_test.py`, `pyproject.toml`, `.agents/rules/git-and-ci.md`, `src/stepcovnet/itgpt/trainers.py`, `tests/itgpt/trainers_test.py`, `.agents/skills/agent-maintenance/scripts/run_workflow_eval.py`, `scripts/colab_cloud_bootstrap.sh` |
+| **Action taken** | Added `find_code_changes_without_tests` + `--skip-test-diff-check` gate to `pre_submit.py` (enforced even under `--fast`), enabled `branch = true` coverage in `pyproject.toml`, added the `Tests with code changes` policy in `git-and-ci.md`, extracted `resolve_train_num_workers()` with unit/wiring tests in `tests/itgpt/trainers_test.py`, and resolved all 27 Codacy `ErrorProne` issues (`# ruff: noqa: F704, F821`, `strict=True`, `print(...)` in `run_workflow_eval.py`; removed unused `UPDATED_LOCALLY` in `colab_cloud_bootstrap.sh`) |
+| **Related** | `c8c5435`, `git-and-ci`, `agent-maintenance`, `JRN-20261128-07` |
+
 ### JRN-20261128-07: Upgrade autoresearch skill and profiles for RSI loop (validated via skill-local TDD eval)
 
 | Field | Value |

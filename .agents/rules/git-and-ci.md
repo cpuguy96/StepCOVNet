@@ -6,6 +6,7 @@ trigger: model_decision
 # Git and CI hygiene
 
 - **CI gate:** Never push Python changes unless `pre_submit.py` passes (`--fast` for ruff + pyright; `--skip-install` for full CI mirror). Never use `--no-verify` unless explicitly requested.
+- **Tests with code changes:** Any commit modifying `src/` or `scripts/` Python files must include accompanying unit tests in `tests/` covering changed behavior and branches (see [python-tests.md](python-tests.md)). `pre_submit.py` enforces this check even under `--fast` (`--skip-test-diff-check` is only for non-behavioral/formatting-only edits), and because `--fast` skips `pytest`, always run the affected tests before pushing.
 - **Keep CI green:** When adding or modifying CI/lint/audit tooling, fix existing violations in the same change set.
 - **Clean commits:** Review `git status` / `git diff` before committing; exclude unrelated local files (e.g. `logs/`, untracked scratch) and keep docs synced with code.
 - **Multi-phase tasks:** On approved multi-phase work, commit and push to the remote after **each verified phase** rather than holding commits locally until the end.

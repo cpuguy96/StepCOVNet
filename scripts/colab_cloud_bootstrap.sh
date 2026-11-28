@@ -100,21 +100,17 @@ fi
 # 4. Configure rclone (explicit source -> uploaded file -> token -> Drive auto-pull)
 TARGET_CONF="$HOME/.config/rclone/rclone.conf"
 UPLOAD_CONF="/home/antigravity/upload/rclone.conf"
-UPDATED_LOCALLY="0"
 
 if [[ -n "$RCLONE_CONF_SRC" ]]; then
   install -m 600 "$RCLONE_CONF_SRC" "$TARGET_CONF"
-  UPDATED_LOCALLY="1"
   echo "[bootstrap] Installed rclone.conf from $RCLONE_CONF_SRC (chmod 600)."
 elif [[ -f "$UPLOAD_CONF" ]]; then
   install -m 600 "$UPLOAD_CONF" "$TARGET_CONF"
   rm -f "$UPLOAD_CONF"
-  UPDATED_LOCALLY="1"
   echo "[bootstrap] Installed rclone.conf from uploaded file and scrubbed $UPLOAD_CONF."
 elif [[ -n "$RCLONE_TOKEN" ]]; then
   "$RCLONE_BIN" config create "$REMOTE" drive scope=drive token="$RCLONE_TOKEN" --non-interactive >/dev/null
   chmod 600 "$TARGET_CONF"
-  UPDATED_LOCALLY="1"
   echo "[bootstrap] Configured rclone remote '$REMOTE:' from token JSON (chmod 600)."
 elif [[ ! -f "$TARGET_CONF" ]] && command -v gdrive >/dev/null 2>&1; then
   SECRETS_ID="$(find_drive_secrets_folder || true)"

@@ -259,6 +259,17 @@ def _apply_silence_negative_aug(
     Preserves ``difficulty`` and ``bpm`` conditioning so the model learns that
     silent audio yields zero steps regardless of target density, without mutating
     cached input tensors in place.
+
+    Args:
+        inputs: Batch model input mapping containing ``"audio"`` tensor.
+        slots: Ground-truth binary slot targets tensor.
+        mask: Valid-beat mask tensor ``(B, T)``.
+        rng: Random generator controlling silence sampling and span length.
+        prob: Probability of applying silence-negative augmentation.
+
+    Returns:
+        Tuple of ``(inputs, slots)`` with cloned, zeroed audio and slot tensors
+        when sampled, or the original inputs and slots unchanged otherwise.
     """
     if prob <= 0.0 or rng.random() >= prob:
         return inputs, slots
@@ -356,6 +367,39 @@ def compile_placement_blocks(model: models.ItgptPlacementModel) -> None:
         getattr(model, level_name).compile(dynamic=True)
     for block in model.level6:
         block.compile(dynamic=True)
+
+
+def resolve_train_num_workers(
+    device: torch.device,
+    n_train_charts: int,
+    lazy_mert_cache_size: int,
+    *,
+    platform: str | None = None,
+) -> int:
+    """Return DataLoader worker count for training charts.
+
+    Disables multiprocessing workers when lazy MERT caching is active so each
+    forked worker does not duplicate the in-process LRU cache in host RAM.
+
+    Args:
+        device: Target PyTorch device.
+        n_train_charts: Number of training charts in the split.
+        lazy_mert_cache_size: Configured lazy MERT cache size (``0`` disables).
+        platform: Optional ``sys.platform`` override (defaults to current host).
+
+    Returns:
+        ``2`` on non-Windows CUDA with at least 8 charts and eager MERT loading;
+        otherwise ``0``.
+    """
+    active_platform = sys.platform if platform is None else platform
+    if (
+        device.type == "cuda"
+        and active_platform != "win32"
+        and n_train_charts >= 8
+        and lazy_mert_cache_size <= 0
+    ):
+        return 2
+    return 0
 
 
 def train_placement(
@@ -519,15 +563,10 @@ def train_placement(
     grad_accum = max(1, int(experiment.run.gradient_accumulation_steps))
     clipnorm = float(experiment.run.clipnorm)
     pin_memory = target_device.type == "cuda"
-    train_workers = (
-        2
-        if (
-            target_device.type == "cuda"
-            and sys.platform != "win32"
-            and len(train_charts) >= 8
-            and experiment.dataset.lazy_mert_cache_size <= 0
-        )
-        else 0
+    train_workers = resolve_train_num_workers(
+        target_device,
+        len(train_charts),
+        experiment.dataset.lazy_mert_cache_size,
     )
 
     train_iter = iter(

@@ -87,6 +87,7 @@ markers = [
 source_pkgs = ["stepcovnet"]
 source_dirs = ["scripts"]
 relative_files = true
+branch = true
 omit = ["*/__pycache__/*"]
 
 [tool.coverage.report]

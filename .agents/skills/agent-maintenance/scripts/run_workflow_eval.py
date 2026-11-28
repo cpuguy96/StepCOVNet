@@ -1,3 +1,5 @@
+# Antigravity run_workflow injects WORKSPACES/args/phase/log/parallel/agent and supports top-level await.
+# ruff: noqa: F704, F821
 """Antigravity run_workflow harness for skill-local and rule-local agent evals.
 
 Run via Antigravity's ``run_workflow`` tool with optional ``Args``:
@@ -154,7 +156,7 @@ if MODE in ("all", "triggers"):
         if trig_cases
         else []
     )
-    for case, out in zip(trig_cases, trig_outputs):
+    for case, out in zip(trig_cases, trig_outputs, strict=True):
         trigger_predictions[case["id"]] = out
     log(f"Completed {len(trigger_predictions)} trigger predictions.")
 
@@ -194,7 +196,7 @@ if MODE in ("all", "behavior"):
 
     rubric_pairs = [
         (case, out)
-        for case, out in zip(beh_cases, beh_outputs)
+        for case, out in zip(beh_cases, beh_outputs, strict=True)
         if case.get("rubric")
     ]
     log(f"Grading {len(rubric_pairs)} rubric-bearing behavior cases...")
@@ -229,9 +231,9 @@ if MODE in ("all", "behavior"):
 
     graded_by_id = {
         case["id"]: graded.get("results", [])
-        for (case, _), graded in zip(rubric_pairs, graded_outputs)
+        for (case, _), graded in zip(rubric_pairs, graded_outputs, strict=True)
     }
-    for case, out in zip(beh_cases, beh_outputs):
+    for case, out in zip(beh_cases, beh_outputs, strict=True):
         behavior_predictions[case["id"]] = {
             "response": out.get("response", ""),
             "commands": out.get("commands", []),
@@ -277,4 +279,4 @@ if score_proc.stderr.strip():
 if score_proc.returncode != 0:
     log(f"Scorer exited with code {score_proc.returncode}")
 
-score_proc.stdout
+print(score_proc.stdout, end="")

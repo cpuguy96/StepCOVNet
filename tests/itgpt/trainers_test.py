@@ -841,6 +841,98 @@ class ItgptTrainersTest(unittest.TestCase):
         self.assertEqual(tuple(logits.shape), (1, 64, constants.N_SLOTS))
         self.assertTrue(torch.isfinite(logits).all())
 
+    def test_resolve_train_num_workers_disables_workers_for_lazy_cache(self) -> None:
+        self.assertEqual(
+            trainers.resolve_train_num_workers(
+                torch.device("cuda"), 8, 0, platform="linux"
+            ),
+            2,
+        )
+        self.assertEqual(
+            trainers.resolve_train_num_workers(
+                torch.device("cuda"), 8, 64, platform="linux"
+            ),
+            0,
+        )
+        self.assertEqual(
+            trainers.resolve_train_num_workers(
+                torch.device("cpu"), 8, 0, platform="linux"
+            ),
+            0,
+        )
+        self.assertEqual(
+            trainers.resolve_train_num_workers(
+                torch.device("cuda"), 8, 0, platform="win32"
+            ),
+            0,
+        )
+        self.assertEqual(
+            trainers.resolve_train_num_workers(
+                torch.device("cuda"), 7, 0, platform="linux"
+            ),
+            0,
+        )
+
+    def test_train_placement_wires_lazy_cache_into_train_num_workers(self) -> None:
+        chart = _synthetic_chart()
+        report = _mock_report(0.5, 0.55)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            experiment = config.ItgptExperimentConfig(
+                dataset=config.ItgptDatasetConfig(
+                    training_index_path=str(pathlib.Path(tmpdir) / "missing.json"),
+                    max_beats=constants.CHUNK_ALIGN,
+                    lazy_mert_cache_size=64,
+                ),
+                model=config.ItgptModelConfig(
+                    d_model=32,
+                    n_heads=4,
+                    n_enc_layers=1,
+                    cnn_hidden=8,
+                    dropout_rate=0.0,
+                ),
+                run=config.ItgptRunConfig(
+                    epoch=1,
+                    steps_per_epoch=1,
+                    validation_steps=1,
+                    model_output_dir=str(pathlib.Path(tmpdir) / "models"),
+                    callback_root_dir="",
+                    model_name="lazy_workers",
+                    resume=False,
+                ),
+            )
+            with (
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.datasets.load_split_charts",
+                    return_value=[chart],
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.evaluate_slot48",
+                    return_value=report,
+                ),
+                mock.patch(
+                    "stepcovnet.itgpt.trainers.evaluation.report_as_dict",
+                    side_effect=lambda r, *, weights: {
+                        **r.as_dict(),
+                        "weights": weights,
+                    },
+                ),
+                mock.patch.object(
+                    trainers,
+                    "resolve_train_num_workers",
+                    autospec=True,
+                    return_value=0,
+                ) as mock_workers,
+                mock.patch.object(
+                    trainers.datasets,
+                    "build_dataloader",
+                    wraps=trainers.datasets.build_dataloader,
+                ) as mock_loader,
+            ):
+                trainers.train_placement(experiment, device="cpu")
+            mock_workers.assert_called_once_with(torch.device("cpu"), 1, 64)
+            self.assertEqual(mock_loader.call_count, 2)
+            self.assertEqual(mock_loader.call_args_list[0].kwargs["num_workers"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,11 +6,74 @@ import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent
+
+
+def find_code_changes_without_tests(changed_paths: Sequence[str]) -> list[str]:
+    """Return ``src/`` or ``scripts/`` Python paths when no ``tests/`` file changed.
+
+    Args:
+        changed_paths: Repo-relative modified or untracked paths.
+
+    Returns:
+        Sorted list of changed Python files under ``src/`` or ``scripts/`` when
+        no ``.py`` file under ``tests/`` was changed alongside them; otherwise
+        an empty list.
+    """
+    normalized = [path.replace("\\", "/").lstrip("./") for path in changed_paths]
+    code_paths = sorted(
+        {
+            path
+            for path in normalized
+            if path.endswith(".py") and path.startswith(("src/", "scripts/"))
+        }
+    )
+    if not code_paths:
+        return []
+    has_test_change = any(
+        path.endswith(".py") and path.startswith("tests/") for path in normalized
+    )
+    return [] if has_test_change else code_paths
+
+
+def git_changed_paths(root: Path) -> list[str]:
+    """Collect modified, added, renamed, and untracked paths via ``git status``.
+
+    Args:
+        root: Repository root directory.
+
+    Returns:
+        List of repo-relative paths excluding pure deletions (or empty list if
+        ``git`` is unavailable or exits non-zero).
+    """
+    completed = subprocess.run(
+        ["git", "status", "--porcelain", "-uall"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return []
+    paths: list[str] = []
+    for raw_line in completed.stdout.splitlines():
+        if len(raw_line) < 4:
+            continue
+        status = raw_line[:2]
+        if status.strip() == "D":
+            continue
+        path_part = raw_line[3:].strip()
+        if " -> " in path_part:
+            path_part = path_part.split(" -> ", 1)[1].strip()
+        path_part = path_part.strip('"')
+        if path_part:
+            paths.append(path_part)
+    return paths
 
 
 def _default_python(root: Path) -> Path:
@@ -32,7 +95,14 @@ def _run_step(label: str, command: list[str], *, cwd: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Execute pre-submit validation steps."""
+    """Execute pre-submit validation steps.
+
+    Args:
+        argv: Optional CLI argument list (defaults to ``sys.argv[1:]``).
+
+    Raises:
+        SystemExit: If the test-diff gate or any enabled check fails.
+    """
     parser = argparse.ArgumentParser(
         description="Mirror GitHub Actions Pre-Submit Checks locally."
     )
@@ -71,6 +141,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Upload coverage.xml to Codacy (needs CODACY_PROJECT_TOKEN)",
     )
+    parser.add_argument(
+        "--skip-test-diff-check",
+        action="store_true",
+        help="Skip checking that src/ or scripts/ Python changes include tests/ changes.",
+    )
     args = parser.parse_args(argv)
     if args.fast:
         args.skip_install = True
@@ -80,6 +155,20 @@ def main(argv: list[str] | None = None) -> None:
     root = _repo_root()
     os.chdir(root)
     python = _default_python(root)
+
+    if not args.skip_test_diff_check:
+        uncovered = find_code_changes_without_tests(git_changed_paths(root))
+        if uncovered:
+            listed = ", ".join(uncovered)
+            print(
+                "Error: Python code changes under src/ or scripts/ have no "
+                f"accompanying tests/ Python changes: {listed}\n"
+                "Add or update unit tests in tests/ (or pass "
+                "--skip-test-diff-check for pure formatting/docstring edits).",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise SystemExit(1)
 
     if not args.skip_install:
         _run_step(
