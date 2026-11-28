@@ -196,18 +196,22 @@ def train_placement(
         and experiment.run.warmup_epochs > 0
         else float(experiment.run.learning_rate)
     )
+    params = [param for param in model.parameters() if param.requires_grad]
+    fused = runtime.supports_fused_adam(params)
     optimizer: torch.optim.Optimizer = (
         torch.optim.AdamW(
-            model.parameters(),
+            params,
             lr=initial_lr,
             weight_decay=float(experiment.run.weight_decay),
             eps=1e-7,
+            fused=fused,
         )
         if experiment.run.weight_decay > 0.0
         else torch.optim.Adam(
-            model.parameters(),
+            params,
             lr=initial_lr,
             eps=1e-7,
+            fused=fused,
         )
     )
     ema: runtime.ModelEMA | None = (
@@ -262,7 +266,9 @@ def train_placement(
             epoch_num = epoch_idx + 1
             t0 = time.perf_counter()
             model.train()
-            train_loss_sum = 0.0
+            train_loss_accum = torch.zeros(
+                (), device=target_device, dtype=torch.float32
+            )
             for _ in range(steps_per_epoch):
                 if experiment.run.lr_schedule == constants.LR_SCHEDULE_COSINE:
                     step_lr = runtime.compute_warmup_cosine_lr(
@@ -299,9 +305,9 @@ def train_placement(
                 if ema is not None:
                     ema.update(model)
                 global_step += 1
-                train_loss_sum += float(loss.detach().item())
+                train_loss_accum += loss.detach().float()
 
-            mean_train = train_loss_sum / float(steps_per_epoch)
+            mean_train = float(train_loss_accum.item()) / float(steps_per_epoch)
             eval_ctx = (
                 ema.average_parameters(model)
                 if ema is not None
@@ -309,7 +315,9 @@ def train_placement(
             )
             with eval_ctx:
                 model.eval()
-                val_loss_sum = 0.0
+                val_loss_accum = torch.zeros(
+                    (), device=target_device, dtype=torch.float32
+                )
                 val_rng = np.random.default_rng(experiment.run.seed + 1)
                 with torch.no_grad():
                     for _ in range(val_steps):
@@ -330,9 +338,9 @@ def train_placement(
                         with runtime.autocast_context(target_device, amp_dtype):
                             v_logits = model.forward_logits(v_inputs)
                             v_loss = criterion(v_logits, v_targets)
-                        val_loss_sum += float(v_loss.detach().item())
+                        val_loss_accum += v_loss.detach().float()
 
-                mean_val = val_loss_sum / float(val_steps)
+                mean_val = float(val_loss_accum.item()) / float(val_steps)
                 elapsed = time.perf_counter() - t0
                 current_lr = float(optimizer.param_groups[0]["lr"])
                 print(

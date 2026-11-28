@@ -33,21 +33,11 @@ Pre-push CI mirror: `python pre_submit.py` (from repository root).
 | `src/stepcovnet/slot48_eval.py` | Shared ``M-slot48`` scoring, threshold sweep, null baseline, and audio-corruption helpers |
 | `src/stepcovnet/beat_this_model.py` | Self-contained pure-PyTorch Beat This! neural beat/downbeat tracker (`foscarin2024beatthis`, MIT) |
 | `src/stepcovnet/beat_tracking.py` | `BeatGrid`, Beat This! / `librosa` backends, offline fallback, transient snapping, ITGPT raw-audio inference |
-| `src/stepcovnet/onset_events/` | K-query event onset pipeline (research track) |
+| `src/stepcovnet/onset_events/` | Shared onset timing matching and F1 metrics (`charts.py`, `matching.py`, `metrics.py`) |
 | `src/stepcovnet/dataset_prep/` | Raw simfile → `final_data` preprocessing, `training_index`, `training_loader` (P8–P9) |
 | `src/stepcovnet/pairing.py` | Audio/chart pairing; `list_training_samples` for `final_data` |
 | `src/stepcovnet/mel_onset.py` | Mel spectrogram helpers (shared by dense path; breaks import cycles) |
 | `src/stepcovnet/wsl_gpu.py` | WSL GPU bootstrap / re-exec helpers |
-
-**Onset events modules (by pipeline stage):**
-
-| Stage | Modules |
-| ----- | ------- |
-| PRE | `audio.py`, `frontend.py`, `preprocess.py`, `datasets.py` |
-| MODEL | `models.py`, `encoder.py`, `losses.py` |
-| POST | `inference.py` |
-| METRICS | `metrics.py`, `matching.py`, `diagnostics.py` |
-| Train | `trainers.py`, `config.py` |
 
 See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the full mapping.
 
@@ -57,24 +47,21 @@ See [PIPELINE_ARCHITECTURE.md](../research/PIPELINE_ARCHITECTURE.md) for the ful
 
 | Path | Role |
 | ---- | ---- |
-| `scripts/` | CLI entry points (train, extract, suite runners) |
+| `scripts/` | CLI entry points (train, eval, extract, generate) |
 | `scripts/preprocess_dataset.py` | Raw simfile packs → nested `data/final_data` |
 | `scripts/build_training_index.py` | Train/val split manifest (`training_index.json`) |
 | `configs/` | JSON experiment configs — see [configs/README.md](../../configs/README.md) |
-| `configs/dense/` | Dense frame onset baselines and scoreboard |
-| `configs/event/` | K-query event onset |
-| `configs/overfit_tide/` | Tide single-song overfit smoke configs |
+| `configs/ddc/` | Placement baselines (`DDC`, `DDCL`, `ITGPT`) and ladder/full configs |
 
 **Common entry points → skill:**
 
 | Script | Skill |
 | ------ | ----- |
+| `scripts/train_itgpt_placement.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) · [colab-gpu-stepcovnet](../../.agents/skills/colab-gpu-stepcovnet/SKILL.md) |
+| `scripts/train_ddcl_placement.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
+| `scripts/train_ddc_placement.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
 | `scripts/train_onset.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
-| `scripts/train_onset_event.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
-| `scripts/run_overfit_tide_suite.py` | [tide-overfit-protocol](../../.agents/skills/tide-overfit-protocol/SKILL.md) |
-| `scripts/run_overfit_tide_ablations.py` | [tide-ablations](../../.agents/skills/tide-ablations/SKILL.md) |
-| `scripts/run_overfit_tide_bisection.py` | `EXP-11` — no skill yet ([skills README § Scripts without skills](../../.agents/skills/README.md#scripts-without-skills-yet)) |
-| `scripts/debug_onset_overfit.py` | [onset-event-eval-matching](../../.agents/skills/onset-event-eval-matching/SKILL.md) |
+| `scripts/train_arrow.py` | [wsl-gpu-stepcovnet](../../.agents/skills/wsl-gpu-stepcovnet/SKILL.md) |
 
 ---
 

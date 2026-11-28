@@ -116,3 +116,17 @@ class RuntimeTest(unittest.TestCase):
             lr10, 1e-6 + (1e-4 - 1e-6) * 0.5 * (1.0 + math.cos(math.pi * 0.5))
         )
         self.assertAlmostEqual(lr16, 1e-6)
+
+    def test_supports_fused_adam(self):
+        self.assertFalse(runtime.supports_fused_adam([]))
+        cpu_param = nn.Parameter(torch.zeros(2, 2, dtype=torch.float32))
+        self.assertFalse(runtime.supports_fused_adam([cpu_param]))
+        int_param = nn.Parameter(
+            torch.zeros(2, 2, dtype=torch.int64), requires_grad=False
+        )
+        self.assertFalse(runtime.supports_fused_adam([int_param]))
+        if torch.cuda.is_available():
+            cuda_param = nn.Parameter(
+                torch.zeros(2, 2, dtype=torch.float32, device="cuda")
+            )
+            self.assertTrue(runtime.supports_fused_adam([cuda_param]))

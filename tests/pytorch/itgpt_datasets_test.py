@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import unittest
 
 import numpy as np
@@ -63,3 +64,20 @@ class PyTorchItgptDatasetsTest(unittest.TestCase):
         self.assertAlmostEqual(float(weights[0, 0, 8]), constants.GRID_WEIGHT_24TH)
         self.assertAlmostEqual(float(weights[0, 0, 6]), 1.0)
         self.assertAlmostEqual(float(weights[0, 0, 1]), constants.GRID_WEIGHT_MICRO)
+
+    @unittest.skipIf(sys.platform == "win32", "POSIX multiprocessing worker smoke test")
+    def test_build_dataloader_multiprocess_workers(self):
+        charts = [
+            _make_chart(n_beats=10, mert=True),
+            _make_chart(n_beats=12, mert=True),
+        ]
+        with self.assertRaises(ValueError):
+            datasets.build_dataloader(charts, max_beats=128, seed=0, num_workers=-1)
+        loader = datasets.build_dataloader(charts, max_beats=128, seed=0, num_workers=2)
+        it = iter(loader)
+        for _ in range(3):
+            batch_inputs, batch_slots, batch_mask = next(it)
+            self.assertEqual(tuple(batch_inputs["audio"].shape), (1, 64, 24, 16))
+            self.assertEqual(tuple(batch_slots.shape), (1, 64, 48))
+            self.assertEqual(tuple(batch_mask.shape), (1, 64))
+        del it

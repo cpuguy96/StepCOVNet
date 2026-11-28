@@ -50,10 +50,9 @@ Maintain this table during [agent-brain-refresh](agent-brain-refresh/SKILL.md).
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | raw simfile → `final_data`, preprocess, dataset prep    | `scripts/preprocess_dataset.py`, [DATASET_PREP_PIPELINE.md](../../docs/research/DATASET_PREP_PIPELINE.md) |
 | train/val split manifest for `final_data`             | `scripts/build_training_index.py`, [DATASET_PREP_PIPELINE.md](../../docs/research/DATASET_PREP_PIPELINE.md) §2 |
-| dense / event train on `final_data`                     | `scripts/train_onset.py` or `train_onset_event.py` + `--training_index_path`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
-| DDC placement train / `M-ddc-20ms` eval | `scripts/train_ddc_placement.py`, `scripts/eval_ddc_placement.py`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
-| bisection, half-cheat, grid oracle, smoke gate bug hunt | `scripts/run_overfit_tide_bisection.py`, [EXP-11](../../docs/research/EXPERIMENT_LOG.md) |
-| what to do now / project orientation                     | `scripts/project_status.py`, [whats-next/SKILL.md](whats-next/SKILL.md) |
+| dense / arrow train on `final_data` | `scripts/train_onset.py` or `scripts/train_arrow.py`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
+| DDC / DDCL / ITGPT placement train & eval | `scripts/train_{ddc,ddcl,itgpt}_placement.py`, `scripts/eval_{ddc,ddcl,itgpt}_placement.py`, [wsl-gpu-stepcovnet](wsl-gpu-stepcovnet/SKILL.md) |
+| what to do now / project orientation | `scripts/project_status.py`, [whats-next/SKILL.md](whats-next/SKILL.md) |
 
 ## Adding a skill
 

@@ -225,6 +225,7 @@ def build_dataloader(
     max_beats: int,
     seed: int,
     pin_memory: bool = False,
+    num_workers: int = 0,
     difficulty_source: str = constants.DIFFICULTY_SOURCE_METER,
 ) -> DataLoader:
     """Build a PyTorch :class:`DataLoader` yielding pre-batched chart tuples.
@@ -234,19 +235,35 @@ def build_dataloader(
         max_beats: Padded beat length cap.
         seed: Base RNG seed.
         pin_memory: Whether to pin CPU host memory for faster CUDA transfers.
+        num_workers: Subprocess worker count (``0`` loads on the main process).
         difficulty_source: Scalar conditioning signal (``"meter"`` or
             ``"density"``).
 
     Returns:
         Configured :class:`DataLoader` (``batch_size=None`` because charts are
         already packed with leading batch axis 1 and have dynamic beat lengths).
+
+    Raises:
+        ValueError: If ``num_workers`` is negative.
     """
+    workers = int(num_workers)
+    if workers < 0:
+        raise ValueError(f"num_workers must be >= 0, got {num_workers}")
     dataset = ItgptRandomChartDataset(
         charts,
         max_beats=max_beats,
         seed=seed,
         difficulty_source=difficulty_source,
     )
+    if workers > 0:
+        return DataLoader(
+            dataset,
+            batch_size=None,
+            num_workers=workers,
+            pin_memory=pin_memory,
+            persistent_workers=True,
+            prefetch_factor=2,
+        )
     return DataLoader(
         dataset,
         batch_size=None,

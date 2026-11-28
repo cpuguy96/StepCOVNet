@@ -56,34 +56,18 @@ python scripts/<script>.py <args>
 
 Without `source wsl_gpu_env.sh`, PyTorch may silently fall back to CPU.
 
-## Onset event training
+## Placement & onset scripts
 
-| Script                                  | Purpose                                              |
-| --------------------------------------- | ---------------------------------------------------- |
-| `scripts/train_onset_event.py`          | Single experiment from JSON config                   |
-| `scripts/run_overfit_tide_suite.py`     | Tide overfit: conv1d / mel / mert (`--epochs=50`)    |
-| `scripts/run_overfit_tide_ablations.py` | Threshold sweep, loss/arch variants (MERT)           |
-| `scripts/run_overfit_tide_bisection.py` | Diagnose, grid oracle, half-cheat ablations (EXP-11) |
-| `scripts/debug_onset_overfit.py`        | Checkpoint diagnostics                               |
-
-**`final_data`:** pass `--training_index_path=data/final_data/training_index.json` (or a smoke subset manifest). Do not rely on `data_dir=val_data_dir` alone when train/val must follow the P8 song split.
-
-**Configs:** `configs/overfit_tide/{conv1d,mel,mert}.json` (default **50 epochs**); `configs/event/audio_baseline.json` for multi-song event runs (`num_queries` / `n_max_onsets` = **2048**).
-
-**Artifacts:** `models_wsl/overfit_tide/`, `models_wsl/overfit_tide_ablations/`, MERT cache `data/v2/test/tide.mert.npy`.
-
-## Other GPU scripts
-
-| Script                                           | Track              |
-| ------------------------------------------------ | ------------------ |
-| `scripts/train_onset.py`                         | Dense onset — use `--training_index_path` for `final_data` |
-| `scripts/train_ddc_placement.py`                 | DDC C-LSTM placement on Dataset A |
-| `scripts/eval_ddc_placement.py`                  | Hamming ±20 ms F-score_c / F-score_m |
-| `scripts/train_ddcl_placement.py`                | DDCL ConvLSTM 48-slot placement on Dataset A. Full split: do **not** pre-stack `(n_beats, memlen+1, …)` windows — WSL default ~15 GiB OOM (~14 GiB RSS). On-demand `window_at_beat` in `stepcovnet.ddcl.datasets`. |
-| `scripts/eval_ddcl_placement.py`                 | `M-slot48` F1 @ 0.5 and max-F1 |
-| `scripts/train_itgpt_placement.py`               | ITGPT hierarchical transformer placement on Dataset B |
-| `scripts/eval_itgpt_placement.py`                | `M-slot48` F1 @ 0.5 and max-F1 |
-| `scripts/train_arrow.py`                         | Arrow model        |
+| Script | Track |
+| ------ | ----- |
+| `scripts/train_itgpt_placement.py` | ITGPT hierarchical transformer placement on Dataset B |
+| `scripts/eval_itgpt_placement.py` | `M-slot48` F1 @ 0.5, max-F1, grounding & error breakdown |
+| `scripts/train_ddcl_placement.py` | DDCL ConvLSTM 48-slot placement on Dataset A. Full split: on-demand `window_at_beat` in `stepcovnet.ddcl.datasets`. |
+| `scripts/eval_ddcl_placement.py` | `M-slot48` F1 @ 0.5 and max-F1 |
+| `scripts/train_ddc_placement.py` | DDC C-LSTM placement on Dataset A |
+| `scripts/eval_ddc_placement.py` | Hamming ±20 ms F-score_c / F-score_m |
+| `scripts/train_onset.py` | Dense onset — use `--training_index_path` for `final_data` |
+| `scripts/train_arrow.py` | Arrow model |
 | `scripts/extract_mert_features.py --device=cuda` | MERT feature cache |
 
 ## Already inside WSL

@@ -6,7 +6,7 @@ import contextlib
 import math
 import pathlib
 import random
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -310,3 +310,17 @@ def compute_warmup_cosine_lr(
     decay_step = min(max(0, current - int(warmup_steps)), decay_steps)
     cosine = 0.5 * (1.0 + math.cos(math.pi * decay_step / float(decay_steps)))
     return float(min_lr + (peak_lr - min_lr) * cosine)
+
+
+def supports_fused_adam(params: Sequence[nn.Parameter]) -> bool:
+    """Return whether fused CUDA ``Adam`` / ``AdamW`` kernels can optimize ``params``.
+
+    Args:
+        params: Non-empty parameter sequence passed to ``Adam`` or ``AdamW``.
+
+    Returns:
+        ``True`` when all parameters are floating-point tensors on CUDA.
+    """
+    return bool(params) and all(
+        param.is_cuda and param.is_floating_point() for param in params
+    )

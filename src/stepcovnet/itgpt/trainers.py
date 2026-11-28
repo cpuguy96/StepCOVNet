@@ -7,6 +7,7 @@ import datetime
 import json
 import pathlib
 import shutil
+import sys
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -147,17 +148,20 @@ def build_optimizer(
         and run_config.warmup_epochs > 0
         else float(run_config.learning_rate)
     )
+    fused = runtime.supports_fused_adam(params)
     if run_config.weight_decay > 0.0:
         return torch.optim.AdamW(
             params,
             lr=initial_lr,
             weight_decay=float(run_config.weight_decay),
             eps=1e-7,
+            fused=fused,
         )
     return torch.optim.Adam(
         params,
         lr=initial_lr,
         eps=1e-7,
+        fused=fused,
     )
 
 
@@ -483,6 +487,15 @@ def train_placement(
     grad_accum = max(1, int(experiment.run.gradient_accumulation_steps))
     clipnorm = float(experiment.run.clipnorm)
     pin_memory = target_device.type == "cuda"
+    train_workers = (
+        2
+        if (
+            target_device.type == "cuda"
+            and sys.platform != "win32"
+            and len(train_charts) >= 8
+        )
+        else 0
+    )
 
     train_iter = iter(
         datasets.build_dataloader(
@@ -490,6 +503,7 @@ def train_placement(
             max_beats=experiment.dataset.max_beats,
             seed=experiment.run.seed + start_epoch,
             pin_memory=pin_memory,
+            num_workers=train_workers,
             difficulty_source=experiment.dataset.difficulty_source,
         )
     )
@@ -505,24 +519,22 @@ def train_placement(
     use_beat_aux = bool(experiment.model.beat_aux_head and beat_aux_weight > 0.0)
     rdrop_kl_weight = float(experiment.run.rdrop_kl_weight)
 
-    def _forward_and_loss(
-        batch_inputs: dict[str, torch.Tensor],
+    def _loss_from_outputs(
+        logits_x: torch.Tensor,
+        act_x: torch.Tensor | None,
+        cnt_x: torch.Tensor | None,
         batch_slots: torch.Tensor,
         batch_mask: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if use_beat_aux:
-            logits, aux_preds = raw_model.forward_with_aux(batch_inputs)
-            step_loss = criterion(logits, batch_slots, batch_mask)
-            if aux_preds is not None:
-                step_loss = step_loss + beat_aux_weight * models.compute_beat_aux_loss(
-                    aux_preds["beat_active_logit"],
-                    aux_preds["beat_count_pred"],
-                    batch_slots,
-                    batch_mask,
-                )
-            return logits, step_loss
-        logits = forward_logits_fn(batch_inputs)
-        return logits, criterion(logits, batch_slots, batch_mask)
+    ) -> torch.Tensor:
+        step_loss = criterion(logits_x, batch_slots, batch_mask)
+        if act_x is not None and cnt_x is not None:
+            step_loss = step_loss + beat_aux_weight * models.compute_beat_aux_loss(
+                act_x,
+                cnt_x,
+                batch_slots,
+                batch_mask,
+            )
+        return step_loss
 
     try:
         for epoch_idx in range(start_epoch, total_epochs):
@@ -530,7 +542,9 @@ def train_placement(
             t0 = time.perf_counter()
             raw_model.train()
             optimizer.zero_grad(set_to_none=True)
-            train_loss_sum = 0.0
+            train_loss_accum = torch.zeros(
+                (), device=target_device, dtype=torch.float32
+            )
             accum_count = 0
 
             for step_in_epoch in range(steps_per_epoch):
@@ -539,9 +553,32 @@ def train_placement(
                 inputs, slots, mask = _move_batch(next(train_iter), target_device)
 
                 with runtime.autocast_context(target_device, amp_dtype):
-                    logits1, loss1 = _forward_and_loss(inputs, slots, mask)
                     if rdrop_kl_weight > 0.0:
-                        logits2, loss2 = _forward_and_loss(inputs, slots, mask)
+                        inputs_pair = {
+                            key: torch.cat([val, val], dim=0)
+                            for key, val in inputs.items()
+                        }
+                        if use_beat_aux:
+                            logits_pair, aux_pair = raw_model.forward_with_aux(
+                                inputs_pair
+                            )
+                            logits1, logits2 = logits_pair.chunk(2, dim=0)
+                            act1, act2 = (
+                                aux_pair["beat_active_logit"].chunk(2, dim=0)
+                                if aux_pair is not None
+                                else (None, None)
+                            )
+                            cnt1, cnt2 = (
+                                aux_pair["beat_count_pred"].chunk(2, dim=0)
+                                if aux_pair is not None
+                                else (None, None)
+                            )
+                        else:
+                            logits_pair = forward_logits_fn(inputs_pair)
+                            logits1, logits2 = logits_pair.chunk(2, dim=0)
+                            act1 = act2 = cnt1 = cnt2 = None
+                        loss1 = _loss_from_outputs(logits1, act1, cnt1, slots, mask)
+                        loss2 = _loss_from_outputs(logits2, act2, cnt2, slots, mask)
                         grid_w: torch.Tensor = criterion.grid_weights  # type: ignore[assignment]
                         kl_loss = models.compute_bernoulli_rdrop_kl(
                             logits1,
@@ -551,10 +588,20 @@ def train_placement(
                             normalize_by_valid_beats=criterion.normalize_by_valid_beats,
                         )
                         loss = 0.5 * (loss1 + loss2) + rdrop_kl_weight * kl_loss
+                    elif use_beat_aux:
+                        logits1, aux1 = raw_model.forward_with_aux(inputs)
+                        loss = _loss_from_outputs(
+                            logits1,
+                            aux1["beat_active_logit"] if aux1 is not None else None,
+                            aux1["beat_count_pred"] if aux1 is not None else None,
+                            slots,
+                            mask,
+                        )
                     else:
-                        loss = loss1
+                        logits1 = forward_logits_fn(inputs)
+                        loss = criterion(logits1, slots, mask)
 
-                train_loss_sum += float(loss.detach().item())
+                train_loss_accum += loss.detach().float()
                 scaled_loss = loss / float(grad_accum)
                 scaler.scale(scaled_loss).backward()
                 accum_count += 1
@@ -572,7 +619,7 @@ def train_placement(
                         ema.update(raw_model)
                     accum_count = 0
 
-            mean_train_loss = train_loss_sum / float(steps_per_epoch)
+            mean_train_loss = float(train_loss_accum.item()) / float(steps_per_epoch)
 
             eval_ctx = (
                 ema.average_parameters(raw_model)
@@ -581,7 +628,9 @@ def train_placement(
             )
             with eval_ctx:
                 raw_model.eval()
-                val_loss_sum = 0.0
+                val_loss_accum = torch.zeros(
+                    (), device=target_device, dtype=torch.float32
+                )
                 val_iter = iter(val_loader)
                 with torch.no_grad():
                     for _ in range(validation_steps):
@@ -591,8 +640,8 @@ def train_placement(
                         with runtime.autocast_context(target_device, amp_dtype):
                             val_logits = raw_model.forward_logits(val_inputs)
                             val_loss = criterion(val_logits, val_slots, val_mask)
-                        val_loss_sum += float(val_loss.detach().item())
-                mean_val_loss = val_loss_sum / float(validation_steps)
+                        val_loss_accum += val_loss.detach().float()
+                mean_val_loss = float(val_loss_accum.item()) / float(validation_steps)
 
                 elapsed = time.perf_counter() - t0
                 current_lr = float(optimizer.param_groups[0]["lr"])
