@@ -28,6 +28,7 @@ _SCRIPT_DIR = str(pathlib.Path(__file__).resolve().parent.parent / "scripts")
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
+import eval_raw_audio_onset  # noqa: E402
 import generate as generate_script  # noqa: E402
 import generate_ui as generate_ui_script  # noqa: E402
 
@@ -1053,6 +1054,88 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
             dtype=np.float64,
         )
         np.testing.assert_allclose(recovered, note_times, atol=0.005)
+
+    def test_eval_raw_audio_onset_modes(self) -> None:
+        beats = 0.5 + np.arange(8, dtype=np.float64) * 0.5
+        oracle_grid = beat_tracking.BeatGrid(
+            beat_times=beats,
+            downbeat_times=beats[::4],
+            bpm=120.0,
+            tracker="oracle",
+        )
+        song = eval_raw_audio_onset.SongEvalGroup(
+            song_key="pack/demo",
+            audio_path="/songs/demo.ogg",
+            oracle_grid=oracle_grid,
+            gt_bpm=120.0,
+            charts=(
+                eval_raw_audio_onset.SongEvalChart(
+                    song_key="pack/demo",
+                    difficulty="challenge",
+                    meter=10,
+                    gt_times_sec=beats[:6],
+                    n_gt_beats=8,
+                    target_density=6.0 / 8.0,
+                ),
+            ),
+        )
+        # Raw Beat This! sits +25 ms late; snap pulls it right onto GT beats!
+        raw_late_grid = beat_tracking.BeatGrid(
+            beat_times=beats + 0.025,
+            downbeat_times=beats[::4] + 0.025,
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        fake_mert = np.zeros((600, 16), dtype=np.float32)
+
+        def fake_predict(_model, chart, **_kwargs) -> np.ndarray:
+            probs = np.zeros((chart.slots.shape[0], 48), dtype=np.float32)
+            probs[:6, 0] = 0.9
+            return probs
+
+        dummy_model = mock.Mock(n_frames_per_beat=24, max_beats=64)
+        with (
+            mock.patch.object(
+                beat_tracking,
+                "_load_or_extract_mert_for_audio",
+                return_value=fake_mert,
+            ) as mock_mert,
+            mock.patch.object(
+                beat_tracking,
+                "estimate_beats",
+                return_value=raw_late_grid,
+            ) as mock_est,
+            mock.patch.object(
+                beat_tracking,
+                "snap_beats_to_onsets",
+                return_value=oracle_grid,
+            ),
+            mock.patch.object(
+                beat_tracking.itgpt_eval,
+                "predict_chart_slots",
+                side_effect=fake_predict,
+            ),
+        ):
+            report = eval_raw_audio_onset.evaluate_raw_audio_modes(
+                [song],
+                dummy_model,
+                modes=("oracle", "beat_this_raw", "beat_this_full"),
+                device="cpu",
+            )
+
+        # MERT loaded once and Beat This! neural inference cached across raw/full!
+        mock_mert.assert_called_once()
+        mock_est.assert_called_once()
+        self.assertAlmostEqual(report["modes"]["oracle"]["ev_f1_20ms"], 1.0, places=4)
+        self.assertAlmostEqual(
+            report["modes"]["beat_this_raw"]["ev_f1_20ms"], 0.0, places=4
+        )
+        self.assertAlmostEqual(
+            report["modes"]["beat_this_raw"]["ev_f1_50ms"], 1.0, places=4
+        )
+        self.assertAlmostEqual(
+            report["modes"]["beat_this_full"]["ev_f1_20ms"], 1.0, places=4
+        )
 
 
 if __name__ == "__main__":

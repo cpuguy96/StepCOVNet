@@ -185,6 +185,7 @@ scripts/*
 !scripts/check_chart_validity.py
 !scripts/eval_dense_onset.py
 !scripts/eval_onset_event_f1.py
+!scripts/eval_raw_audio_onset.py
 !scripts/eval_spectral_flux_onset.py
 !scripts/extract_mert_features.py
 !scripts/generate.py
