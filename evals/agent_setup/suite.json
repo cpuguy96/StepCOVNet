@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "description": "StepCOVNet agent-setup trigger (Layer 2) and behavior (Layer 3) hill-climbing eval suite.",
+  "trigger_cases": [
+    {
+      "id": "trig-whats-next-status",
+      "prompt": "Where are we right now on ITGPT placement and what should we do next?",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": ["whats-next"],
+      "optional_skills": ["onset-evaluation"],
+      "forbidden_skills": ["agent-maintenance", "colab-gpu-stepcovnet"]
+    },
+    {
+      "id": "trig-whats-next-do-it",
+      "prompt": "Go ahead and do it — run the next step you just recommended.",
+      "expected_rules": [],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": ["whats-next"],
+      "optional_skills": ["wsl-gpu-stepcovnet", "colab-gpu-stepcovnet", "onset-evaluation"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-eval-raw-audio",
+      "prompt": "How is our latest ITGPT checkpoint doing on raw audio with Beat This! versus oracle beat grids?",
+      "expected_rules": [],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": ["onset-evaluation"],
+      "optional_skills": ["wsl-gpu-stepcovnet"],
+      "forbidden_skills": ["autoresearch", "agent-maintenance"]
+    },
+    {
+      "id": "trig-eval-grounding-slices",
+      "prompt": "Run audio grounding checks and inspect the worst failing songs and error slices on this ITGPT checkpoint, plus rank the scoreboard.",
+      "expected_rules": [],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": ["onset-evaluation"],
+      "optional_skills": [],
+      "forbidden_skills": ["autoresearch", "agent-maintenance"]
+    },
+    {
+      "id": "trig-colab-launch",
+      "prompt": "Launch this ITGPT MERT placement training run on Google Colab and sync datasets and TensorBoard to Drive.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["colab-gpu-stepcovnet"],
+      "optional_skills": ["research-session-workflow", "onset-evaluation"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-colab-cloud-vm",
+      "prompt": "We are on a fresh remote cloud VM without colab or rclone installed — bootstrap them and start an L4 GPU training run.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["colab-gpu-stepcovnet"],
+      "optional_skills": [],
+      "forbidden_skills": ["wsl-gpu-stepcovnet", "agent-maintenance"]
+    },
+    {
+      "id": "trig-wsl-local-train",
+      "prompt": "Run train_itgpt_placement.py locally on our Windows machine using WSL CUDA and extract MERT features with cuda.",
+      "expected_rules": [],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": ["wsl-gpu-stepcovnet"],
+      "optional_skills": ["research-session-workflow"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-wsl-zero-gpu",
+      "prompt": "PyTorch in WSL sees zero GPUs when I run extract_mert_features.py --device=cuda — how should we launch it?",
+      "expected_rules": [],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": ["wsl-gpu-stepcovnet"],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "agent-maintenance"]
+    },
+    {
+      "id": "trig-autoresearch-budget",
+      "prompt": "Run autoresearch on profile itgpt-onset with a 4 hour budget to beat the Stage 1 champion — do not ask between runs.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["autoresearch"],
+      "optional_skills": ["colab-gpu-stepcovnet", "onset-evaluation", "research-session-workflow", "wsl-gpu-stepcovnet"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-autoresearch-generic",
+      "prompt": "Run an autonomous 2 hour research loop to improve val F1 without exceeding our time budget.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": [],
+      "expected_skills": ["autoresearch"],
+      "optional_skills": ["research-session-workflow", "colab-gpu-stepcovnet", "onset-evaluation"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-research-log-exp",
+      "prompt": "That eval finished — log the EXP entry in EXPERIMENT_LOG.md, add the NOTE on our design decision, and cite the baseline paper.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md", "python-env.md"],
+      "expected_skills": ["research-session-workflow"],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "wsl-gpu-stepcovnet", "agent-maintenance"]
+    },
+    {
+      "id": "trig-research-start-session",
+      "prompt": "Let's start a research session to investigate timing drift and record our findings in the lab notebook.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": ["research-session-workflow"],
+      "optional_skills": ["whats-next", "onset-evaluation"],
+      "forbidden_skills": ["agent-maintenance"]
+    },
+    {
+      "id": "trig-agent-maint-steering",
+      "prompt": "Remember this: always run pre_submit before pushing, and don't put long runbooks in AGENTS.md.",
+      "expected_rules": [],
+      "optional_rules": ["git-and-ci.md"],
+      "forbidden_rules": [],
+      "expected_skills": ["agent-maintenance"],
+      "optional_skills": [],
+      "forbidden_skills": ["autoresearch", "colab-gpu-stepcovnet", "onset-evaluation"]
+    },
+    {
+      "id": "trig-agent-maint-audit",
+      "prompt": "Refresh agent brain and audit all rules and skills for drift.",
+      "expected_rules": [],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": [],
+      "expected_skills": ["agent-maintenance"],
+      "optional_skills": [],
+      "forbidden_skills": ["autoresearch", "colab-gpu-stepcovnet", "wsl-gpu-stepcovnet"]
+    },
+    {
+      "id": "trig-rule-git-commit-push",
+      "prompt": "Commit these verified changes cleanly across our refactor phases and push them to origin/master.",
+      "expected_rules": ["git-and-ci.md"],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": [],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "autoresearch", "whats-next"]
+    },
+    {
+      "id": "trig-rule-ci-tooling",
+      "prompt": "Update the Ruff lint configuration and GitHub pre-submit workflow, then rebase and push to master.",
+      "expected_rules": ["git-and-ci.md"],
+      "optional_rules": ["python-env.md"],
+      "forbidden_rules": [],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "autoresearch", "onset-evaluation"]
+    },
+    {
+      "id": "trig-rule-python-env-pytest",
+      "prompt": "Run the unit tests with pytest and check Ruff formatting on src/stepcovnet/slot48_eval.py, writing any scratch file safely.",
+      "expected_rules": ["python-env.md"],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "autoresearch", "onset-evaluation"]
+    },
+    {
+      "id": "trig-rule-python-env-scratch",
+      "prompt": "Write a small helper script to inspect a JSON manifest and capture its log output cleanly using the project Python.",
+      "expected_rules": ["python-env.md"],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md"],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["colab-gpu-stepcovnet", "autoresearch", "whats-next"]
+    },
+    {
+      "id": "trig-neg-code-read",
+      "prompt": "Explain what BeatGrid.beats_per_bar computes in src/stepcovnet/beat_tracking.py.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md", "python-env.md"],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["autoresearch", "colab-gpu-stepcovnet", "wsl-gpu-stepcovnet", "onset-evaluation", "whats-next", "agent-maintenance", "research-session-workflow"]
+    },
+    {
+      "id": "trig-neg-math-question",
+      "prompt": "Explain mathematically why R-Drop adds symmetric KL divergence between two dropout passes.",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md", "python-env.md"],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["autoresearch", "colab-gpu-stepcovnet", "wsl-gpu-stepcovnet", "onset-evaluation", "whats-next", "agent-maintenance", "research-session-workflow"]
+    },
+    {
+      "id": "trig-neg-config-inspect",
+      "prompt": "What is the learning rate and batch size in configs/ddc/itgpt_placement_fraxtil_orig_128ep.json?",
+      "expected_rules": [],
+      "optional_rules": [],
+      "forbidden_rules": ["git-and-ci.md", "python-env.md"],
+      "expected_skills": [],
+      "optional_skills": [],
+      "forbidden_skills": ["autoresearch", "colab-gpu-stepcovnet", "wsl-gpu-stepcovnet", "onset-evaluation", "whats-next", "agent-maintenance", "research-session-workflow"]
+    }
+  ],
+  "behavior_cases": [
+    {
+      "id": "beh-colab-cloud-vm",
+      "target": "colab-gpu-stepcovnet",
+      "prompt": "We are on a fresh remote cloud VM without colab CLI or rclone installed. Describe the exact bootstrap + remote Colab launch workflow and how TensorBoard monitoring should work for the user.",
+      "must_contain_any": [
+        ["colab_cloud_bootstrap.sh"],
+        ["colab_run_remote.sh"],
+        ["live_tb", "MyDrive/StepCOVNet/live_tb"]
+      ],
+      "must_not_contain_regex": [
+        "localhost:600[68]",
+        "cloudflared",
+        "git push.*wip"
+      ],
+      "rubric": [
+        "Follows GPU priority L4 -> T4 -> local -> A100 and chooses L4 by default.",
+        "Avoids linking localhost TensorBoard URLs or cloudflared, relying on MyDrive/StepCOVNet/live_tb/ instead.",
+        "Launches autonomously via scripts/colab_run_remote.sh with VM cleanup (or --max-poll-seconds 420 / sessions check) and does not push WIP code to GitHub."
+      ]
+    },
+    {
+      "id": "beh-eval-raw-audio",
+      "target": "onset-evaluation",
+      "prompt": "The user asks: 'How well does our latest ITGPT placement checkpoint work end-to-end on raw audio compared to oracle beat grids?' Give the exact evaluation plan and command.",
+      "must_contain_any": [
+        ["eval_raw_audio_onset.py"],
+        ["oracle"],
+        ["beat_this_full", "beat_this_raw"]
+      ],
+      "must_not_contain_regex": [],
+      "rubric": [
+        "Uses scripts/eval_raw_audio_onset.py to compare oracle vs Beat This! modes on +/-20 ms event F1.",
+        "Does not mix M-slot48 placement F1 and +/-20 ms raw-audio event F1 into a single incompatible comparison column."
+      ]
+    },
+    {
+      "id": "beh-eval-itgpt-grounding",
+      "target": "onset-evaluation",
+      "prompt": "We finished training an ITGPT-MERT placement checkpoint on Stage 1. What exact eval command and pass gates must we check before promoting it as champion?",
+      "must_contain_any": [
+        ["eval_itgpt_placement.py"],
+        ["--diagnose_grounding"],
+        ["--error_breakdown", "eval_val_breakdown.json"]
+      ],
+      "must_not_contain_regex": [],
+      "rubric": [
+        "Checks both audio grounding thresholds (shuffle >= 0.08 and zeros >= 0.10) alongside M-slot48 F1.",
+        "Inspects eval_val_breakdown.json slices before promoting rather than trusting aggregate F1 alone."
+      ]
+    },
+    {
+      "id": "beh-git-multiphase-push",
+      "target": "git-and-ci.md",
+      "prompt": "We just completed and verified Phase 1 of an approved 3-phase refactor in StepCOVNet. Should we keep Phase 1 uncommitted/local until Phase 3 is done, or what should we do next before starting Phase 2?",
+      "must_contain_any": [
+        ["git push"],
+        ["pre_submit.py", "ruff"]
+      ],
+      "must_not_contain_regex": [
+        "--no-verify"
+      ],
+      "rubric": [
+        "Explicitly states that Phase 1 must be verified, committed, and pushed to the remote before starting Phase 2 rather than holding commits locally."
+      ]
+    },
+    {
+      "id": "beh-python-style-imports",
+      "target": "python-style.md",
+      "prompt": "Write a tiny Python helper `_config_stem(path: str | os.PathLike[str]) -> str` for `src/stepcovnet/` using pathlib and Google docstring style matching repo rules.",
+      "must_contain_any": [
+        ["import pathlib"],
+        ["Args:"]
+      ],
+      "must_not_contain_regex": [
+        "from pathlib import"
+      ],
+      "rubric": [
+        "Uses module-level `import pathlib` and `pathlib.Path(...)` rather than importing `Path` directly.",
+        "Includes a compliant Google-style docstring on the private helper without a redundant Returns section if the summary starts with 'Return'."
+      ]
+    },
+    {
+      "id": "beh-wsl-gpu-local",
+      "target": "wsl-gpu-stepcovnet",
+      "prompt": "Colab L4 and T4 are both unavailable, so the user asks to run `scripts/train_itgpt_placement.py --config configs/ddc/itgpt_placement_fraxtil_orig_128ep.json` locally on Windows RTX 2080. Give the exact run setup.",
+      "must_contain_any": [
+        ["callbacks/ddc/itgpt_placement/logs"],
+        ["Tee-Object", "tee"],
+        ["gpu_wsl.lock", "one training job", "single-tenant", "serial"]
+      ],
+      "must_not_contain_regex": [
+        "STEPCOVNET_NO_WSL=1",
+        ">\\s*logs/"
+      ],
+      "rubric": [
+        "Launches TensorBoard pointed at the stage tree callbacks/ddc/itgpt_placement/logs before/with training and streams visible console output via tee.",
+        "Respects serial WSL GPU execution (never sets STEPCOVNET_NO_WSL=1 for GPU training)."
+      ]
+    },
+    {
+      "id": "beh-whats-next-no-saturation",
+      "target": "whats-next",
+      "prompt": "Stage 1 beat tracking is at 95.8% F1. Is Stage 1 saturated / at diminishing returns so we should recommend moving on to Stage 2?",
+      "must_contain_any": [
+        ["worst", "slice", "per-song", "failing"]
+      ],
+      "must_not_contain_regex": [],
+      "rubric": [
+        "Refuses to declare Stage 1 saturated or nudge to move to Stage 2 without inspecting the worst failing songs and error slices first."
+      ]
+    },
+    {
+      "id": "beh-agent-maintenance-tdd",
+      "target": "agent-maintenance",
+      "prompt": "User says: 'Remember this: always check eval_val_breakdown.json before picking the next architecture tweak.' Explain the exact steps to promote this steering correction.",
+      "must_contain_any": [
+        ["evals/agent_setup/suite.json", "suite.json"],
+        ["self-journal.md", "JRN-"],
+        ["audit_agent_brain.py"]
+      ],
+      "must_not_contain_regex": [],
+      "rubric": [
+        "Follows TDD hill-climbing: adds a failing eval case first, promotes to the smallest durable layer (skill/scoped rule, not AGENTS.md prose), verifies FAIL -> PASS without regressions, and prepends a JRN receipt."
+      ]
+    }
+  ]
+}
