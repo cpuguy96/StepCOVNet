@@ -37,6 +37,7 @@ class ItgptConfigTest(unittest.TestCase):
                 min_learning_rate=1e-6,
                 label_smoothing=0.02,
                 dice_loss_weight=0.25,
+                dice_slot_scope="fine_subdiv",
                 bce_pos_weight=1.35,
                 gradient_accumulation_steps=4,
                 use_ema=True,
@@ -74,6 +75,8 @@ class ItgptConfigTest(unittest.TestCase):
         self.assertAlmostEqual(config.ItgptRunConfig().label_smoothing, 0.0)
         self.assertAlmostEqual(loaded.run.dice_loss_weight, 0.25)
         self.assertAlmostEqual(config.ItgptRunConfig().dice_loss_weight, 0.0)
+        self.assertEqual(loaded.run.dice_slot_scope, "fine_subdiv")
+        self.assertEqual(config.ItgptRunConfig().dice_slot_scope, "all")
         self.assertAlmostEqual(loaded.run.bce_pos_weight, 1.35)
         self.assertAlmostEqual(config.ItgptRunConfig().bce_pos_weight, 1.0)
         self.assertEqual(loaded.run.gradient_accumulation_steps, 4)
@@ -139,6 +142,8 @@ class ItgptConfigTest(unittest.TestCase):
             config.ItgptRunConfig(label_smoothing=1.0)
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(dice_loss_weight=-0.1)
+        with self.assertRaises(ValueError):
+            config.ItgptRunConfig(dice_slot_scope="invalid_scope")
         with self.assertRaises(ValueError):
             config.ItgptRunConfig(bce_pos_weight=0.0)
         with self.assertRaises(ValueError):

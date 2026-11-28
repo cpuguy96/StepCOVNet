@@ -230,6 +230,10 @@ class ItgptRunConfig(_DictSerializableMixin):
         dice_loss_weight: Non-negative weight for an additive masked soft-Dice
             term over real-beat slot probabilities and raw binary targets
             (``0.0`` disables).
+        dice_slot_scope: Slot subset over which soft-Dice is computed
+            (``"all"`` uses all 48 slots; ``"fine_subdiv"`` restricts Dice to
+            16th off-beats ``(12, 36)`` and 24th triplets ``(8, 16, 32, 40)``
+            so sparse low-meter charts stay calibrated).
         bce_pos_weight: Positive class weight passed to
             ``binary_cross_entropy_with_logits`` (``1.0`` disables).
         gradient_accumulation_steps: Number of micro-batches to accumulate
@@ -269,6 +273,7 @@ class ItgptRunConfig(_DictSerializableMixin):
     min_learning_rate: float = 0.0
     label_smoothing: float = 0.0
     dice_loss_weight: float = 0.0
+    dice_slot_scope: str = constants.DICE_SLOT_SCOPE_ALL
     bce_pos_weight: float = 1.0
     gradient_accumulation_steps: int = 1
     use_ema: bool = False
@@ -283,7 +288,7 @@ class ItgptRunConfig(_DictSerializableMixin):
         Raises:
             ValueError: If ``epoch``, ``learning_rate``, ``weight_decay``,
                 ``eval_slot_f1_every``, LR schedule, ``label_smoothing``,
-                ``dice_loss_weight``, ``bce_pos_weight``,
+                ``dice_loss_weight``, ``dice_slot_scope``, ``bce_pos_weight``,
                 ``gradient_accumulation_steps``, ``ema_momentum``,
                 ``beat_aux_loss_weight``, or ``rdrop_kl_weight`` fields are
                 invalid.
@@ -326,6 +331,11 @@ class ItgptRunConfig(_DictSerializableMixin):
         if self.dice_loss_weight < 0.0:
             raise ValueError(
                 f"dice_loss_weight must be >= 0, got {self.dice_loss_weight}"
+            )
+        if self.dice_slot_scope not in constants.DICE_SLOT_SCOPES:
+            raise ValueError(
+                f"dice_slot_scope must be one of {constants.DICE_SLOT_SCOPES}, "
+                f"got {self.dice_slot_scope!r}"
             )
         if self.bce_pos_weight <= 0.0:
             raise ValueError(

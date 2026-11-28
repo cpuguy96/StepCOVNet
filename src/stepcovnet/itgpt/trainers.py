@@ -438,6 +438,7 @@ def train_placement(
         label_smoothing=experiment.run.label_smoothing,
         dice_loss_weight=experiment.run.dice_loss_weight,
         bce_pos_weight=experiment.run.bce_pos_weight,
+        dice_slot_scope=experiment.run.dice_slot_scope,
     ).to(target_device)
     optimizer = build_optimizer(raw_model, experiment.run)
     ema = (

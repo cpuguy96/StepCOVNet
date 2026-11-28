@@ -500,6 +500,68 @@ class ItgptModelsTest(unittest.TestCase):
             float(torch.max(torch.abs(logits_pad_mut.grad[:, 2:, :])).item()), 0.0
         )
 
+    def test_placement_loss_fine_subdiv_dice_selectivity_and_zero_gating(self) -> None:
+        with self.assertRaises(ValueError):
+            models.ItgptPlacementLoss(dice_slot_scope="unknown")
+
+        rng = np.random.default_rng(456)
+        logits_data = rng.standard_normal((1, 4, constants.N_SLOTS)).astype(np.float32)
+        mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]], dtype=torch.float32)
+
+        bce_fn = models.ItgptPlacementLoss(label_smoothing=0.01, dice_loss_weight=0.0)
+        fine_fn = models.ItgptPlacementLoss(
+            label_smoothing=0.01,
+            dice_loss_weight=0.05,
+            dice_slot_scope="fine_subdiv",
+        )
+
+        # Case 1: Sparse chart with only quarter (0) and 8th (24) steps -> zero fine Dice.
+        sparse_targets = torch.zeros((1, 4, constants.N_SLOTS), dtype=torch.float32)
+        sparse_targets[0, 0, 0] = 1.0
+        sparse_targets[0, 1, 24] = 1.0
+        logits_bce = torch.tensor(logits_data, requires_grad=True)
+        logits_fine = torch.tensor(logits_data, requires_grad=True)
+        loss_bce = bce_fn(logits_bce, sparse_targets, mask)
+        loss_fine = fine_fn(logits_fine, sparse_targets, mask)
+        self.assertAlmostEqual(
+            float(loss_fine.detach().item()), float(loss_bce.detach().item()), places=6
+        )
+        loss_bce.backward()
+        loss_fine.backward()
+        assert logits_bce.grad is not None and logits_fine.grad is not None
+        np.testing.assert_allclose(
+            logits_fine.grad.numpy(), logits_bce.grad.numpy(), atol=1e-6
+        )
+
+        # Case 2: Chart with 16th_off (12) + 24th (16) steps -> only fine slots change.
+        dense_targets = sparse_targets.clone()
+        dense_targets[0, 0, 12] = 1.0
+        dense_targets[0, 1, 16] = 1.0
+        logits_bce2 = torch.tensor(logits_data, requires_grad=True)
+        logits_fine2 = torch.tensor(logits_data, requires_grad=True)
+        loss_bce2 = bce_fn(logits_bce2, dense_targets, mask)
+        loss_fine2 = fine_fn(logits_fine2, dense_targets, mask)
+        self.assertGreater(
+            float(loss_fine2.detach().item()), float(loss_bce2.detach().item())
+        )
+        loss_bce2.backward()
+        loss_fine2.backward()
+        assert logits_bce2.grad is not None and logits_fine2.grad is not None
+        diff = torch.abs(logits_fine2.grad - logits_bce2.grad)
+        fine_set = set(constants.INDICES_FINE_SUBDIV)
+        non_fine = [i for i in range(constants.N_SLOTS) if i not in fine_set]
+        # Quarter, 8th, and all other non-fine slots must have zero Dice gradient delta.
+        self.assertEqual(float(torch.max(diff[:, :, non_fine]).item()), 0.0)
+        # Fine subdivision slots on real beats must receive non-zero Dice gradient.
+        self.assertGreater(
+            float(torch.max(diff[:, :2, list(constants.INDICES_FINE_SUBDIV)]).item()),
+            0.0,
+        )
+        # Padded beats must have exact zero gradient.
+        self.assertEqual(
+            float(torch.max(torch.abs(logits_fine2.grad[:, 2:, :])).item()), 0.0
+        )
+
     def test_placement_loss_bce_pos_weight_baseline_shift_and_validation(self) -> None:
         with self.assertRaises(ValueError):
             models.ItgptPlacementLoss(bce_pos_weight=0.0)

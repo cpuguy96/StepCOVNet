@@ -82,14 +82,19 @@ class ItgptPlacementLoss(nn.Module):
             real beats (``0.0`` disables).
         bce_pos_weight: Positive class weight passed to
             ``binary_cross_entropy_with_logits`` (``1.0`` disables).
+        dice_slot_scope: Slot subset over which soft-Dice is computed
+            (``"all"`` uses all 48 slots; ``"fine_subdiv"`` restricts Dice to
+            16th off-beats and 24th triplets with Laplace smoothing and
+            zero-target gating so sparse charts without fine subdivisions
+            receive zero Dice gradient).
         normalize_by_valid_beats: If True, divide masked beat losses by the
             number of real beats (``mask.sum()``). If False, divide by the
             total padded beat count (mean over batch and beat axes).
 
     Raises:
         ValueError: If ``label_smoothing`` is outside ``[0, 1)``,
-            ``dice_loss_weight`` is negative, or ``bce_pos_weight`` is not
-            positive.
+            ``dice_loss_weight`` is negative, ``bce_pos_weight`` is not
+            positive, or ``dice_slot_scope`` is invalid.
     """
 
     def __init__(
@@ -98,6 +103,7 @@ class ItgptPlacementLoss(nn.Module):
         dice_loss_weight: float = 0.0,
         bce_pos_weight: float = 1.0,
         *,
+        dice_slot_scope: str = constants.DICE_SLOT_SCOPE_ALL,
         normalize_by_valid_beats: bool = False,
     ) -> None:
         super().__init__()
@@ -109,15 +115,28 @@ class ItgptPlacementLoss(nn.Module):
             raise ValueError(f"dice_loss_weight must be >= 0, got {dice_loss_weight}")
         if float(bce_pos_weight) <= 0.0:
             raise ValueError(f"bce_pos_weight must be positive, got {bce_pos_weight}")
+        if dice_slot_scope not in constants.DICE_SLOT_SCOPES:
+            raise ValueError(
+                f"dice_slot_scope must be one of {constants.DICE_SLOT_SCOPES}, "
+                f"got {dice_slot_scope!r}"
+            )
         self.label_smoothing = float(label_smoothing)
         self.dice_loss_weight = float(dice_loss_weight)
         self.bce_pos_weight = float(bce_pos_weight)
+        self.dice_slot_scope = str(dice_slot_scope)
         self.normalize_by_valid_beats = bool(normalize_by_valid_beats)
         self.register_buffer(
             "grid_weights",
             grid_importance_weights(),
             persistent=False,
         )
+        if self.dice_slot_scope == constants.DICE_SLOT_SCOPE_FINE_SUBDIV:
+            dice_mask = torch.zeros(constants.N_SLOTS, dtype=torch.float32)
+            for slot_idx in constants.INDICES_FINE_SUBDIV:
+                dice_mask[slot_idx] = 1.0
+        else:
+            dice_mask = torch.ones(constants.N_SLOTS, dtype=torch.float32)
+        self.register_buffer("dice_slot_mask", dice_mask, persistent=False)
 
     def forward(
         self,
@@ -168,9 +187,20 @@ class ItgptPlacementLoss(nn.Module):
         if self.dice_loss_weight == 0.0:
             return bce_loss
         dice_probs = torch.sigmoid(logits_fp32)
-        slot_mask = mask_fp32.unsqueeze(-1)
+        dice_slot_mask: torch.Tensor = self.dice_slot_mask  # type: ignore[assignment]
+        slot_mask = mask_fp32.unsqueeze(-1) * dice_slot_mask.to(logits_fp32.device)
         masked_probs = dice_probs * slot_mask
         masked_targets = raw_targets_fp32 * slot_mask
+        if self.dice_slot_scope == constants.DICE_SLOT_SCOPE_FINE_SUBDIV:
+            target_sum = torch.sum(masked_targets)
+            smooth = 1.0
+            intersection = torch.sum(masked_probs * masked_targets)
+            dice_denom = torch.sum(masked_probs) + target_sum + smooth
+            raw_dice = 1.0 - (2.0 * intersection + smooth) / dice_denom
+            dice_loss = torch.where(
+                target_sum > 0.0, raw_dice, torch.zeros_like(raw_dice)
+            )
+            return bce_loss + self.dice_loss_weight * dice_loss
         eps = 1e-6
         intersection = torch.sum(masked_probs * masked_targets)
         dice_denom = torch.sum(masked_probs) + torch.sum(masked_targets) + eps
