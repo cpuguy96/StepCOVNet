@@ -305,7 +305,12 @@ def _robust_bpm_from_beats(beats: np.ndarray) -> float:
 
 
 def beat_this_available() -> bool:
-    """Return True — Beat This! is built into StepCOVNet with no extra packages."""
+    """Check whether Beat This! inference is available.
+
+    Returns:
+        Always ``True``, since Beat This! is built into StepCOVNet with no extra
+        packages.
+    """
     return True
 
 
@@ -452,23 +457,69 @@ def _compute_attack_onset_envelope(
     return env, t_rms
 
 
+def _fold_ibi_to_bpm_range(
+    ibi: float,
+    *,
+    min_bpm: float = 110.0,
+    max_bpm: float = 240.0,
+) -> float:
+    """Fold an inter-beat interval by powers of 2 into ``[min_bpm, max_bpm]``.
+
+    Args:
+        ibi: Raw inter-beat interval in seconds.
+        min_bpm: Lower tempo bound in BPM.
+        max_bpm: Upper tempo bound in BPM.
+
+    Returns:
+        Octave-folded inter-beat interval in seconds.
+    """
+    x = float(ibi)
+    while x > 1e-6 and 60.0 / x > float(max_bpm):
+        x *= 2.0
+    while x > 1e-6 and 60.0 / x < float(min_bpm):
+        x *= 0.5
+    return x
+
+
+def _octave_folded_ibi_dist(ibi_a: float, ibi_b: float) -> float:
+    """Return minimum relative distance between ``ibi_a`` and power-of-2 multiples of ``ibi_b``.
+
+    Args:
+        ibi_a: First inter-beat interval in seconds.
+        ibi_b: Reference inter-beat interval in seconds.
+
+    Returns:
+        Non-negative relative error to the nearest ``{0.25, 0.5, 1, 2, 4}`` multiple.
+    """
+    if ibi_b <= 1e-6:
+        return 1.0
+    ratio = float(ibi_a) / float(ibi_b)
+    return min(abs(ratio - m) / m for m in (0.25, 0.5, 1.0, 2.0, 4.0))
+
+
 def _segment_beats_by_tempo(
     bt: np.ndarray,
     *,
     rel_tol: float = 0.06,
     min_section_beats: int = 16,
+    octave_folded: bool = True,
 ) -> list[tuple[int, int]]:
     """Partition beat indices into contiguous constant-tempo sections.
 
-    Smooths inter-beat intervals with a radius-3 median filter so isolated
-    1–2 beat tracker glitches do not trigger spurious splits, groups adjacent
-    intervals within ``rel_tol`` of the section median, and merges transient
-    runs shorter than ``min_section_beats`` into the closer neighboring tempo.
+    Smooths inter-beat intervals with a median filter so isolated 1–2 beat
+    tracker glitches do not trigger spurious splits, groups adjacent intervals
+    within ``rel_tol`` of the section median, merges adjacent runs with
+    matching tempo (modulo power-of-2 octaves when ``octave_folded`` is True),
+    and absorbs transient runs shorter than ``min_section_beats`` into the
+    closer neighboring tempo.
 
     Args:
         bt: Strictly increasing 1D float64 beat timestamps in seconds.
         rel_tol: Fractional IBI change threshold to start a new tempo section.
         min_section_beats: Minimum beat count for a standalone tempo section.
+        octave_folded: When True (default), fold ``0.5× / 2×`` octave flickers
+            before smoothing and compare section tempos modulo powers of 2 so
+            tracker octave switches inside one medley section do not split it.
 
     Returns:
         List of non-overlapping ``(start_idx, end_idx)`` half-open index slices
@@ -477,18 +528,31 @@ def _segment_beats_by_tempo(
     n = int(bt.size)
     if n < max(4, int(min_section_beats)):
         return [(0, n)]
-    ibis = np.diff(bt)
+    raw_ibis = np.diff(bt)
+    ibis = (
+        np.asarray(
+            [_fold_ibi_to_bpm_range(float(x)) for x in raw_ibis], dtype=np.float64
+        )
+        if octave_folded
+        else raw_ibis
+    )
+    radius = 4 if octave_folded else 3
     smooth = np.empty_like(ibis)
     for i in range(ibis.size):
-        lo = max(0, i - 3)
-        hi = min(ibis.size, i + 4)
+        lo = max(0, i - radius)
+        hi = min(ibis.size, i + radius + 1)
         smooth[i] = float(np.median(ibis[lo:hi]))
+
+    def _dist(a: float, b: float) -> float:
+        if octave_folded:
+            return _octave_folded_ibi_dist(a, b)
+        return abs(a - b) / max(b, 1e-6)
 
     runs: list[list[int]] = []
     start = 0
     ref = float(smooth[0])
     for i in range(1, smooth.size):
-        if abs(float(smooth[i]) - ref) / max(ref, 1e-6) > float(rel_tol):
+        if _dist(float(smooth[i]), ref) > float(rel_tol):
             runs.append([start, i])
             start = i
             ref = float(smooth[i])
@@ -499,27 +563,34 @@ def _segment_beats_by_tempo(
     changed = True
     while changed and len(runs) > 1:
         changed = False
+        if octave_folded:
+            for k in range(len(runs) - 1):
+                m1 = float(np.median(ibis[runs[k][0] : runs[k][1]]))
+                m2 = float(np.median(ibis[runs[k + 1][0] : runs[k + 1][1]]))
+                if _dist(m1, m2) <= float(rel_tol):
+                    runs[k][1] = runs[k + 1][1]
+                    runs.pop(k + 1)
+                    changed = True
+                    break
+            if changed:
+                continue
         lengths = [r[1] - r[0] + 1 for r in runs]
         min_idx = int(np.argmin(lengths))
         if lengths[min_idx] < int(min_section_beats):
             r_lo, r_hi = runs[min_idx]
             r_med = float(np.median(ibis[r_lo:r_hi])) if r_hi > r_lo else 0.5
             left_diff = (
-                abs(
-                    r_med
-                    - float(
-                        np.median(ibis[runs[min_idx - 1][0] : runs[min_idx - 1][1]])
-                    )
+                _dist(
+                    r_med,
+                    float(np.median(ibis[runs[min_idx - 1][0] : runs[min_idx - 1][1]])),
                 )
                 if min_idx > 0
                 else float("inf")
             )
             right_diff = (
-                abs(
-                    r_med
-                    - float(
-                        np.median(ibis[runs[min_idx + 1][0] : runs[min_idx + 1][1]])
-                    )
+                _dist(
+                    r_med,
+                    float(np.median(ibis[runs[min_idx + 1][0] : runs[min_idx + 1][1]])),
                 )
                 if min_idx + 1 < len(runs)
                 else float("inf")
@@ -546,7 +617,18 @@ def _optimal_attack_shift_sec(
     shifts_sec: np.ndarray,
     max_shift_sec: float,
 ) -> float:
-    """Return the scalar shift maximizing mean attack-onset energy on ``bt``."""
+    """Find the scalar shift maximizing mean attack-onset energy on ``bt``.
+
+    Args:
+        bt: 1-D array of beat timestamps in seconds.
+        onset_env: 1-D attack-onset envelope values.
+        env_times: 1-D timestamp grid corresponding to ``onset_env``.
+        shifts_sec: Candidate scalar time shifts in seconds to evaluate.
+        max_shift_sec: Maximum absolute shift margin used to select interior beats.
+
+    Returns:
+        Optimal shift in seconds from ``shifts_sec``.
+    """
     env_end = float(env_times[-1])
     interior = bt[(bt >= max_shift_sec) & (bt <= env_end - max_shift_sec)]
     score_bt = interior if interior.size > 0 else bt
@@ -654,6 +736,9 @@ def snap_beats_to_onsets(
     if abs(best_shift) < 1e-6:
         return beat_grid
     raw_beats = beat_grid.beat_times + best_shift
+    # Preserve a genuine Beat 0 sitting right at t=0 that shifted slightly
+    # negative (within 5 ms), while still dropping stray negative pre-beats.
+    raw_beats = np.where((raw_beats < 0.0) & (raw_beats >= -0.005), 0.0, raw_beats)
     kept_beats = raw_beats[raw_beats >= 0.0]
     if kept_beats.size < 2:
         # Preserve strict monotonicity if fewer than 2 non-negative beats remain.
@@ -667,10 +752,10 @@ def snap_beats_to_onsets(
         )
     else:
         shifted_beats = kept_beats
+        raw_db = beat_grid.downbeat_times + best_shift
+        raw_db = np.where((raw_db < 0.0) & (raw_db >= -0.005), 0.0, raw_db)
         shifted_downbeats = (
-            (beat_grid.downbeat_times + best_shift)[
-                beat_grid.downbeat_times + best_shift >= 0.0
-            ]
+            raw_db[raw_db >= 0.0]
             if beat_grid.downbeat_times.size > 0
             else beat_grid.downbeat_times
         )
@@ -760,34 +845,33 @@ def _fit_octave_aware_global_lattice(
     *,
     inlier_tol_sec: float = 0.035,
     min_inlier_fraction: float = 0.85,
+    min_harmonic_fraction: float = 0.80,
     max_bpm: float = 250.0,
 ) -> tuple[float, float] | None:
-    """Fit a global constant-BPM lattice across ``0.5× / 1× / 2×`` tracker octaves.
+    """Fit a constant-BPM lattice across ``0.5× / 1× / 2×`` tracker octaves.
 
-    Uses progressive span expansion (``8 s -> 24 s -> 72 s -> full``) to avoid
-    phase-wrapping on long or fast tracks and enforces a power-of-2 IBI
-    consistency guard so genuine non-harmonic medleys are never collapsed into
-    a single tempo.
+    Uses progressive span expansion (``2.5 s -> 8 s -> 24 s -> 72 s -> full``)
+    to avoid phase-wrapping on long or fast tracks and enforces a power-of-2
+    IBI consistency guard so genuine non-harmonic medleys are never collapsed
+    into a single tempo.
 
     Args:
         bt: Raw beat timestamps in seconds.
         db: Raw downbeat timestamps in seconds (may be empty).
         inlier_tol_sec: Maximum beat residual in seconds.
         min_inlier_fraction: Minimum fraction of raw beats on the sub-lattice.
+        min_harmonic_fraction: Minimum fraction of raw IBIs matching a power-of-2
+            harmonic of the fitted tempo (default ``0.80`` for whole-song fits).
         max_bpm: Upper bound when folding a fine sub-lattice to musical BPM.
 
     Returns:
-        Tuple ``(final_ibi, final_anchor)`` if an octave-consistent global
-        lattice passes all guards, else ``None``.
+        Tuple ``(final_ibi, final_anchor)`` if an octave-consistent lattice
+        passes all guards, else ``None``.
     """
     if bt.size < 8:
         return None
     ibis = np.diff(bt)
-    q_ibis = [
-        float(np.median(ibis)),
-        float(np.percentile(ibis, 25)),
-        float(np.percentile(ibis, 75)),
-    ]
+    q_ibis = [float(np.percentile(ibis, p)) for p in (25, 40, 50, 60, 75)]
     raw_cands: list[float] = []
     for base in q_ibis:
         if base <= 1e-4:
@@ -801,7 +885,7 @@ def _fit_octave_aware_global_lattice(
     raw_cands.sort(reverse=True)
     seeds: list[float] = []
     for ci in raw_cands:
-        if not seeds or abs(ci - seeds[-1]) / max(seeds[-1], 1e-6) > 0.02:
+        if not seeds or abs(ci - seeds[-1]) / max(seeds[-1], 1e-6) > 0.015:
             seeds.append(ci)
 
     best_fit: tuple[float, float, float, float] | None = None
@@ -810,7 +894,7 @@ def _fit_octave_aware_global_lattice(
             anchor_t = float(bt[int(q * (bt.size - 1))])
             cur_ibi = float(seed_ibi)
             ok = True
-            for span_sec in (8.0, 24.0, 72.0, 1e9):
+            for span_sec in (2.5, 8.0, 24.0, 72.0, 1e9):
                 local = bt[np.abs(bt - anchor_t) <= span_sec]
                 if local.size < 4:
                     local = bt
@@ -838,13 +922,25 @@ def _fit_octave_aware_global_lattice(
             if frac < float(min_inlier_fraction):
                 continue
             med_err = float(np.median(resid_all[inlier_mask]))
-            if med_err > min(0.012, 0.08 * cur_ibi):
+            med_limit = (
+                min(0.012, 0.08 * cur_ibi)
+                if min_harmonic_fraction >= 0.75
+                else min(0.015, 0.10 * cur_ibi)
+            )
+            if med_err > med_limit:
+                continue
+            # Do not hallucinate a finer 2x/4x sub-lattice unless the raw tracker
+            # actually emitted intervals at that finer spacing (prevents doubling
+            # noisy single-octave grids like librosa 124 -> 248 BPM).
+            if cur_ibi < 0.75 * float(np.median(ibis)) and (
+                float(np.mean(ibis <= 1.35 * cur_ibi)) < 0.10
+            ):
                 continue
 
             final_ibi, final_anchor = _choose_musical_octave_and_phase(
                 bt, db, cur_ibi, anchor_t, max_bpm=max_bpm
             )
-            if _harmonic_ibi_fraction(ibis, final_ibi) < 0.80:
+            if _harmonic_ibi_fraction(ibis, final_ibi) < float(min_harmonic_fraction):
                 continue
             if (
                 best_fit is None
@@ -880,8 +976,8 @@ def regularize_beat_grid(
     global lattice unifies the song onto one musical constant-BPM grid. For
     genuine medleys and variable-tempo songs (when ``piecewise_sections`` is
     True), each contiguous constant-tempo section is regularized independently
-    (with ultra-fast ``> 250 BPM`` double-time sections folded back into the
-    natural octave) while leaving unstructured rubato sections untouched.
+    (including per-section octave-flicker unification and ``> 250 BPM``
+    double-time folding) while leaving unstructured rubato sections untouched.
 
     Args:
         beat_grid: Input :class:`BeatGrid`.
@@ -957,7 +1053,13 @@ def regularize_beat_grid(
         else:
             if not piecewise_sections:
                 return beat_grid
-            sections = _segment_beats_by_tempo(bt, rel_tol=0.06, min_section_beats=16)
+            min_sec = min(24, max(12, int(bt.size) // 16))
+            sections = _segment_beats_by_tempo(
+                bt,
+                rel_tol=0.07 if octave_aware else 0.06,
+                min_section_beats=min_sec,
+                octave_folded=octave_aware,
+            )
             if len(sections) <= 1:
                 return beat_grid
             merged_beats_parts: list[np.ndarray] = []
@@ -977,76 +1079,138 @@ def regularize_beat_grid(
                         bpm=_robust_bpm_from_beats(sec_bt),
                         tracker=beat_grid.tracker,
                     )
+                    sec_min_inlier = min(0.75, float(min_inlier_fraction))
                     sec_reg = regularize_beat_grid(
                         sec_grid,
                         inlier_tol_sec=inlier_tol_sec,
-                        min_inlier_fraction=min(0.75, float(min_inlier_fraction)),
+                        min_inlier_fraction=sec_min_inlier,
                         integer_bpm_tol=integer_bpm_tol,
                         piecewise_sections=False,
                         octave_aware=False,
                     )
-                    sb = sec_reg.beat_times
-                    sb = sb[(sb >= sec_bt[0] - 0.05) & (sb <= sec_bt[-1] + 0.05)]
-                    if sb.size >= 2:
-                        if sec_reg is not sec_grid:
-                            any_section_regularized = True
-                        if octave_aware and sec_reg.bpm > 250.0:
-                            sec_ibi = 60.0 / max(float(sec_reg.bpm), 1e-6)
-                            folded_ibi, folded_anchor = (
-                                _choose_musical_octave_and_phase(
-                                    sec_bt,
-                                    sec_db,
-                                    sec_ibi,
-                                    float(sb[0]),
-                                    max_bpm=250.0,
-                                )
-                            )
-                            k_lo = int(
-                                np.ceil((sec_bt[0] - 0.05 - folded_anchor) / folded_ibi)
-                            )
-                            k_hi = int(
-                                np.floor(
-                                    (sec_bt[-1] + 0.05 - folded_anchor) / folded_ibi
-                                )
-                            )
-                            if k_hi - k_lo >= 1:
-                                ks_f = np.arange(k_lo, k_hi + 1, dtype=np.int64)
-                                sb = (
-                                    folded_anchor + ks_f.astype(np.float64) * folded_ibi
-                                )
-                                any_section_regularized = True
-                                if sec_db.size > 0:
-                                    db_kf = np.rint(
-                                        (sec_db - folded_anchor) / folded_ibi
-                                    ).astype(np.int64)
-                                    db_rf = np.abs(
-                                        sec_db - (folded_anchor + db_kf * folded_ibi)
+                    sec_oct_fit: tuple[float, float] | None = None
+                    if octave_aware and sec_reg is sec_grid:
+                        sec_oct_fit = _fit_octave_aware_global_lattice(
+                            sec_bt,
+                            sec_db,
+                            inlier_tol_sec=inlier_tol_sec,
+                            min_inlier_fraction=sec_min_inlier,
+                            min_harmonic_fraction=0.65,
+                        )
+                    if sec_oct_fit is not None:
+                        s_ibi, s_anc = sec_oct_fit
+                        s_bpm = 60.0 / max(s_ibi, 1e-6)
+                        if (
+                            integer_bpm_tol > 0.0
+                            and round(s_bpm) >= 40
+                            and abs(s_bpm - float(round(s_bpm)))
+                            <= max(float(integer_bpm_tol), 0.05)
+                        ):
+                            ibi_i = 60.0 / float(round(s_bpm))
+                            k_i = np.rint((sec_bt - s_anc) / ibi_i)
+                            anc_i = float(np.median(sec_bt - k_i * ibi_i))
+                            if (
+                                float(
+                                    np.mean(
+                                        np.abs(sec_bt - (anc_i + k_i * ibi_i))
+                                        <= float(inlier_tol_sec)
                                     )
-                                    v_db = db_kf[db_rf <= float(inlier_tol_sec)]
-                                    if v_db.size > 0:
-                                        bp = int(
-                                            np.argmax(
-                                                np.bincount(
-                                                    np.mod(v_db, 4), minlength=4
+                                )
+                                >= 0.70
+                            ):
+                                s_ibi, s_anc = ibi_i, anc_i
+                        k_lo = int(np.ceil((sec_bt[0] - 0.05 - s_anc) / s_ibi))
+                        k_hi = int(np.floor((sec_bt[-1] + 0.05 - s_anc) / s_ibi))
+                        if k_hi - k_lo >= 1:
+                            ks_s = np.arange(k_lo, k_hi + 1, dtype=np.int64)
+                            sb = s_anc + ks_s.astype(np.float64) * s_ibi
+                            any_section_regularized = True
+                            if sec_db.size > 0:
+                                db_ks = np.rint((sec_db - s_anc) / s_ibi).astype(
+                                    np.int64
+                                )
+                                db_rs = np.abs(sec_db - (s_anc + db_ks * s_ibi))
+                                v_db = db_ks[db_rs <= float(inlier_tol_sec)]
+                                if v_db.size > 0:
+                                    bp = int(
+                                        np.argmax(
+                                            np.bincount(np.mod(v_db, 4), minlength=4)
+                                        )
+                                    )
+                                    sd = sb[np.mod(ks_s, 4) == bp]
+                                else:
+                                    sd = sb[::4]
+                            else:
+                                sd = np.zeros(0, dtype=np.float64)
+                        else:
+                            sb, sd = sec_bt, sec_db
+                    else:
+                        sb = sec_reg.beat_times
+                        sb = sb[(sb >= sec_bt[0] - 0.05) & (sb <= sec_bt[-1] + 0.05)]
+                        if sb.size >= 2:
+                            if sec_reg is not sec_grid:
+                                any_section_regularized = True
+                            if octave_aware and sec_reg.bpm > 250.0:
+                                sec_ibi = 60.0 / max(float(sec_reg.bpm), 1e-6)
+                                folded_ibi, folded_anchor = (
+                                    _choose_musical_octave_and_phase(
+                                        sec_bt,
+                                        sec_db,
+                                        sec_ibi,
+                                        float(sb[0]),
+                                        max_bpm=250.0,
+                                    )
+                                )
+                                k_lo = int(
+                                    np.ceil(
+                                        (sec_bt[0] - 0.05 - folded_anchor) / folded_ibi
+                                    )
+                                )
+                                k_hi = int(
+                                    np.floor(
+                                        (sec_bt[-1] + 0.05 - folded_anchor) / folded_ibi
+                                    )
+                                )
+                                if k_hi - k_lo >= 1:
+                                    ks_f = np.arange(k_lo, k_hi + 1, dtype=np.int64)
+                                    sb = (
+                                        folded_anchor
+                                        + ks_f.astype(np.float64) * folded_ibi
+                                    )
+                                    any_section_regularized = True
+                                    if sec_db.size > 0:
+                                        db_kf = np.rint(
+                                            (sec_db - folded_anchor) / folded_ibi
+                                        ).astype(np.int64)
+                                        db_rf = np.abs(
+                                            sec_db
+                                            - (folded_anchor + db_kf * folded_ibi)
+                                        )
+                                        v_db = db_kf[db_rf <= float(inlier_tol_sec)]
+                                        if v_db.size > 0:
+                                            bp = int(
+                                                np.argmax(
+                                                    np.bincount(
+                                                        np.mod(v_db, 4), minlength=4
+                                                    )
                                                 )
                                             )
-                                        )
-                                        sd = sb[np.mod(ks_f, 4) == bp]
+                                            sd = sb[np.mod(ks_f, 4) == bp]
+                                        else:
+                                            sd = sb[::4]
                                     else:
-                                        sd = sb[::4]
+                                        sd = np.zeros(0, dtype=np.float64)
                                 else:
-                                    sd = np.zeros(0, dtype=np.float64)
+                                    sd = sec_reg.downbeat_times
                             else:
                                 sd = sec_reg.downbeat_times
+                            sd = (
+                                sd[(sd >= sb[0] - 1e-4) & (sd <= sb[-1] + 1e-4)]
+                                if sd.size > 0
+                                else np.zeros(0, dtype=np.float64)
+                            )
                         else:
-                            sd = sec_reg.downbeat_times
-                        sd = (
-                            sd[(sd >= sb[0] - 1e-4) & (sd <= sb[-1] + 1e-4)]
-                            if sd.size > 0
-                            else np.zeros(0, dtype=np.float64)
-                        )
-                    else:
-                        sb, sd = sec_bt, sec_db
+                            sb, sd = sec_bt, sec_db
                 else:
                     sb, sd = sec_bt, sec_db
 
@@ -1329,7 +1493,19 @@ def _load_or_extract_mert_for_audio(
     use_mert_cache: bool = True,
     mert_cache_dir: str | pathlib.Path | None = None,
 ) -> np.ndarray:
-    """Load sibling or audio-hash cached MERT features if present, else extract."""
+    """Load sibling or audio-hash cached MERT features if present, else extract.
+
+    Args:
+        audio_path: Path to the source audio file.
+        mert_layers: Tuple of MERT transformer layer indices to extract/average.
+        mert_cache_suffix: Filename suffix for sibling ``.npy`` MERT caches.
+        device: Device string for MERT extraction when uncached.
+        use_mert_cache: Whether to read/write the shared audio-hash MERT cache.
+        mert_cache_dir: Optional override directory for the shared MERT cache.
+
+    Returns:
+        2-D float32 MERT feature array of shape ``(n_frames, hidden_dim)``.
+    """
     sibling = pathlib.Path(audio_path).with_suffix(mert_cache_suffix)
     if sibling.is_file():
         return ddcl_features.load_mert_features(
@@ -1578,6 +1754,67 @@ DEFAULT_DIFFICULTY_PACK: tuple[DifficultyPreset, ...] = (
 )
 
 
+def _align_inputs_to_downbeat_phase(
+    beat_mert: np.ndarray,
+    grid: BeatGrid,
+) -> tuple[np.ndarray, BeatGrid, float | None]:
+    """Align beat-indexed MERT and grid so index ``0`` sits on a 4-beat downbeat.
+
+    ITGPT chunks beats into 4-beat bars (``level2``) and 16-beat phrases
+    (``level3``) starting strictly at index ``0``, matching StepMania charts
+    whose Measure 1 Beat 0 is always a downbeat. When raw-audio beat tracking
+    prepends ``1..3`` partial-measure lead-in beats before the first downbeat,
+    trimming those leading beats aligns every ``level2``/``level3`` chunk to
+    true bar boundaries; when the first detected downbeat lies deeper in the
+    track (``db0_idx >= 4``), left-padding ``1..3`` silent beats aligns bar
+    phase without discarding early audio.
+
+    Args:
+        beat_mert: Beat-aligned MERT array of shape ``(n_beats, n_frames, D)``.
+        grid: Corresponding :class:`BeatGrid`.
+
+    Returns:
+        Tuple ``(aligned_mert, aligned_grid, min_time_sec)`` where
+        ``min_time_sec`` filters out any decoded onset inside synthetic
+        left-padding (or ``None`` if no padding was added).
+    """
+    n_beats = int(beat_mert.shape[0])
+    if grid.downbeat_times.size == 0 or n_beats < 8 or grid.n_beats < n_beats:
+        return beat_mert, grid, None
+    bt = grid.beat_times[:n_beats]
+    db0_idx = int(np.argmin(np.abs(bt - float(grid.downbeat_times[0]))))
+    rem = db0_idx % 4
+    if rem == 0:
+        return beat_mert, grid, None
+    if 1 <= db0_idx <= 3 and n_beats - db0_idx >= 4:
+        trimmed_grid = BeatGrid(
+            beat_times=grid.beat_times[db0_idx:],
+            downbeat_times=grid.downbeat_times,
+            bpm=grid.bpm,
+            tracker=grid.tracker,
+        )
+        return beat_mert[db0_idx:], trimmed_grid, None
+    pad = 4 - rem
+    ibi0 = max(float(grid.beat_times[1] - grid.beat_times[0]), 1e-3)
+    pad_bt = float(grid.beat_times[0]) - np.arange(pad, 0, -1, dtype=np.float64) * ibi0
+    pad_grid = BeatGrid(
+        beat_times=np.concatenate([pad_bt, grid.beat_times]),
+        downbeat_times=grid.downbeat_times,
+        bpm=grid.bpm,
+        tracker=grid.tracker,
+    )
+    pad_mert = np.concatenate(
+        [
+            np.zeros(
+                (pad, beat_mert.shape[1], beat_mert.shape[2]), dtype=beat_mert.dtype
+            ),
+            beat_mert,
+        ],
+        axis=0,
+    )
+    return pad_mert, pad_grid, float(grid.beat_times[0]) - 1e-6
+
+
 def _predict_itgpt_onsets_for_mert(
     song_key: str,
     beat_mert: np.ndarray,
@@ -1592,8 +1829,33 @@ def _predict_itgpt_onsets_for_mert(
     device: torch.device,
     fallback_top_k: bool = False,
     allowed_slots: collections.abc.Collection[int] | None = SLOTS_16TH_24TH,
+    align_downbeat: bool = True,
 ) -> np.ndarray:
-    """Run ITGPT slot prediction and timestamp decoding on precomputed beat MERT."""
+    """Run ITGPT slot prediction and timestamp decoding on precomputed beat MERT.
+
+    Args:
+        song_key: Identifier for the synthetic chart metadata.
+        beat_mert: Beat-aligned MERT features of shape ``(n_beats, frames, dim)``.
+        grid: Estimated or regularized beat grid for the song.
+        itgpt_model: Loaded ITGPT placement model.
+        difficulty: Chart difficulty label (for metadata only).
+        target_density: Desired average steps per beat for density conditioning.
+        meter: StepMania integer difficulty rating for metadata conditioning.
+        threshold: Sigmoid probability threshold for slot activation.
+        max_beats: Optional cap on beats passed to the model.
+        device: Torch device for inference.
+        fallback_top_k: If True and threshold yields zero onsets, fall back to top-k.
+        allowed_slots: Optional subset of 48-slot indices permitted during decoding.
+        align_downbeat: If True, align beat 0 to ``grid.downbeat_times[0]`` before
+            ITGPT bar/phrase chunking.
+
+    Returns:
+        Sorted 1-D float64 array of predicted onset timestamps in seconds.
+    """
+    orig_n_beats = int(beat_mert.shape[0])
+    min_time_sec: float | None = None
+    if align_downbeat:
+        beat_mert, grid, min_time_sec = _align_inputs_to_downbeat_phase(beat_mert, grid)
     n_beats = int(beat_mert.shape[0])
     stream = np.zeros((n_beats, 2), dtype=np.float32)
     stream[:, 0] = float(meter)
@@ -1602,7 +1864,9 @@ def _predict_itgpt_onsets_for_mert(
     # Populate dummy_slots with the exact target total step count so
     # density-conditioned ITGPT models receive mean(steps_per_beat) == target_density.
     dummy_slots = np.zeros((n_beats, itgpt_constants.N_SLOTS), dtype=np.float32)
-    target_n_steps = max(1, int(round(float(target_density) * float(n_beats))))
+    target_n_steps = max(
+        1, int(round(float(target_density) * float(min(orig_n_beats, n_beats))))
+    )
     flat_slots = dummy_slots.reshape(-1)
     flat_slots[: min(target_n_steps, flat_slots.size)] = 1.0
 
@@ -1634,6 +1898,8 @@ def _predict_itgpt_onsets_for_mert(
         use_slot_centers=False,
         allowed_slots=allowed_slots,
     )
+    if min_time_sec is not None and onset_times.size > 0:
+        onset_times = onset_times[onset_times >= min_time_sec]
     if onset_times.size == 0 and fallback_top_k and probs.size > 0:
         masked_probs = np.asarray(probs, dtype=np.float64)
         if allowed_slots is not None and masked_probs.ndim == 2:
@@ -1654,6 +1920,8 @@ def _predict_itgpt_onsets_for_mert(
             use_slot_centers=False,
             allowed_slots=allowed_slots,
         )
+        if min_time_sec is not None and onset_times.size > 0:
+            onset_times = onset_times[onset_times >= min_time_sec]
     return onset_times
 
 

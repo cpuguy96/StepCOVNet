@@ -1504,6 +1504,84 @@ class ItgptRawAudioGenerationTest(unittest.TestCase):
         self.assertTrue(any(abs(b - 211.0) < 0.6 for b in seg_bpms))
         self.assertTrue(all(b <= 255.0 for b in seg_bpms))
 
+    def test_downbeat_bar_phase_alignment_and_octave_folded_medley(self) -> None:
+        # 1. Octave-folded medley: 186 BPM with mid-section 93 BPM (0.5x) dip ->
+        #    211/422 BPM mixed-octave section must stay 2 clean sections (~186 & ~211).
+        rng = np.random.default_rng(77)
+        ibi1 = 60.0 / 186.0
+        s1_full = 0.5 + np.arange(80, dtype=np.float64) * ibi1
+        s1_raw = np.concatenate([s1_full[:40], s1_full[40:60:2], s1_full[60:]])
+        ibi2 = 60.0 / 211.0
+        s2_start = float(s1_full[-1]) + ibi2
+        s2_base = s2_start + np.arange(60, dtype=np.float64) * ibi2
+        s2_dbl = s2_start + np.arange(40, 100, dtype=np.float64) * (0.5 * ibi2)
+        s2_raw = np.sort(np.concatenate([s2_base[:20], s2_dbl, s2_base[50:]]))
+        medley_bt = np.sort(
+            np.concatenate([s1_raw, s2_raw])
+            + rng.normal(0.0, 0.003, size=s1_raw.size + s2_raw.size)
+        )
+        medley_db = np.concatenate([s1_full[::4], s2_base[::4]])
+        grid = beat_tracking.BeatGrid(
+            beat_times=medley_bt,
+            downbeat_times=medley_db,
+            bpm=186.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        reg = beat_tracking.regularize_beat_grid(grid)
+        segs, _ = reg.sm_bpm_segments()
+        seg_bpms = [b for _, b in segs]
+        self.assertTrue(any(abs(b - 186.0) < 0.5 for b in seg_bpms))
+        self.assertTrue(any(abs(b - 211.0) < 0.6 for b in seg_bpms))
+        self.assertTrue(all(b <= 255.0 for b in seg_bpms))
+
+        # 2. Anti-phantom-sublattice guard: noisy single-octave 124 BPM grid with
+        #    zero 248 BPM intervals must NOT double into 248 BPM.
+        ibi124 = 60.0 / 124.0
+        noisy124 = 0.3 + np.arange(64, dtype=np.float64) * ibi124
+        noisy124 = noisy124 + rng.normal(0.0, 0.022, size=noisy124.size)
+        noisy124 = np.sort(noisy124)
+        g124 = beat_tracking.BeatGrid(
+            beat_times=noisy124,
+            downbeat_times=np.zeros(0, dtype=np.float64),
+            bpm=124.0,
+            tracker=beat_tracking.TRACKER_LIBROSA,
+        )
+        reg124 = beat_tracking.regularize_beat_grid(g124)
+        self.assertLess(reg124.bpm, 150.0)
+
+        # 3. Downbeat bar-phase alignment:
+        #    (a) db0_idx in 1..3 trims leading beats so beat 0 is a downbeat.
+        bt16 = 0.2 + np.arange(16, dtype=np.float64) * 0.5
+        bm16 = np.arange(16 * 24 * 4, dtype=np.float32).reshape(16, 24, 4)
+        g_lead2 = beat_tracking.BeatGrid(
+            beat_times=bt16,
+            downbeat_times=bt16[2::4],
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        a_bm, a_grid, min_t = beat_tracking._align_inputs_to_downbeat_phase(
+            bm16, g_lead2
+        )
+        self.assertEqual(a_bm.shape[0], 14)
+        self.assertAlmostEqual(float(a_grid.beat_times[0]), float(bt16[2]), places=6)
+        self.assertIsNone(min_t)
+
+        #    (b) db0_idx >= 4 (e.g. idx=5) left-pads 3 zero beats without dropping audio.
+        g_deep = beat_tracking.BeatGrid(
+            beat_times=bt16,
+            downbeat_times=bt16[5::4],
+            bpm=120.0,
+            tracker=beat_tracking.TRACKER_BEAT_THIS,
+        )
+        p_bm, p_grid, p_min_t = beat_tracking._align_inputs_to_downbeat_phase(
+            bm16, g_deep
+        )
+        self.assertEqual(p_bm.shape[0], 19)
+        self.assertEqual(float(np.abs(p_bm[:3]).sum()), 0.0)
+        self.assertIsNotNone(p_min_t)
+        db0_new_idx = int(np.argmin(np.abs(p_grid.beat_times - bt16[5])))
+        self.assertEqual(db0_new_idx % 4, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
